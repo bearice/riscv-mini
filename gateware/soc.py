@@ -8,7 +8,7 @@ from litex_boards.platforms.sipeed_tang_primer_20k import Platform
 
 
 class ClockResetGenerator(LiteXModule):
-    def __init__(self, platform, frequency, with_ddr=False, with_video=False):
+    def __init__(self, platform, frequency, with_ddr=False, with_video=False, exact_clock=False):
         self.cd_sys = ClockDomain('sys')
         self.cd_por = ClockDomain('por')
         clock = platform.request('clk27')
@@ -26,7 +26,7 @@ class ClockResetGenerator(LiteXModule):
             self.cd_init = ClockDomain('init')
             self.cd_sys2x = ClockDomain('sys2x')
             self.cd_sys2x_i = ClockDomain('sys2x_i')
-            pll.create_clkout(self.cd_sys2x_i, 2*frequency, with_reset=False)
+            pll.create_clkout(self.cd_sys2x_i, 2*frequency, margin=0 if exact_clock else 1e-2, with_reset=False)
             self.specials += [
                 Instance('DHCEN', i_CLKIN=self.cd_sys2x_i.clk, i_CE=self.stop,
                          o_CLKOUT=self.cd_sys2x.clk),
@@ -37,7 +37,7 @@ class ClockResetGenerator(LiteXModule):
             # Gowin derives rPLL/CLKDIV clocks; the fabric net is optimized away
             # during PnR and cannot be constrained by its pre-synthesis name.
         else:
-            pll.create_clkout(self.cd_sys, frequency, with_reset=False)
+            pll.create_clkout(self.cd_sys, frequency, margin=0 if exact_clock else 1e-2, with_reset=False)
         self.specials += AsyncResetSynchronizer(self.cd_sys, ~pll.locked | ~reset_n | self.reset)
         if with_video:
             self.cd_video = ClockDomain('video')
@@ -53,10 +53,10 @@ class ClockResetGenerator(LiteXModule):
 
 
 class MiniSoC(SoCCore):
-    def __init__(self, rom_data=None, with_ddr=False, with_io=False, with_video=False, with_stress=False):
+    def __init__(self, rom_data=None, with_ddr=False, with_io=False, with_video=False, with_stress=False, experiment=None):
         platform = Platform(dock='standard', toolchain='gowin')
-        frequency=60e6 if with_stress else 48e6
-        self.crg = ClockResetGenerator(platform, frequency, with_ddr, with_video)
+        frequency=(experiment['system_clock_hz'] if experiment else 60e6 if with_stress else 48e6)
+        self.crg = ClockResetGenerator(platform, frequency, with_ddr, with_video, exact_clock=bool(experiment))
         SoCCore.__init__(
             self, platform, clk_freq=frequency,
             ident=f'riscv-mini {"M4" if with_stress else "M3" if with_video else "M2" if with_io else "M1" if with_ddr else "M0"}: Tang Primer 20K + Dock 3713',
@@ -73,7 +73,10 @@ class MiniSoC(SoCCore):
             from gateware.ddr import H5TQ1G63EFR
             from gateware.constraints import add_ddr_init_exceptions
             add_ddr_init_exceptions(platform,with_video)
-            self.ddrphy = GW2DDRPHY(platform.request('ddram'), sys_clk_freq=frequency, dll_off=True)
+            phy_options={'dll_off':True} if not experiment else {
+                'dll_off':experiment.get('ddr_dll_off',True),
+                'cl':experiment.get('cl',6), 'cwl':experiment.get('cwl',6)}
+            self.ddrphy = GW2DDRPHY(platform.request('ddram'), sys_clk_freq=frequency, **phy_options)
             self.ddrphy.settings.rtt_nom = 'disabled'
             self.ddrphy.settings.rtt_wr = 'disabled'
             self.comb += [self.crg.stop.eq(self.ddrphy.init.stop),

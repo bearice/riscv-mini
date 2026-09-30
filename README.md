@@ -138,3 +138,5 @@ M4 在 LCD DMA 持续运行时，交错执行内存复制、SD 文件读取校�
 ```
 
 新增 monitor 命令：`memcopy`、`fboff`（停止并排空 DMA）、`fbon`（在帧边界恢复）。压力脚本以整帧模和、欠载为 0、换帧/扫描计数增长、内存逐字检查和 SD CRC 同时判定结果，失败立即保留日志。Windows 上测试进程临时阻止系统自动休眠，结束后释放请求。当前 M4 ROM 映射使用全部 46 块 BSRAM，扩充缓存/FIFO 前需要重新分配片上存储。SD 应用加载、IRQ/RTOS 和断电冷启动是后续工作。
+
+频率扫描结果见 [frequency-validation.md](docs/frequency-validation.md)。当前已上板确认 CPU/片上总线最高 86.4 MHz；完整 DDR/LCD 并发配置最高确认 62.4375 MHz sys / 124.875 MHz DDR CK。提频实验使用独立输出目录，开发板最终恢复到已提交的 60/120 MHz 稳定版本。

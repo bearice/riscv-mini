@@ -47,10 +47,11 @@ def main():
     parser.add_argument('--port',default='COM4')
     parser.add_argument('--seconds',type=float,default=300)
     parser.add_argument('--name',default='stress')
+    parser.add_argument('--output-dir',type=Path,help='Test a separately built M4 experiment')
     args=parser.parse_args()
     if not math.isfinite(args.seconds) or args.seconds<=0: parser.error('Duration must be positive and finite')
     if not re.fullmatch(r'[a-zA-Z0-9_-]+',args.name): parser.error('Use a simple output name')
-    output=ROOT/'build/m4'
+    output=args.output_dir.resolve() if args.output_dir else ROOT/'build/m4'
     validation=json.loads((output/'validation.json').read_text())
     hardware=json.loads((output/'hardware-validation.json').read_text())
     fs=output/'gateware/riscv_mini.fs'

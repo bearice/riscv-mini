@@ -25,12 +25,13 @@ def main():
     p.add_argument('--timeout', type=float, default=120)
     p.add_argument('--soft-resets', type=int, default=0, help='M1: repeat acceptance via ! CPU reset')
     p.add_argument('--sd-write-test', action='store_true', help='M2: create a new SD test file and read it back')
+    p.add_argument('--output-dir', type=Path, help='Test a separately built experiment')
     args=p.parse_args()
     if args.soft_resets < 0 or (args.stage == 'm0' and args.soft_resets):
         p.error('Soft resets require M1 and a nonnegative count.')
     if args.sd_write_test and args.stage not in ('m2','m3','m4'): p.error('SD write test requires M2.')
     if not args.program: p.error('Pass --program to authorize SRAM download.')
-    output=ROOT/'build'/args.stage
+    output=args.output_dir.resolve() if args.output_dir else ROOT/'build'/args.stage
     validation=json.loads((output/'validation.json').read_text())
     if not validation.get('synthesis_requested') or any(validation['timing_violated_endpoints'].values()):
         raise SystemExit('A successful synthesis/timing validation is required.')

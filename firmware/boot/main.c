@@ -25,7 +25,11 @@ int main(void) {
     /* Allow the programmer/UART bridge to settle after configuration. */
     for (volatile unsigned i=0; i<480000; ++i) {}
 #ifdef MINI_STRESS
+#ifdef MINI_FREQUENCY
+    puts_uart("\r\nriscv-mini M4 | RV32IM | " MINI_SYS_MHZ " MHz | DDR 128 MiB\r\n");
+#else
     puts_uart("\r\nriscv-mini M4 | RV32IM | 60 MHz | DDR 128 MiB\r\n");
+#endif
 #elif defined(MINI_VIDEO)
     puts_uart("\r\nriscv-mini M3 | RV32IM | 48 MHz | DDR 128 MiB\r\n");
 #elif defined(MINI_IO)

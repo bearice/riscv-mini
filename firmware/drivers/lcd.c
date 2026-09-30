@@ -45,7 +45,7 @@ static void text(unsigned x, unsigned y, const char *s) {
     }
 }
 int lcd_show(unsigned sd_ready, unsigned write_pass) {
-    lcd_spi_clk_divider_write(CONFIG_CLOCK_FREQUENCY/6000000u); /* 6 MHz, mode 0, MSB first. */
+    lcd_spi_clk_divider_write((CONFIG_CLOCK_FREQUENCY+5999999u)/6000000u); /* 6 MHz, mode 0, MSB first. */
     spi_select(1,0); pins=4; lcd_gpio_out_write(pins); io_delay_ms(100);
     pins=6; lcd_gpio_out_write(pins); io_delay_ms(200);
     spi_select(1,1);

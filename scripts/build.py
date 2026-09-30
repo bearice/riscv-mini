@@ -30,7 +30,7 @@ def checked(command, log=None):
         subprocess.run(command, cwd=ROOT, check=True)
 
 
-def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=False, with_video=False, with_stress=False):
+def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=False, with_video=False, with_stress=False, experiment=None):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data = None
@@ -38,7 +38,7 @@ def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=Fals
         raw = binary.read_bytes()
         raw += bytes((-len(raw)) % 4)
         data = [int.from_bytes(raw[i:i+4], 'little') for i in range(0, len(raw), 4)]
-    soc = MiniSoC(rom_data=data, with_ddr=with_ddr, with_io=with_io, with_video=with_video, with_stress=with_stress)
+    soc = MiniSoC(rom_data=data, with_ddr=with_ddr, with_io=with_io, with_video=with_video, with_stress=with_stress, experiment=experiment)
     builder = Builder(soc, output_dir=str(output), compile_software=False,
         compile_gateware=synthesize, csr_json=str(output / 'csr.json'), csr_csv=str(output / 'csr.csv'))
     builder.build(run=synthesize, build_name='riscv_mini')
@@ -50,10 +50,17 @@ def main():
     parser.add_argument('--stage', choices=('m0', 'm1', 'm2', 'm3', 'm4'), default='m0')
     parser.add_argument('--generate-only', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--rom', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--experiment-config', type=Path, help='Explicit clock experiment JSON; requires a separate output directory')
+    parser.add_argument('--output-dir', type=Path)
     args = parser.parse_args()
-    output = ROOT / 'build' / args.stage
+    output = args.output_dir.resolve() if args.output_dir else ROOT / 'build' / args.stage
+    experiment=json.loads(args.experiment_config.read_text()) if args.experiment_config else None
+    if experiment and (not args.output_dir or output in [ROOT/'build'/stage for stage in ('m0','m1','m2','m3','m4')]):
+        parser.error('Clock experiments must use a separate --output-dir')
+    experiment_args=['--output-dir',str(output)]
+    if args.experiment_config: experiment_args += ['--experiment-config',str(args.experiment_config.resolve())]
     if args.generate_only:
-        generate(output, args.rom, args.synthesize, args.stage != 'm0', args.stage in ('m2','m3','m4'), args.stage in ('m3','m4'), args.stage == 'm4')
+        generate(output, args.rom, args.synthesize, args.stage != 'm0', args.stage in ('m2','m3','m4'), args.stage in ('m3','m4'), args.stage == 'm4', experiment)
         return
     tools = json.loads((ROOT / '.tools.local.json').read_text())
     gcc = Path(tools['gcc'])
@@ -61,7 +68,7 @@ def main():
     os.environ['PATH'] = os.pathsep.join([str(toolbin), str(Path(tools['gowin']).parent), os.environ['PATH']])
     os.environ['PYTHONUTF8'] = '1'
     output.mkdir(parents=True, exist_ok=True)
-    checked([sys.executable, __file__, '--generate-only', '--stage', args.stage], output / 'generate.log')
+    checked([sys.executable, __file__, '--generate-only', '--stage', args.stage,*experiment_args], output / 'generate.log')
 
     csr = json.loads((output / 'csr.json').read_text())
     rom_size=(48 if args.stage=='m4' else 32)*1024
@@ -71,7 +78,10 @@ def main():
         raise SystemExit('Generated SRAM layout does not match firmware linker script.')
     registers = csr['csr_registers']
     functions = []
-    for name in ('uart_rxtx', 'uart_txfull', 'uart_rxempty', 'uart_ev_pending'):
+    simple_csrs=['uart_rxtx', 'uart_txfull', 'uart_rxempty', 'uart_ev_pending']
+    if experiment and args.stage=='m0':
+        simple_csrs += ['timer0_en','timer0_load','timer0_reload','timer0_update_value','timer0_value']
+    for name in simple_csrs:
         register = registers[name]
         if register['size'] != 1:
             raise SystemExit(f'Expected a single CSR word: {name}')
@@ -82,6 +92,13 @@ def main():
     firmware.mkdir(exist_ok=True)
     (firmware / 'mini_csr.h').write_text('#pragma once\n' + '\n'.join(functions) + '\n', encoding='utf-8')
     extra = []
+    if experiment:
+        extra += ['-DMINI_FREQUENCY',
+                  f'-DMINI_SYS_MHZ="{experiment["system_clock_hz"]/1e6:g}"',
+                  f'-DMINI_DDR_DESCRIPTION="{2*experiment["system_clock_hz"]/1e6:g} MHz '+
+                  ('DLL-off' if experiment.get('ddr_dll_off',True) else 'DLL-on')+
+                  f' CL{experiment.get("cl",6)}/CWL{experiment.get("cwl",6)} ODT disabled"']
+        if args.stage=='m0': extra += ['-I',output/'software/include']
     if args.stage != 'm0':
         if csr['memories']['main_ram'] != {'base': 0x40000000, 'size': 128*1024*1024, 'type': 'cached'}:
             raise SystemExit(f"Unexpected DDR layout: {csr['memories']['main_ram']}")
@@ -104,7 +121,7 @@ def main():
         (include / 'hw').mkdir(exist_ok=True)
         (include / 'generated/csr.h').write_text('\n'.join(lines)+'\n', encoding='utf-8')
         (include / 'hw/common.h').write_text('#pragma once\n#include <stdint.h>\n', encoding='utf-8')
-        extra = ['-DMINI_DDR', '-I', include, '-I', output / 'software/include', ROOT / 'firmware/boot/ddr.c']
+        extra += ['-DMINI_DDR', '-I', include, '-I', output / 'software/include', ROOT / 'firmware/boot/ddr.c']
         if args.stage in ('m2','m3','m4'):
             vendor = ROOT / 'firmware/vendor/fatfs'
             extra += ['-DMINI_IO', '-I', vendor, '-I', ROOT / 'firmware/drivers',
@@ -126,7 +143,8 @@ def main():
     linker=firmware/'linker.ld'
     linker.write_text((ROOT/'firmware/boot/linker.ld').read_text().replace('LENGTH = 32K',f'LENGTH = {rom_size//1024}K'),encoding='utf-8')
     elf = firmware / 'boot.elf'
-    checked([gcc, *flags, *extra, '-I', firmware, ROOT / 'firmware/boot/start.S', ROOT / 'firmware/boot/main.c',
+    main_source=ROOT/'firmware/apps/frequency-cpu.c' if experiment and args.stage=='m0' else ROOT/'firmware/boot/main.c'
+    checked([gcc, *flags, *extra, '-I', firmware, ROOT / 'firmware/boot/start.S', main_source,
         '-T', linker, '-Wl,--gc-sections', f'-Wl,-Map,{firmware / "boot.map"}', '-lgcc', '-o', elf])
     cpp = firmware / 'toolchain-smoke.o'
     checked([toolbin / 'riscv-none-elf-g++.exe', *flags, '-fno-exceptions', '-fno-rtti', '-c',
@@ -141,7 +159,7 @@ def main():
     checked([toolbin / 'riscv-none-elf-size.exe', elf])
     attributes = subprocess.check_output([toolbin / 'riscv-none-elf-readelf.exe', '-h', '-A', elf], text=True)
     (firmware / 'elf-info.txt').write_text(attributes, encoding='utf-8')
-    command = [sys.executable, __file__, '--generate-only', '--stage', args.stage, '--rom', binary]
+    command = [sys.executable, __file__, '--generate-only', '--stage', args.stage, '--rom', binary,*experiment_args]
     if args.synthesize:
         command += ['--synthesize']
     checked(command, output / ('synthesis.log' if args.synthesize else 'generate-rom.log'))
@@ -156,7 +174,7 @@ def main():
                     'm3':'CPU + DDR + SD/SPI LCD + 480x272 RGB LCD DMA; no HDMI',
                     'm4':'M3 + DDR copy/check stress monitor; no HDMI'}[args.stage],
         'rom_size_bytes': rom_size, 'firmware_bytes': size, 'firmware_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
-        'isa': 'rv32im', 'abi': 'ilp32', 'clock_hz': 60000000 if args.stage=='m4' else 48000000,
+        'isa': 'rv32im', 'abi': 'ilp32', 'clock_hz': experiment['system_clock_hz'] if experiment else 60000000 if args.stage=='m4' else 48000000,
         'rtl': str(output / 'gateware/riscv_mini.v'),
         'synthesis_requested': args.synthesize,
         'board_test': 'not performed',
@@ -181,8 +199,6 @@ def main():
             if not match:
                 raise SystemExit(f'Cannot verify {kind} timing from Gowin report.')
             counts[kind.lower()] = int(match.group(1))
-        if any(counts.values()):
-            raise SystemExit(f'Gowin reports timing violations: {counts}')
         resource_text = (output / 'gateware/impl/pnr/project.rpt.txt').read_text(errors='replace')
         resources = {}
         for kind in ('Logic', 'Register', 'BSRAM'):
@@ -193,7 +209,10 @@ def main():
         report['bitstream_sha256'] = hashlib.sha256(bitstream.read_bytes()).hexdigest()
         report['timing_violated_endpoints'] = counts
         report['resources'] = resources
+    if experiment: report['experiment']=experiment
     (output / 'validation.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    if args.synthesize and any(report['timing_violated_endpoints'].values()):
+        raise SystemExit(f'Gowin reports timing violations: {report["timing_violated_endpoints"]}; not eligible for programming')
     print(f'{args.stage} build verified: {size} bytes of ROM firmware. Report: {output / "validation.json"}')
 
 

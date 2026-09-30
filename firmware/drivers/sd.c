@@ -67,7 +67,7 @@ static int read_data(unsigned char *p, unsigned len) {
 DSTATUS disk_initialize(BYTE drive) {
     if (drive) return STA_NOINIT;
     initialized=high_capacity=io_failed=sectors=0;
-    spisdcard_clk_divider_write(CONFIG_CLOCK_FREQUENCY/400000u); /* 400 kHz during initialization. */
+    spisdcard_clk_divider_write((CONFIG_CLOCK_FREQUENCY+399999u)/400000u); /* 400 kHz during initialization. */
     spi_select(0,0);
     io_delay_ms(10);
     for (unsigned i=0; i<10; ++i) exchange(255);
@@ -111,7 +111,7 @@ DSTATUS disk_initialize(BYTE drive) {
     } else goto fail;
     release();
     detect_present=sd_detect_in_read()&1;
-    spisdcard_clk_divider_write(CONFIG_CLOCK_FREQUENCY/6000000u); /* 6 MHz first functional target. */
+    spisdcard_clk_divider_write((CONFIG_CLOCK_FREQUENCY+5999999u)/6000000u); /* 6 MHz first functional target. */
     initialized=1;
     puts_uart("SD init PASS: sectors="); io_hex(sectors);
     puts_uart(" SDHC="); io_hex(!!high_capacity);
