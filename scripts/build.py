@@ -25,14 +25,14 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False):
+def generate(output,binary=None,synthesize=False,sd_backend="native"):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
         raw=binary.read_bytes();raw+=bytes((-len(raw))%4)
         data=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-    soc=MiniSoC(rom_data=data)
+    soc=MiniSoC(rom_data=data,sd_backend=sd_backend)
     builder=Builder(soc,output_dir=str(output),compile_software=False,compile_gateware=synthesize,
                     csr_json=str(output/'csr.json'),csr_csv=str(output/'csr.csv'))
     builder.build(run=synthesize,build_name='riscv_mini')
@@ -41,7 +41,10 @@ def generate_csr(csr,include):
     lines=['#pragma once','#include <stdint.h>']
     for name,reg in csr['csr_registers'].items():
         count,addr=reg['size'],reg['addr']
-        if count not in (1,2):raise ValueError(f'Unsupported CSR width: {name}')
+        if count>2:
+            lines += [f'#define CSR_{name.upper()}_ADDR 0x{addr:08x}u',f'#define CSR_{name.upper()}_SIZE {count}',
+                f'static inline uint32_t {name}_read_word(unsigned index) {{ return *(volatile uint32_t *)(0x{addr:08x}u+4*index); }}']
+            continue
         typ='uint64_t' if count==2 else 'uint32_t'
         reads=' | '.join(f'(({typ})*(volatile uint32_t *)0x{addr+4*i:08x}u << {32*(count-i-1)})' for i in range(count))
         writes=' '.join(f'*(volatile uint32_t *)0x{addr+4*i:08x}u = (uint32_t)(value >> {32*(count-i-1)});' for i in range(count))
@@ -72,19 +75,21 @@ def pnr_report(output):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--sd-backend',choices=('native','spi'),default='native')
     p.add_argument('--synthesize',action='store_true')
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--app',type=Path,default=ROOT/'firmware/app/main.c',help='DDR application source; bootloader is unchanged')
     p.add_argument('--generate-only',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--rom',type=Path,help=argparse.SUPPRESS)
     a=p.parse_args();output=a.output_dir.resolve()
-    if a.generate_only:generate(output,a.rom,a.synthesize);return
+    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend);return
     output.mkdir(parents=True,exist_ok=True)
     tools=json.loads((ROOT/'.tools.local.json').read_text());gcc=Path(tools['gcc']);toolbin=gcc.parent
     os.environ['PATH']=os.pathsep.join([str(toolbin),str(Path(tools['gowin']).parent),os.environ['PATH']])
     os.environ['PYTHONUTF8']='1'
-    checked([sys.executable,__file__,'--generate-only','--output-dir',output],output/'generate.log')
+    checked([sys.executable,__file__,'--generate-only','--output-dir',output,'--sd-backend',a.sd_backend],output/'generate.log')
     csr=json.loads((output/'csr.json').read_text())
+    if csr['constants']['config_sd_native']!=int(a.sd_backend=='native'):raise ValueError('SD hardware/backend mismatch')
     for name,base,size in [('rom',0,8192),('sram',0x10000000,8192),('main_ram',0x40000000,128*1024*1024)]:
         if csr['memories'][name]['base']!=base or csr['memories'][name]['size']!=size:raise ValueError(f'Unexpected {name} layout')
     firmware=output/'firmware';firmware.mkdir(exist_ok=True)
@@ -97,7 +102,7 @@ def main():
     common=[ROOT/'firmware/boot/start.S',drivers/'uart.c',drivers/'time.c',drivers/'flash.c']
     for name,main,sources,linker in [
         ('boot',loader/'main.c',[ROOT/'firmware/boot/ddr.c'],loader/'boot.ld'),
-        ('app',a.app.resolve(),[*[drivers/n for n in ('spi.c','lcd.c','sd.c','filesystem.c','string.c','video.c')],
+        ('app',a.app.resolve(),[*[drivers/n for n in ('spi.c','lcd.c','sd_native.c' if a.sd_backend=='native' else 'sd.c','filesystem.c','string.c','video.c')],
             *[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c')],vendor/'ff.c',vendor/'ffunicode.c'],loader/'app.ld')]:
         elf=firmware/f'{name}.elf'
         # Whole-program optimization keeps the ROM loader compact; app stays
@@ -109,7 +114,7 @@ def main():
     binary=firmware/'boot.bin';size=binary.stat().st_size
     if size>8192:raise RuntimeError('Boot ROM overflow')
     image=pack_image((firmware/'app.bin').read_bytes(),abi);(firmware/'app.img').write_bytes(image)
-    command=[sys.executable,__file__,'--generate-only','--output-dir',output,'--rom',binary]
+    command=[sys.executable,__file__,'--generate-only','--output-dir',output,'--rom',binary,'--sd-backend',a.sd_backend]
     if a.synthesize:command+=['--synthesize']
     checked(command,output/('synthesis.log' if a.synthesize else 'generate-rom.log'))
     # ROM content is validated independently of the compiler exit code.
@@ -119,7 +124,7 @@ def main():
     report={'profile':'base: Flash/UART bootloader + DDR application','rom_size_bytes':8192,'sram_size_bytes':8192,
         'firmware_bytes':size,'firmware_sha256':hashlib.sha256(raw).hexdigest(),'isa':'rv32im_zicsr_zifencei','abi':'ilp32',
         'clock_hz':60000000,'ddr_clock_hz':120000000,'rtl':str(output/'gateware/riscv_mini.v'),
-        'synthesis_requested':a.synthesize,'board_test':'not performed',
+        'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,
                       'image_bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}}
     if a.synthesize:

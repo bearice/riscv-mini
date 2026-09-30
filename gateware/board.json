@@ -14,7 +14,7 @@
     "rows": 8192,
     "columns": 1024,
     "speed_suffix": "PBC",
-    "status": "Fixed 60/120 MHz DLL-off CL6/CWL6; ROM initialization and DDR-resident HAL app. Current acceptance: docs/m5a-validation.md.",
+    "status": "Fixed60/120MHz DLL-off CL6/CWL6; ROM init, DDR HAL app; Wishbone SD DMA shares CPU bridge. See docs/m6-validation.md.",
     "clock_hz": 120000000,
     "dll_off": true,
     "cl": 6,
@@ -146,12 +146,34 @@
     "irq_sources": {
       "uart": 0,
       "timer0": 1,
-      "board_io": 2,
-      "timer1": 3
+      "sdcard": 2,
+      "board_io": 3,
+      "timer1": 4
     },
     "timer_irq_hz": 1000,
     "uart_rx_buffer_bytes": 128,
     "runtime_location": "ddr_application",
     "api_header": "firmware/hal/include/hal/hal.h"
+  },
+  "sd": {
+    "default_backend": "native",
+    "native_bus_width": 4,
+    "init_clock_hz": 400000,
+    "native_clock_hz": 7500000,
+    "spi_clock_hz": 6000000,
+    "clk_pin": "N10",
+    "cmd_pin": "R14",
+    "data_lsb_first": [
+      "M8",
+      "M7",
+      "M10",
+      "N11"
+    ],
+    "card_detect_pin": "D15",
+    "card_detect_active_low": true,
+    "dma": "sys_wishbone",
+    "bounce_bytes": 4096,
+    "max_blocks_per_command": 8,
+    "status": "M6 native15MHz reads pass; stable native7.5MHz write/read. Hotplug acceptance skipped per user. See docs/m6-validation.md."
   }
 }

@@ -10,6 +10,8 @@ static void status(void) {
     hal_uart_puts("CPU/sys=60 MHz DDR=120 MHz LCD=9 MHz UART=115200\r\n");
     uint32_t id=0;unsigned bytes=0;unsigned ok=hal_flash_probe(&id,&bytes)==HAL_OK;
     hal_uart_puts("FLASH JEDEC=");hal_uart_hex(id);hal_uart_puts(" bytes=");hal_uart_hex(bytes);hal_uart_puts(ok?" READY\r\n":" UNAVAILABLE\r\n");
+    hal_sd_info_t sd;hal_sd_get_info(&sd);
+    hal_uart_puts("SD native=");hal_uart_hex(sd.native);hal_uart_puts(" width=");hal_uart_hex(sd.bus_width);hal_uart_puts(" hz=");hal_uart_hex(sd.clock_hz);hal_uart_puts(" sectors=");hal_uart_hex(sd.sectors);hal_uart_puts(" present=");hal_uart_hex(sd.present);hal_uart_puts(" ready=");hal_uart_hex(sd.initialized);hal_uart_puts(" reads=");hal_uart_hex(sd.read_blocks);hal_uart_puts(" writes=");hal_uart_hex(sd.written_blocks);hal_uart_puts(" errors=");hal_uart_hex(sd.errors);hal_uart_puts("\r\n");
     hal_video_status();
     hal_stats_t stats;hal_get_stats(&stats);
     hal_uart_puts("IRQ timer=");hal_uart_hex(stats.timer_irqs);hal_uart_puts(" uart=");hal_uart_hex(stats.uart_irqs);hal_uart_puts(" buttons=");hal_uart_hex(stats.button_irqs);hal_uart_puts(" drops=");hal_uart_hex(stats.uart_drops);hal_uart_puts(" unhandled=");hal_uart_hex(stats.unhandled_irqs);hal_uart_puts("\r\n");

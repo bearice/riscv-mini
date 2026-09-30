@@ -4,6 +4,7 @@
 #include "io.h"
 #include "ff.h"
 #include "diskio.h"
+#include <hal/hal.h>
 #include <generated/csr.h>
 
 static unsigned initialized, high_capacity, io_failed, detect_present;
@@ -166,4 +167,8 @@ DRESULT disk_ioctl(BYTE drive, BYTE cmd, void *buff) {
     if (cmd==GET_SECTOR_COUNT) { *(LBA_t *)buff=sectors; return RES_OK; }
     if (cmd==GET_SECTOR_SIZE) { *(WORD *)buff=512; return RES_OK; }
     return RES_PARERR;
+}
+
+void sd_get_info(hal_sd_info_t *info) {
+    *info=(hal_sd_info_t){sectors,initialized?6000000u:400000u,1,0,!(sd_detect_in_read()&1u),!disk_status(0),0,0,0};
 }

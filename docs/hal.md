@@ -12,8 +12,8 @@
 | irq / trap | 注册和屏蔽 32 个 CPU IRQ 源；临界区保存/恢复 MIE；完整整数寄存器/CSR trap frame；默认同步异常报告后停止，可覆盖异常 handler |
 | uart | IRQ RX + 128 字节环形缓冲；非阻塞 getc；带超时和已写长度的 write；puts/hex 为阻塞便利函数 |
 | board IO | 六灯逻辑掩码、四按键稳定状态/按下释放事件、四 DIP、单颗 WS2812B、共用 PHY reset |
-| spi | 已有 SD / LCD mode-0 主机的事务接口，位宽分别 8 / 16；不是任意模式/引脚的通用 SPI 控制器 |
-| sd | SPI-SD/FatFs mount/list、512 字节 block read/write；原生四位 SD 是后续工作 |
+| spi | 已有 SD / LCD mode-0 主机的事务接口，SPI 回退下位宽分别 8 / 16；原生 SD 构建中 SD SPI 请求返回 HAL_UNSUPPORTED；不是任意模式/引脚的通用 SPI 控制器 |
+| sd | FatFs mount/list、512 字节 block read/write；默认原生四位 SD + Wishbone DMA，SPI 作为回退；get_info 返回模式、时钟、容量和统计 |
 | flash | JEDEC/容量、read、受 `[2,4)` MiB 边界保护的 program/erase；无写后读回 |
 | display | SPI LCD 状态页，DDR RGB565 双帧的 init/frame/present/stop/status |
 
@@ -41,7 +41,7 @@ WS2812B 所有时序由 sys 状态机完成：每 bit 75 周期 = 1.25 µs，0 �
 
 ## 中断与异常
 
-生成的当前 IRQ 编号是 UART=0、timer0=1、board_io=2、timer1=3。runtime 启用 UART RX、board IO 和 timer1；timer0 保留轮询。使用 VexRiscv 的 `0xbc0` mask / `0xfc0` pending 和 machine external IRQ，初始化 `mtvec`、`mie.MEIE`、`mstatus.MIE`。
+生成的SPI 回退的 IRQ 编号是 UART=0、timer0=1、board_io=2、timer1=3；原生 SD 构建为 UART=0、timer0=1、sdcard=2、board_io=3、timer1=4。runtime 启用 UART RX、board IO 和 timer1；timer0 保留轮询。SD DMA 当前也使用有界轮询；SD event IRQ 定义在硬件中，未启用到 CPU runtime。使用 VexRiscv 的 `0xbc0` mask / `0xfc0` pending 和 machine external IRQ，初始化 `mtvec`、`mie.MEIE`、`mstatus.MIE`。
 
 trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 字节对齐。默认异常输出 cause/pc/value 后停止；自定义 handler 若要恢复执行，需要正确更新 frame。尚无独立异常栈、嵌套 IRQ、调度器或 RTOS runtime。
 
@@ -59,3 +59,5 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 ```
 
 先构建/下载当前 FPGA 配置，示例才能使用匹配的 CSR ABI。模拟检查运行 `sim/test_board_io.py`，包括去抖、长按不重复、释放、并发按键、GRB/pulse/latch 和 busy 提交忽略。实际验收状态见 [M5a 验证](m5a-validation.md)。
+
+原生 SD 的块缓冲、错误取消和运行频率见 [原生 SD](native-sd.md)。M5a 验证页记录当时的 SPI 构建，最新基础版见 [M6 验证](m6-validation.md)。

@@ -33,3 +33,11 @@ button bounce suppression, held-key/no-repeat, release and simultaneous keys.
 It also samples actual 60 MHz WS2812 output: GRB MSB order, 24/48-cycle high
 pulses, 75-cycle bit period, 18000-cycle latch and ignored submissions while busy.
 These checks do not replace real board switch/LED observation.
+
+`sim/test_sd.py` checks real SDCore good/corrupt command CRC and PHY timeout
+status propagation, plus 400 kHz/15 MHz/7.5 MHz SD clock periods at sys 60 MHz.
+`--upstream` reproduces the pinned upstream CRC visibility defect (expected failure).
+It uses a PHY endpoint seam and does not prove connector timing.
+`scripts/sd_verify.py` runs the independent SD demo on the board: existing file
+CRC, single/multi-block and unaligned callers, optional unique-file write/read,
+and five-minute LCD frame switching. See docs/m6-validation.md.

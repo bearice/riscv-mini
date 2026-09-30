@@ -1,6 +1,6 @@
 # 外围设备 HAL 与板级控制器计划
 
-日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，当前验收状态见 [M5a 验证](m5a-validation.md)。本页保留外围控制器方案和引脚核对；原生 SD、音频、Ethernet 和 USB Host 为后续工作。
+日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，当前验收状态见 [M5a 验证](m5a-validation.md) / [M6 验证](m6-validation.md)。本页保留外围控制器方案和引脚核对；原生 SD 已接入，音频、Ethernet 和 USB Host 为后续工作。
 
 ## 1. 本轮确定的范围
 
@@ -29,7 +29,7 @@
 | `gateware/soc.py`、`gateware/board.json`、`firmware/drivers/`、`requirements.in` | 当前 SoC、频率、软件接口和固定依赖 |
 | `build/m4/gateware/impl/pnr/project.rpt.txt` | 当前资源占用，非未来估算 |
 
-M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、SPI-SD/FatFs，并新增独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。原生 SD、音频、Ethernet、USB Host、嵌套中断和 RTOS 尚未接入。
+M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、FatFs、独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。M6 默认使用原生四位 SD + DMA，SPI-SD 为独立构建回退；音频、Ethernet、USB Host、嵌套中断和 RTOS 尚未接入。
 
 本轮把上述新增引脚清单与 M4 生成的 `riscv_mini.cst` 做了静态比对：新增设备之间的重复脚为已识别的 F10；与现有功能重叠的是 T10 复位和 SD 的原 SPI 引脚。该检查不代替 bank 电压、时钟专用引脚、配置复用和布局布线验收。
 
@@ -121,7 +121,7 @@ microSD 在核心板 J2，所有四根数据线均已接 FPGA。
 
 采用已锁定的 LiteSDCard：SDPHY + SDCore + Wishbone block-to-memory / memory-to-block DMA。这里是原生 SD memory 协议（用户所说非 SPI 的 SDIO），首轮不承诺 SDIO Wi-Fi 等 I/O function 卡。
 
-初始化 400 kHz、一位数据；协商后四位 SDR、15 MHz。sys 60 MHz 下当前 clocker 用对称整数分频，15 MHz 易于实现；30 MHz 超过标准速度默认上限，20 MHz 的奇数分频也不能简单声称准确得到。首版无须另一个 PLL；理论四位数据位率 7.5 MB/s，实际文件吞吐另测。
+初始化 400 kHz、一位数据；协商后四位 SDR。原规划为 15 MHz；M6 实测 15 MHz 读通过但写响应失败，7.5 MHz 写入/读回通过，当前固定 7.5 MHz，15 MHz 写裕量优化留待后续。sys 60 MHz 下当前 clocker 用对称整数分频，15 MHz 易于实现；30 MHz 超过标准速度默认上限，20 MHz 的奇数分频也不能简单声称准确得到。首版无须另一个 PLL；原规划 15 MHz 的理论四位数据位率 7.5 MB/s；当前 7.5 MHz 为 3.75 MB/s，实际文件吞吐另测。
 
 覆盖 CRC7/CRC16、SDSC/SDHC 寻址、命令/数据/busy 超时、插拔恢复、单块和多块读写。复用现有 FatFs，上层文件 API 保持，替换 `diskio` 的 block backend。SD DMA 经 sys Wishbone 进入 DDR，不新增独立 DDR PHY 或第二物理 native 端口。
 
@@ -172,7 +172,7 @@ Flash/UART 装载已完成：应用独立存放于 Flash 或经 UART 下载，�
 | RMII | PHY 输出 50 MHz，独立域 | 0 |
 | USB ULPI 初始化 | PHY 输出 60 MHz，独立域 | 0 |
 | OHCI PHY | 首选 48 MHz，独立 PLL，控制/DMA 为 sys 60 MHz | 预计 1 |
-| 原生 SD CLK | 400 kHz / 15 MHz，sys 分频 | 0 |
+| 原生 SD CLK | 400 kHz / 7.5 MHz，sys 分频 | 0 |
 | SPI LCD / Flash | 6 MHz / 首版 10 MHz，sys 分频 | 0 |
 | Audio BCK / WS | 1.5 MHz / 46.875 kHz，sys 分频 | 0 |
 | WS2812B | 约 800 kbit/s，sys 定时状态机 | 0 |
@@ -190,7 +190,7 @@ USB PHY 的 60 MHz 与 CPU 的 60 MHz 异步，不可因频率相同省略 CDC�
 | PRIMARY | 4 / 8 |
 | LW | 8 / 8 |
 
-原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，BSRAM 占用 16/46；M5a boot 镜像 6,560 字节，DDR app 镜像 24,004 字节（包含 48 字节 header）。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
+原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，M6 BSRAM 占用 18/46；M6 boot 镜像 6,560 字节，DDR app 镜像 24,704 字节（包含 48 字节 header）。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
 
 PLL 总数初步够用，但 BSRAM 推断粒度、长线/时钟布线和新增 OHCI Logic 必须重新 PnR。不能用“剩 63% Logic”保证所有外设一定同时装得下。每阶段记录资源增量；若超预算，先减 packet slots/FIFO 与调试模块，避免削弱 DDR/LCD 已验证的可靠性。
 
@@ -200,7 +200,7 @@ PLL 总数初步够用，但 BSRAM 推断粒度、长线/时钟布线和新增 O
 
 新增有界 burst、主设备公平性和完成归属检查：视频保持 FIFO 安全余量，音频满足定时需求，SD/网络不能长期占总线，CPU 必须保持进展。大 ring buffers/描述符按所属设备分区，固件、视频、boot/test 区边界由 linker/配置生成；CPU 与 DMA 的 ownership 转移配合 memory barrier。
 
-目前无 D-cache，DMA cache-maintenance hooks 可为空操作并保留接口。DDR 程序加载仍要处理 I-cache。视频读取约 15.65 MB/s，音频约 0.188 MB/s；Ethernet 100 Mbps 线速、SD 7.5 MB/s 原始位率不等于当前 DDR 桥或 CPU 实际承载能力，必须实测瓶颈。
+目前无 D-cache，DMA cache-maintenance hooks 可为空操作并保留接口。DDR 程序加载仍要处理 I-cache。视频读取约 15.65 MB/s，音频约 0.188 MB/s；Ethernet 100 Mbps 线速、当前四位 SD 7.5 MHz 的 3.75 MB/s 理论数据率不等于实际文件吞吐或当前 DDR 桥/CPU 承载能力，必须实测瓶颈。
 
 ## 5. HAL 软件边界
 
@@ -241,7 +241,7 @@ gateware/peripherals/      新控制器及板级桥接
 | --- | --- | --- |
 | M5a：HAL 基础与板级 IO（代码已接入） | 现有 UART/timer/SPI/显示/SD 接口包入 HAL；trap/IRQ 基础；LED、四用户键、四 DIP、WS2812B；公共 PHY reset 资源定义 | API 示例、数字逻辑仿真及上板 IRQ/原有功能回归；灯/按键/DIP 人工状态见 M5a 验证页 |
 | Flash/UART 启动（当前已实现） | 独立 LiteX SPIMaster、受限分区；小 bootloader、DDR 应用 linker、镜像头、UART 恢复；固件存 Flash、载入 DDR | JEDEC/CRC、错误镜像拒绝、读写范围保护；应用 DDR 执行；持久配置与软件复位已通过；按用户要求跳过断电检查 |
-| M6：原生 SD | LiteSDCard 四位 15 MHz、DMA、FatFs backend；保留 SPI fallback 构建 | 文件 CRC、多块传输、新文件写回、拔卡超时/插回恢复、LCD 不欠载 |
+| M6：原生 SD（已接入） | LiteSDCard 四位 7.5 MHz、DMA、FatFs backend；保留 SPI fallback 构建 | 文件 CRC、多块传输、新文件写回、LCD 不欠载；本次按用户要求跳过拔插验收，详见 M6 验证 |
 | M7：音频 | PT8211 序列器、PIO FIFO→DDR PCM ring/DMA | 左右独立音调、46.875 kHz 实测/逻辑验证、静音、缺样补零及统计；显示/SD 同时运行 |
 | M8：Ethernet | MDIO、LiteEth RMII MAC、原始帧 HAL、少量 packet slots、IRQ | PHY ID/链路、ARP/ICMP/UDP、收发 CRC/丢包、拔插网线恢复；不要把 link-up 当作 MAC 验收 |
 | M9：USB Host HID | 固定 OHCI netlist/TinyUSB；USB3317 初始化/serial bridge；48 MHz 域和 DMA/IRQ；键盘鼠标事件 | LS/FS 枚举、按下/释放/修饰键、鼠标、拔插和复位恢复；与 Ethernet 共用 F10 的联动恢复 |

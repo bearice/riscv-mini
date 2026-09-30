@@ -12,6 +12,7 @@ from litex.build.generic_platform import Pins, Subsignal, IOStandard
 from litex.soc.cores.spi import SPIMaster
 from litex.soc.cores.gpio import GPIOOut, GPIOIn
 from litex.soc.cores.timer import Timer
+from litex.soc.interconnect.csr import CSRStorage
 from litex_boards.platforms.sipeed_tang_primer_20k import Platform
 from litedram.frontend.wishbone import LiteDRAMWishbone2Native
 from gateware.vendor.gw2ddrphy import GW2DDRPHY
@@ -20,6 +21,7 @@ from gateware.constraints import add_ddr_init_exceptions
 from gateware.memory import SharedNativePort
 from gateware.video import RGBLCD
 from gateware.board_io import BoardIO, WS2812
+from gateware.sd import NativeSD
 
 class ClockResetGenerator(LiteXModule):
     def __init__(self,platform):
@@ -48,8 +50,14 @@ class ClockResetGenerator(LiteXModule):
         self.comb += video_reset.eq(~vp.locked|self.cd_sys.rst)
         self.specials += AsyncResetSynchronizer(self.cd_video,video_reset)
 
+class SDControl(LiteXModule):
+    def __init__(self,reset):
+        self._reset=CSRStorage(name="reset")
+        self.comb += reset.eq(self._reset.storage)
+
 class MiniSoC(SoCCore):
-    def __init__(self,rom_data=None):
+    def __init__(self,rom_data=None,sd_backend="native"):
+        if sd_backend not in ("native","spi"):raise ValueError("SD backend must be native or spi")
         platform=Platform(dock='standard',toolchain='gowin');self.crg=ClockResetGenerator(platform)
         SoCCore.__init__(self,platform,clk_freq=60e6,ident='riscv-mini base: Flash/UART -> DDR',
             cpu_type='vexriscv',cpu_variant='lite',integrated_rom_size=8*1024,
@@ -77,9 +85,15 @@ class MiniSoC(SoCCore):
         self.lcd_spi=SPIMaster(lcd,16,60e6,6e6,with_csr=False,mode='aligned')
         self.lcd_spi.add_csr(with_loopback=False);self.lcd_spi.add_clk_divider()
         self.lcd_gpio=GPIOOut(Cat(lcd.dc,lcd.rst_n,lcd.bl_n),reset=4)
-        self.spisdcard=SPIMaster(platform.request('spisdcard'),8,60e6,400e3,with_csr=False,mode='aligned')
-        self.spisdcard.add_csr(with_loopback=False);self.spisdcard.add_clk_divider()
-        self.sd_detect=GPIOIn(platform.request('sd_detect'))
+        self.add_constant('CONFIG_SD_NATIVE',int(sd_backend=='native'))
+        if sd_backend=='native':
+            self.sdcard=NativeSD(self)
+            self.irq.add("sdcard",use_loc_if_exists=True)
+            self.sd_control=SDControl(self.sdcard.reset)
+        else:
+            self.spisdcard=SPIMaster(platform.request('spisdcard'),8,60e6,400e3,with_csr=False,mode='aligned')
+            self.spisdcard.add_csr(with_loopback=False);self.spisdcard.add_clk_divider()
+            self.sd_detect=GPIOIn(platform.request('sd_detect'))
         self.flash_spi=SPIMaster(platform.request('spiflash'),32,60e6,10e6,with_csr=False,mode='aligned')
         self.flash_spi.add_csr(with_loopback=False);self.flash_spi.add_clk_divider()
         pins=json.loads(Path(__file__).with_name('board.json').read_text())['video']['rgb_lcd']['pins']

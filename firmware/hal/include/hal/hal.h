@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef enum {HAL_OK=0,HAL_BUSY,HAL_TIMEOUT,HAL_IO,HAL_INVALID,HAL_NO_MEDIA} hal_result_t;
+typedef enum {HAL_OK=0,HAL_BUSY,HAL_TIMEOUT,HAL_IO,HAL_INVALID,HAL_NO_MEDIA,HAL_UNSUPPORTED} hal_result_t;
 typedef enum {HAL_SPI_SD=0,HAL_SPI_LCD=1} hal_spi_bus_t;
 typedef struct {uint32_t gpr[32],pc,status,cause,value;} hal_trap_frame_t;
 typedef void (*hal_irq_handler_t)(void *context);
@@ -37,6 +37,8 @@ unsigned hal_ws2812_busy(void);
 hal_result_t hal_phys_reset(unsigned hold_ms); /* F10 resets BOTH Ethernet/USB PHYs */
 hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,unsigned *received);
 hal_result_t hal_spi_select(hal_spi_bus_t bus,unsigned selected);
+typedef struct {uint32_t sectors,clock_hz,bus_width,native,present,initialized,read_blocks,written_blocks,errors;} hal_sd_info_t;
+void hal_sd_get_info(hal_sd_info_t *info);
 hal_result_t hal_sd_mount(void);
 hal_result_t hal_sd_list(void);
 hal_result_t hal_sd_read(uint32_t sector,void *data,unsigned count);

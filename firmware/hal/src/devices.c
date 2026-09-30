@@ -3,16 +3,21 @@
 #include "flash.h"
 #include "ff.h"
 #include "diskio.h"
+#include <generated/soc.h>
+extern void sd_get_info(hal_sd_info_t *info);
+void hal_sd_get_info(hal_sd_info_t *info) {if(info)sd_get_info(info);}
 static hal_result_t result(int ok) {return ok?HAL_OK:HAL_IO;}
 void hal_uart_puts(const char *text) {puts_uart(text);}
 void hal_uart_putc(char ch) {putchar_uart(ch);}
 void hal_uart_hex(uint32_t value) {io_hex(value);}
 hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,unsigned *received) {
     if((bus!=HAL_SPI_SD && bus!=HAL_SPI_LCD) || !bits || bits>(bus==HAL_SPI_SD?8u:16u))return HAL_INVALID;
+    if(CONFIG_SD_NATIVE && bus==HAL_SPI_SD)return HAL_UNSUPPORTED;
     return result(spi_transfer(bus,value,bits,received));
 }
 hal_result_t hal_spi_select(hal_spi_bus_t bus,unsigned selected) {
     if(bus!=HAL_SPI_SD && bus!=HAL_SPI_LCD)return HAL_INVALID;
+    if(CONFIG_SD_NATIVE && bus==HAL_SPI_SD)return HAL_UNSUPPORTED;
     spi_select(bus,!!selected);return HAL_OK;
 }
 hal_result_t hal_sd_mount(void) {return sd_mount()?HAL_OK:HAL_NO_MEDIA;}

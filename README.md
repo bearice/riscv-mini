@@ -1,6 +1,6 @@
 # riscv-mini
 
-Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片上 bootloader 启动，将 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。默认构建只有一个 `base` 配置，旧 M0–M4 和提频试验的阶段分支、测试命令已移除。
+Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片上 bootloader 启动，将 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。默认 `base` 使用原生 SD，另保留 SPI-SD 回退构建，旧 M0–M4 和提频试验的阶段分支、测试命令已移除。
 
 ## 当前配置
 
@@ -11,13 +11,13 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
-| SD | SPI 模式，初始化 400 kHz，工作 6 MHz，FatFs |
+| SD | 原生四位 SDR + Wishbone DMA，初始化 400 kHz、工作 7.5 MHz，FatFs；可选 SPI 回退 |
 | SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
-M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。原生四位 SD、音频、Ethernet、USB Host HID 和 RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
+M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。M6 已接入原生四位 SD，接口与验收见 [原生 SD](docs/native-sd.md) / [M6 验证](docs/m6-validation.md)。音频、Ethernet、USB Host HID 和 RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
 
 ## 开发环境
 
@@ -29,6 +29,8 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 . .\scripts\env.ps1
 & $MiniPython .\scripts\doctor.py
 & $MiniPython .\scripts\build.py --synthesize
+# SPI 回退拥有相同 SD 引脚，需要重新下载匹配的 FPGA 配置和应用。
+& $MiniPython .\scripts\build.py --sd-backend spi --output-dir build/spi --synthesize
 ```
 
 `bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。`build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件；两种方式都不自动下载。默认产物位于 `build/base/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。
@@ -62,7 +64,7 @@ bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载�
 
 | 路径 | 内容 |
 | --- | --- |
-| `gateware/` | 单一 SoC、DDR 端口调度、视频扫描、时序约束和板级配置 |
+| `gateware/` | SoC、可选 SD backend、DDR 端口调度、视频扫描、时序约束和板级配置 |
 | `firmware/boot/` | 共用启动汇编、仅 bootloader 使用的 DDR 初始化/训练 |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
 | `firmware/app/` | DDR 基础应用和小型串口入口 |

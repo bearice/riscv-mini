@@ -10,7 +10,7 @@ SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使
 
 ## 固定硬件与内存
 
-CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD SPI 400 kHz 初始化 / 6 MHz 工作；SPI LCD 6 MHz。CPU lite 有 2 KiB I-cache，无 D-cache/L2。DDR CPU/视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
+CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 7.5 MHz 工作（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz。CPU lite 有 2 KiB I-cache，无 D-cache/L2。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
 
 | 地址 | 用途 |
 | --- | --- |
