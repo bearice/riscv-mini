@@ -65,5 +65,5 @@ HDMI framebuffer/DMA/TMDS 属于 M3，尚未实现。实体复位按键和断电
 未实测 SDSC、其他卡型、exFAT；SD SPI 当前适合资源加载，未作吞吐基准测试。
 目前 LCD 更新和 SD 访问为轮询，会阻塞 monitor，所有协议等待有超时；没有后台自动热插拔任务，插回后用 sdinfo 重新挂载。
 
-下一阶段接入 640×480@60 Hz HDMI RGB565 DDR framebuffer，加入显示 DMA、跨时钟 FIFO、帧切换和 underflow 计数，
+下一阶段规格已改为 480×272 / 约 59.94 Hz，先接入并行 RGB LCD 的 RGB565 DDR framebuffer，HDMI 暂缓（见 [视频规格](video-spec.md)），加入显示 DMA、跨时钟 FIFO、帧切换和 underflow 计数，
 在显示运行时回归 DDR/SD/LCD 并测量内存带宽。

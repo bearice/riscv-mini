@@ -13,3 +13,9 @@ int lcd_show(unsigned sd_ready, unsigned write_pass);
 int sd_mount_info(void);
 int sd_file_test(void);
 int sd_command(const char *line);
+
+int video_init(void);
+int video_command(const char *line);
+void video_status(void);
+
+int video_stop(void);

@@ -18,7 +18,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--stage', choices=('m0','m1','m2'), default='m1')
+    p.add_argument('--stage', choices=('m0','m1','m2','m3'), default='m1')
     p.add_argument('--port', default='COM4')
     p.add_argument('--location', default='107569')
     p.add_argument('--program', action='store_true')
@@ -28,7 +28,7 @@ def main():
     args=p.parse_args()
     if args.soft_resets < 0 or (args.stage == 'm0' and args.soft_resets):
         p.error('Soft resets require M1 and a nonnegative count.')
-    if args.sd_write_test and args.stage!='m2': p.error('SD write test requires M2.')
+    if args.sd_write_test and args.stage not in ('m2','m3'): p.error('SD write test requires M2.')
     if not args.program: p.error('Pass --program to authorize SRAM download.')
     output=ROOT/'build'/args.stage
     validation=json.loads((output/'validation.json').read_text())
@@ -49,20 +49,21 @@ def main():
         print('SRAM download completed.',flush=True)
         captured=bytearray()
         deadline=time.monotonic()+args.timeout
-        marker={'m0':b'> ','m1':b'M1 PASS:','m2':b'M2 READY:'}[args.stage]
+        marker={'m0':b'> ','m1':b'M1 PASS:','m2':b'M2 READY:','m3':b'M3 READY:'}[args.stage]
         while time.monotonic()<deadline:
             chunk=port.read(4096)
             if chunk:
                 captured.extend(chunk)
                 print(chunk.decode('utf-8',errors='replace'),end='',flush=True)
-            if marker in captured or b'DDR FAILED:' in captured: break
+            if marker in captured or b'DDR FAILED:' in captured or b'RGB LCD FAIL:' in captured: break
         port.write(b'board-echo-check\r')
         port.flush()
         echo=bytearray()
         deadline=time.monotonic()+2
         while time.monotonic()<deadline: echo.extend(port.read(4096))
         accepted=marker in captured
-        if args.stage=='m2': accepted=accepted and b'M1 PASS:' in captured and b'SPI loopback PASS' in captured
+        if args.stage in ('m2','m3'): accepted=accepted and b'M1 PASS:' in captured and b'SPI loopback PASS' in captured
+        if args.stage=='m3': accepted=accepted and b'RGB LCD DMA PASS:' in captured
         echo_ok=b'board-echo-check\r\n> ' in echo
         sd_log=bytearray()
         sd_pass=None
@@ -92,7 +93,7 @@ def main():
                 if chunk:
                     log.extend(chunk)
                     print(chunk.decode('utf-8',errors='replace'),end='',flush=True)
-                if marker in log or b'DDR FAILED:' in log: break
+                if marker in log or b'DDR FAILED:' in log or b'RGB LCD FAIL:' in log: break
             good=marker in log and f'riscv-mini {args.stage.upper()} | RV32IM'.encode() in log
             resets.append({'index':index+1,'passed':good,'uart':log.decode('utf-8',errors='replace')})
             accepted=accepted and good

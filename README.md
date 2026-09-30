@@ -2,11 +2,13 @@
 
 Tang Primer 20K + Dock 3713 上的 RISC-V 小型系统。开发入口为 Windows PowerShell，使用项目独立 Python 环境、LiteX/Migen、VexRiscv，以及已有的 Gowin 和 xPack RISC-V GCC。
 
-目标架构：单核 RV32IM / 48 MHz、H5TQ1G63EFR / 128 MiB DDR3、UART monitor、SPI-SD、SPI LCD、640×480@60 Hz RGB565 HDMI 双缓冲。完整设计见 [系统规划](docs/system-plan.md)。机器可读的硬件目标位于 [gateware/board.json](gateware/board.json)。
+目标架构：单核 RV32IM / 48 MHz、H5TQ1G63EFR / 128 MiB DDR3、UART monitor、SPI-SD、SPI LCD、480×272 / 约 59.94 Hz RGB565 DDR 双缓冲，输出并行 RGB LCD；HDMI 暂缓。完整设计见 [系统规划](docs/system-plan.md)。机器可读的硬件目标位于 [gateware/board.json](gateware/board.json)。
 
 ## 当前实现范围
 
-M0 UART、M1 DDR 和 M2 SPI LCD / SD 已完成构建与上板验证。M2 包含 RV32IM CPU、UART 115200 8N1、timer、32 KiB ROM、16 KiB SRAM、128 MiB DDR、独立 LCD/SD SPI 控制器和 FatFs。裸机 monitor 支持显示图案、挂载 SD、创建测试文件并读回、只读检查已有测试文件。当前使用上游 VexRiscv `lite` 的 2 KiB I-cache，无 D-cache/L2；中断尚未启用。HDMI framebuffer 属于 M3，尚未接入。
+M0 UART、M1 DDR 和 M2 SPI LCD / SD 已完成构建与上板验证。M2 包含 RV32IM CPU、UART 115200 8N1、timer、32 KiB ROM、16 KiB SRAM、128 MiB DDR、独立 LCD/SD SPI 控制器和 FatFs。裸机 monitor 支持显示图案、挂载 SD、创建测试文件并读回、只读检查已有测试文件。当前使用上游 VexRiscv `lite` 的 2 KiB I-cache，无 D-cache/L2；中断尚未启用。480×272 并行 RGB LCD framebuffer 为当前 M3 开发范围；HDMI 暂缓；M2 的 240×135 SPI LCD 保留独立状态显示用途。
+
+视频目标采用 4.3 英寸 LCD 示例的 9 MHz、525×286 总时序，当前只实现 RGB LCD 的单路 DMA/扫描，HDMI 不生成时钟或占用输出引脚。具体规格、引脚与兼容性条件见 [视频规格](docs/video-spec.md)。
 
 ## Bootstrap
 
@@ -115,3 +117,10 @@ FatFs 配置支持 FAT12/16/32 和 exFAT，本次上板验收使用 FAT32 SDHC�
 默认命令不连接或烧录开发板。Gowin 工具和 license 需要通过 `--synthesize` 的实际结果验证；doctor 中发现可执行文件不代表 license 有效。板上复位、UART、实际 bank 电压及后续 DDR/HDMI 的验证结果另行记录，不能用构建成功替代上板测试。
 
 本机没有发现 openFPGALoader，已有 Gowin Programmer CLI。使用烧录工具前需确认调试器及驱动；本次 bootstrap 不安装 USB 驱动、不写 FPGA/NOR、不修改 SD 卡。
+
+## M3 并行 RGB LCD
+
+M3 已实现并完成扫描仿真及 Gowin 综合/PnR，已成功 SRAM 下载；DDR、五次软件复位、双缓冲切换、SD 只读校验及 SPI LCD 回归通过，欠载计数为 0。最终版本经用户确认画面正常稳定；先前复位后条纹在本轮未复现，根因未确认，列入 M4 压力测试观察项。
+使用 `build.py --stage m3 --synthesize` 构建，`board_test.py --stage m3 --program` 进行明确的 SRAM 下载。
+显示为白色外框、RGB 三色带、灰阶及青色/黄色角标。UART 命令 `fbinfo` 读计数，`fbflip` 在垂直消隐切换两帧；`fbcheck` 校验 DMA 整帧像素模和，`fbpattern` / `fbmemory` 切换直接生成图案与 DDR 帧缓冲。
+详细当前验证状态见 [m3-validation.md](docs/m3-validation.md)，扫描测试为 `sim/test_video.py`。

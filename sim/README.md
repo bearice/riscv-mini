@@ -9,3 +9,7 @@ by the firmware SPI loopback on hardware.
 DDR training, CPU DDR access, SD file CRC, and LCD display are checked on the
 board; see docs/m1-validation.md and docs/m2-validation.md. Video DMA/CDC/flip
 simulation is pending M3; SPI simulation does not verify electrical timing.
+
+`sim/test_video.py` checks full 480x272 LCD scan periods, sync pulse widths,
+pixel order and last-marked frame recovery after an injected pixel underrun.
+This covers the scanner, not real DDR arbitration or connector electrical timing.

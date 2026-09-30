@@ -17,14 +17,92 @@
     "status": "planned; timing profile and PHY validation required before enabling"
   },
   "video": {
-    "width": 640,
-    "height": 480,
-    "refresh_hz": 60,
+    "width": 480,
+    "height": 272,
+    "refresh_hz": 59.94005994005994,
     "format": "rgb565",
-    "stride_bytes": 1280,
+    "stride_bytes": 960,
     "framebuffer_base": "0x47e00000",
-    "framebuffer_next": "0x47ea0000",
+    "framebuffer_next": "0x47e40000",
     "reserved_bytes": 2097152,
-    "status": "planned"
+    "status": "M3 current build verified on board: 5 software resets, 3 flips, frame checksum, SD-read/SPI-LCD regression, zero underflows; user confirms stable picture. Earlier stripes not reproduced; root cause unresolved; observe in M4",
+    "pixel_clock_hz": 9000000,
+    "frame_bytes": 261120,
+    "framebuffer_spacing_bytes": 262144,
+    "fifo_bytes": 8192,
+    "outputs": [
+      "rgb_lcd"
+    ],
+    "scanout": "single_lcd_dma",
+    "timing": {
+      "h_active": 480,
+      "h_front_porch": 2,
+      "h_sync": 41,
+      "h_back_porch": 2,
+      "h_total": 525,
+      "v_active": 272,
+      "v_front_porch": 2,
+      "v_sync": 10,
+      "v_back_porch": 2,
+      "v_total": 286,
+      "hsync_active_high": false,
+      "vsync_active_high": false
+    },
+    "rgb_lcd": {
+      "reference": "../examples/RGB_lcd/480x272_4.3inch_lcd",
+      "io_standard": "LVCMOS33",
+      "format": "rgb565",
+      "pins": {
+        "clk": "R9",
+        "hsync": "A15",
+        "vsync": "D14",
+        "de": "E15",
+        "r_lsb_first": [
+          "L9",
+          "N8",
+          "N9",
+          "N7",
+          "N6"
+        ],
+        "g_lsb_first": [
+          "D11",
+          "A11",
+          "B11",
+          "P7",
+          "R7",
+          "D10"
+        ],
+        "b_lsb_first": [
+          "B12",
+          "C12",
+          "B13",
+          "A14",
+          "B14"
+        ]
+      }
+    },
+    "hdmi": {
+      "transport": "DVI-compatible TMDS encoding; custom low-clock timing",
+      "pixel_clock_hz": 9000000,
+      "serializer_clock_hz": 45000000,
+      "lane_bit_rate_bps": 90000000,
+      "format": "rgb888_expanded_from_rgb565",
+      "compatibility": "not applicable to current LCD-only milestone",
+      "pins": {
+        "clk_p": "G16",
+        "clk_n": "H15",
+        "data_p": [
+          "H14",
+          "J15",
+          "K14"
+        ],
+        "data_n": [
+          "H16",
+          "K16",
+          "K15"
+        ]
+      },
+      "status": "deferred by user; not instantiated or driven in M3"
+    }
   }
 }

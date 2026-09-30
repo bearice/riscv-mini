@@ -24,12 +24,19 @@ int main(void) {
     extern int ddr_bringup(void);
     /* Allow the programmer/UART bridge to settle after configuration. */
     for (volatile unsigned i=0; i<480000; ++i) {}
-#ifdef MINI_IO
+#ifdef MINI_VIDEO
+    puts_uart("\r\nriscv-mini M3 | RV32IM | 48 MHz | DDR 128 MiB\r\n");
+#elif defined(MINI_IO)
     puts_uart("\r\nriscv-mini M2 | RV32IM | 48 MHz | DDR 128 MiB\r\n");
 #else
     puts_uart("\r\nriscv-mini M1 | RV32IM | 48 MHz | DDR 128 MiB\r\n");
 #endif
+#ifdef MINI_VIDEO
+    io_timer_init();
+    int ddr_ok=video_stop() && ddr_bringup();
+#else
     int ddr_ok=ddr_bringup();
+#endif
     if (!ddr_ok) puts_uart("DDR FAILED: ROM UART recovery remains available.\r\n");
 #ifdef MINI_IO
     io_timer_init();
@@ -41,6 +48,10 @@ int main(void) {
             puts_uart(sd_ready ? "mounted\r\n" : "unavailable\r\n");
         }
     }
+#ifdef MINI_VIDEO
+    if (ddr_ok) video_init();
+    puts_uart("Commands: fbinfo, fbflip, ");
+#endif
     puts_uart("Commands: lcd, sdinfo, sdtest (create new), sdcheck FILE (read only), ! (reset)\r\n");
 #endif
 #else
@@ -54,6 +65,9 @@ int main(void) {
             mini_uart_ev_pending_write(2);
 #ifdef MINI_DDR
             if (value == '!') {
+#ifdef MINI_VIDEO
+                if (!video_stop()) continue;
+#endif
                 puts_uart("\r\nCPU soft reset...\r\n");
                 ctrl_reset_write(1);
                 for (;;) {}
@@ -63,7 +77,12 @@ int main(void) {
 #ifdef MINI_IO
                 line[line_len]=0;
                 puts_uart("\r\n");
-                if (io_available && !line_overflow) sd_command(line);
+                if (io_available && !line_overflow) {
+#ifdef MINI_VIDEO
+                    if (!video_command(line))
+#endif
+                    sd_command(line);
+                }
                 line_len=line_overflow=0;
                 puts_uart("> ");
 #else

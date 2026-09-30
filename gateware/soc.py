@@ -8,7 +8,7 @@ from litex_boards.platforms.sipeed_tang_primer_20k import Platform
 
 
 class ClockResetGenerator(LiteXModule):
-    def __init__(self, platform, frequency, with_ddr=False):
+    def __init__(self, platform, frequency, with_ddr=False, with_video=False):
         self.cd_sys = ClockDomain('sys')
         self.cd_por = ClockDomain('por')
         clock = platform.request('clk27')
@@ -39,15 +39,26 @@ class ClockResetGenerator(LiteXModule):
         else:
             pll.create_clkout(self.cd_sys, frequency, with_reset=False)
         self.specials += AsyncResetSynchronizer(self.cd_sys, ~pll.locked | ~reset_n | self.reset)
+        if with_video:
+            self.cd_video = ClockDomain('video')
+            self.video_pll = vp = GW2APLL(devicename=platform.devicename,device=platform.device)
+            self.comb += vp.reset.eq((counter!=0)|~reset_n)
+            vp.register_clkin(clock,27e6)
+            vp.create_clkout(self.cd_video,9e6,margin=0,with_reset=False)
+            video_reset=Signal(name_override='lcd_video_async_reset')
+            video_reset.attr.add('keep')
+            self.comb += video_reset.eq(~vp.locked|self.cd_sys.rst)
+            self.specials += AsyncResetSynchronizer(self.cd_video,video_reset)
+
 
 
 class MiniSoC(SoCCore):
-    def __init__(self, rom_data=None, with_ddr=False, with_io=False):
+    def __init__(self, rom_data=None, with_ddr=False, with_io=False, with_video=False):
         platform = Platform(dock='standard', toolchain='gowin')
-        self.crg = ClockResetGenerator(platform, 48e6, with_ddr)
+        self.crg = ClockResetGenerator(platform, 48e6, with_ddr, with_video)
         SoCCore.__init__(
             self, platform, clk_freq=48e6,
-            ident=f'riscv-mini {"M2" if with_io else "M1" if with_ddr else "M0"}: Tang Primer 20K + Dock 3713',
+            ident=f'riscv-mini {"M3" if with_video else "M2" if with_io else "M1" if with_ddr else "M0"}: Tang Primer 20K + Dock 3713',
             cpu_type='vexriscv', cpu_variant='lite',
             integrated_rom_size=32*1024,
             integrated_rom_init=rom_data or [],
@@ -60,7 +71,7 @@ class MiniSoC(SoCCore):
             from gateware.vendor.gw2ddrphy import GW2DDRPHY
             from gateware.ddr import H5TQ1G63EFR
             from gateware.constraints import add_ddr_init_exceptions
-            add_ddr_init_exceptions(platform)
+            add_ddr_init_exceptions(platform,with_video)
             self.ddrphy = GW2DDRPHY(platform.request('ddram'), sys_clk_freq=48e6, dll_off=True)
             self.ddrphy.settings.rtt_nom = 'disabled'
             self.ddrphy.settings.rtt_wr = 'disabled'
@@ -86,3 +97,16 @@ class MiniSoC(SoCCore):
             self.lcd_gpio = GPIOOut(Cat(lcd.dc, lcd.rst_n, lcd.bl_n), reset=4)
             self.add_spi_sdcard(spi_clk_freq=400e3)
             self.sd_detect = GPIOIn(platform.request('sd_detect'))
+
+        if with_video:
+            import json
+            from pathlib import Path
+            from litex.build.generic_platform import Pins, Subsignal, IOStandard
+            from gateware.video import RGBLCD
+            cfg=json.loads(Path(__file__).with_name('board.json').read_text())['video']['rgb_lcd']
+            pins=cfg['pins']
+            platform.add_extension([('rgb_lcd',0,
+                *[Subsignal(name,Pins(pins[name])) for name in ('clk','hsync','vsync','de')],
+                *[Subsignal(color,Pins(' '.join(pins[color+'_lsb_first']))) for color in 'rgb'],
+                IOStandard('LVCMOS33'))])
+            self.rgb_lcd=RGBLCD(self.sdram.crossbar.get_port(mode='read'),platform.request('rgb_lcd'))
