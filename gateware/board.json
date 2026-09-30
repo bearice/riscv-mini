@@ -1,0 +1,30 @@
+{
+  "board": "Tang Primer 20K",
+  "dock": "3713",
+  "device": "GW2A-LV18PG256C8/I7",
+  "input_clock_hz": 27000000,
+  "system_clock_hz": 48000000,
+  "cpu": "vexriscv",
+  "cpu_variant": "lite",
+  "ddr": {
+    "part": "H5TQ1G63EFR",
+    "size_bytes": 134217728,
+    "data_width": 16,
+    "banks": 8,
+    "rows": 8192,
+    "columns": 1024,
+    "speed_suffix": null,
+    "status": "planned; timing profile and PHY validation required before enabling"
+  },
+  "video": {
+    "width": 640,
+    "height": 480,
+    "refresh_hz": 60,
+    "format": "rgb565",
+    "stride_bytes": 1280,
+    "framebuffer_base": "0x47e00000",
+    "framebuffer_next": "0x47ea0000",
+    "reserved_bytes": 2097152,
+    "status": "planned"
+  }
+}

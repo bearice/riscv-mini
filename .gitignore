@@ -1,0 +1,5 @@
+.venv/
+.tools.local.json
+build/
+__pycache__/
+*.pyc
