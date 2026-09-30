@@ -32,9 +32,9 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 | `0x200000`–`0x400000` | 2 MiB | 单一应用镜像；CPU 可擦写 |
 | `0x400000`–`0x800000` | 4 MiB，仅本机 | 后续保留；首版 CPU 只读 |
 
-当前 Gowin 配置二进制小于 2 MiB，配置下载地址固定为零；上传工具执行此长度检查。CPU 更新不用 chip erase，只对应用覆盖到的 4 KiB 扇区擦除，按 256 字节页边界编程。先写 payload、读回并校验，再最后提交镜像头。更新中断时旧镜像可能失效，自动回到 UART 恢复；本版没有 A/B 回滚。
+当前 Gowin 配置二进制小于 2 MiB，配置下载地址固定为零；上传工具执行此长度检查。CPU 更新不用 chip erase，只对应用覆盖到的 4 KiB 扇区擦除，按 256 字节页边界编程。先写 payload，最后写镜像头；按用户要求不做 Flash 写后读回校验。更新中断时旧镜像可能失效，启动检查失败后回到 UART 恢复；本版没有 A/B 回滚。
 
-`--configure-flash` 是显式的 FPGA 持久配置更新。Gowin 配置工具的操作与 CPU 分区擦写不同，因此工具先通过 boundary-scan 更新并校验 FPGA 配置，再执行 Reprogram 从 Flash 重新配置，最后通过 UART 安装应用。本机普通 exFlash 操作曾报告 `SPI Verify failed`，脚本检查错误文本，不能仅相信退出码或 `Finished`。不能把普通 `--mode install` 当作 FPGA 配置更新。修改 ROM/CSR/内存布局时需要构建并更新匹配的配置和镜像。
+`--configure-flash` 是显式的 FPGA 持久配置更新。工具先执行 Gowin 普通 exFlash Erase/Program（operation 8），再执行 Reprogram 从 Flash 重新配置，最后通过 UART 安装应用。没有 Gowin Verify、独立配置读回或 CRC 比对步骤。不能把普通 `--mode install` 当作 FPGA 配置更新。修改 ROM/CSR/内存布局时需要构建并更新匹配的配置和镜像。
 
 ## 镜像与 UART 协议
 
@@ -57,13 +57,12 @@ DDR 初始化后等待两秒。无输入默认从 Flash 启动；无有效镜像
 | `p` | UART 收镜像并校验 DDR，然后安装到 Flash 应用区 |
 | `f` | 从 Flash 装入 DDR 并执行 |
 | `i` | Flash ID 和镜像头状态 |
-| `c` | 前 2 MiB 配置保留区 CRC，供更新保护核对 |
 | `!` | 软件复位 |
 
 DDR 基础应用仅有 `help` / `status` / `ls` / `reboot` 和 `!`。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，旧自检命令不再进入产品 monitor。
 
 ## 验证
 
-`scripts/boot_verify.py --program --install` 会写 Flash 应用区，检查 UART/Flash 执行、两次自动 Flash 软件重启、配置保留区 CRC 一致、应用状态、SD 根目录读取，并拒绝坏头 CRC、错误 ABI、错误 load、零/越界长度、不对齐/越界 entry、flags、坏包 CRC、UART 截断超时和 payload CRC 不一致。完整 UART 日志和验收 JSON 写入 `build/base/`。
+`scripts/boot_verify.py --program --install` 会写 Flash 应用区，检查 UART/Flash 执行、两次自动 Flash 软件重启、应用状态、SD 根目录读取，并拒绝坏头 CRC、错误 ABI、错误 load、零/越界长度、不对齐/越界 entry、flags、坏包 CRC、UART 截断超时和 payload CRC 不一致。Flash 安装本身不读回；镜像 CRC 检查发生在 UART 接收或启动装载时。完整 UART 日志和验收 JSON 写入 `build/base/`。
 
 `sim/test_boot_image.py` 检查主机格式/边界/CRC，`sim/test_programmer_result.py` 检查 Gowin 失败日志识别；其他仿真范围见 [sim/README.md](../sim/README.md)。`boot_verify.py --reset --soak-seconds 300` 做五分钟只读状态/SD 根目录检查，确认帧/完成计数持续增长、欠载为零，不再执行历史全内存/整帧内容校验。`cold_boot.py` 只监听外部断电重启，不发软件复位。PnR 报告必须 setup/hold 均无违例。硬件冷启动与持续运行结果记录在 [基础版验证](base-validation.md)，不能以软件复位替代断电测试。

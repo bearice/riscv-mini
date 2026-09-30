@@ -55,13 +55,9 @@ static int install(const struct image_header *h) {
     unsigned end=IMAGE_OFFSET+sizeof(*h)+h->length;
     for(unsigned address=IMAGE_OFFSET;address<end;address+=4096) if(!flash_erase_sector(address)) return 0;
     if(!flash_program(IMAGE_OFFSET+sizeof(*h),(const void *)h->load,h->length)) return 0;
-    uint32_t crc;
-    if(!flash_crc(IMAGE_OFFSET+sizeof(*h),h->length,&crc) || crc!=h->crc) return 0;
-    /* Commit the header only after the stored payload has passed readback. */
+    /* Write the header last; no Flash readback after programming. */
     if(!flash_program(IMAGE_OFFSET,h,sizeof(*h))) return 0;
-    struct image_header readback;
-    if(!flash_read(IMAGE_OFFSET,&readback,sizeof(readback)) || !image_valid(&readback) || readback.crc!=h->crc) return 0;
-    puts_uart("FLASH INSTALLED CRC32=");io_hex(crc);puts_uart("\r\n");return 1;
+    puts_uart("FLASH INSTALLED\r\n");return 1;
 }
 int main(void) {
     extern int ddr_bringup(void);
@@ -94,10 +90,6 @@ int main(void) {
             struct image_header h;
             int valid=available && flash_read(IMAGE_OFFSET,&h,sizeof(h)) && image_valid(&h);
             puts_uart(valid?"FLASH HEADER VALID\r\n":"FLASH HEADER INVALID\r\n");
-        } else if(choice=='c') {
-            uint32_t crc;
-            if(available && flash_crc(0,IMAGE_OFFSET,&crc)) {puts_uart("CONFIG CRC32=");io_hex(crc);puts_uart("\r\n");}
-            else puts_uart("ERR FLASH IO\r\n");
         } else if(choice=='!') {ctrl_reset_write(1);for(;;) {}}
         puts_uart("BL> ");
         do { if(!uart_byte(&choice,1000)) choice=0; } while(!choice || choice=='\r' || choice=='\n');

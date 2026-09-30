@@ -80,11 +80,7 @@ def main():
                 record(command.decode().strip(),response)
             record('uart_reset',s.menu(True))
             if a.install:
-                before=s.command('c');record('protected_before',before)
                 record('flash_install',s.upload(image,True))
-                after=s.command('c');record('protected_after',after)
-                match=lambda text:re.search(rb'CONFIG CRC32=([0-9a-f]{8})',text)
-                if not match(before) or not match(after) or match(before)[1]!=match(after)[1]:raise RuntimeError('Configuration partition changed')
                 port.write(b'f');app=s.until(b'> ')
                 if b'BOOT FLASH' not in app or ready not in app:raise RuntimeError('Flash boot failed')
                 record('flash_boot',app)

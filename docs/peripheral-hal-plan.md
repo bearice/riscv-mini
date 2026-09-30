@@ -153,7 +153,7 @@ flowchart LR
 
 bootloader 目标 8–16 KiB ROM、4–8 KiB SRAM，最终以 link map、DDR 初始化工作集和异常栈深度为准。主程序 `.text/.rodata/.data/.bss`、正常栈和堆放 DDR；bootloader 自身不依赖尚未初始化的 DDR。保留 I-cache、LCD FIFO、必要外设 FIFO，不能把这些运行存储全部去掉。
 
-镜像头包含 magic/version、SoC/CSR ABI 标识、Flash 偏移、载入地址、长度、入口、CRC32。边界检查拒绝覆盖 bootloader 工作区、DMA 保留区和视频区；CRC 是完整性检查，不描述为签名认证。写入新镜像后先读回校验，再更新有效元数据。加载完执行指令缓存同步。
+镜像头包含 magic/version、SoC/CSR ABI 标识、载入地址、长度、入口、CRC32。边界检查拒绝覆盖 bootloader 工作区、DMA 保留区和视频区；CRC 是完整性检查，不描述为签名认证。当前按用户要求简化 Flash 安装：只擦除和编程，不做写后读回校验，镜像头最后写入；加载时检查镜像并执行指令缓存同步。
 
 Flash 配置区、固件区、可写数据区分别保护。确切偏移在核对 Gowin 实际配置镜像长度、格式/压缩、擦除粒度后由脚本生成，不凭当前 `project.bin` 文件大小硬定。默认禁止 chip erase，也禁止 CPU 擦写配置区；固件更新的上电安全策略先用有效标记/恢复入口，双镜像是否能容纳由 4 MiB 容量预算决定。
 
@@ -190,7 +190,7 @@ USB PHY 的 60 MHz 与 CPU 的 60 MHz 异步，不可因频率相同省略 CDC�
 | PRIMARY | 4 / 8 |
 | LW | 8 / 8 |
 
-原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，BSRAM 占用 16/46；boot 镜像 7,040 字节，DDR app 镜像 19,468 字节。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
+原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，BSRAM 占用 16/46；boot 镜像 6,568 字节，DDR app 镜像 19,468 字节。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
 
 PLL 总数初步够用，但 BSRAM 推断粒度、长线/时钟布线和新增 OHCI Logic 必须重新 PnR。不能用“剩 63% Logic”保证所有外设一定同时装得下。每阶段记录资源增量；若超预算，先减 packet slots/FIFO 与调试模块，避免削弱 DDR/LCD 已验证的可靠性。
 

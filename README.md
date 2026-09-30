@@ -54,7 +54,7 @@ bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载�
 & $MiniPython .\scripts\boot_verify.py --reset --soak-seconds 300
 ```
 
-默认串口 `COM4`、调试器 location `107569`，其他连接使用 `--port` / `--location`。工具检查 PnR 和 bitstream hash。普通应用更新只擦写 Flash `[2,4)` MiB，前 2 MiB FPGA 配置受 CPU 驱动保护；写入前后还检查该区 CRC。配置更新会替换 FPGA bitstream，应与匹配的 `app.img` 一起更新。本机通过 boundary-scan 方式写入并校验持久配置，该操作明显慢于 SRAM 下载；普通 exFlash 模式曾报校验失败，工具把这种日志视为失败，即使进程退出码为零。
+默认串口 `COM4`、调试器 location `107569`，其他连接使用 `--port` / `--location`。工具检查 PnR 和 bitstream hash。普通应用更新只擦写 Flash `[2,4)` MiB，前 2 MiB FPGA 配置由 CPU 驱动的地址范围保护。按用户要求，Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 使用普通 exFlash Erase/Program，不执行 Verify。配置更新会替换 FPGA bitstream，应与匹配的 `app.img` 一起更新。
 
 详细启动流程、镜像格式、分区、恢复命令和验证范围见 [bootloader](docs/bootloader.md)。
 

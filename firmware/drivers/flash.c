@@ -79,16 +79,3 @@ int flash_program(unsigned address, const void *data, unsigned length) {
     }
     return 1;
 }
-int flash_crc(unsigned address, unsigned length, uint32_t *result) {
-    uint8_t buffer[128];uint32_t crc=0xffffffffu;
-    if(address>=capacity || length>capacity-address) return 0;
-    while(length) {
-        unsigned n=length>sizeof(buffer)?sizeof(buffer):length;
-        if(!flash_read(address,buffer,n)) return 0;
-        for(unsigned i=0;i<n;++i) {
-            crc^=buffer[i];for(unsigned b=0;b<8;++b) crc=(crc>>1)^(0xedb88320u&(0u-(crc&1u)));
-        }
-        address+=n;length-=n;
-    }
-    *result=~crc;return 1;
-}

@@ -7,7 +7,6 @@ import struct
 import subprocess
 import sys
 import time
-import zlib
 from pathlib import Path
 import serial
 from boot_image import CHUNK, HEADER, packet, unpack_image
@@ -18,19 +17,6 @@ def programmer_succeeded(result):
     # Gowin can emit "Error: SPI Verify failed!" and still return 0/Finished.
     output=result.stdout+'\n'+result.stderr
     return result.returncode==0 and bool(re.search(r'\bFinished[.!]',output)) and not re.search(r'\berror\s*:|\bfailed\b',output,re.I)
-
-def configuration_readback(output,text):
-    """Verify through the running CPU, independently of Gowin's SPI verifier."""
-    raw=(output/'gateware/impl/pnr/project.bin').read_bytes()
-    if len(raw)>=0x200000:raise RuntimeError('Configuration exceeds reserved partition')
-    expected=zlib.crc32(raw+b'\xff'*(0x200000-len(raw)))
-    match=re.search(rb'CONFIG CRC32=([0-9a-f]{8})',text)
-    actual=int(match[1],16) if match else None
-    report={'expected_crc32':f'{expected:08x}','actual_crc32':None if actual is None else f'{actual:08x}',
-            'bytes_checked':0x200000,'passed':actual==expected,
-            'method':'CPU SPI readback of configuration image plus erased reserved tail'}
-    (output/'configuration-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
-    if actual!=expected:raise RuntimeError('FPGA configuration readback mismatch; inspect configuration-verification.json')
 
 class BootSession:
     def __init__(self,port,log=None):
@@ -74,7 +60,7 @@ class BootSession:
                 self.note(ack)
                 raise RuntimeError(f'Bad ACK at packet {sequence}: {bytes(ack)!r}')
         result=self.until(b'BL> ' if install else b'> ')
-        if b'ERR ' in result or (install and b'FLASH INSTALLED CRC32=' not in result):
+        if b'ERR ' in result or (install and b'FLASH INSTALLED' not in result):
             raise RuntimeError(result.decode(errors='replace'))
         if not install and b'SYSTEM READY' not in result:
             raise RuntimeError('Application did not become ready: '+result.decode(errors='replace'))
@@ -97,12 +83,12 @@ def program(output,location,configuration=False):
             raise RuntimeError('Configuration image must fit below the firmware partition')
     tools=json.loads((ROOT/'.tools.local.json').read_text())
     command=[tools['programmer'],'--cable-index','4','--location',str(location),'--frequency','2MHz',
-             '--device','GW2A-18C','--operation_index','13' if configuration else '2','--fsFile',str(fs)]
+             '--device','GW2A-18C','--operation_index','8' if configuration else '2','--fsFile',str(fs)]
     if configuration: command+=['--spiaddr','0x000000']
     log=output/('configuration-programmer.log' if configuration else 'programmer.log')
-    # Boundary-scan Flash transfer is slower; retain live output even on timeout.
+    # Preserve programmer output; Flash uses erase/program, without Verify.
     with log.open('w',encoding='utf-8') as stream:
-        result=subprocess.run(command,stdout=stream,stderr=subprocess.STDOUT,timeout=1200 if configuration else 120)
+        result=subprocess.run(command,stdout=stream,stderr=subprocess.STDOUT,timeout=120)
     result.stdout=log.read_text(encoding='utf-8',errors='replace');result.stderr=''
     if not programmer_succeeded(result):
         raise RuntimeError('Programming failed; inspect programmer log')
@@ -140,17 +126,7 @@ def main():
             port.write(b'f');result=session.until(b'> ')
             if b'BOOT FLASH' not in result or b'ERR ' in result: raise RuntimeError(result.decode(errors='replace'))
         else:
-            if a.mode=='install':
-                before=session.command('c')
-                print(before.decode(errors='replace'),end='',flush=True)
-                if a.configure_flash:configuration_readback(output,before)
             result=session.upload(image,a.mode=='install')
-            if a.mode=='install':
-                after=session.command('c')
-                crc=lambda s: re.search(rb'CONFIG CRC32=([0-9a-f]{8})',s)
-                if not crc(before) or not crc(after) or crc(before)[1]!=crc(after)[1]:
-                    raise RuntimeError('Protected Flash configuration checksum changed')
-                result+=after
         print(result.decode(errors='replace'),end='',flush=True)
 
 if __name__=='__main__': main()
