@@ -23,7 +23,7 @@ LCD DCLK 转发相位使数据/控制在外部时钟上升沿前稳定；面板�
 
 消隐期不消耗正常帧像素。FIFO 缺像素时记一次 underflow，当前帧剩余部分输出黑色；
 持续丢弃旧帧直到 last 标志，再在下一扫描边界重同步。时钟、DE、HS/VS 始终运行。
-关闭显示时继续排空已发起的一帧，避免再次启用时读到旧数据。
+关闭显示时继续排空已发起的一帧，避免再次启用时读到旧数据。跨域 enable 在扫描帧边界才启用像素消费，避免半帧启动时产生冷启动欠载。
 CSR 包含 enable、select、active、busy、frames、completed、checksum、test 和 underflows；暂不启用视频 IRQ。checksum 为每帧 RGB565 像素的 32-bit 模和，在 native DMA 输出处计算；用于检测测试图数据变化，不是 CRC，也不能检测像素重排。
 fbpattern 切换到 FPGA 直接色带，fbmemory 恢复 DDR 帧缓冲；两者沿用同一 LCD 输出时序。
 
@@ -47,7 +47,9 @@ fbpattern 切换到 FPGA 直接色带，fbmemory 恢复 DDR 帧缓冲；两者�
 
 先通过完整扫描帧的像素顺序、同步宽度及缺数恢复仿真，再综合/布局布线、SRAM 下载。
 上板验证 DDR、SPI/SD 回归、完整帧 completed 计数增长、双缓冲切换、underflow；用户确认 RGB 色带、白色边框及首末像素显示。
-M4 在 LCD 运行下同时进行内存复制、SD CRC 读取和 SPI LCD 更新，持续至少 30 分钟。
+M4 在 LCD 运行下同时进行内存复制、SD CRC 读取和 SPI LCD 更新，持续至少 5 分钟（2026-10-01 按用户要求调整，自动测试实际 390.344 秒 / 246 轮通过）。
 HDMI 和 upscale 延后，未来若重新启用，应单独确定标准输出时序、缩放、DMA/缓存和跨域换帧策略。
 
 总体规划见 [system-plan.md](system-plan.md)，机器目标见 [board.json](../gateware/board.json)。
+
+M4 当前采用 CPU/sys 60 MHz、DDR CK 120 MHz DLL-off CL6/CWL6，单物理 native 事务调度；LCD 像素时钟、同步参数、帧地址和色彩格式保持上述规格。最终并发结果见 [m4-validation.md](m4-validation.md)。

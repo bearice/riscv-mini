@@ -2,11 +2,11 @@
 
 Tang Primer 20K + Dock 3713 上的 RISC-V 小型系统。开发入口为 Windows PowerShell，使用项目独立 Python 环境、LiteX/Migen、VexRiscv，以及已有的 Gowin 和 xPack RISC-V GCC。
 
-目标架构：单核 RV32IM / 48 MHz、H5TQ1G63EFR / 128 MiB DDR3、UART monitor、SPI-SD、SPI LCD、480×272 / 约 59.94 Hz RGB565 DDR 双缓冲，输出并行 RGB LCD；HDMI 暂缓。完整设计见 [系统规划](docs/system-plan.md)。机器可读的硬件目标位于 [gateware/board.json](gateware/board.json)。
+目标架构：单核 RV32IM、H5TQ1G63EFR / 128 MiB DDR3、UART monitor、SPI-SD、SPI LCD、480×272 / 约 59.94 Hz RGB565 DDR 双缓冲，输出并行 RGB LCD；HDMI 暂缓。M4 使用 CPU/sys 60 MHz、DDR CK 120 MHz DLL-off / CL6/CWL6；M0–M3 保留历史 48/96 MHz 配置。完整设计见 [系统规划](docs/system-plan.md)。机器可读的硬件目标位于 [gateware/board.json](gateware/board.json)。
 
 ## 当前实现范围
 
-M0 UART、M1 DDR 和 M2 SPI LCD / SD 已完成构建与上板验证。M2 包含 RV32IM CPU、UART 115200 8N1、timer、32 KiB ROM、16 KiB SRAM、128 MiB DDR、独立 LCD/SD SPI 控制器和 FatFs。裸机 monitor 支持显示图案、挂载 SD、创建测试文件并读回、只读检查已有测试文件。当前使用上游 VexRiscv `lite` 的 2 KiB I-cache，无 D-cache/L2；中断尚未启用。480×272 并行 RGB LCD framebuffer 为当前 M3 开发范围；HDMI 暂缓；M2 的 240×135 SPI LCD 保留独立状态显示用途。
+M0–M3 已完成构建与上板验证。M4 增加 DDR 内存复制检查和并发压力脚本，已按用户调整后的 5 分钟要求通过自动验收（实际 390.344 秒 / 246 轮），两块 LCD 已由用户确认正常稳定，详见 [M4 验证](docs/m4-validation.md)。M4 包含 UART 115200 8N1、timer、48 KiB ROM、16 KiB SRAM、128 MiB DDR、独立 LCD/SD SPI 控制器和 FatFs。当前 VexRiscv `lite` 为 2 KiB I-cache，无 D-cache/L2；中断和 SD 应用加载器尚未实现。RGB LCD 持续读取 DDR，240×135 SPI LCD 保留独立状态显示用途。
 
 视频目标采用 4.3 英寸 LCD 示例的 9 MHz、525×286 总时序，当前只实现 RGB LCD 的单路 DMA/扫描，HDMI 不生成时钟或占用输出引脚。具体规格、引脚与兼容性条件见 [视频规格](docs/video-spec.md)。
 
@@ -55,12 +55,12 @@ bootstrap 创建 `.venv`（CPython 3.10.21）、同步依赖、发现本地工�
 | firmware/boot/ | 启动汇编、linker script、串口启动程序 |
 | firmware/apps/ | freestanding C++ 编译/链接样例 |
 | scripts/ | bootstrap、当前会话环境、工具发现、doctor、build |
-| sim/ | SPI 事务仿真；后续视频 DMA/CDC 仿真 |
+| sim/ | SPI 事务、DDR 端口调度和视频扫描/恢复仿真 |
 | docs/ | 开发验证记录 |
 | requirements.in / requirements.lock | 上游固定 commit 和解析后的固定依赖版本 |
 | build/ | 生成物与日志，不作为源码维护 |
 
-构建按阶段输出到 `build/m0/`、`build/m1/` 或 `build/m2/`：`csr.json`、`csr.csv`、`firmware/boot.elf`、`boot.bin`、`boot.map`、`elf-info.txt`、`gateware/riscv_mini.v`、Gowin 工程/约束和验证报告。生成目录可再生，不应手工修改。
+构建按阶段输出到 `build/m0/` 至 `build/m4/`：`csr.json`、`csr.csv`、`firmware/boot.elf`、`boot.bin`、`boot.map`、`elf-info.txt`、`gateware/riscv_mini.v`、Gowin 工程/约束和验证报告。生成目录可再生，不应手工修改。
 
 ## 依赖更新
 
@@ -124,3 +124,17 @@ M3 已实现并完成扫描仿真及 Gowin 综合/PnR，已成功 SRAM 下载；
 使用 `build.py --stage m3 --synthesize` 构建，`board_test.py --stage m3 --program` 进行明确的 SRAM 下载。
 显示为白色外框、RGB 三色带、灰阶及青色/黄色角标。UART 命令 `fbinfo` 读计数，`fbflip` 在垂直消隐切换两帧；`fbcheck` 校验 DMA 整帧像素模和，`fbpattern` / `fbmemory` 切换直接生成图案与 DDR 帧缓冲。
 详细当前验证状态见 [m3-validation.md](docs/m3-validation.md)，扫描测试为 `sim/test_video.py`。
+
+## M4 并发稳定性
+
+M4 在 LCD DMA 持续运行时，交错执行内存复制、SD 文件读取校验、SPI LCD 重绘和 RGB LCD 换帧。每次 `memcopy` 写入、逐字验证、复制并再次逐字验证两个独立的 32 KiB DDR 测试区。错误立即报告地址偏移、预期值和实际值。
+
+```powershell
+& $MiniPython .\scripts\build.py --stage m4 --synthesize
+& $MiniPython .\scripts\board_test.py --stage m4 --program --port COM4 --location 107569 --soft-resets 5
+# 只读已有 RVTEST00.BIN；不下载、不格式化、不写 SD/Flash。
+& $MiniPython .\scripts\stress_test.py --seconds 300
+& $MiniPython .\sim\test_memory.py
+```
+
+新增 monitor 命令：`memcopy`、`fboff`（停止并排空 DMA）、`fbon`（在帧边界恢复）。压力脚本以整帧模和、欠载为 0、换帧/扫描计数增长、内存逐字检查和 SD CRC 同时判定结果，失败立即保留日志。Windows 上测试进程临时阻止系统自动休眠，结束后释放请求。当前 M4 ROM 映射使用全部 46 块 BSRAM，扩充缓存/FIFO 前需要重新分配片上存储。SD 应用加载、IRQ/RTOS 和断电冷启动是后续工作。

@@ -3,7 +3,7 @@
   "dock": "3713",
   "device": "GW2A-LV18PG256C8/I7",
   "input_clock_hz": 27000000,
-  "system_clock_hz": 48000000,
+  "system_clock_hz": 60000000,
   "cpu": "vexriscv",
   "cpu_variant": "lite",
   "ddr": {
@@ -13,8 +13,12 @@
     "banks": 8,
     "rows": 8192,
     "columns": 1024,
-    "speed_suffix": null,
-    "status": "planned; timing profile and PHY validation required before enabling"
+    "speed_suffix": "PBC",
+    "status": "M4 60/120 MHz DLL-off CL6/CWL6: startup, five software resets and user-required 5-minute concurrent stress passed (390.344 s / 246 cycles). Historical 96 MHz concurrent data errors reproduced; cold boot/environmental limits not tested.",
+    "clock_hz": 120000000,
+    "dll_off": true,
+    "cl": 6,
+    "cwl": 6
   },
   "video": {
     "width": 480,
@@ -25,7 +29,7 @@
     "framebuffer_base": "0x47e00000",
     "framebuffer_next": "0x47e40000",
     "reserved_bytes": 2097152,
-    "status": "M3 current build verified on board: 5 software resets, 3 flips, frame checksum, SD-read/SPI-LCD regression, zero underflows; user confirms stable picture. Earlier stripes not reproduced; root cause unresolved; observe in M4",
+    "status": "M4 concurrent stress passed: 390.344 s / 246 flips and checks / zero underflows; user confirmed RGB LCD and SPI LCD normal and stable",
     "pixel_clock_hz": 9000000,
     "frame_bytes": 261120,
     "framebuffer_spacing_bytes": 262144,
@@ -103,6 +107,24 @@
         ]
       },
       "status": "deferred by user; not instantiated or driven in M3"
+    }
+  },
+  "milestone_profiles": {
+    "m0_m3": {
+      "system_clock_hz": 48000000,
+      "ddr_clock_hz": 96000000,
+      "ddr_dll_off": true,
+      "rom_bytes": 32768
+    },
+    "m4": {
+      "system_clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "ddr_dll_off": true,
+      "cl": 6,
+      "cwl": 6,
+      "rom_bytes": 49152,
+      "native_arbitration": "serialized_video_priority",
+      "native_idle_sys_cycles": 8
     }
   }
 }

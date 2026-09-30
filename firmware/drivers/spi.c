@@ -11,7 +11,7 @@ uint32_t io_ticks(void) {
 }
 void io_delay_ms(unsigned ms) {
     uint32_t start=io_ticks();
-    while ((uint32_t)(io_ticks()-start)<ms*48000u) {}
+    while ((uint32_t)(io_ticks()-start)<ms*(CONFIG_CLOCK_FREQUENCY/1000u)) {}
 }
 void io_hex(uint32_t x) {
     const char *digits="0123456789abcdef";
@@ -29,7 +29,7 @@ int spi_transfer(unsigned lcd, unsigned value, unsigned bits, unsigned *received
         unsigned status=lcd ? lcd_spi_status_read() : spisdcard_status_read();
         if (status&4) { spi_select(lcd,0); return 0; }
         if (status&1) break;
-        if ((uint32_t)(io_ticks()-start)>480000u) { spi_select(lcd,0); return 0; }
+        if ((uint32_t)(io_ticks()-start)>(CONFIG_CLOCK_FREQUENCY/100u)) { spi_select(lcd,0); return 0; }
     }
     if (received) *received=lcd ? lcd_spi_miso_read() : spisdcard_miso_read();
     return 1;

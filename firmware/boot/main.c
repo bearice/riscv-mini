@@ -24,7 +24,9 @@ int main(void) {
     extern int ddr_bringup(void);
     /* Allow the programmer/UART bridge to settle after configuration. */
     for (volatile unsigned i=0; i<480000; ++i) {}
-#ifdef MINI_VIDEO
+#ifdef MINI_STRESS
+    puts_uart("\r\nriscv-mini M4 | RV32IM | 60 MHz | DDR 128 MiB\r\n");
+#elif defined(MINI_VIDEO)
     puts_uart("\r\nriscv-mini M3 | RV32IM | 48 MHz | DDR 128 MiB\r\n");
 #elif defined(MINI_IO)
     puts_uart("\r\nriscv-mini M2 | RV32IM | 48 MHz | DDR 128 MiB\r\n");
@@ -49,7 +51,14 @@ int main(void) {
         }
     }
 #ifdef MINI_VIDEO
-    if (ddr_ok) video_init();
+#ifdef MINI_STRESS
+    if (ddr_ok) video_command("memcopy");
+#endif
+    if (ddr_ok && video_init()) {
+#ifdef MINI_STRESS
+        puts_uart("M4 READY: stress monitor\r\n");
+#endif
+    }
     puts_uart("Commands: fbinfo, fbflip, ");
 #endif
     puts_uart("Commands: lcd, sdinfo, sdtest (create new), sdcheck FILE (read only), ! (reset)\r\n");

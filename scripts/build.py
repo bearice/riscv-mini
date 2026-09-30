@@ -30,7 +30,7 @@ def checked(command, log=None):
         subprocess.run(command, cwd=ROOT, check=True)
 
 
-def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=False, with_video=False):
+def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=False, with_video=False, with_stress=False):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data = None
@@ -38,7 +38,7 @@ def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=Fals
         raw = binary.read_bytes()
         raw += bytes((-len(raw)) % 4)
         data = [int.from_bytes(raw[i:i+4], 'little') for i in range(0, len(raw), 4)]
-    soc = MiniSoC(rom_data=data, with_ddr=with_ddr, with_io=with_io, with_video=with_video)
+    soc = MiniSoC(rom_data=data, with_ddr=with_ddr, with_io=with_io, with_video=with_video, with_stress=with_stress)
     builder = Builder(soc, output_dir=str(output), compile_software=False,
         compile_gateware=synthesize, csr_json=str(output / 'csr.json'), csr_csv=str(output / 'csr.csv'))
     builder.build(run=synthesize, build_name='riscv_mini')
@@ -47,13 +47,13 @@ def generate(output, binary=None, synthesize=False, with_ddr=False, with_io=Fals
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--synthesize', action='store_true')
-    parser.add_argument('--stage', choices=('m0', 'm1', 'm2', 'm3'), default='m0')
+    parser.add_argument('--stage', choices=('m0', 'm1', 'm2', 'm3', 'm4'), default='m0')
     parser.add_argument('--generate-only', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--rom', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     output = ROOT / 'build' / args.stage
     if args.generate_only:
-        generate(output, args.rom, args.synthesize, args.stage != 'm0', args.stage in ('m2','m3'), args.stage == 'm3')
+        generate(output, args.rom, args.synthesize, args.stage != 'm0', args.stage in ('m2','m3','m4'), args.stage in ('m3','m4'), args.stage == 'm4')
         return
     tools = json.loads((ROOT / '.tools.local.json').read_text())
     gcc = Path(tools['gcc'])
@@ -64,7 +64,8 @@ def main():
     checked([sys.executable, __file__, '--generate-only', '--stage', args.stage], output / 'generate.log')
 
     csr = json.loads((output / 'csr.json').read_text())
-    if csr['memories']['rom']['base'] != 0 or csr['memories']['rom']['size'] != 32768:
+    rom_size=(48 if args.stage=='m4' else 32)*1024
+    if csr['memories']['rom']['base'] != 0 or csr['memories']['rom']['size'] != rom_size:
         raise SystemExit('Generated ROM layout does not match firmware linker script.')
     if csr['memories']['sram']['base'] != 0x10000000 or csr['memories']['sram']['size'] != 16384:
         raise SystemExit('Generated SRAM layout does not match firmware linker script.')
@@ -104,13 +105,14 @@ def main():
         (include / 'generated/csr.h').write_text('\n'.join(lines)+'\n', encoding='utf-8')
         (include / 'hw/common.h').write_text('#pragma once\n#include <stdint.h>\n', encoding='utf-8')
         extra = ['-DMINI_DDR', '-I', include, '-I', output / 'software/include', ROOT / 'firmware/boot/ddr.c']
-        if args.stage in ('m2','m3'):
+        if args.stage in ('m2','m3','m4'):
             vendor = ROOT / 'firmware/vendor/fatfs'
             extra += ['-DMINI_IO', '-I', vendor, '-I', ROOT / 'firmware/drivers',
                       *[ROOT / 'firmware/drivers' / name for name in
                         ('spi.c', 'lcd.c', 'sd.c', 'filesystem.c', 'string.c')],
                       vendor / 'ff.c', vendor / 'ffunicode.c']
-        if args.stage == 'm3': extra += ['-DMINI_VIDEO', ROOT / 'firmware/drivers/video.c']
+        if args.stage in ('m3','m4'): extra += ['-DMINI_VIDEO', ROOT / 'firmware/drivers/video.c']
+        if args.stage == 'm4': extra += ['-DMINI_STRESS']
         app = firmware / 'ddr-smoke.elf'
         checked([gcc, '-march=rv32im', '-mabi=ilp32', '-Os', '-ffreestanding', '-fno-builtin',
                  '-nostdlib', '-msmall-data-limit=0', ROOT / 'firmware/apps/ddr-smoke.c',
@@ -121,9 +123,11 @@ def main():
             ','.join(str(b) for b in app_bin.read_bytes())+'};\n', encoding='utf-8')
     flags = ['-march=rv32im', '-mabi=ilp32', '-Os', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin',
         '-ffunction-sections', '-fdata-sections', '-nostdlib', '-nostartfiles', '-msmall-data-limit=0']
+    linker=firmware/'linker.ld'
+    linker.write_text((ROOT/'firmware/boot/linker.ld').read_text().replace('LENGTH = 32K',f'LENGTH = {rom_size//1024}K'),encoding='utf-8')
     elf = firmware / 'boot.elf'
     checked([gcc, *flags, *extra, '-I', firmware, ROOT / 'firmware/boot/start.S', ROOT / 'firmware/boot/main.c',
-        '-T', ROOT / 'firmware/boot/linker.ld', '-Wl,--gc-sections', f'-Wl,-Map,{firmware / "boot.map"}', '-lgcc', '-o', elf])
+        '-T', linker, '-Wl,--gc-sections', f'-Wl,-Map,{firmware / "boot.map"}', '-lgcc', '-o', elf])
     cpp = firmware / 'toolchain-smoke.o'
     checked([toolbin / 'riscv-none-elf-g++.exe', *flags, '-fno-exceptions', '-fno-rtti', '-c',
         ROOT / 'firmware/apps/toolchain-smoke.cpp', '-o', cpp])
@@ -132,8 +136,8 @@ def main():
     binary = firmware / 'boot.bin'
     checked([toolbin / 'riscv-none-elf-objcopy.exe', '-O', 'binary', elf, binary])
     size = binary.stat().st_size
-    if size > 32768:
-        raise SystemExit(f'Boot ROM overflow: {size} > 32768')
+    if size > rom_size:
+        raise SystemExit(f'Boot ROM overflow: {size} > {rom_size}')
     checked([toolbin / 'riscv-none-elf-size.exe', elf])
     attributes = subprocess.check_output([toolbin / 'riscv-none-elf-readelf.exe', '-h', '-A', elf], text=True)
     (firmware / 'elf-info.txt').write_text(attributes, encoding='utf-8')
@@ -149,9 +153,10 @@ def main():
     report = {
         'profile': {'m0':'CPU/UART/timer/ROM/SRAM', 'm1':'CPU + 128 MiB DDR',
                     'm2':'CPU + DDR + SPI LCD + SPI SD + FatFs; no HDMI',
-                    'm3':'CPU + DDR + SD/SPI LCD + 480x272 RGB LCD DMA; no HDMI'}[args.stage],
-        'firmware_bytes': size, 'firmware_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
-        'isa': 'rv32im', 'abi': 'ilp32', 'clock_hz': 48000000,
+                    'm3':'CPU + DDR + SD/SPI LCD + 480x272 RGB LCD DMA; no HDMI',
+                    'm4':'M3 + DDR copy/check stress monitor; no HDMI'}[args.stage],
+        'rom_size_bytes': rom_size, 'firmware_bytes': size, 'firmware_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+        'isa': 'rv32im', 'abi': 'ilp32', 'clock_hz': 60000000 if args.stage=='m4' else 48000000,
         'rtl': str(output / 'gateware/riscv_mini.v'),
         'synthesis_requested': args.synthesize,
         'board_test': 'not performed',

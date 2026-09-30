@@ -53,14 +53,15 @@ class ClockResetGenerator(LiteXModule):
 
 
 class MiniSoC(SoCCore):
-    def __init__(self, rom_data=None, with_ddr=False, with_io=False, with_video=False):
+    def __init__(self, rom_data=None, with_ddr=False, with_io=False, with_video=False, with_stress=False):
         platform = Platform(dock='standard', toolchain='gowin')
-        self.crg = ClockResetGenerator(platform, 48e6, with_ddr, with_video)
+        frequency=60e6 if with_stress else 48e6
+        self.crg = ClockResetGenerator(platform, frequency, with_ddr, with_video)
         SoCCore.__init__(
-            self, platform, clk_freq=48e6,
-            ident=f'riscv-mini {"M3" if with_video else "M2" if with_io else "M1" if with_ddr else "M0"}: Tang Primer 20K + Dock 3713',
+            self, platform, clk_freq=frequency,
+            ident=f'riscv-mini {"M4" if with_stress else "M3" if with_video else "M2" if with_io else "M1" if with_ddr else "M0"}: Tang Primer 20K + Dock 3713',
             cpu_type='vexriscv', cpu_variant='lite',
-            integrated_rom_size=32*1024,
+            integrated_rom_size=(48 if with_stress else 32)*1024,
             integrated_rom_init=rom_data or [],
             integrated_sram_size=16*1024,
             integrated_main_ram_size=0,
@@ -72,13 +73,27 @@ class MiniSoC(SoCCore):
             from gateware.ddr import H5TQ1G63EFR
             from gateware.constraints import add_ddr_init_exceptions
             add_ddr_init_exceptions(platform,with_video)
-            self.ddrphy = GW2DDRPHY(platform.request('ddram'), sys_clk_freq=48e6, dll_off=True)
+            self.ddrphy = GW2DDRPHY(platform.request('ddram'), sys_clk_freq=frequency, dll_off=True)
             self.ddrphy.settings.rtt_nom = 'disabled'
             self.ddrphy.settings.rtt_wr = 'disabled'
             self.comb += [self.crg.stop.eq(self.ddrphy.init.stop),
                           self.crg.reset.eq(self.ddrphy.init.reset)]
             self.add_sdram('sdram', phy=self.ddrphy,
-                           module=H5TQ1G63EFR(48e6, '1:2'), l2_cache_size=0)
+                           module=H5TQ1G63EFR(frequency, '1:2'), l2_cache_size=0,
+                           with_soc_interconnect=not with_stress)
+            if with_stress:
+                from litex.soc.integration.soc import SoCRegion
+                from litex.soc.interconnect import wishbone
+                from litedram.frontend.wishbone import LiteDRAMWishbone2Native
+                from gateware.memory import SharedNativePort
+                self.memory_port=SharedNativePort(self.sdram.crossbar.get_port())
+                wb_ram=wishbone.Interface(data_width=32,address_width=32,addressing='word')
+                self.bus.add_slave(name='main_ram',slave=wb_ram,
+                    region=SoCRegion(origin=0x40000000,size=128*1024*1024))
+                wb_native=wishbone.Interface(data_width=128,address_width=32,addressing='word')
+                self.submodules += wishbone.Converter(wb_ram,wb_native)
+                self.wishbone_bridge=LiteDRAMWishbone2Native(wb_native,
+                    self.memory_port.cpu,base_address=0x40000000)
         if with_io:
             from litex.build.generic_platform import Pins, Subsignal, IOStandard
             from litex.soc.cores.spi import SPIMaster
@@ -92,7 +107,7 @@ class MiniSoC(SoCCore):
             lcd = platform.request('spi_lcd')
             lcd.miso = Signal()
             self.comb += lcd.miso.eq(0)
-            self.lcd_spi = SPIMaster(lcd, 16, 48e6, 6e6, mode='aligned')
+            self.lcd_spi = SPIMaster(lcd, 16, frequency, 6e6, mode='aligned')
             self.lcd_spi.add_clk_divider()
             self.lcd_gpio = GPIOOut(Cat(lcd.dc, lcd.rst_n, lcd.bl_n), reset=4)
             self.add_spi_sdcard(spi_clk_freq=400e3)
@@ -109,4 +124,5 @@ class MiniSoC(SoCCore):
                 *[Subsignal(name,Pins(pins[name])) for name in ('clk','hsync','vsync','de')],
                 *[Subsignal(color,Pins(' '.join(pins[color+'_lsb_first']))) for color in 'rgb'],
                 IOStandard('LVCMOS33'))])
-            self.rgb_lcd=RGBLCD(self.sdram.crossbar.get_port(mode='read'),platform.request('rgb_lcd'))
+            video_port=self.memory_port.video if with_stress else self.sdram.crossbar.get_port(mode='read')
+            self.rgb_lcd=RGBLCD(video_port,platform.request('rgb_lcd'))

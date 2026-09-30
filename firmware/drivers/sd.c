@@ -18,7 +18,7 @@ static int ready(unsigned ms) {
     uint32_t start=io_ticks();
     do {
         if (exchange(255)==255 && !io_failed) return 1;
-    } while (!io_failed && (uint32_t)(io_ticks()-start)<ms*48000u);
+    } while (!io_failed && (uint32_t)(io_ticks()-start)<ms*(CONFIG_CLOCK_FREQUENCY/1000u));
     return 0;
 }
 static unsigned crc7(const unsigned char *p, unsigned len) {
@@ -57,7 +57,7 @@ static int read_data(unsigned char *p, unsigned len) {
         token=exchange(255);
         if (io_failed) return 0;
         if (token!=255) break;
-    } while ((uint32_t)(io_ticks()-start)<24000000u);
+    } while ((uint32_t)(io_ticks()-start)<CONFIG_CLOCK_FREQUENCY/2u);
     if (token!=0xfe) return 0;
     for (unsigned i=0; i<len; ++i) p[i]=exchange(255);
     unsigned received=exchange(255)<<8; received|=exchange(255);
@@ -67,7 +67,7 @@ static int read_data(unsigned char *p, unsigned len) {
 DSTATUS disk_initialize(BYTE drive) {
     if (drive) return STA_NOINIT;
     initialized=high_capacity=io_failed=sectors=0;
-    spisdcard_clk_divider_write(120); /* 400 kHz during initialization. */
+    spisdcard_clk_divider_write(CONFIG_CLOCK_FREQUENCY/400000u); /* 400 kHz during initialization. */
     spi_select(0,0);
     io_delay_ms(10);
     for (unsigned i=0; i<10; ++i) exchange(255);
@@ -88,7 +88,7 @@ DSTATUS disk_initialize(BYTE drive) {
         if (!r) break;
         if (r!=1) goto fail;
         release(); io_delay_ms(10);
-    } while ((uint32_t)(io_ticks()-start)<96000000u);
+    } while ((uint32_t)(io_ticks()-start)<2u*CONFIG_CLOCK_FREQUENCY);
     if (r) goto fail;
     if (command(58,0)) goto fail;
     uint32_t ocr=0;
@@ -111,7 +111,7 @@ DSTATUS disk_initialize(BYTE drive) {
     } else goto fail;
     release();
     detect_present=sd_detect_in_read()&1;
-    spisdcard_clk_divider_write(8); /* 6 MHz first functional target. */
+    spisdcard_clk_divider_write(CONFIG_CLOCK_FREQUENCY/6000000u); /* 6 MHz first functional target. */
     initialized=1;
     puts_uart("SD init PASS: sectors="); io_hex(sectors);
     puts_uart(" SDHC="); io_hex(!!high_capacity);

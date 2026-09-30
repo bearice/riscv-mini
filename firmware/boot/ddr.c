@@ -123,7 +123,11 @@ static int memory_test(void) {
     return 1;
 }
 int ddr_bringup(void) {
+#ifdef MINI_STRESS
+    puts_uart("DDR JEDEC init: CK120 MHz DLL-off CL6/CWL6 ODT disabled\r\n");
+#else
     puts_uart("DDR JEDEC init: CK96 MHz DLL-off CL6/CWL6 ODT disabled\r\n");
+#endif
     sdram_dfii_control_write(0);
     cdelay(50000);
     init_sequence();

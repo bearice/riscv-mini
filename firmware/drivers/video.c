@@ -27,7 +27,7 @@ int video_stop(void) {
     io_delay_ms(1);
     unsigned start=io_ticks();
     while (rgb_lcd_busy_read()) {
-        if ((uint32_t)(io_ticks()-start)>4800000u) { puts_uart("RGB LCD STOP FAIL: DMA drain timeout\r\n");return 0; }
+        if ((uint32_t)(io_ticks()-start)>(CONFIG_CLOCK_FREQUENCY/10u)) { puts_uart("RGB LCD STOP FAIL: DMA drain timeout\r\n");return 0; }
     }
     return 1;
 }
@@ -54,6 +54,28 @@ int video_init(void) {
     return 1;
 }
 int video_command(const char *line) {
+#ifdef MINI_STRESS
+    if (!strcmp(line,"fboff")) { if (video_stop()) puts_uart("LCD DMA stopped\r\n");return 1; }
+    if (!strcmp(line,"fbon")) { rgb_lcd_enable_write(1);puts_uart("LCD DMA enabled\r\n");return 1; }
+    if (!strcmp(line,"memcopy")) {
+        volatile unsigned *src=(unsigned *)0x40400000u, *dst=(unsigned *)0x40408000u;
+        unsigned start=io_ticks();
+        for (unsigned i=0;i<8192;++i) src[i]=start^(i*0x9e3779b9u);
+        for (unsigned i=0;i<8192;++i) { unsigned got=src[i]; if (got!=(start^(i*0x9e3779b9u))) {
+            puts_uart("MEM SOURCE FAIL: offset=");io_hex(i*4);
+            puts_uart(" expected=");io_hex(start^(i*0x9e3779b9u));
+            puts_uart(" got=");io_hex(got);puts_uart("\r\n");return 1;
+        } }
+        for (unsigned i=0;i<8192;++i) dst[i]=src[i];
+        for (unsigned i=0;i<8192;++i) { unsigned got=dst[i]; if (got!=(start^(i*0x9e3779b9u))) {
+            puts_uart("MEM COPY FAIL: offset=");io_hex(i*4);
+            puts_uart(" expected=");io_hex(start^(i*0x9e3779b9u));
+            puts_uart(" got=");io_hex(got);
+            puts_uart(" source=");io_hex(src[i]);puts_uart("\r\n");return 1;
+        } }
+        puts_uart("MEM COPY PASS: bytes=32768 ticks=");io_hex(io_ticks()-start);puts_uart("\r\n");return 1;
+    }
+#endif
     if (!strcmp(line,"fbcheck")) { io_delay_ms(40);puts_uart(rgb_lcd_checksum_read()==expected[current] ? "FB CHECK PASS\r\n" : "FB CHECK FAIL\r\n");video_status();return 1; }
     if (!strcmp(line,"fbpattern")) { rgb_lcd_test_write(1);puts_uart("LCD direct pattern enabled\r\n");return 1; }
     if (!strcmp(line,"fbmemory")) { rgb_lcd_test_write(0);puts_uart("LCD DDR framebuffer enabled\r\n");return 1; }
@@ -63,7 +85,7 @@ int video_command(const char *line) {
         rgb_lcd_select_write(next);
         unsigned start=io_ticks();
         while(rgb_lcd_active_read()!=next) {
-            if ((uint32_t)(io_ticks()-start)>4800000u) { puts_uart("RGB LCD FLIP FAIL: timeout\r\n");return 1; }
+            if ((uint32_t)(io_ticks()-start)>(CONFIG_CLOCK_FREQUENCY/10u)) { puts_uart("RGB LCD FLIP FAIL: timeout\r\n");return 1; }
         }
         current=next;
         puts_uart("RGB LCD FLIP PASS: active=");io_hex(current);puts_uart("\r\n");

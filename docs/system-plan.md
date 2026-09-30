@@ -10,7 +10,7 @@
 
 ## 1. 推荐配置
 
-采用 LiteX 构建可再生成的 SoC，单核 VexRiscv RV32IM、Wishbone 总线、LiteDRAM GW2DDRPHY，Gowin 综合与布局布线。CPU 初始目标 48 MHz；无 MMU/FPU，保留 machine-mode CSR、异常、UART/定时器/外设中断。指令缓存目标 4 KiB；第一版关闭数据缓存与 DDR L2 缓存，简化显示 DMA 和 CPU 之间的一致性。具体 CPU variant / 插件配置以生成后的 RTL 和 ISA 检查为准。
+采用 LiteX 构建可再生成的 SoC，单核 VexRiscv RV32IM、Wishbone 总线、LiteDRAM GW2DDRPHY，Gowin 综合与布局布线。M0–M3 的 CPU 为 48 MHz；M4 当前为 CPU/sys 60 MHz、DDR CK 120 MHz DLL-off，采用单物理 native 端口调度验证并发稳定性。无 MMU/FPU，保留 machine-mode CSR、异常、UART/定时器/外设中断。指令缓存目标 4 KiB；第一版关闭数据缓存与 DDR L2 缓存，简化显示 DMA 和 CPU 之间的一致性。具体 CPU variant / 插件配置以生成后的 RTL 和 ISA 检查为准。
 
 外设：UART 115200 8N1，SPI 模式 SD 卡，480×272 RGB565 DDR 双帧缓冲，输出并行 RGB LCD；HDMI 延后，独立 SPI LCD 主控制器及 DC/RESET/背光 GPIO，GPIO、系统控制、定时器。普通 SPI 控制器需要可配置分频、CPOL/CPHA、CS 保持和 TX/RX FIFO；LCD 的板载连接只有输出数据线，额外 MISO/CS 的板级引脚以后有实际设备再指定。
 
@@ -35,7 +35,7 @@
 
 ```mermaid
 flowchart TD
-    CPU["VexRiscv RV32IM · 48 MHz"] --> WB["Wishbone 总线"]
+    CPU["VexRiscv RV32IM · M4 60 MHz"] --> WB["Wishbone 总线"]
     WB --> BRAM["Boot ROM / SRAM"]
     WB --> CSR["MMIO / CSR"]
     CSR --> UART["UART / timer / IRQ / GPIO"]
@@ -43,8 +43,9 @@ flowchart TD
     CSR --> LCD["LCD SPI + DC / RESET / BL"]
     CSR --> VC["显示寄存器 / 帧切换"]
     WB --> CPUport["CPU DDR 端口"]
-    CPUport --> DRAM["LiteDRAM 仲裁 + GW2DDRPHY"]
-    DMA["显示 burst-read DMA"] --> DRAM
+    CPUport --> ARB["M4 单 native 端口 · 显示优先 / 锁存读回"]
+    DMA["显示 burst-read DMA"] --> ARB
+    ARB --> DRAM["LiteDRAM + GW2DDRPHY"]
     DRAM --> DDR["板载 x16 DDR3"]
     DMA --> FIFO["跨时钟 FIFO · 8 KiB 起步"]
     FIFO --> PIX["RGB565 解包 / RGB888 / 固定时序"]
@@ -52,9 +53,9 @@ flowchart TD
     VC --> DMA
 ```
 
-CPU 管理软件、文件系统、SPI LCD 命令和后台画图。显示 DMA 持续读取前台帧；CPU 绘制后台帧。当前只启用并行 RGB LCD 的单路 DMA、FIFO 和扫描时序，HDMI 不实例化。DDR 引脚只有 LiteDRAM 一套控制器驱动，CPU 和显示用独立端口接同一个仲裁器。SD M2 通过轮询 PIO 搬运数据，FIFO 为后续优化，暂不加入 SD DMA。
+CPU 管理软件、文件系统、SPI LCD 命令和后台画图。显示 DMA 持续读取前台帧；CPU 绘制后台帧。当前只启用并行 RGB LCD 的单路 DMA、FIFO 和扫描时序，HDMI 不实例化。DDR 引脚只有 LiteDRAM 一套控制器驱动。M4 的 CPU 和显示为两个逻辑端口，由调度器串行接一个物理 native 端口；显示 FIFO 背压/帧结束时服务 CPU。M0–M3 保留历史多端口配置。SD M2 通过轮询 PIO 搬运数据，FIFO 为后续优化，暂不加入 SD DMA。
 
-显示读端口不能被 CPU 大块写入无限阻塞。先用 LiteDRAM 多端口仲裁并测量最大服务间隔；若公平仲裁不能满足 FIFO 水位，增加显示端口的水位感知服务策略。仲裁能力与吞吐验收是第一版交付条件。
+显示读端口不能被 CPU 大块写入无限阻塞。M4 对在途事务和返回数据所有权作隔离，事务间保留 8 个 sys 周期；原双端口 72 MHz 试验有 43 个 setup 违例，未上板。60 MHz 双端口未重新验证，当前保留已测的单端口配置。仲裁能力与吞吐验收是第一版交付条件。
 
 ## 4. DDR 和资源预算
 
@@ -144,7 +145,7 @@ DDR 的完整球位使用核对过的 LiteX platform / 本地 DDR CST，SSTL15/S
 
 | 区域 | 建议地址 | 属性 |
 | --- | --- | --- |
-| Boot ROM | 0x00000000，32 KiB | DDR 初始化和恢复入口 |
+| Boot ROM | 0x00000000，M4 48 KiB（M0–M3 32 KiB） | DDR 初始化和恢复入口 |
 | SRAM | 0x10000000，16 KiB | 初始化栈、异常和临时区 |
 | DDR | 0x40000000–0x47FFFFFF，128 MiB | 应用代码/数据/堆栈及帧区 |
 | Framebuffer | DDR 尾部预留 2 MiB | 从应用分配器和 linker 排除；不缓存 |
@@ -152,13 +153,13 @@ DDR 的完整球位使用核对过的 LiteX platform / 本地 DDR CST，SSTL15/S
 
 帧区固定预留 0x47E00000–0x47FFFFFF（2 MiB）；帧 0 位于 0x47E00000，帧 1 位于 0x47E40000（帧间距 256 KiB，每帧有效数据 255 KiB）。两帧均落在预留区内，stride 固定 960；应用区为 0x40000000–0x47DFFFFF，共 126 MiB，包含代码、数据、堆和栈。linker 和固件取生成常量，不能各自硬编码不同容量。
 
-上电链路：SPI Flash 配置 FPGA → BRAM Boot ROM → PLL/reset 正常 → SRAM 建栈和 UART → DDR 初始化/小范围自检 → 视频安全黑帧 → SD 初始化 → 从 FAT32 加载 monitor/application 到 DDR。无卡、坏文件或 DDR 错误时进入串口恢复路径，故障不能表现为无限忙等。
+上电链路：SPI Flash 配置 FPGA → BRAM Boot ROM → PLL/reset 正常 → SRAM 建栈和 UART → DDR 初始化/小范围自检 → 视频安全黑帧 → SD 初始化 → 当前 ROM monitor；从 FAT32 加载 application 到 DDR 为后续目标，尚未实现。无卡、坏文件或 DDR 错误时进入串口恢复路径，故障不能表现为无限忙等。
 
-Boot ROM 先保留 LiteX BIOS 的初始化和 UART 下载能力；完整 FAT32/monitor 作为 DDR stage2。独立无卡启动若需要把 stage2 存入 NOR，必须增加 Flash 控制器并按实际 bitstream 长度规划分区和擦除边界，避免覆盖 FPGA 配置。初始不假设现有 4 MiB Flash 剩余空间已可直接用。
+当前采用独立裸机 Boot ROM 初始化和串口 monitor，尚未实现 UART 程序下载或 DDR stage2；FAT32 应用加载为后续工作。独立无卡启动若需要把 stage2 存入 NOR，必须增加 Flash 控制器并按实际 bitstream 长度规划分区和擦除边界，避免覆盖 FPGA 配置。初始不假设现有 4 MiB Flash 剩余空间已可直接用。
 
 ## 9. 时钟、复位和工具
 
-- PLL 0：sys2x 96 MHz，CLKDIV /2 得 sys 48 MHz；DDR 初始化域沿用已支持方案。
+- PLL 0：M4 sys2x/DDR CK 120 MHz，CLKDIV /2 得 sys/CPU 60 MHz；DLL-off CL6/CWL6。M0–M3 历史配置为 96/48 MHz。DDR 初始化域沿用原方案。
 - PLL 1：原生 9 MHz LCD 像素域；转发 DCLK 与寄存器数据错开半周期，面板采样边沿上板确认。HDMI 不生成时钟。
 - SPI 使用 sys 域 clock-enable / 输出逻辑，不新建 fabric 派生时钟。
 - 所有输出域有 PLL lock 约束和同步 reset 释放；UART 下载、软件 reset 和重新配置后均有可重复的启动行为。
@@ -178,7 +179,7 @@ Boot ROM 先保留 LiteX BIOS 的初始化和 UART 下载能力；完整 FAT32/m
 | M1 | CPU + DDR + timer/IRQ | 地址别名和数据模式测试通过，DDR 执行 C 程序；DDR 故障可从 UART 报告 |
 | M2 | 独立 SPI-SD + SPI-LCD 驱动 | 文件读 CRC 正确，测试文件写回正确，拔卡超时可恢复，LCD 图案/文字/延时正常 |
 | M3 | 480×272 RGB LCD + DDR framebuffer DMA，HDMI 暂缓 | CPU 写入图案，颜色/边界/同步正确，PLL 与约 59.94 Hz 时序一致；双缓冲切换无旧帧残留，underflow 可检测并恢复 |
-| M4 | 综合 monitor、SD 加载、RGB LCD 视频及 SPI LCD 状态显示 | LCD 视频运行时同时 mem copy / SD read / SPI LCD update，持续至少 30 分钟 underflow=0、CRC 正确、串口响应可用；timing 收敛 |
+| M4 | 综合 monitor、SD 加载、RGB LCD 视频及 SPI LCD 状态显示 | LCD 视频运行时同时 mem copy / SD read / SPI LCD update，持续至少 5 分钟（用户调整） underflow=0、CRC 正确、串口响应可用；timing 收敛 |
 
 有意义的仿真覆盖：SPI 事务中的 CPOL/CPHA/CS/DC 边界与背压；显示 DMA 随机 DDR 延迟、地址对齐/边界、FIFO 空满、frame flip 与旧预取排空；异常/IRQ 的确认和清除；跨域 reset。DDR PHY、RGB LCD 采样边沿/IO 时序必须上板验证；HDMI 电气和兼容性留待恢复该功能后验收，不能只用仿真替代。
 
@@ -193,3 +194,9 @@ Boot ROM 先保留 LiteX BIOS 的初始化和 UART 下载能力；完整 FAT32/m
 [板级 platform](https://github.com/litex-hub/litex-boards/blob/master/litex_boards/platforms/sipeed_tang_primer_20k.py) 的 SPI-SD 球位与本地核心板图一致。[LiteDRAM memory profiles](https://github.com/enjoy-digital/litedram/blob/master/litedram/modules.py) 中 IMD128M16R39CG8GNF 的组织为 8 banks × 16,384 rows × 1,024 columns，x16 为 256 MiB；它仅佐证原理图型号，不能证明用户手上颗粒就是该型号。
 
 用户实物照片确认 DDR 完整型号为 H5TQ1G63EFR-PBC / 64M×16 / 128 MiB，DDR3-1600 商业温度档；上游 IMD profile 仅作为差异核对依据。M1 已完成工具实际构建、综合资源/时序报告与低频 DDR 上板功能验收；剩余实体复位、断电冷启动、温度/长期稳定性以及后续外设整机验收见 M1 验证记录。
+
+## 12. M4 当前进展
+
+M4 增加 memcopy 和并发脚本。2026-10-01 用户将验收时长从 30 分钟调整为 5 分钟；最终 60/120 MHz 配置的启动、五次软件复位及 390.344 秒 / 246 轮自动压力验收通过，欠载为 0，两块 LCD 已由用户确认正常稳定。96 MHz CK DLL-off 在并发测试中出现数据错误，即使欠载为 0 也不能当作稳定；CK 120 MHz / DLL-off / CL6/CWL6 为当前配置，时钟周期 8.333 ns，按 8 ns 下限保守约束。曾试验的 CK 144 MHz DLL-on/DLL-off 均因频率规格约束被排除，短测结果不计入正式验收。底层错读的确切采样机制尚未确认，不能将历史 M1/M3 短测视为并发保证。
+
+M4 固件 33,136 字节，48 KiB ROM 映射占用全部 46 块 BSRAM；16 KiB SRAM、128 MiB DDR 和 8 KiB 视频 FIFO 保留。扩大片上缓存/FIFO 前须重新预算；应用加载、IRQ/RTOS 和断电冷启动仍未实现/验证。当前验收范围是 M4 的并发稳定性部分，结果和边界见 [m4-validation.md](m4-validation.md)。

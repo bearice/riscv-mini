@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <generated/soc.h>
 void puts_uart(const char *text);
 void putchar_uart(char ch);
 void io_timer_init(void);
