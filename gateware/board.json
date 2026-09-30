@@ -14,7 +14,7 @@
     "rows": 8192,
     "columns": 1024,
     "speed_suffix": "PBC",
-    "status": "Base fixed 60/120 MHz DLL-off CL6/CWL6; bounded ROM training/checks, DDR-resident app. See docs/base-validation.md for current hardware acceptance.",
+    "status": "Fixed 60/120 MHz DLL-off CL6/CWL6; ROM initialization and DDR-resident HAL app. Current acceptance: docs/m5a-validation.md.",
     "clock_hz": 120000000,
     "dll_off": true,
     "cl": 6,
@@ -109,5 +109,49 @@
     "application_offset": 2097152,
     "application_partition_bytes": 2097152,
     "extra_space": "reserved_read_only"
+  },
+  "board_io": {
+    "leds_lsb_first": [
+      "C13",
+      "A13",
+      "N16",
+      "N14",
+      "L14",
+      "L16"
+    ],
+    "leds_active_low": true,
+    "buttons_lsb_first": [
+      "T3",
+      "T2",
+      "D7",
+      "C7"
+    ],
+    "buttons_active_low": true,
+    "buttons_debounce_ms": 5,
+    "switches_lsb_first": [
+      "E9",
+      "E8",
+      "T4",
+      "T5"
+    ],
+    "input_io_standard": "LVCMOS15",
+    "output_io_standard": "LVCMOS33",
+    "ws2812_pin": "T9",
+    "phy_reset_shared_pin": "F10",
+    "system_reset_pin": "T10",
+    "configuration_switch_pin": "B10",
+    "status": "Implemented; input/lighting physical acceptance pending. See docs/m5a-validation.md."
+  },
+  "hal": {
+    "irq_sources": {
+      "uart": 0,
+      "timer0": 1,
+      "board_io": 2,
+      "timer1": 3
+    },
+    "timer_irq_hz": 1000,
+    "uart_rx_buffer_bytes": 128,
+    "runtime_location": "ddr_application",
+    "api_header": "firmware/hal/include/hal/hal.h"
   }
 }

@@ -5,7 +5,7 @@ import unittest
 import zlib
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from boot_image import HEADER, LOAD, MAX_PAYLOAD, pack_image, unpack_image, packet
+from boot_image import HEADER, LOAD, MAX_PAYLOAD, pack_image, unpack_image, packet, abi_tag
 
 class ImageTests(unittest.TestCase):
     def setUp(self):
@@ -29,5 +29,9 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<IH',framed),(0x10203040,5))
         self.assertEqual(struct.unpack('<I',framed[-4:])[0],zlib.crc32(framed[:-4]))
         self.assertEqual(framed[6:-4],data)
+    def test_irq_assignment_is_part_of_abi(self):
+        csr={'csr_registers':{},'memories':{},'constants':{'uart_interrupt':0,'board_io_interrupt':2}}
+        original=abi_tag(csr);csr['constants']['board_io_interrupt']=3
+        self.assertNotEqual(original,abi_tag(csr))
 
 if __name__=='__main__': unittest.main()

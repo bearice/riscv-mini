@@ -11,6 +11,7 @@ from litex.soc.interconnect import wishbone
 from litex.build.generic_platform import Pins, Subsignal, IOStandard
 from litex.soc.cores.spi import SPIMaster
 from litex.soc.cores.gpio import GPIOOut, GPIOIn
+from litex.soc.cores.timer import Timer
 from litex_boards.platforms.sipeed_tang_primer_20k import Platform
 from litedram.frontend.wishbone import LiteDRAMWishbone2Native
 from gateware.vendor.gw2ddrphy import GW2DDRPHY
@@ -18,6 +19,7 @@ from gateware.ddr import H5TQ1G63EFR
 from gateware.constraints import add_ddr_init_exceptions
 from gateware.memory import SharedNativePort
 from gateware.video import RGBLCD
+from gateware.board_io import BoardIO, WS2812
 
 class ClockResetGenerator(LiteXModule):
     def __init__(self,platform):
@@ -85,3 +87,15 @@ class MiniSoC(SoCCore):
             *[Subsignal(name,Pins(pins[name])) for name in ('clk','hsync','vsync','de')],
             *[Subsignal(color,Pins(' '.join(pins[color+'_lsb_first']))) for color in 'rgb'],IOStandard('LVCMOS33'))])
         self.rgb_lcd=RGBLCD(self.memory_port.video,platform.request('rgb_lcd'))
+        platform.add_extension([
+            ('board_leds',0,Pins('C13 A13 N16 N14 L14 L16'),IOStandard('LVCMOS33')),
+            ('board_switches',0,Pins('E9 E8 T4 T5'),IOStandard('LVCMOS15')),
+            ('shared_phy_reset_n',0,Pins('F10'),IOStandard('LVCMOS33'))])
+        buttons=Cat(*[platform.request('btn_n',i) for i in range(1,5)])
+        self.board_io=BoardIO(platform.request('board_leds'),buttons,platform.request('board_switches'))
+        self.irq.add('board_io',use_loc_if_exists=True)
+        self.ws2812=WS2812(platform.request('rgb_led'))
+        # One output owns F10: both Ethernet and USB PHYs reset together.
+        self.phy_reset=GPIOOut(platform.request('shared_phy_reset_n'),reset=0)
+        self.timer0.add_uptime()
+        self.timer1=Timer();self.irq.add('timer1',use_loc_if_exists=True)

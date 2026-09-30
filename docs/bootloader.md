@@ -38,13 +38,13 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 
 ## 镜像与 UART 协议
 
-镜像是 48 字节头加 payload。头为 12 个 little-endian uint32：magic `0x354d5652`、version 1、header 长度、CSR/内存/CPU ABI tag、payload 长度、固定 load `0x40800000`、entry、payload CRC32、flags 0、两个 reserved 0、头部前 44 字节 CRC32。ABI tag 随生成的 CSR 和内存映射计算；不是密码签名。
+镜像是 48 字节头加 payload。头为 12 个 little-endian uint32：magic `0x354d5652`、version 1、header 长度、CSR/内存/CPU ABI tag、payload 长度、固定 load `0x40800000`、entry、payload CRC32、flags 0、两个 reserved 0、头部前 44 字节 CRC32。ABI tag 随生成的 CSR、内存映射及 IRQ 编号计算；不是密码签名。
 
 payload 长度为 4 到 2097104 字节；entry 必须四字节对齐并落在 payload 中，完整指令不得跨过尾部。ROM、SRAM、LCD 保留区和任意其他 load 地址均被拒绝。应用本身可以通过正常 HAL 使用其他 DDR 工作区；装载地址限制仅针对镜像。
 
 UART 115200 8N1：loader 输出 `READY HEADER` 后收头；验证通过后输出 `READY DATA`。每包是 uint32 sequence、uint16 count、最多 128 字节数据、覆盖该包前缀和数据的 CRC32；精确顺序和末包长度受检查。成功 ACK 为 `K` 加 uint32 sequence。每个字节等待超时为三秒；失败排空输入并返回 `BL>`。所有数据收完后，再校验 DDR 中的完整 payload。
 
-加载完成使用 `fence` 和 `fence.i`，关闭 machine IRQ，跳转应用入口；应用 `_start` 初始化独立栈、data/BSS，再调用 `main`。完整 trap/IRQ/RTOS runtime 是后续工作。
+加载完成使用 `fence` 和 `fence.i`，关闭 machine IRQ，跳转应用入口；应用 `_start` 初始化独立栈、data/BSS，再调用 `main`。M5a 应用的 `hal_init()` 另外安装 trap/IRQ 运行时并启用已注册的 IRQ；bootloader 自身保持轮询，无 HAL/SD/LCD 驱动。RTOS 属于后续工作。
 
 ## 恢复和命令
 
@@ -59,7 +59,7 @@ DDR 初始化后等待两秒。无输入默认从 Flash 启动；无有效镜像
 | `i` | Flash ID 和镜像头状态 |
 | `!` | 软件复位 |
 
-DDR 基础应用仅有 `help` / `status` / `ls` / `reboot` 和 `!`。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，旧自检命令不再进入产品 monitor。
+DDR 基础应用提供 `help` / `status` / `ls` / `reboot` 和 `!`，M5a 增加 `io` / `led HH` / `rgb RRGGBB` 板级控制。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，旧自检命令不再进入产品 monitor。
 
 ## 验证
 

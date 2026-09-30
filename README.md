@@ -10,14 +10,14 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | 片上存储 | 8 KiB boot ROM、8 KiB 工作 SRAM；SD/LCD 驱动不在 bootloader 中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
-| UART / timer | 115200 8N1；60 MHz 计数器，当前驱动采用轮询 |
+| UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
 | SD | SPI 模式，初始化 400 kHz，工作 6 MHz，FatFs |
 | SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
-应用只保留串口 `help`、`status`、`ls`、`reboot` 命令，以及 `!` 复位快捷键。Flash API 同样可由 DDR 应用调用。GPIO/WS2812B、原生四位 SD、音频、Ethernet、USB Host HID 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。完整 trap/IRQ runtime 和 RTOS 尚未接入。
+M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。原生四位 SD、音频、Ethernet、USB Host HID 和 RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
 
 ## 开发环境
 

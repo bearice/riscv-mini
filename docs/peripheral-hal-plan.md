@@ -1,6 +1,6 @@
 # 外围设备 HAL 与板级控制器计划
 
-日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。本页保留外围控制器的方案和引脚核对；Flash/UART 启动已实现，当前单一基础系统见 [bootloader](bootloader.md) 和 [基础版验证](base-validation.md)。其他新增外围控制器仍是后续计划。
+日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，当前验收状态见 [M5a 验证](m5a-validation.md)。本页保留外围控制器方案和引脚核对；原生 SD、音频、Ethernet 和 USB Host 为后续工作。
 
 ## 1. 本轮确定的范围
 
@@ -29,7 +29,7 @@
 | `gateware/soc.py`、`gateware/board.json`、`firmware/drivers/`、`requirements.in` | 当前 SoC、频率、软件接口和固定依赖 |
 | `build/m4/gateware/impl/pnr/project.rpt.txt` | 当前资源占用，非未来估算 |
 
-M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、SPI-SD/FatFs，并新增独立 SPI Flash CPU 接口与 Flash/UART bootloader。原生 SD、音频、Ethernet、USB Host 尚未接入。启动汇编尚无完整 trap/IRQ runtime，后续须补齐。
+M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、SPI-SD/FatFs，并新增独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。原生 SD、音频、Ethernet、USB Host、嵌套中断和 RTOS 尚未接入。
 
 本轮把上述新增引脚清单与 M4 生成的 `riscv_mini.cst` 做了静态比对：新增设备之间的重复脚为已识别的 F10；与现有功能重叠的是 T10 复位和 SD 的原 SPI 引脚。该检查不代替 bank 电压、时钟专用引脚、配置复用和布局布线验收。
 
@@ -157,7 +157,7 @@ bootloader 目标 8–16 KiB ROM、4–8 KiB SRAM，最终以 link map、DDR 初
 
 Flash 配置区、固件区、可写数据区分别保护。确切偏移在核对 Gowin 实际配置镜像长度、格式/压缩、擦除粒度后由脚本生成，不凭当前 `project.bin` 文件大小硬定。默认禁止 chip erase，也禁止 CPU 擦写配置区；固件更新的上电安全策略先用有效标记/恢复入口，双镜像是否能容纳由 4 MiB 容量预算决定。
 
-M5 可以先用 UART 下载 DDR 镜像验证 bootloader，避免“把完整应用仍嵌在 ROM 再复制到 DDR”造成片上资源没有减少。随后完成 Flash 固件区烧录与冷启动，交付用户要求的 Flash 存储启动。
+Flash/UART 装载已完成：应用独立存放于 Flash 或经 UART 下载，然后在 DDR 执行；没有把完整应用嵌入 ROM。已做持久配置编程及软件复位自动 Flash 启动。用户明确跳过断电检查，冷启动断电验收不列为本轮待办。
 
 ## 4. 时钟、复位和资源
 
@@ -190,7 +190,7 @@ USB PHY 的 60 MHz 与 CPU 的 60 MHz 异步，不可因频率相同省略 CDC�
 | PRIMARY | 4 / 8 |
 | LW | 8 / 8 |
 
-原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，BSRAM 占用 16/46；boot 镜像 6,568 字节，DDR app 镜像 19,468 字节。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
+原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，BSRAM 占用 16/46；M5a boot 镜像 6,560 字节，DDR app 镜像 24,004 字节（包含 48 字节 header）。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
 
 PLL 总数初步够用，但 BSRAM 推断粒度、长线/时钟布线和新增 OHCI Logic 必须重新 PnR。不能用“剩 63% Logic”保证所有外设一定同时装得下。每阶段记录资源增量；若超预算，先减 packet slots/FIFO 与调试模块，避免削弱 DDR/LCD 已验证的可靠性。
 
@@ -239,8 +239,8 @@ gateware/peripherals/      新控制器及板级桥接
 
 | 阶段 | 工作 | 交付与验收 |
 | --- | --- | --- |
-| M5a：HAL 基础与板级 IO | 现有 UART/timer/SPI/显示/SD 接口包入 HAL；trap/IRQ 基础；LED、四用户键、四 DIP、WS2812B；公共 PHY reset 资源定义 | API 示例，GPIO 极性/去抖，按键事件不重复，六灯和彩灯人工确认；现有 M4 功能回归 |
-| Flash + 两级启动（当前已实现） | 独立 LiteX SPIMaster、受限分区；小 bootloader、DDR 应用 linker、镜像头、UART 恢复；固件存 Flash、载入 DDR | JEDEC/CRC、错误镜像拒绝、读写范围保护；应用 DDR 执行；持久配置/冷启动验证以基础版验证文档为准 |
+| M5a：HAL 基础与板级 IO（代码已接入） | 现有 UART/timer/SPI/显示/SD 接口包入 HAL；trap/IRQ 基础；LED、四用户键、四 DIP、WS2812B；公共 PHY reset 资源定义 | API 示例、数字逻辑仿真及上板 IRQ/原有功能回归；灯/按键/DIP 人工状态见 M5a 验证页 |
+| Flash/UART 启动（当前已实现） | 独立 LiteX SPIMaster、受限分区；小 bootloader、DDR 应用 linker、镜像头、UART 恢复；固件存 Flash、载入 DDR | JEDEC/CRC、错误镜像拒绝、读写范围保护；应用 DDR 执行；持久配置与软件复位已通过；按用户要求跳过断电检查 |
 | M6：原生 SD | LiteSDCard 四位 15 MHz、DMA、FatFs backend；保留 SPI fallback 构建 | 文件 CRC、多块传输、新文件写回、拔卡超时/插回恢复、LCD 不欠载 |
 | M7：音频 | PT8211 序列器、PIO FIFO→DDR PCM ring/DMA | 左右独立音调、46.875 kHz 实测/逻辑验证、静音、缺样补零及统计；显示/SD 同时运行 |
 | M8：Ethernet | MDIO、LiteEth RMII MAC、原始帧 HAL、少量 packet slots、IRQ | PHY ID/链路、ARP/ICMP/UDP、收发 CRC/丢包、拔插网线恢复；不要把 link-up 当作 MAC 验收 |
@@ -249,7 +249,7 @@ gateware/peripherals/      新控制器及板级桥接
 
 每个新增高速/跨域控制器做针对性仿真或协议检查，Gowin 综合/PnR 核查资源与相关 setup/hold，再上板。新增布线/资源失败时在独立构建配置处理，保留 M4 bitstream 和源码作为基线。五分钟是当前综合压力验收范围，不延长到三十分钟。
 
-USB PHY/控制器选型可在 M5b 释放资源后提早做独立枚举探针，尽早发现接口/供电问题；按上表顺序合入，不把 USB 风险拖到最后才研究。全套外设的最终资源与性能仍待实际综合和上板，当前不宣称已经支持。
+USB PHY/控制器选型可在 Flash/UART 启动释放资源后提早做独立枚举探针，尽早发现接口/供电问题；按上表顺序合入，不把 USB 风险拖到最后才研究。全套外设的最终资源与性能仍待实际综合和上板，当前不宣称已经支持。
 
 ## 7. 尚待硬件核对
 

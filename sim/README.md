@@ -27,3 +27,9 @@ exercises rejection by the actual ROM loader and execution in real DDR.
 
 `sim/test_programmer_result.py` rejects Gowin's observed zero-exit-code
 `SPI Verify failed` output as well as missing completion/nonzero return codes.
+
+`sim/test_board_io.py` covers logical LED polarity/order, DIP synchronization,
+button bounce suppression, held-key/no-repeat, release and simultaneous keys.
+It also samples actual 60 MHz WS2812 output: GRB MSB order, 24/48-cycle high
+pulses, 75-cycle bit period, 18000-cycle latch and ignored submissions while busy.
+These checks do not replace real board switch/LED observation.

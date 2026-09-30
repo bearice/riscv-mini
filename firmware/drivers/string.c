@@ -19,6 +19,10 @@ int strcmp(const char *a, const char *b) {
     while (*a && *a==*b) { ++a; ++b; }
     return (unsigned char)*a-(unsigned char)*b;
 }
+int strncmp(const char *a,const char *b,size_t n) {
+    while(n--) {unsigned char x=*a++,y=*b++;if(x!=y)return (int)x-(int)y;if(!x)return 0;}
+    return 0;
+}
 char *strchr(const char *s, int ch) {
     do { if ((unsigned char)*s==(unsigned char)ch) return (char *)s; } while (*s++);
     return 0;

@@ -74,6 +74,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--synthesize',action='store_true')
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
+    p.add_argument('--app',type=Path,default=ROOT/'firmware/app/main.c',help='DDR application source; bootloader is unchanged')
     p.add_argument('--generate-only',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--rom',type=Path,help=argparse.SUPPRESS)
     a=p.parse_args();output=a.output_dir.resolve()
@@ -89,14 +90,15 @@ def main():
     firmware=output/'firmware';firmware.mkdir(exist_ok=True)
     include=firmware/'include';generate_csr(csr,include)
     abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
-    loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs'
+    loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
     flags=['-march=rv32im_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror','-ffreestanding',
         '-fno-builtin','-ffunction-sections','-fdata-sections','-nostdlib','-nostartfiles','-msmall-data-limit=0',
-        '-I',firmware,'-I',include,'-I',output/'software/include','-I',drivers,'-I',loader,'-I',vendor]
+        '-I',firmware,'-I',include,'-I',output/'software/include','-I',drivers,'-I',loader,'-I',vendor,'-I',hal/'include']
     common=[ROOT/'firmware/boot/start.S',drivers/'uart.c',drivers/'time.c',drivers/'flash.c']
     for name,main,sources,linker in [
         ('boot',loader/'main.c',[ROOT/'firmware/boot/ddr.c'],loader/'boot.ld'),
-        ('app',ROOT/'firmware/app/main.c',[*[drivers/n for n in ('spi.c','lcd.c','sd.c','filesystem.c','string.c','video.c')],vendor/'ff.c',vendor/'ffunicode.c'],loader/'app.ld')]:
+        ('app',a.app.resolve(),[*[drivers/n for n in ('spi.c','lcd.c','sd.c','filesystem.c','string.c','video.c')],
+            *[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c')],vendor/'ff.c',vendor/'ffunicode.c'],loader/'app.ld')]:
         elf=firmware/f'{name}.elf'
         # Whole-program optimization keeps the ROM loader compact; app stays
         # separately linked and carries SD/display drivers only in DDR.

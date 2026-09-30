@@ -1,36 +1,47 @@
-/* Minimal DDR-resident base application; device APIs live in drivers/. */
-#include <generated/csr.h>
+/* Minimal DDR-resident base application; public device APIs live in hal/, reusing drivers/ backends. */
+#include <hal/hal.h>
 #include <string.h>
-#include "io.h"
-#include "flash.h"
+static int parse_hex(const char *p,unsigned digits,unsigned *value) {
+    unsigned n=0;for(unsigned i=0;i<digits;++i) {unsigned char c=p[i];unsigned d=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:16;if(d>=16)return 0;n=(n<<4)|d;}
+    if(p[digits])return 0;
+    *value=n;return 1;
+}
 static void status(void) {
-    puts_uart("CPU/sys=60 MHz DDR=120 MHz LCD=9 MHz UART=115200\r\n");
-    uint32_t id=0;unsigned ok=flash_init(&id);
-    puts_uart("FLASH JEDEC=");io_hex(id);puts_uart(" bytes=");io_hex(flash_size());puts_uart(ok?" READY\r\n":" UNAVAILABLE\r\n");
-    video_status();
+    hal_uart_puts("CPU/sys=60 MHz DDR=120 MHz LCD=9 MHz UART=115200\r\n");
+    uint32_t id=0;unsigned bytes=0;unsigned ok=hal_flash_probe(&id,&bytes)==HAL_OK;
+    hal_uart_puts("FLASH JEDEC=");hal_uart_hex(id);hal_uart_puts(" bytes=");hal_uart_hex(bytes);hal_uart_puts(ok?" READY\r\n":" UNAVAILABLE\r\n");
+    hal_video_status();
+    hal_stats_t stats;hal_get_stats(&stats);
+    hal_uart_puts("IRQ timer=");hal_uart_hex(stats.timer_irqs);hal_uart_puts(" uart=");hal_uart_hex(stats.uart_irqs);hal_uart_puts(" buttons=");hal_uart_hex(stats.button_irqs);hal_uart_puts(" drops=");hal_uart_hex(stats.uart_drops);hal_uart_puts(" unhandled=");hal_uart_hex(stats.unhandled_irqs);hal_uart_puts("\r\n");
+    hal_uart_puts("IO leds=");hal_uart_hex(hal_leds_get());hal_uart_puts(" keys=");hal_uart_hex(hal_buttons_read());hal_uart_puts(" dip=");hal_uart_hex(hal_switches_read());hal_uart_puts("\r\n");
 }
 int main(void) {
-    io_timer_init();unsigned sd_ready=sd_mount();unsigned spi_lcd_ready=lcd_show(sd_ready);unsigned rgb_ready=video_init();
-    puts_uart("\r\nriscv-mini | RV32IM | DDR application at 40800000\r\n");
-    puts_uart("SYSTEM READY sd=");io_hex(sd_ready);puts_uart(" spi_lcd=");io_hex(spi_lcd_ready);
-    puts_uart(" rgb_lcd=");io_hex(rgb_ready);puts_uart("\r\n");
-    status();puts_uart("Commands: help, status, ls, reboot (! also resets)\r\n> ");
+    hal_init();unsigned sd_ready=hal_sd_mount()==HAL_OK;unsigned spi_lcd_ready=hal_spi_lcd_show(sd_ready)==HAL_OK;unsigned rgb_ready=hal_video_init()==HAL_OK;
+    hal_uart_puts("\r\nriscv-mini | RV32IM | DDR application at 40800000\r\n");
+    hal_uart_puts("SYSTEM READY sd=");hal_uart_hex(sd_ready);hal_uart_puts(" spi_lcd=");hal_uart_hex(spi_lcd_ready);
+    hal_uart_puts(" rgb_lcd=");hal_uart_hex(rgb_ready);hal_uart_puts("\r\n");
+    status();hal_uart_puts("Commands: help, status, ls, reboot, io, led HH, rgb RRGGBB (! also resets)\r\n> ");
     char line[32];unsigned used=0,overflow=0;
     for(;;) {
-        if(uart_rxempty_read()) continue;
-        unsigned ch=uart_rxtx_read();uart_ev_pending_write(2);
-        if(ch=='!') {video_stop();ctrl_reset_write(1);for(;;) {}}
+        hal_poll();
+        unsigned pressed,released;hal_buttons_take(&pressed,&released);
+        if(pressed|released) {hal_uart_puts("\r\nBUTTON pressed=");hal_uart_hex(pressed);hal_uart_puts(" released=");hal_uart_hex(released);hal_uart_puts("\r\n> ");}
+        int received=hal_uart_getc();if(received<0)continue;
+        unsigned ch=received;
+        if(ch=='!') {hal_reboot();}
         if(ch=='\n') continue;
         if(ch=='\r') {
-            line[used]=0;puts_uart("\r\n");
-            if(overflow) puts_uart("ERR command too long\r\n");
-            else if(!strcmp(line,"reboot")) {video_stop();ctrl_reset_write(1);for(;;) {}}
-            else if(!strcmp(line,"status")) status();
-            else if(!strcmp(line,"ls")) sd_list();
-            else if(!strcmp(line,"help")) puts_uart("help, status, ls, reboot\r\n");
-            else if(used) puts_uart("ERR unknown command\r\n");
-            used=overflow=0;puts_uart("> ");
-        } else if(ch==8 || ch==127) {if(used) {--used;puts_uart("\b \b");}}
-        else if(ch>=32 && ch<127) {putchar_uart(ch);if(used<sizeof(line)-1) line[used++]=ch;else overflow=1;}
+            line[used]=0;hal_uart_puts("\r\n");
+            if(overflow) hal_uart_puts("ERR command too long\r\n");
+            else if(!strcmp(line,"reboot")) {hal_reboot();}
+            else if(!strcmp(line,"status") || !strcmp(line,"io")) status();
+            else if(!strncmp(line,"led ",4)) {unsigned value;if(!parse_hex(line+4,2,&value)||value>63)hal_uart_puts("ERR led mask\r\n");else hal_leds_set(value);}
+            else if(!strncmp(line,"rgb ",4)) {unsigned value;if(!parse_hex(line+4,6,&value))hal_uart_puts("ERR rgb color\r\n");else if(hal_ws2812_set(value>>16,value>>8,value)!=HAL_OK)hal_uart_puts("BUSY rgb\r\n");}
+            else if(!strcmp(line,"ls")) hal_sd_list();
+            else if(!strcmp(line,"help")) hal_uart_puts("help, status, ls, reboot, io, led HH, rgb RRGGBB\r\n");
+            else if(used) hal_uart_puts("ERR unknown command\r\n");
+            used=overflow=0;hal_uart_puts("> ");
+        } else if(ch==8 || ch==127) {if(used) {--used;hal_uart_puts("\b \b");}}
+        else if(ch>=32 && ch<127) {hal_uart_putc(ch);if(used<sizeof(line)-1) line[used++]=ch;else overflow=1;}
     }
 }
