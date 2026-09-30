@@ -63,13 +63,11 @@ class RGBLCD(LiteXModule):
         words=FRAME_BYTES//word_bytes
         if FRAME_BYTES%word_bytes: raise ValueError('Frame must contain complete native words')
         self._enable = CSRStorage(name='enable')
-        self._test = CSRStorage(name='test')
         self._select = CSRStorage(name='select')
         self._active = CSRStatus(name='active')
         self._busy = CSRStatus(name='busy')
         self._frames = CSRStatus(32,name='frames')
         self._completed = CSRStatus(32,name='completed')
-        self._checksum = CSRStatus(32,name='checksum')
         self._underflows = CSRStatus(32,name='underflows')
         self.dma = dma = LiteDRAMDMAReader(port,fifo_depth=8192//word_bytes,fifo_buffered=True)
         self.conv = conv = stream.Converter(port.data_width,16)
@@ -84,11 +82,6 @@ class RGBLCD(LiteXModule):
         self.specials += MultiReg(enable_source,enable_video,'video')
         self.sync.video += If(scan.frame_start,armed.eq(enable_video))
         self.comb += scan.enable.eq(enable_video & armed)
-        test_source=Signal(name_override='lcd_video_test')
-        test_source.attr.add('keep')
-        test=Signal()
-        self.comb += test_source.eq(self._test.storage)
-        self.specials += MultiReg(test_source,test,'video')
         self.start = start = PulseSynchronizer('video','sys')
         self.done = done = PulseSynchronizer('video','sys')
         self.error = error = PulseSynchronizer('video','sys')
@@ -98,21 +91,16 @@ class RGBLCD(LiteXModule):
         pending = Signal()
         selected = Signal()
         offset = Signal(max=words)
-        checksum=Signal(32)
-        word_sum=sum(dma.source.data[i:i+16] for i in range(0,port.data_width,16))
         self.comb += [self._active.status.eq(selected),self._busy.status.eq(busy),
             dma.sink.valid.eq(issuing),dma.sink.last.eq(offset==words-1),
             dma.sink.address.eq((BASES[0]-0x40000000)//word_bytes + (selected<<(18-shift)) + offset)]
         self.sync += [
-            If(dma.source.valid & dma.source.ready,
-                checksum.eq(checksum+word_sum),
-                If(dma.source.last,self._checksum.status.eq(checksum+word_sum))),
             If(start.o,self._frames.status.eq(self._frames.status+1),pending.eq(self._enable.storage)),
             If(error.o,self._underflows.status.eq(self._underflows.status+1)),
             If(done.o,busy.eq(0),self._completed.status.eq(self._completed.status+1)),
             If(pending & ~busy,
                 pending.eq(0),
-                If(self._enable.storage,busy.eq(1),issuing.eq(1),offset.eq(0),checksum.eq(0),selected.eq(self._select.storage))),
+                If(self._enable.storage,busy.eq(1),issuing.eq(1),offset.eq(0),selected.eq(self._select.storage))),
             If(dma.sink.valid & dma.sink.ready,
                 If(dma.sink.last,issuing.eq(0)).Else(offset.eq(offset+1))),
         ]
@@ -122,11 +110,6 @@ class RGBLCD(LiteXModule):
         self.specials += DDROutput(i1=0,i2=1,o=pads.clk,clk=ClockSignal('video'))
         for value,pin in [(scan.hsync,pads.hsync),(scan.vsync,pads.vsync),(scan.de,pads.de)]:
             self.specials += SDROutput(i=value,o=pin,clk=ClockSignal('video'))
-        pixel=Signal(16)
-        self.comb += [pixel.eq(scan.pixel),If(test,
-            pixel.eq(0),
-            If(scan.de,
-                If(scan.h<205,pixel.eq(0xf800)).Elif(scan.h<365,pixel.eq(0x07e0)).Else(pixel.eq(0x001f)),
-                If((scan.h==45)|(scan.h==524)|(scan.v==14)|(scan.v==285),pixel.eq(0xffff))))]
+        pixel=scan.pixel
         for data,pins in [(pixel[11:16],pads.r),(pixel[5:11],pads.g),(pixel[:5],pads.b)]:
             for i,pin in enumerate(pins): self.specials += SDROutput(i=data[i],o=pin,clk=ClockSignal('video'))

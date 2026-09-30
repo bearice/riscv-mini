@@ -14,7 +14,7 @@
     "rows": 8192,
     "columns": 1024,
     "speed_suffix": "PBC",
-    "status": "M4 60/120 MHz DLL-off CL6/CWL6: startup, five software resets and user-required 5-minute concurrent stress passed (390.344 s / 246 cycles). Historical 96 MHz concurrent data errors reproduced; cold boot/environmental limits not tested.",
+    "status": "Base fixed 60/120 MHz DLL-off CL6/CWL6; bounded ROM training/checks, DDR-resident app. See docs/base-validation.md for current hardware acceptance.",
     "clock_hz": 120000000,
     "dll_off": true,
     "cl": 6,
@@ -29,7 +29,7 @@
     "framebuffer_base": "0x47e00000",
     "framebuffer_next": "0x47e40000",
     "reserved_bytes": 2097152,
-    "status": "M4 concurrent stress passed: 390.344 s / 246 flips and checks / zero underflows; user confirmed RGB LCD and SPI LCD normal and stable",
+    "status": "Base LCD-only DDR scanout; black initial canvas. Historical M4 visual/stress acceptance in docs/m4-validation.md.",
     "pixel_clock_hz": 9000000,
     "frame_bytes": 261120,
     "framebuffer_spacing_bytes": 262144,
@@ -84,47 +84,30 @@
           "B14"
         ]
       }
-    },
-    "hdmi": {
-      "transport": "DVI-compatible TMDS encoding; custom low-clock timing",
-      "pixel_clock_hz": 9000000,
-      "serializer_clock_hz": 45000000,
-      "lane_bit_rate_bps": 90000000,
-      "format": "rgb888_expanded_from_rgb565",
-      "compatibility": "not applicable to current LCD-only milestone",
-      "pins": {
-        "clk_p": "G16",
-        "clk_n": "H15",
-        "data_p": [
-          "H14",
-          "J15",
-          "K14"
-        ],
-        "data_n": [
-          "H16",
-          "K16",
-          "K15"
-        ]
-      },
-      "status": "deferred by user; not instantiated or driven in M3"
     }
   },
-  "milestone_profiles": {
-    "m0_m3": {
-      "system_clock_hz": 48000000,
-      "ddr_clock_hz": 96000000,
-      "ddr_dll_off": true,
-      "rom_bytes": 32768
-    },
-    "m4": {
-      "system_clock_hz": 60000000,
-      "ddr_clock_hz": 120000000,
-      "ddr_dll_off": true,
-      "cl": 6,
-      "cwl": 6,
-      "rom_bytes": 49152,
-      "native_arbitration": "serialized_video_priority",
-      "native_idle_sys_cycles": 8
-    }
+  "boot": {
+    "rom_bytes": 8192,
+    "sram_bytes": 8192,
+    "application_address": "0x40800000",
+    "application_linker_bytes": 4194304,
+    "auto_flash_delay_ms": 2000,
+    "sources": [
+      "flash",
+      "uart"
+    ],
+    "native_arbitration": "serialized_video_priority",
+    "native_idle_sys_cycles": 8
+  },
+  "flash": {
+    "schematic_part": "W25Q32JVS",
+    "schematic_size_bytes": 4194304,
+    "measured_jedec": "0x0b4017",
+    "measured_size_bytes": 8388608,
+    "spi_clock_hz": 10000000,
+    "configuration_reserved_bytes": 2097152,
+    "application_offset": 2097152,
+    "application_partition_bytes": 2097152,
+    "extra_space": "reserved_read_only"
   }
 }

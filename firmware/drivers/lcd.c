@@ -44,7 +44,7 @@ static void text(unsigned x, unsigned y, const char *s) {
         x+=12;
     }
 }
-int lcd_show(unsigned sd_ready, unsigned write_pass) {
+int lcd_show(unsigned sd_ready) {
     lcd_spi_clk_divider_write((CONFIG_CLOCK_FREQUENCY+5999999u)/6000000u); /* 6 MHz, mode 0, MSB first. */
     spi_select(1,0); pins=4; lcd_gpio_out_write(pins); io_delay_ms(100);
     pins=6; lcd_gpio_out_write(pins); io_delay_ms(200);
@@ -55,21 +55,17 @@ int lcd_show(unsigned sd_ready, unsigned write_pass) {
         if (!byte(lcd_init[i]>>8,lcd_init[i]&255)) goto fail;
     for (unsigned y=0; y<HEIGHT; ++y) for (unsigned x=0; x<WIDTH; ++x) {
         uint16_t color=0;
-        if (y>=44 && y<62) color=0xf800;
-        if (y>=62 && y<80) color=0x07e0;
-        if (y>=80 && y<98) color=0x001f;
         if (!x || x==WIDTH-1 || !y || y==HEIGHT-1) color=0xffff;
         frame[y*WIDTH+x]=color;
     }
-    text(30,8,"RISCV MINI M2"); text(48,26,"DDR 128 MB");
-    text(24,110,write_pass ? "SD WRITE PASS" : sd_ready ? "SD CARD READY" : "SD NOT READY");
+    text(60,8,"RISCV MINI"); text(48,26,"DDR 128 MB");
+    text(36,110,sd_ready ? "SD CARD READY" : "SD NOT READY");
     if (!window()) goto fail;
     pins|=1; lcd_gpio_out_write(pins);
     for (unsigned i=0; i<WIDTH*HEIGHT; ++i)
         if (!spi_transfer(1,frame[i],16,0)) goto fail;
     spi_select(1,0); pins&=~4u; lcd_gpio_out_write(pins);
-    puts_uart("LCD transfer PASS: RGB bars + RISCV MINI M2 + DDR 128 MB\r\n");
     return 1;
 fail:
-    spi_select(1,0); puts_uart("LCD transfer FAIL\r\n"); return 0;
+    spi_select(1,0); puts_uart("LCD transfer failed\r\n"); return 0;
 }

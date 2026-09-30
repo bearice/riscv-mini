@@ -1,5 +1,7 @@
 # Tang Primer 20K + Dock 3713：RISC-V 小型系统规划
 
+2026-10-01：当前已收敛为单一 60/120 MHz 基础系统，8 KiB boot ROM / 8 KiB SRAM，Flash 或 UART 装载 DDR 应用；SD 和 LCD 驱动只在 DDR 应用中。当前接口及启动流程见 [bootloader](bootloader.md)，后续范围见 [外围 HAL 计划](peripheral-hal-plan.md)。下文保留早期阶段的历史设计背景；旧阶段构建参数和测试命令已从当前源码移除。
+
 原始硬件资料与示例位于本仓库的同级 `../docs/` 和 `../examples/`，不包含在本仓库中。文中 `docs/01_*`、`examples/*` 等证据路径相对于 TangPrimer-20K 工作目录。
 
 日期：2026-09-30。状态：开发环境、M0 UART、M1 DDR 和 M2 SPI LCD / SD 已完成实际构建与上板验证。DDR 地址/数据模式测试及 DDR 代码/栈执行通过；LCD 颜色、文字方向和画面范围经用户确认；SD 新文件写回与 CRC 校验、拔卡报错和插回重新挂载通过。M3 并行 RGB LCD 已实现并完成扫描仿真与综合/PnR，已成功 SRAM 下载，DDR、五次软件复位、双缓冲切换、SD 只读及 SPI LCD 回归通过，视频欠载为 0；最终带整帧校验版本经用户确认画面正常稳定；先前复位后条纹未复现，根因未确认，继续列为 M4 观察项；实体按键和断电冷启动也尚待验收。详见 [M1 验证](m1-validation.md) 和 [M2 验证](m2-validation.md)。

@@ -31,9 +31,9 @@ def add_ddr_init_exceptions(platform, with_video=False):
             stream.write(f'set_false_path -from [get_pins {{ddr_init_pause_s0/Q}}] -to [get_pins {{{stages[0]}_s0/D}}]\n')
             if with_video:
                 pairs=re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl)
-                stages=[dest for dest,src in pairs if src in ('lcd_video_enable','lcd_video_test') or
+                stages=[dest for dest,src in pairs if src=='lcd_video_enable' or
                     re.search(r'(?:cdc_cdc_graycounter[01]_q|(?:start|done|error)_toggle_i)$',src)]
-                if len(stages)!=7: raise ValueError(f'Unexpected LCD CDC first stages: {stages}')
+                if len(stages)!=6: raise ValueError(f'Unexpected LCD CDC first stages: {stages}')
                 stream.write('# LCD CDC: only async first-stage D pins; second stages stay timed.\n')
                 stream.write('set_false_path -through [get_nets {lcd_video_async_reset}]\n')
                 declarations={name:int(msb)+1 for msb,name in re.findall(r'reg\s+\[(\d+):0\]\s+(\w+)',rtl)}

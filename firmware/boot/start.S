@@ -1,6 +1,8 @@
 .section .text.start, "ax", @progbits
 .global _start
 _start:
+    csrw mie, zero
+    csrci mstatus, 8
     la sp, _stack_top
     .option push
     .option norelax
@@ -28,19 +30,3 @@ _start:
     call main
 5:
     j 5b
-#ifdef MINI_DDR
-.section .text.ddr_call,"ax",@progbits
-.global ddr_call
-ddr_call:
-    addi sp, sp, -16
-    sw ra, 12(sp)
-    sw s0, 8(sp)
-    mv s0, sp
-    mv sp, a1
-    jalr ra, a0, 0
-    mv sp, s0
-    lw s0, 8(sp)
-    lw ra, 12(sp)
-    addi sp, sp, 16
-    ret
-#endif

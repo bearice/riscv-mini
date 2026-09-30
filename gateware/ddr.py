@@ -4,7 +4,7 @@ Geometry: local SK hynix datasheet pp. 4/9. Photo confirms -PBC:
 DDR3-1600, normal consumption, commercial temperature grade. Retain
 use 15 ns RP/RCD, 37.5 ns RAS and 50 ns FAW. RFC=160 ns is deliberately
 longer than the 1 Gbit requirement. Refresh every 3.9 us covers hot refresh.
-96 MHz CK uses optional DLL-off operation; verify on the actual device.
+The base system uses 120 MHz CK with DLL-off CL6/CWL6, verified on this board.
 """
 from litedram.modules import DDR3Module, _TechnologyTimings, _SpeedgradeTimings
 

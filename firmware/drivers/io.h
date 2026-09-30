@@ -9,14 +9,13 @@ void io_delay_ms(unsigned ms);
 void io_hex(uint32_t value);
 int spi_transfer(unsigned lcd, unsigned value, unsigned bits, unsigned *received);
 void spi_select(unsigned lcd, unsigned selected);
-int spi_selftest(void);
-int lcd_show(unsigned sd_ready, unsigned write_pass);
-int sd_mount_info(void);
-int sd_file_test(void);
-int sd_command(const char *line);
+int lcd_show(unsigned sd_ready);
+int sd_mount(void);
+int sd_list(void);
 
 int video_init(void);
-int video_command(const char *line);
+volatile uint16_t *video_frame(unsigned slot);
+int video_present(unsigned slot);
 void video_status(void);
 
 int video_stop(void);

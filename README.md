@@ -1,142 +1,74 @@
 # riscv-mini
 
-Tang Primer 20K + Dock 3713 上的 RISC-V 小型系统。开发入口为 Windows PowerShell，使用项目独立 Python 环境、LiteX/Migen、VexRiscv，以及已有的 Gowin 和 xPack RISC-V GCC。
+Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片上 bootloader 启动，将 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。默认构建只有一个 `base` 配置，旧 M0–M4 和提频试验的阶段分支、测试命令已移除。
 
-目标架构：单核 RV32IM、H5TQ1G63EFR / 128 MiB DDR3、UART monitor、SPI-SD、SPI LCD、480×272 / 约 59.94 Hz RGB565 DDR 双缓冲，输出并行 RGB LCD；HDMI 暂缓。M4 使用 CPU/sys 60 MHz、DDR CK 120 MHz DLL-off / CL6/CWL6；M0–M3 保留历史 48/96 MHz 配置。完整设计见 [系统规划](docs/system-plan.md)。机器可读的硬件目标位于 [gateware/board.json](gateware/board.json)。
+## 当前配置
 
-## 当前实现范围
+| 项目 | 配置 |
+| --- | --- |
+| CPU / 总线 | VexRiscv lite RV32IM，60 MHz，2 KiB I-cache，无 D-cache / L2 / MMU |
+| 片上存储 | 8 KiB boot ROM、8 KiB 工作 SRAM；SD/LCD 驱动不在 bootloader 中 |
+| DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
+| Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
+| UART / timer | 115200 8N1；60 MHz 计数器，当前驱动采用轮询 |
+| SD | SPI 模式，初始化 400 kHz，工作 6 MHz，FatFs |
+| SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
+| RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 
-M0–M3 已完成构建与上板验证。M4 增加 DDR 内存复制检查和并发压力脚本，已按用户调整后的 5 分钟要求通过自动验收（实际 390.344 秒 / 246 轮），两块 LCD 已由用户确认正常稳定，详见 [M4 验证](docs/m4-validation.md)。M4 包含 UART 115200 8N1、timer、48 KiB ROM、16 KiB SRAM、128 MiB DDR、独立 LCD/SD SPI 控制器和 FatFs。当前 VexRiscv `lite` 为 2 KiB I-cache，无 D-cache/L2；中断和 SD 应用加载器尚未实现。RGB LCD 持续读取 DDR，240×135 SPI LCD 保留独立状态显示用途。
+RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
-视频目标采用 4.3 英寸 LCD 示例的 9 MHz、525×286 总时序，当前只实现 RGB LCD 的单路 DMA/扫描，HDMI 不生成时钟或占用输出引脚。具体规格、引脚与兼容性条件见 [视频规格](docs/video-spec.md)。
+应用只保留串口 `help`、`status`、`ls`、`reboot` 命令，以及 `!` 复位快捷键。Flash API 同样可由 DDR 应用调用。GPIO/WS2812B、原生四位 SD、音频、Ethernet、USB Host HID 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。完整 trap/IRQ runtime 和 RTOS 尚未接入。
 
-## Bootstrap
+## 开发环境
 
-需要 PowerShell、Git 和 uv；Gowin 与 xPack GCC 可由脚本发现，或显式提供 bin 目录。依赖按 requirements.lock 安装；不会修改系统 Python，也不会永久修改 PATH。
+Windows PowerShell 下使用独立 Python 环境、LiteX/Migen、Gowin FPGA Designer 和 xPack RISC-V GCC。依赖固定在 `requirements.lock`；机器路径写入忽略提交的 `.tools.local.json`。
 
 ```powershell
 cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 .\scripts\bootstrap.ps1
-```
-
-bootstrap 创建 `.venv`（CPython 3.10.21）、同步依赖、发现本地工具，然后运行 doctor 和默认构建验证。已有环境可重复执行。机器路径保存在忽略提交的 `.tools.local.json`。
-
-其他机器需要提供工具目录时：
-
-```powershell
-.\scripts\bootstrap.ps1 `
-  -GowinBin 'C:\Gowin\Gowin_V1.9.11.02_x64\IDE\bin' `
-  -RiscvBin 'C:\xpack-riscv-none-elf-gcc-14.2.0-3\bin'
-```
-
-## 开发命令
-
-```powershell
-# 每个新 PowerShell 会话执行一次；只影响当前进程。
 . .\scripts\env.ps1
-
-# 检查依赖、编译器和路径，输出 build/environment.json。
 & $MiniPython .\scripts\doctor.py
-
-# 生成 RTL/CSR，编译 C 启动程序，验证 C++/libgcc，重新生成含固件的 ROM。
-& $MiniPython .\scripts\build.py
-
-# 上述步骤后实际调用 Gowin 综合、布局布线；不烧录设备。
 & $MiniPython .\scripts\build.py --synthesize
 ```
 
-默认构建使用 freestanding C/C++，不依赖 shell/Make 编译固件，避免 Windows 与 MSYS 路径混用。LiteX 标准 BIOS 所需 picolibc、compiler-rt、Meson、Ninja 已包含在开发依赖中，但标准 BIOS 的完整 Make 构建不属于本次 M0 验证。
+`bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。`build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件；两种方式都不自动下载。默认产物位于 `build/base/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。
+
+## 启动和固件更新
+
+bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载应用。等待期间按 `b` 进入恢复菜单，或按 `u` 走 UART。无有效 Flash 镜像时也进入恢复菜单。CRC、地址或 ABI 不匹配的镜像不会执行。
+
+```powershell
+# 先下载 FPGA SRAM，再通过 UART 将应用装入 DDR 执行。
+& $MiniPython .\scripts\boot_upload.py --program --mode uart
+
+# 已运行基础应用时：软件复位，更新 Flash 的应用分区。
+& $MiniPython .\scripts\boot_upload.py --reset --mode install
+
+# 更新 FPGA 的持久配置，然后安装匹配的应用镜像。
+& $MiniPython .\scripts\boot_upload.py --configure-flash --mode install
+
+# Flash/UART 错误边界及启动验收；--install 会写应用分区。
+& $MiniPython .\scripts\boot_verify.py --program --install
+
+# 五分钟只读持续检查：状态、SD 根目录、DDR 视频扫描计数和欠载。
+& $MiniPython .\scripts\boot_verify.py --reset --soak-seconds 300
+```
+
+默认串口 `COM4`、调试器 location `107569`，其他连接使用 `--port` / `--location`。工具检查 PnR 和 bitstream hash。普通应用更新只擦写 Flash `[2,4)` MiB，前 2 MiB FPGA 配置受 CPU 驱动保护；写入前后还检查该区 CRC。配置更新会替换 FPGA bitstream，应与匹配的 `app.img` 一起更新。本机通过 boundary-scan 方式写入并校验持久配置，该操作明显慢于 SRAM 下载；普通 exFlash 模式曾报校验失败，工具把这种日志视为失败，即使进程退出码为零。
+
+详细启动流程、镜像格式、分区、恢复命令和验证范围见 [bootloader](docs/bootloader.md)。
 
 ## 目录
 
-| 目录或文件 | 内容 |
+| 路径 | 内容 |
 | --- | --- |
-| gateware/ | SoC 与时钟/复位源、板级目标配置 |
-| firmware/boot/ | 启动汇编、linker script、串口启动程序 |
-| firmware/apps/ | freestanding C++ 编译/链接样例 |
-| scripts/ | bootstrap、当前会话环境、工具发现、doctor、build |
-| sim/ | SPI 事务、DDR 端口调度和视频扫描/恢复仿真 |
-| docs/ | 开发验证记录 |
-| requirements.in / requirements.lock | 上游固定 commit 和解析后的固定依赖版本 |
-| build/ | 生成物与日志，不作为源码维护 |
+| `gateware/` | 单一 SoC、DDR 端口调度、视频扫描、时序约束和板级配置 |
+| `firmware/boot/` | 共用启动汇编、仅 bootloader 使用的 DDR 初始化/训练 |
+| `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
+| `firmware/app/` | DDR 基础应用和小型串口入口 |
+| `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |
+| `scripts/` | 环境、构建、镜像打包、上传和板级验收 |
+| `sim/` | SPI、DDR 调度、视频扫描、镜像/传输协议验证 |
+| `docs/` | 当前启动/外围计划；旧阶段文档保留历史证据 |
 
-构建按阶段输出到 `build/m0/` 至 `build/m4/`：`csr.json`、`csr.csv`、`firmware/boot.elf`、`boot.bin`、`boot.map`、`elf-info.txt`、`gateware/riscv_mini.v`、Gowin 工程/约束和验证报告。生成目录可再生，不应手工修改。
-
-## 依赖更新
-
-先修改 requirements.in 中明确的上游 commit，再解析 lock；不要在普通 bootstrap 时拉取浮动分支。
-
-```powershell
-uv pip compile .\requirements.in --python-version 3.10 -o .\requirements.lock
-.\scripts\bootstrap.ps1
-```
-
-## 硬件验证
-
-M1 已加入 H5TQ1G63EFR 的 128 MiB DDR，CPU/sys 48 MHz、DDR CK 96 MHz，
-无 D-cache/L2 cache。构建保留在独立 build/m1/，默认 build.py 仍构建 M0。
-
-```powershell
-. .\scripts\env.ps1
-& $MiniPython .\scripts\build.py --stage m1 --synthesize
-& $MiniPython .\scripts\board_test.py --stage m1 --program --port COM4 --location 107569 --soft-resets 2
-```
-
-第二条命令实际下载到 FPGA SRAM 并验证串口；Flash 不受影响。
-COM4 和 USB location 是本机已确认值，换接口/电脑后需重新识别。
-board_test.py 下载前核对 bitstream hash 和构建时序报告，并保存下载日志、
-UART 日志及 hardware-validation.json。M1 串口输入 `!` 会触发 CPU 软件复位，
-重新初始化 DDR 并运行自检；其他字符回显。
-
-M1 验证内容、范围与已知边界见 [m1-validation.md](docs/m1-validation.md)。
-M2 构建和下载：
-
-```powershell
-& $MiniPython .\scripts\build.py --stage m2 --synthesize
-& $MiniPython .\scripts\board_test.py --stage m2 --program --port COM4 --location 107569 --soft-resets 1
-# 明确需要创建测试文件时，给 board_test.py 加 --sd-write-test。
-& $MiniPython .\sim\test_spi.py
-```
-
-M2 启动只读挂载 SD 并在 LCD 显示 RGB 色带、白框和状态文字。
-LCD/SD 工作 SPI 为 6 MHz，SD 初始化为 400 kHz，均使用 mode 0 和轮询传输。
-串口 monitor 输入一整行后按回车：
-
-| 命令 | 行为 |
-| --- | --- |
-| `sdinfo` | 重新初始化、挂载、列出前 16 个根目录项；可用于拔卡后恢复 |
-| `sdtest` | 新建未占用的 RVTEST00–99.BIN，写 4096 字节并关闭、重新打开、读回校验 |
-| `sdcheck RVTEST00.BIN` | 只读检查既有测试文件的大小、每个字节和 CRC32 |
-| `lcd` | 重绘 LCD 状态画面 |
-| `!` | CPU 软件复位，再次初始化并自检 DDR/外设 |
-
-测试文件使用 FA_CREATE_NEW，已有同名文件不会被覆盖。没有格式化或裸扇区写入命令。
-FatFs 配置支持 FAT12/16/32 和 exFAT，本次上板验收使用 FAT32 SDHC；其他卡型/文件系统尚未实测。
-完整结果见 [m2-validation.md](docs/m2-validation.md)。
-
-默认命令不连接或烧录开发板。Gowin 工具和 license 需要通过 `--synthesize` 的实际结果验证；doctor 中发现可执行文件不代表 license 有效。板上复位、UART、实际 bank 电压及后续 DDR/HDMI 的验证结果另行记录，不能用构建成功替代上板测试。
-
-本机没有发现 openFPGALoader，已有 Gowin Programmer CLI。使用烧录工具前需确认调试器及驱动；本次 bootstrap 不安装 USB 驱动、不写 FPGA/NOR、不修改 SD 卡。
-
-## M3 并行 RGB LCD
-
-M3 已实现并完成扫描仿真及 Gowin 综合/PnR，已成功 SRAM 下载；DDR、五次软件复位、双缓冲切换、SD 只读校验及 SPI LCD 回归通过，欠载计数为 0。最终版本经用户确认画面正常稳定；先前复位后条纹在本轮未复现，根因未确认，列入 M4 压力测试观察项。
-使用 `build.py --stage m3 --synthesize` 构建，`board_test.py --stage m3 --program` 进行明确的 SRAM 下载。
-显示为白色外框、RGB 三色带、灰阶及青色/黄色角标。UART 命令 `fbinfo` 读计数，`fbflip` 在垂直消隐切换两帧；`fbcheck` 校验 DMA 整帧像素模和，`fbpattern` / `fbmemory` 切换直接生成图案与 DDR 帧缓冲。
-详细当前验证状态见 [m3-validation.md](docs/m3-validation.md)，扫描测试为 `sim/test_video.py`。
-
-## M4 并发稳定性
-
-M4 在 LCD DMA 持续运行时，交错执行内存复制、SD 文件读取校验、SPI LCD 重绘和 RGB LCD 换帧。每次 `memcopy` 写入、逐字验证、复制并再次逐字验证两个独立的 32 KiB DDR 测试区。错误立即报告地址偏移、预期值和实际值。
-
-```powershell
-& $MiniPython .\scripts\build.py --stage m4 --synthesize
-& $MiniPython .\scripts\board_test.py --stage m4 --program --port COM4 --location 107569 --soft-resets 5
-# 只读已有 RVTEST00.BIN；不下载、不格式化、不写 SD/Flash。
-& $MiniPython .\scripts\stress_test.py --seconds 300
-& $MiniPython .\sim\test_memory.py
-```
-
-新增 monitor 命令：`memcopy`、`fboff`（停止并排空 DMA）、`fbon`（在帧边界恢复）。压力脚本以整帧模和、欠载为 0、换帧/扫描计数增长、内存逐字检查和 SD CRC 同时判定结果，失败立即保留日志。Windows 上测试进程临时阻止系统自动休眠，结束后释放请求。当前 M4 ROM 映射使用全部 46 块 BSRAM，扩充缓存/FIFO 前需要重新分配片上存储。SD 应用加载、IRQ/RTOS 和断电冷启动是后续工作。
-
-频率扫描结果见 [frequency-validation.md](docs/frequency-validation.md)。当前已上板确认 CPU/片上总线最高 86.4 MHz；完整 DDR/LCD 并发配置最高确认 62.4375 MHz sys / 124.875 MHz DDR CK。提频实验使用独立输出目录，开发板最终恢复到已提交的 60/120 MHz 稳定版本。
+历史 `--stage`、提频参数、内存/SD 写测/换帧测试命令不再适用于当前源码。旧验收文档记录的是各自当时的实现和结果，不是当前基础版本的测试声明。源码仓库在本目录，父目录 `../docs/` / `../examples/` 为硬件参考资料。
