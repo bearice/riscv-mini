@@ -1,4 +1,4 @@
-# M5a HAL 与板级 IO
+# HAL 与板级外围设备
 
 基线为单一 CPU/sys 60 MHz、DDR CK 120 MHz、LCD 像素 9 MHz 配置。bootloader 仍只负责 DDR 初始化和 Flash/UART 装载；HAL、trap/IRQ 和设备驱动全部链接在 DDR 应用中。Flash 安装只擦除/编程，未恢复写后校验。
 
@@ -16,6 +16,7 @@
 | sd | FatFs mount/list、512 字节 block read/write；默认原生四位 SD + Wishbone DMA，SPI 作为回退；get_info 返回模式、时钟、容量和统计 |
 | flash | JEDEC/容量、read、受 `[2,4)` MiB 边界保护的 program/erase；无写后读回 |
 | display | SPI LCD 状态页，DDR RGB565 双帧的 init/frame/present/stop/status |
+| audio | PT8211 PCM16 stereo，46,875 Hz；PIO FIFO / DDR ring DMA、start/pause/stop/mute、进度及欠载统计；见 [音频](audio.md) |
 
 `hal_init()` 在应用启动时调用一次。当前是裸机单主循环：IRQ 只做 RX 搬运、计数和按键事件确认，SD/FatFs、SPI、显示和 Flash 传输在主循环执行。`hal_poll()` 留作后续设备的延后处理入口，当前无后台任务。SPI/文件系统 API 不支持多个调用者或 ISR 并发操作。
 

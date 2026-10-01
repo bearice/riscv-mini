@@ -41,3 +41,13 @@ It uses a PHY endpoint seam and does not prove connector timing.
 `scripts/sd_verify.py` runs the independent SD demo on the board: existing file
 CRC, single/multi-block and unaligned callers, optional unique-file write/read,
 and five-minute LCD frame switching. See docs/m6-validation.md.
+
+`sim/test_audio.py` decodes actual BCK/WS/DIN for stereo sample/bit order,
+underrun zeros and mute. It checks real 60MHz clock enables (1.5MHz BCK /
+46875Hz frames), DMA word order, ring wrap/ownership, request release,
+stop during a delayed DDR reply, framebuffer boundary rejection and bus errors.
+`sim/test_audio_capture.py` tests the WAV analyzer with a surviving DC offset
+and requires actual suppression of the test tone; an unmuted tone fails.
+`scripts/audio_verify.py` runs the independent audio demo: PIO underrun,
+DMA/pause/resume/stop, optional Windows line-in capture, and five minutes
+of muted PCM DMA + SD file CRC + DDR LCD frame switching. See docs/audio.md.

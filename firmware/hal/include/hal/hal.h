@@ -53,6 +53,17 @@ volatile uint16_t *hal_video_frame(unsigned slot);
 hal_result_t hal_video_present(unsigned slot);
 hal_result_t hal_video_stop(void);
 void hal_video_status(void);
+/* Stereo PCM word: signed left in bits15:0, signed right in bits31:16.
+   Single main-loop owner. DMA ring must remain allocated until stop succeeds. */
+typedef struct {uint32_t sample_rate,control,level,frames,played,underruns,overruns,fetched,wraps,errors,busy,amplifier,last_sample;} hal_audio_info_t;
+void hal_audio_get_info(hal_audio_info_t *info);
+hal_result_t hal_audio_stop(void);
+hal_result_t hal_audio_start(void);
+void hal_audio_pause(void);
+void hal_audio_mute(unsigned muted);
+hal_result_t hal_audio_write(const uint32_t *pcm,unsigned frames,unsigned *written);
+hal_result_t hal_audio_ring_begin(uint32_t *ring,unsigned capacity_frames);
+hal_result_t hal_audio_ring_write(const uint32_t *pcm,unsigned frames,unsigned *written);
 void hal_reboot(void) __attribute__((noreturn));
 #ifdef __cplusplus
 }

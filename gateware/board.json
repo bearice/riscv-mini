@@ -175,5 +175,21 @@
     "bounce_bytes": 4096,
     "max_blocks_per_command": 8,
     "status": "M6 native15MHz reads pass; stable native7.5MHz write/read. Hotplug acceptance skipped per user. See docs/m6-validation.md."
+  },
+  "audio": {
+    "part": "PT8211-S",
+    "format": "pcm16_stereo_L_low16_R_high16",
+    "sample_rate_hz": 46875,
+    "bck_hz": 1500000,
+    "bck_pin": "N15",
+    "din_pin": "P15",
+    "ws_pin": "P16",
+    "pa_en_pin": "R16",
+    "ws_low_channel": "right",
+    "fifo_frames": 512,
+    "dma": "sys_wishbone_single_word_ring",
+    "max_ring_frames": 65535,
+    "default_muted": true,
+    "status": "M7 implemented; independent validation in docs/m7-validation.md."
   }
 }

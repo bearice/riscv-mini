@@ -22,6 +22,7 @@ from gateware.memory import SharedNativePort
 from gateware.video import RGBLCD
 from gateware.board_io import BoardIO, WS2812
 from gateware.sd import NativeSD
+from gateware.audio import Audio
 
 class ClockResetGenerator(LiteXModule):
     def __init__(self,platform):
@@ -113,3 +114,11 @@ class MiniSoC(SoCCore):
         self.phy_reset=GPIOOut(platform.request('shared_phy_reset_n'),reset=0)
         self.timer0.add_uptime()
         self.timer1=Timer();self.irq.add('timer1',use_loc_if_exists=True)
+        platform.add_extension([('audio_dac',0,
+            Subsignal('bck',Pins('N15')),Subsignal('din',Pins('P15')),
+            Subsignal('ws',Pins('P16')),Subsignal('pa_en',Pins('R16')),IOStandard('LVCMOS33'))])
+        audio_bus=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
+        self.bus.add_master(name='audio_dma',master=audio_bus)
+        self.audio=Audio(platform.request('audio_dac'),audio_bus)
+        self.add_constant('AUDIO_SAMPLE_RATE',46875)
+        self.add_constant('AUDIO_FIFO_FRAMES',512)

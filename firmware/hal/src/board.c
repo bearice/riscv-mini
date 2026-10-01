@@ -32,6 +32,7 @@ void hal_init(void) {
     timer1_reload_write(CONFIG_CLOCK_FREQUENCY/1000u-1);timer1_ev_pending_write(1);timer1_ev_enable_write(1);timer1_en_write(1);
     board_io_ev_enable_write(1);uart_ev_enable_write(2);hal_irq_runtime_start();
     hal_phys_reset(10);while(hal_ws2812_busy()) {} hal_ws2812_set(0,0,0);
+    hal_audio_stop();hal_audio_mute(1);
 }
 void hal_poll(void) {} /* Deferred device work belongs here as later controllers are added. */
 uint32_t hal_time_ms(void) {
@@ -74,6 +75,7 @@ hal_result_t hal_phys_reset(unsigned hold_ms) {
     phy_reset_out_write(0);hal_delay_ms(hold_ms);phy_reset_out_write(1);return HAL_OK;
 }
 void hal_reboot(void) {
+    hal_audio_stop();
     video_stop();hal_irq_save();uart_ev_enable_write(0);timer1_ev_enable_write(0);board_io_ev_enable_write(0);
     __asm__ volatile("csrw 0xbc0,zero\ncsrw mie,zero":::"memory");ctrl_reset_write(1);for(;;) {}
 }

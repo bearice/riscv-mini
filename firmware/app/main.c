@@ -13,6 +13,8 @@ static void status(void) {
     hal_sd_info_t sd;hal_sd_get_info(&sd);
     hal_uart_puts("SD native=");hal_uart_hex(sd.native);hal_uart_puts(" width=");hal_uart_hex(sd.bus_width);hal_uart_puts(" hz=");hal_uart_hex(sd.clock_hz);hal_uart_puts(" sectors=");hal_uart_hex(sd.sectors);hal_uart_puts(" present=");hal_uart_hex(sd.present);hal_uart_puts(" ready=");hal_uart_hex(sd.initialized);hal_uart_puts(" reads=");hal_uart_hex(sd.read_blocks);hal_uart_puts(" writes=");hal_uart_hex(sd.written_blocks);hal_uart_puts(" errors=");hal_uart_hex(sd.errors);hal_uart_puts("\r\n");
     hal_video_status();
+    hal_audio_info_t audio;hal_audio_get_info(&audio);
+    hal_uart_puts("AUDIO hz=");hal_uart_hex(audio.sample_rate);hal_uart_puts(" control=");hal_uart_hex(audio.control);hal_uart_puts(" level=");hal_uart_hex(audio.level);hal_uart_puts(" underruns=");hal_uart_hex(audio.underruns);hal_uart_puts(" errors=");hal_uart_hex(audio.errors);hal_uart_puts(" amp=");hal_uart_hex(audio.amplifier);hal_uart_puts("\r\n");
     hal_stats_t stats;hal_get_stats(&stats);
     hal_uart_puts("IRQ timer=");hal_uart_hex(stats.timer_irqs);hal_uart_puts(" uart=");hal_uart_hex(stats.uart_irqs);hal_uart_puts(" buttons=");hal_uart_hex(stats.button_irqs);hal_uart_puts(" drops=");hal_uart_hex(stats.uart_drops);hal_uart_puts(" unhandled=");hal_uart_hex(stats.unhandled_irqs);hal_uart_puts("\r\n");
     hal_uart_puts("IO leds=");hal_uart_hex(hal_leds_get());hal_uart_puts(" keys=");hal_uart_hex(hal_buttons_read());hal_uart_puts(" dip=");hal_uart_hex(hal_switches_read());hal_uart_puts("\r\n");
