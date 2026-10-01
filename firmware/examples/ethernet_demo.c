@@ -169,44 +169,14 @@ static void swap_frame(void) {
     }
     hal_uart_puts(hal_video_present(frame)==HAL_OK?"FRAME PASS\r\n":"FRAME FAIL\r\n");
 }
-static unsigned parser_check(void) {
-    static uint8_t original[1514];
-    static const unsigned lengths[]={0,1,31,32,63,64,255,511,1024,1472};
-    for(unsigned i=0;i<sizeof(lengths)/sizeof(lengths[0]);++i) {
-        unsigned length=42+lengths[i];memset(original,0,length);
-        memcpy(original,echo_mac,6);original[6]=2;original[11]=7;put16(original+12,0x0800);
-        original[14]=0x45;put16(original+16,length-14);original[22]=64;original[23]=17;
-        original[26]=169;original[27]=254;original[28]=48;original[29]=203;
-        memcpy(original+30,echo_ip,4);put16(original+34,4567);put16(original+36,1234);
-        put16(original+38,length-34);
-        for(unsigned j=42;j<length;++j)original[j]=j*37u+i;
-        unsigned value=(~sum_bytes(original+34,length-34,sum_bytes(original+26,8,17+length-34)))&0xffff;
-        put16(original+40,value?value:0xffff);put16(original+24,checksum(original+14,20));
-        memcpy(packet,original,length);
-        if(packet_reply(packet,length)!=length || checksum(packet+14,20) ||
-           sum_bytes(packet+34,length-34,sum_bytes(packet+26,8,17+length-34))!=0xffff ||
-           net16(packet+34)!=1234 || net16(packet+36)!=4567 || memcmp(packet+42,original+42,length-42))return 0;
-        for(unsigned short_length=0;short_length<length;++short_length) {
-            memcpy(packet,original,length);if(packet_reply(packet,short_length))return 0;
-        }
-        memcpy(packet,original,length);packet[40]^=1;if(packet_reply(packet,length))return 0;
-        memcpy(packet,original,length);packet[24]^=1;if(packet_reply(packet,length))return 0;
-        memcpy(packet,original,length);put16(packet+20,0x2000);put16(packet+24,0);put16(packet+24,checksum(packet+14,20));
-        if(packet_reply(packet,length))return 0;
-    }
-    memset(packet,0,42);memset(packet,255,6);packet[22]=2;packet[27]=7;
-    put16(packet+12,0x0806);put16(packet+14,1);put16(packet+16,0x0800);packet[18]=6;packet[19]=4;
-    put16(packet+20,1);memcpy(packet+38,echo_ip,4);
-    if(packet_reply(packet,41) || packet_reply(packet,42)!=42 || net16(packet+20)!=2 || memcmp(packet+22,echo_mac,6))return 0;
-    return 1;
-}
+
 int main(void) {
     hal_init();
     if(hal_eth_get_mac(echo_mac)!=HAL_OK || (echo_mac[0]&3)!=2) {
         hal_uart_puts("FLASH UID/MAC FAIL\r\n");for(;;)hal_poll();
     }
     hal_eth_stop(); /* Avoid filling packet slots while displays initialize. */
-    if(!parser_check()) {hal_uart_puts("NETWORK PARSER FAIL\r\n");for(;;)hal_poll();}
+    if(!packet_check(packet)) {hal_uart_puts("NETWORK PARSER FAIL\r\n");for(;;)hal_poll();}
     hal_uart_puts("NETWORK PARSER PASS: checksums, odd/MTU lengths, truncation, fragments, ARP\r\n");
     unsigned ready=hal_sd_mount()==HAL_OK;hal_spi_lcd_show(ready);hal_spi_lcd_network(echo_mac,echo_ip);hal_video_init();
     hal_eth_init();

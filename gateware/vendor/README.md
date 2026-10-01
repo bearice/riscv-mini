@@ -19,7 +19,15 @@ DDR 代码/栈测试验证通过。正常 DLL-on、高频率、其他颗粒尚�
 
 sdcore.py 来自锁定的 LiteSDCard commit
 17718d9258ac2dd62ac23e2eecd7ac613a050986，保留原版权和 BSD-2-Clause 标识。
-唯一功能补丁是将 cmd_crc 连接到 cmd_event.crc，并在响应 CRC 不符时置 cmd_error。
-原版发现 CRC 不符却把 CRC 状态硬连为零，软件看不到失败。
-sim/test_sd.py 在原版返回成功的坏 CRC 响应上失败，本地补丁返回 done/error/crc=1。
-不修改命令格式、PHY 或数据 CRC 算法。更新依赖时须核对是否已上游修复。
+本地补丁包括：
+
+- 将 cmd_crc 连接到 cmd_event.crc，并在响应 CRC 不符时置 cmd_error。
+  原版把 CRC 状态硬连为零；sim/test_sd.py 的坏 CRC 响应在原版失败，
+  本地补丁返回 done/error/crc=1。
+- M9 在 PHY 读请求侧加入寄存的描述符 FIFO（接线见 gateware/sd.py），
+  block_length 保持连续有效，读块计数仅在 valid & ready 时增加。
+  这样避免请求/块边界计数的组合环路，并保持 PHY 停顿时的请求所有权。
+  sim/test_sd.py 验证早期请求、长停顿、精确块数和超时/终止清空。
+
+不修改命令格式、PHY 或数据 CRC 算法。更新依赖时须逐项核对补丁，
+并重新运行模拟、PnR 及真实 SD 多块读写验收。

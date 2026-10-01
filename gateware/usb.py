@@ -69,7 +69,10 @@ class USBHost(LiteXModule):
         # T15's incoming clock route is too slow for the ULPI output setup
         # budget. Regenerate the same synchronous 60MHz clock on a PLL route.
         self.ulpi_pll=pll=GW2APLL(devicename=soc.platform.devicename,device=soc.platform.device)
-        self.comb += pll.reset.eq(~soc.phy_reset.out.storage|~self._enable.storage)
+        # The init FSM has synchronous state resets. Disabling its PLL can
+        # stop the clock before ready/id clear, leaving stale status in sys.
+        # Keep the clock running for USB-only stop; F10 still resets the PLL.
+        self.comb += pll.reset.eq(~soc.phy_reset.out.storage)
         pll.register_clkin(pads.clk,60e6)
         # 225 degrees is a 135-degree advance modulo one period. Compensate
         # the incoming/PLL/global insertion before the external sampling edge.

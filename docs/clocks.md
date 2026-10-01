@@ -45,3 +45,8 @@ hold 检查，初始化输出仅增加一个 setup 周期，没有用对应 hold
 模式并重新初始化，保持 F10 释放。ULPI PLL lock 参与初始化域复位；USB
 48 MHz 域另有 lock 和 OHCI control reset。USB PHY clock 与 sys 名义频率相同
 不代表同步，二者之间仍需 CDC。
+
+M10 修复连续停止后 ready/ID 残留：USB-only disable 保持 ULPI PLL 运行，
+以 enable 复位初始化 FSM，确保同步寄存器有时钟完成清零。F10 物理复位仍
+复位该 PLL。当前 rPLL、PRIMARY、LW 分别为 4/4、8/8、8/8，完整占用见
+[M10 资源报告](m10-review.md)。

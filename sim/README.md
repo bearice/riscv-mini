@@ -75,3 +75,16 @@ electrical timing or HID input. `scripts/ethernet_verify.py --usb` checks the
 connected FS HID receiver, three local software restarts, shared F10 reset,
 DDR HCCA alignment, OHCI progress and <=5 minute media coexistence on hardware.
 Physical keyboard transitions remain a separate acceptance step. See docs/usb.md.
+
+`sim/test_build_report.py` checks routed resource extraction, including full
+PLL/global clock usage, setup/hold violations and rejection of incomplete reports.
+It uses captured resource rows and temporary reports; it does not run synthesis.
+
+Run all local checks from the repository root (no board or programming required):
+
+```powershell
+Get-ChildItem sim/test_*.py | ForEach-Object {
+    & .venv/Scripts/python.exe $_.FullName
+    if ($LASTEXITCODE -ne 0) { throw "Failed: $($_.Name)" }
+}
+```

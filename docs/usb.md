@@ -45,6 +45,18 @@ USB. A USB-only restart uses STP and does not reset F10 or Ethernet. Reboot
 stops USB before returning to ROM. `hal_usb_get_info` exposes PHY status,
 VID/PID, interfaces, report/event counters, errors, root-port status and HCCA.
 
+M10 keeps the ULPI PLL running while the USB enable CSR is zero, so the
+synchronous initialization FSM can clear ready/ID. Resetting that PLL on
+disable was observed to leave ready=1 after repeated stops. F10 still resets
+the PLL; the domain's enable/reset/lock logic still holds the FSM in reset.
+The regression uses the real `test usb stop/restart` firmware commands;
+PHY FSM simulation alone cannot reproduce a stopped physical PLL.
+
+Current on-board commands are `test usb`, `test usb stop/restart`,
+`test usb input`, `test usb leds ...` and `test phys`. Batch execution uses
+`scripts/firmware_verify.py`; input and physical LED acceptance remain manual.
+See [firmware commands](firmware-tests.md) and [M10 review](m10-review.md).
+
 The base monitor prints key usages over UART. The independent
 `firmware/examples/ethernet_demo.c` adds `u` for USB diagnostics and `j` for
 USB-only restart to its SD/LCD/audio/network acceptance workload. Run
@@ -76,7 +88,8 @@ max/min 5.5/-0.5 ns. The phase-shifted initialization outputs target the next
 external rising edge after internal clock insertion; their setup-only
 multicycle constraint retains the intervening hold check. Serial TX has an
 explicit 25 ns launch-to-pad bound, including output and clock-insertion budget.
-Hardware acceptance and current device identity belong in m9-validation.md.
+Historical M9 acceptance and identity are in m9-validation.md; current M10
+reset fixes and command acceptance are in m10-review.md.
 
 Primary references: [USB3317 datasheet, §§4.3,6.2,6.3,7.1](https://ww1.microchip.com/downloads/aemDocuments/documents/UNG/ProductDocuments/DataSheets/00002366A.pdf),
 [Spinal OHCI](https://github.com/litex-hub/pythondata-misc-usb_ohci/tree/17c1d3d6548ea267e19aec3cb6d2e64335a1bb2a),

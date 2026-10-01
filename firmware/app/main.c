@@ -1,6 +1,7 @@
 /* Minimal DDR-resident base application; public device APIs live in hal/, reusing drivers/ backends. */
 #include <hal/hal.h>
 #include <string.h>
+#include "tests.h"
 static int parse_hex(const char *p,unsigned digits,unsigned *value) {
     unsigned n=0;for(unsigned i=0;i<digits;++i) {unsigned char c=p[i];unsigned d=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:16;if(d>=16)return 0;n=(n<<4)|d;}
     if(p[digits])return 0;
@@ -39,17 +40,10 @@ int main(void) {
     hal_eth_info_t identity;hal_eth_get_info(&identity);
     if(spi_lcd_ready && identity.uid_length)hal_spi_lcd_network(identity.mac,0);
     unsigned last_link=0;
-    status();hal_uart_puts("Commands: help, status, ls, reboot, io, led HH, rgb RRGGBB (! also resets)\r\n> ");
+    status();hal_uart_puts("Commands: help, status, ls, reboot, io, led HH, rgb RRGGBB, test (! also resets)\r\n> ");
     char line[32];unsigned used=0,overflow=0;
     for(;;) {
-        hal_poll();
-        hal_usb_key_t key;
-        while(hal_usb_key_take(&key)==HAL_OK) {
-            hal_uart_puts(key.pressed?"\r\nUSB KEY DOWN usage=":"\r\nUSB KEY UP usage=");hal_uart_hex(key.usage);
-            hal_uart_puts(" modifiers=");hal_uart_hex(key.modifiers);hal_uart_puts("\r\n> ");
-        }
-        hal_usb_report_t report;while(hal_usb_report_take(&report)==HAL_OK) {}
-        hal_usb_mouse_t mouse;while(hal_usb_mouse_take(&mouse)==HAL_OK) {}
+        hal_poll();tests_poll();
         hal_eth_info_t link;hal_eth_get_info(&link);
         if(spi_lcd_ready && link.link!=last_link) {hal_spi_lcd_link(link.link);last_link=link.link;}
         unsigned pressed,released;hal_buttons_take(&pressed,&released);
@@ -66,7 +60,8 @@ int main(void) {
             else if(!strncmp(line,"led ",4)) {unsigned value;if(!parse_hex(line+4,2,&value)||value>63)hal_uart_puts("ERR led mask\r\n");else hal_leds_set(value);}
             else if(!strncmp(line,"rgb ",4)) {unsigned value;if(!parse_hex(line+4,6,&value))hal_uart_puts("ERR rgb color\r\n");else if(hal_ws2812_set(value>>16,value>>8,value)!=HAL_OK)hal_uart_puts("BUSY rgb\r\n");}
             else if(!strcmp(line,"ls")) hal_sd_list();
-            else if(!strcmp(line,"help")) hal_uart_puts("help, status, ls, reboot, io, led HH, rgb RRGGBB\r\n");
+            else if(!strcmp(line,"help")) {hal_uart_puts("help, status, ls, reboot, io, led HH, rgb RRGGBB, test\r\n");tests_help();}
+            else if(tests_command(line)) {}
             else if(used) hal_uart_puts("ERR unknown command\r\n");
             used=overflow=0;hal_uart_puts("> ");
         } else if(ch==8 || ch==127) {if(used) {--used;hal_uart_puts("\b \b");}}

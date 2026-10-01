@@ -50,6 +50,11 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 
 基础 monitor 保留 help/status/ls/reboot，并增加正常板级控制命令：`io`、`led HH`、`rgb RRGGBB`。如 `led 01` 亮原理图第零灯，`rgb 200000` 显示低亮度红色。按键事件异步输出 `BUTTON pressed=... released=...`；`status` 显示 IRQ、RX 丢字节及视频欠载计数。
 
+M10 按用户要求增加统一 `test ...` 固件命令，覆盖设备自检与有界并发。
+`test irq` 只为主动触发的 ECALL 放行异常并返回，其他异常仍报告 FAULT。
+验收逻辑在 DDR app，不进入 HAL 驱动或 boot ROM；命令和外部验收边界见
+[固件测试](firmware-tests.md)。
+
 ## 示例与验证
 
 `firmware/examples/hal_demo.c` 是独立 UART 加载示例，不加入基础 monitor。它覆盖 ECALL 处理并返回、timer IRQ、在真实 DDR 栈上运行的确定性计算、deadline 回绕和 UART IRQ echo。
@@ -65,4 +70,4 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 
 原生 SD 的块缓冲、错误取消和运行频率见 [原生 SD](native-sd.md)。M5a 验证页记录当时的 SPI 构建，最新基础版见 [M6 验证](m6-validation.md)。
 
-`hal_flash_uid()` 读取工厂唯一序列号。SPI LCD提供 `hal_spi_lcd_network(mac,ip)` 与 `hal_spi_lcd_link(up)`，新增冒号/句点字形和局部更新。基础monitor显示实际MAC和IP UNCONFIGURED，独立Ethernet示例显示自己拥有的IPv4地址；基础系统没有IP栈，不能把示例IP当作它已配置的地址。见 [Ethernet](ethernet.md) / [M8验证](m8-validation.md)。
+`hal_flash_uid()` 读取工厂唯一序列号。SPI LCD提供 `hal_spi_lcd_network(mac,ip)` 与 `hal_spi_lcd_link(up)`，支持冒号/句点字形和局部更新。基础monitor默认显示实际MAC和IP UNCONFIGURED；显式 `test eth start` 启用测试用 ARP/ICMP/UDP 子集并显示测试 IP，`test eth stop` 恢复未配置状态。独立Ethernet示例也拥有自己的测试地址，HAL本身不提供完整IP栈。见 [Ethernet](ethernet.md) / [M8验证](m8-validation.md)。

@@ -1,6 +1,6 @@
 # riscv-mini
 
-Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片上 bootloader 启动，将 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。默认 `base` 使用原生 SD，另保留 SPI-SD 回退构建，旧 M0–M4 和提频试验的阶段分支、测试命令已移除。
+Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片上 bootloader 启动，将 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。默认 `base` 使用原生 SD，另保留 SPI-SD 回退构建。旧 M0–M4 和提频试验的阶段分支已移除；M10 将板上验收统一为 DDR monitor 的 `test ...` 命令。
 
 ## 当前配置
 
@@ -18,7 +18,7 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | Ethernet | RTL8201F + LiteEth RMII，100 Mbps 全双工；50 MHz PHY REF_CLK，MDIO、2 RX / 2 TX packet slots、Flash UID 派生 MAC |
 | USB Host | USB3317 + Spinal OHCI + TinyUSB Host；FS 12 Mbit/s，48 MHz 收发引擎，DDR 描述符/DMA、IRQ、Boot 键盘/鼠标和 raw HID HAL |
 
-完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。M9 使用第四颗 PLL 为 ULPI 初始化接口提供相移 60 MHz，当前 PLL 为 4/4；CPU/DDR 保持 60/120 MHz。
+完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。M9 使用第四颗 PLL 为 ULPI 初始化接口提供相移 60 MHz，当前 PLL 为 4/4；CPU/DDR 保持 60/120 MHz。当前源码 review、完整资源报告和验收边界见 [M10 收尾](docs/m10-review.md)；PRIMARY 和 LW 时钟资源均为 8/8，扩展前需重新评估时钟布线。
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
@@ -26,7 +26,23 @@ M9 自动枚举/软件复位及五分钟稳定并发结果见 [M9 验证](docs/m
 真实键盘输入验收按用户要求延期。并发窗口前显式等待复位后的本机网络初始化
 流量结束；立即复位后两个未过滤 RX 槽可能溢出并丢 UDP，限制与失败现场均记录在验证页。
 
-M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。M6 原生四位 SD 见 [原生 SD](docs/native-sd.md) / [M6 验证](docs/m6-validation.md)。M7 PT8211/FIFO/DDR ring DMA 已接入，见 [音频](docs/audio.md) / [M7 验证](docs/m7-validation.md)。M8 Ethernet 已接入，见 [Ethernet](docs/ethernet.md) / [M8 验证](docs/m8-validation.md)。M9 USB Host HID 已接入，基础 monitor 在 UART 输出键盘 usage 的按下/释放通知，见 [USB](docs/usb.md)。RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
+M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`、`test ...`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。M6 原生四位 SD 见 [原生 SD](docs/native-sd.md) / [M6 验证](docs/m6-validation.md)。M7 PT8211/FIFO/DDR ring DMA 已接入，见 [音频](docs/audio.md) / [M7 验证](docs/m7-validation.md)。M8 Ethernet 已接入，见 [Ethernet](docs/ethernet.md) / [M8 验证](docs/m8-validation.md)。M9 USB Host HID 已接入，基础 monitor 在 UART 输出键盘 usage 的按下/释放通知，见 [USB](docs/usb.md)。RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
+
+## 固件测试命令
+
+输入 `test` 列出 DDR、Flash、UART/IRQ、SD、两块 LCD、板级 IO、音频、Ethernet、USB 和并发测试命令。完整参数、读写影响和外部验收边界见 [固件测试命令](docs/firmware-tests.md)。例如：
+
+```text
+test ddr
+test sd blocks
+test lcd
+test usb restart
+test audio
+test soak 300
+test lcd clear
+```
+
+网络收发使用 `test eth start/stop`，真实 HID 输入使用 `test usb input`；两秒音调使用显式 `test audio tone`。这些检查只在请求时执行，boot ROM 不包含任何测试代码。批量自动验收使用 `scripts/firmware_verify.py --reset --soak-seconds 300`，脚本调用固件命令，不要求 USB 拔插或物理键盘输入。
 
 ## 开发环境
 
@@ -43,6 +59,8 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 ```
 
 `bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。`build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件；两种方式都不自动下载。默认产物位于 `build/base/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。
+
+`validation.json` 的 `firmware_sizes` 记录两级固件的 text/data/BSS 和二进制大小；综合构建还记录实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 和所有时钟资源。缺失必要资源或 setup/hold 报告会使构建失败。`board_test` 字段只表示构建脚本未做上板测试，实板结果记录在独立验收 JSON 和验证文档中。软件构建不产生新的 PnR 证据，建议使用不同输出目录保存 FPGA 构建与独立示例。
 
 ## 启动和固件更新
 
@@ -78,8 +96,11 @@ bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载�
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
 | `firmware/app/` | DDR 基础应用和小型串口入口 |
 | `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |
+| `firmware/hal/` | 公共 C/C++ API、trap/IRQ、板级 IO、音频、Ethernet 和 USB Host |
+| `firmware/examples/` | 独立 HAL/SD/音频/网络并发验收应用，通过 UART 装入 DDR |
+| `firmware/vendor/` / `gateware/vendor/` | 固定版本第三方源码、许可证与本地补丁说明 |
 | `scripts/` | 环境、构建、镜像打包、上传和板级验收 |
 | `sim/` | SPI、DDR 调度、视频扫描、镜像/传输协议验证 |
 | `docs/` | 当前启动/外围计划；旧阶段文档保留历史证据 |
 
-历史 `--stage`、提频参数、内存/SD 写测/换帧测试命令不再适用于当前源码。旧验收文档记录的是各自当时的实现和结果，不是当前基础版本的测试声明。源码仓库在本目录，父目录 `../docs/` / `../examples/` 为硬件参考资料。
+历史 `--stage`、提频参数和旧阶段命令不再适用于当前 monitor；当前验收使用上面的 `test ...` 命令。旧验收文档记录的是各自当时的实现和结果，不是当前基础版本的测试声明。源码仓库在本目录，父目录 `../docs/` / `../examples/` 为硬件参考资料。

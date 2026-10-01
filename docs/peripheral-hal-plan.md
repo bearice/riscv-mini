@@ -27,7 +27,7 @@
 | `examples/WS2812` | 单像素串行时序参考；以 60 MHz 重算时序 |
 | `examples/RGB_lcd/480x272_4.3inch_lcd`、`examples/SPI_lcd` | 已接入并上板验证的两块显示屏 |
 | `gateware/soc.py`、`gateware/board.json`、`firmware/drivers/`、`requirements.in` | 当前 SoC、频率、软件接口和固定依赖 |
-| `build/m4/gateware/impl/pnr/project.rpt.txt` | 当前资源占用，非未来估算 |
+| `build/m10-release/gateware/impl/pnr/project.rpt.txt` / [M10 收尾](m10-review.md) | 当前实际资源与验收范围；M4 数字仅为历史比较 |
 
 M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、FatFs、独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。M6 默认使用原生四位 SD + DMA，SPI-SD 为独立构建回退；M7 已接入 PT8211/FIFO/DDR PCM ring DMA，默认静音。M8 已接入 LiteEth/RTL8201F 原始帧 HAL；M9 已接入 OHCI/TinyUSB Host，嵌套中断和 RTOS 尚未接入。
 
@@ -192,12 +192,16 @@ USB PHY 的 60 MHz 与 CPU 的 60 MHz 异步，不可因频率相同省略 CDC�
 
 原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，M6 BSRAM 占用 18/46；M6 boot 镜像 6,560 字节，DDR app 镜像 24,704 字节（包含 48 字节 header）。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
 
-PLL 总数初步够用，但 BSRAM 推断粒度、长线/时钟布线和新增 OHCI Logic 必须重新 PnR。不能用“剩 63% Logic”保证所有外设一定同时装得下。每阶段记录资源增量；若超预算，先减 packet slots/FIFO 与调试模块，避免削弱 DDR/LCD 已验证的可靠性。
+原规划的 PLL 预算已用完。BSRAM 推断粒度、CLS 打包、长线与时钟布线都限制后续扩展，不能用历史 M4 的 Logic 余量保证新外设装得下。扩展前必须重新 PnR；若超预算，先评估 packet slots/FIFO 与时钟复用，避免削弱 DDR/LCD 已验证的可靠性。
 
 M9 实际 PnR 为 Logic 15,528/20,736、Register 8,414/16,173、BSRAM
 34/46、rPLL **4/4**，setup/hold 均无违反端点。USB 需要两颗 PLL；
 当前没有空闲 PLL。完整当前频率见 [时钟树](clocks.md)，上板验收边界见
 [M9 验证](m9-validation.md)，不能将历史 M4 的余量作为当前资源预算。
+
+M10 当前 Logic 15,445、Register 8,431、CLS 9,182/10,368，BSRAM 34/46；
+PLL、PRIMARY、LW 均已用满。USB stop 复位修正和 DDR 固件 `test ...` 命令见
+[M10 收尾](m10-review.md) / [固件测试](firmware-tests.md)，ROM 仍为 6,568 字节。
 
 ### 4.3 DDR 访问策略
 
