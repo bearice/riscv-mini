@@ -238,6 +238,31 @@ static void usb_status(void) {
     value("USB initialized=",u.initialized);value(" phy_ready=",u.phy_ready);value(" phy=",u.phy_id);
     value(" connected=",u.connected);value(" VID=",u.vid);value(" PID=",u.pid);value(" HID=",u.hid_interfaces);
     value(" frame=",u.frame);value(" HCCA=",u.hcca);value(" errors=",u.errors);hal_uart_puts("\r\n");
+    value("USB key_events=",u.key_events);value(" mouse_events=",u.mouse_events);
+    value(" key_drops=",u.key_drops);value(" mouse_drops=",u.mouse_drops);
+    value(" report_drops=",u.report_drops);hal_uart_puts("\r\n");
+}
+static unsigned usb_schedule_ok(unsigned hcca,unsigned interfaces) {
+    /* Read a bounded snapshot of the real OHCI periodic ED chain. Disable
+       CPU IRQs so the HCD cannot free/reassign TDs during this check. */
+    unsigned state=hal_irq_save(),seen[32],count=0,endpoints=0,ok=1;
+    unsigned address=*(volatile unsigned *)hcca;
+    for(unsigned budget=0;address && budget<16;++budget) {
+        if(address<0x40800000u || address>0x40bffff0u || (address&15u)) {ok=0;break;}
+        volatile unsigned *ed=(volatile unsigned *)address;
+        if(!(ed[0]&(1u<<14))) {
+            unsigned head=ed[2]&~15u,tail=ed[1]&~15u;
+            if(head<0x40800000u || head>0x40bffff0u || tail<0x40800000u || tail>0x40bffff0u) {ok=0;break;}
+            for(unsigned i=0;i<count;++i)if(seen[i]==head || seen[i]==tail)ok=0;
+            if(!ok)break;
+            seen[count++]=head;seen[count++]=tail;++endpoints;
+        }
+        address=ed[3];
+    }
+    hal_irq_restore(state);
+    if(address || endpoints<interfaces)ok=0;
+    if(!ok)hal_uart_puts("USB periodic TD ownership FAIL\r\n");
+    return ok;
 }
 static unsigned usb_check(void) {
     uint32_t start=hal_time_ms();hal_usb_info_t before,after;
@@ -245,8 +270,9 @@ static unsigned usb_check(void) {
     do {cooperate();hal_usb_get_info(&before);}while(!before.connected && hal_time_ms()-start<10000);
     wait_ms(20);hal_usb_get_info(&after);usb_status();
     return after.initialized && after.phy_ready && after.connected && after.hid_interfaces &&
-        after.phy_id==0x60424 && !after.phy_error && !after.errors && !after.key_drops && !after.report_drops &&
-        after.frame!=before.frame && after.hcca>=0x40800000 && after.hcca<0x40c00000 && !(after.hcca&255);
+        after.phy_id==0x60424 && !after.phy_error && !after.errors && !after.key_drops && !after.mouse_drops && !after.report_drops &&
+        after.frame!=before.frame && after.hcca>=0x40800000 && after.hcca<0x40c00000 && !(after.hcca&255) &&
+        usb_schedule_ok(after.hcca,after.hid_interfaces);
 }
 static unsigned usb_restart(void) {
     hal_usb_stop();wait_ms(20);hal_usb_info_t stopped;hal_usb_get_info(&stopped);

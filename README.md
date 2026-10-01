@@ -22,8 +22,10 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
+独立 [键鼠图形 demo](docs/usb-input-demo.md) 在大 LCD 上显示鼠标光标、键盘文字和输入状态，通过 UART 装入 DDR；源码为 `firmware/examples/usb_input_demo.c`。
+
 M9 自动枚举/软件复位及五分钟稳定并发结果见 [M9 验证](docs/m9-validation.md)。
-真实键盘输入验收按用户要求延期。并发窗口前显式等待复位后的本机网络初始化
+2026-10-01 已完成实际键盘和鼠标输入验收，并修复 OHCI 多端点共用 TD 的故障，见 [输入验证](docs/usb-input-validation.md)。该补丁尚未写入 Flash。并发窗口前显式等待复位后的本机网络初始化
 流量结束；立即复位后两个未过滤 RX 槽可能溢出并丢 UDP，限制与失败现场均记录在验证页。
 
 M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`、`test ...`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。M6 原生四位 SD 见 [原生 SD](docs/native-sd.md) / [M6 验证](docs/m6-validation.md)。M7 PT8211/FIFO/DDR ring DMA 已接入，见 [音频](docs/audio.md) / [M7 验证](docs/m7-validation.md)。M8 Ethernet 已接入，见 [Ethernet](docs/ethernet.md) / [M8 验证](docs/m8-validation.md)。M9 USB Host HID 已接入，基础 monitor 在 UART 输出键盘 usage 的按下/释放通知，见 [USB](docs/usb.md)。RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
@@ -97,7 +99,7 @@ bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载�
 | `firmware/app/` | DDR 基础应用和小型串口入口 |
 | `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |
 | `firmware/hal/` | 公共 C/C++ API、trap/IRQ、板级 IO、音频、Ethernet 和 USB Host |
-| `firmware/examples/` | 独立 HAL/SD/音频/网络并发验收应用，通过 UART 装入 DDR |
+| `firmware/examples/` | 独立 HAL/SD/音频/网络验收应用和 RGB LCD 键鼠 demo，通过 UART 装入 DDR |
 | `firmware/vendor/` / `gateware/vendor/` | 固定版本第三方源码、许可证与本地补丁说明 |
 | `scripts/` | 环境、构建、镜像打包、上传和板级验收 |
 | `sim/` | SPI、DDR 调度、视频扫描、镜像/传输协议验证 |

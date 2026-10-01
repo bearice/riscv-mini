@@ -68,7 +68,11 @@ Dock U9 是 RTL8201F-VB-CG，10/100 Mbps PHY，以 RMII 连接 FPGA。
 
 RMII 50 MHz 与 sys 60 MHz 之间用异步 FIFO。当前 MDIO 为软件 bitbang，每半周期等待至少 1 µs，MDC ≤500 kHz，无额外 PLL。使用两个 RX 和两个 TX 片上 packet slots；后续网络 DDR ring/DMA 再接系统总线。
 
-MDIO/MDC 的 F16/F14 与 HDMI DDC、屏幕触摸/摄像头的 I²C 路由复用。当前 RGB 像素输出不冲突；接 Ethernet 时保留这两脚给 MDIO，未来触摸需要独立评估总线所有权。
+F14/F16 同时接入 Ethernet MDC/MDIO 和 HDMI DDC、屏幕触摸/摄像头的 I²C 路由；
+不同接口的 SCL/SDA 对应关系需分别核对。用户已于 2026-10-01 确认 R58/R59 空焊，
+这两颗是 PHY 管理线的可选上拉，信号连接仍经过 RN7，不能据此认为 PHY 已隔离。
+当前 Ethernet 使用两脚，未来 I²C 需协调物理线路与控制器所有权；详见
+[Ethernet 引脚说明](ethernet.md)。RGB 像素输出不占用两脚。
 
 ### 3.3 USB Host
 

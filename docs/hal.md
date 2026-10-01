@@ -57,6 +57,10 @@ M10 按用户要求增加统一 `test ...` 固件命令，覆盖设备自检与�
 
 ## 示例与验证
 
+`firmware/examples/usb_input_demo.c` 将 USB Boot 键盘/鼠标事件显示在 RGB LCD：
+美式 ASCII 输入、鼠标光标、按钮/滚轮和错误统计。它用双帧缓冲和光标背景保存，
+只更新非活动帧中的变化区域。构建、UART 加载和 `test demo` 命令见 [键鼠 demo](usb-input-demo.md)。
+
 `firmware/examples/hal_demo.c` 是独立 UART 加载示例，不加入基础 monitor。它覆盖 ECALL 处理并返回、timer IRQ、在真实 DDR 栈上运行的确定性计算、deadline 回绕和 UART IRQ echo。
 
 ```powershell

@@ -25,7 +25,7 @@ boot ROM 仍只有 DDR 初始化和 Flash/UART 装载，不链接这些测试。
 | `test eth parser` | CRC/checksum、UDP MTU/奇数长度、截断、fragment 拒绝、ARP | 使用与独立示例共用的协议验收向量；不是线上收发 |
 | `test eth start` | 启用 ARP/ICMP/UDP1234 回显，SPI LCD 显示 MAC 与 `169.254.20.20` | 需要外部主机发包；每轮有界处理 RX，不保证两个 RX 槽能承受任意突发 |
 | `test eth stop` | 停止回显并恢复 SPI LCD 的 IP UNCONFIGURED | PHY/HAL 仍运行；不修改主机网卡配置 |
-| `test usb` | PHY ID/ready、HID 枚举、错误/队列、DDR HCCA 对齐、OHCI frame 推进 | 接收器空闲也可通过；不能代替真实按键输入 |
+| `test usb` | PHY ID/ready、HID 枚举、错误/队列、DDR HCCA 对齐、OHCI frame 推进，以及实际周期 ED 链的 TD 所有权 | 接收器空闲也可通过；不能代替真实按键输入 |
 | `test usb stop` | 停止 OHCI/PHY 初始化逻辑，检查 ready 清零 | 保持接收器连接，禁用时 ULPI PLL 仍运行以完成状态复位 |
 | `test usb restart` | 停止状态检查、重新初始化、枚举与 OHCI 进度 | 不需要拔插设备 |
 | `test usb input` / `test usb input stop` | 开/关 raw HID 和鼠标事件输出；键盘按下/释放始终输出 | 返回 READY 表示等待实物输入，没有输入时不判 PASS；鼠标坐标为带符号值的 32 位十六进制 |

@@ -11,7 +11,16 @@ Dock 3713 的 RTL8201F 通过 RMII 接入 LiteEth。系统保持 CPU/Wishbone 60
 | MDC / MDIO | F14 / F16 |
 | Ethernet + USB RESET_N | F10，唯一的 `phy_reset` GPIO 所有者 |
 
-F14/F16 与 HDMI DDC、部分触摸/摄像头 I2C 角色冲突；当前 RGB LCD 像素引脚不冲突。未来使用这些复用接口时需明确选定所有者。
+F14/F16 同时路由到 I²C 相关接口和 Ethernet 管理接口：F14 接 HDMI SDA、
+触摸 TP_SDA、摄像头 DVP_SCL 及 PHY MDC；F16 接 HDMI SCL、触摸 TP_SCK、
+摄像头 DVP_SDA 及 PHY MDIO。各接口的 SCL/SDA 标注并非一致，驱动应按目标接口映射。
+
+2026-10-01 用户根据原理图和实物确认 **R58、R59 空焊**。Ethernet 页中它们
+分别是 PHY_MDC、PHY_MDIO 到 3.3 V 的 5.1 kΩ 上拉，原理图也标为不装；
+FPGA 到 PHY 的信号连接经过 RN7 的 22 Ω 电阻，因此 R58/R59 空焊不表示
+MDC/MDIO 与 F14/F16 断开。当前 Ethernet 使用 F14/F16；加入 I²C 时需要
+协调同一物理线路的协议与驱动所有权，不能直接同时启用独立控制器。
+RGB LCD 像素引脚不占用这两脚。依据：Dock 3713 原理图总图与 `P005Ethernet` 页。
 
 ## 硬件与时钟
 

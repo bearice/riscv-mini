@@ -54,8 +54,10 @@ PHY FSM simulation alone cannot reproduce a stopped physical PLL.
 
 Current on-board commands are `test usb`, `test usb stop/restart`,
 `test usb input`, `test usb leds ...` and `test phys`. Batch execution uses
-`scripts/firmware_verify.py`; input and physical LED acceptance remain manual.
+`scripts/firmware_verify.py`; physical input and LED acceptance require manual action.
 See [firmware commands](firmware-tests.md) and [M10 review](m10-review.md).
+Keyboard/mouse input was verified on 2026-10-01 after fixing OHCI dummy-TD
+ownership; see [input validation](usb-input-validation.md). LED output remains untested.
 
 The base monitor prints key usages over UART. The independent
 `firmware/examples/ethernet_demo.c` adds `u` for USB diagnostics and `j` for
@@ -68,7 +70,8 @@ It never asks for or requires physical USB removal.
 traffic from the steady-state soak. It defaults to zero, is recorded outside
 the soak window and is not a UDP retry. Immediate post-reset UDP loss on the
 unfiltered two-slot Ethernet receiver remains a known limitation; see
-[M9 validation](m9-validation.md). Physical keyboard input is postponed.
+[M9 validation](m9-validation.md). Its deferred physical keyboard test was
+subsequently completed with the limited input sequence documented above.
 
 Simulation: `.venv/Scripts/python.exe sim/test_usb_phy.py` exercises the actual
 initialization FSM. It does not prove electrical USB timing or enumeration.
