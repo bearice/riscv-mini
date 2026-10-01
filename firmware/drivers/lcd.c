@@ -13,9 +13,10 @@ static int byte(unsigned dc, unsigned value) {
 }
 static int cmd(unsigned value) { return byte(0,value); }
 static int data(unsigned value) { return byte(1,value); }
-static int window(void) {
+static int window(unsigned first,unsigned last) {
     return cmd(0x2a) && data(0) && data(40) && data(1) && data(23)
-        && cmd(0x2b) && data(0) && data(53) && data(0) && data(187) && cmd(0x2c);
+        && cmd(0x2b) && data((53+first)>>8) && data((53+first)&255)
+        && data((53+last)>>8) && data((53+last)&255) && cmd(0x2c);
 }
 /* Original compact 5x7 row glyphs, bit4 is leftmost. */
 static const unsigned char letters[26][7]={
@@ -33,11 +34,12 @@ static const unsigned char digits[10][7]={
  {30,1,1,14,1,1,30},{2,6,10,18,31,2,2},{31,16,16,30,1,1,30},
  {14,16,16,30,17,17,14},{31,1,2,4,8,8,8},{14,17,17,14,17,17,14},
  {14,17,17,15,1,1,14}};
+static const unsigned char dot[7]={0,0,0,0,0,4,4},colon[7]={0,4,4,0,4,4,0};
 static void text(unsigned x, unsigned y, const char *s) {
     while (*s && x+10<WIDTH) {
         unsigned ch=(unsigned char)*s++;
         const unsigned char *glyph=ch>='A' && ch<='Z' ? letters[ch-'A'] :
-            ch>='0' && ch<='9' ? digits[ch-'0'] : 0;
+            ch>='0' && ch<='9' ? digits[ch-'0'] : ch=='.'?dot:ch==':'?colon:0;
         if (glyph) for (unsigned row=0; row<7; ++row) for (unsigned col=0; col<5; ++col)
             if (glyph[row]&(16u>>col)) for (unsigned a=0; a<2; ++a) for (unsigned b=0; b<2; ++b)
                 frame[(y+2*row+a)*WIDTH+x+2*col+b]=0xffff;
@@ -60,7 +62,7 @@ int lcd_show(unsigned sd_ready) {
     }
     text(60,8,"RISCV MINI"); text(48,26,"DDR 128 MB");
     text(36,110,sd_ready ? "SD CARD READY" : "SD NOT READY");
-    if (!window()) goto fail;
+    if (!window(0,HEIGHT-1)) goto fail;
     pins|=1; lcd_gpio_out_write(pins);
     for (unsigned i=0; i<WIDTH*HEIGHT; ++i)
         if (!spi_transfer(1,frame[i],16,0)) goto fail;
@@ -68,4 +70,35 @@ int lcd_show(unsigned sd_ready) {
     return 1;
 fail:
     spi_select(1,0); puts_uart("LCD transfer failed\r\n"); return 0;
+}
+
+static int upload_rows(unsigned first,unsigned last) {
+    spi_select(1,1);
+    if(!window(first,last)) {spi_select(1,0);return 0;}
+    pins|=1;lcd_gpio_out_write(pins);
+    int ok=1;
+    for(unsigned i=first*WIDTH;ok && i<(last+1)*WIDTH;++i)ok=spi_transfer(1,frame[i],16,0);
+    spi_select(1,0);return ok;
+}
+int lcd_network(const uint8_t mac[6],const uint8_t ip[4]) {
+    if(!mac)return 0;
+    for(unsigned y=46;y<104;++y)for(unsigned x=1;x<WIDTH-1;++x)frame[y*WIDTH+x]=0;
+    static const char hex[]="0123456789ABCDEF";char address[18];
+    for(unsigned i=0;i<6;++i) {address[3*i]=hex[mac[i]>>4];address[3*i+1]=hex[mac[i]&15];address[3*i+2]=':';}
+    address[17]=0;text(18,48,address);
+    char line[20]="IP ";unsigned n=3;
+    if(ip) {
+        for(unsigned i=0;i<4;++i) {
+            unsigned value=ip[i];
+            if(value>=100)line[n++]=(value/100)+'0';
+            if(value>=10)line[n++]=((value/10)%10)+'0';
+            line[n++]=(value%10)+'0';if(i<3)line[n++]='.';
+        }
+        line[n]=0;text(12,68,line);
+    } else text(12,68,"IP UNCONFIGURED");
+    text(12,88,"ETH LINK DOWN");return upload_rows(46,103);
+}
+int lcd_link(unsigned up) {
+    for(unsigned y=88;y<102;++y)for(unsigned x=1;x<WIDTH-1;++x)frame[y*WIDTH+x]=0;
+    text(12,88,up?"ETH LINK UP":"ETH LINK DOWN");return upload_rows(88,101);
 }

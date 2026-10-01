@@ -13,6 +13,14 @@ static void status(void) {
     hal_sd_info_t sd;hal_sd_get_info(&sd);
     hal_uart_puts("SD native=");hal_uart_hex(sd.native);hal_uart_puts(" width=");hal_uart_hex(sd.bus_width);hal_uart_puts(" hz=");hal_uart_hex(sd.clock_hz);hal_uart_puts(" sectors=");hal_uart_hex(sd.sectors);hal_uart_puts(" present=");hal_uart_hex(sd.present);hal_uart_puts(" ready=");hal_uart_hex(sd.initialized);hal_uart_puts(" reads=");hal_uart_hex(sd.read_blocks);hal_uart_puts(" writes=");hal_uart_hex(sd.written_blocks);hal_uart_puts(" errors=");hal_uart_hex(sd.errors);hal_uart_puts("\r\n");
     hal_video_status();
+    hal_eth_info_t eth;hal_eth_get_info(&eth);
+    hal_uart_puts("ETH phy=");hal_uart_hex(eth.phy_id);hal_uart_puts(" addr=");hal_uart_hex(eth.phy_address);
+    hal_uart_puts(" ready=");hal_uart_hex(eth.initialized);hal_uart_puts(" link=");hal_uart_hex(eth.link);
+    hal_uart_puts(" mbps=");hal_uart_hex(eth.speed_mbps);hal_uart_puts(" full=");hal_uart_hex(eth.full_duplex);
+    hal_uart_puts(" ref_hz=");hal_uart_hex(eth.ref_clock_hz);hal_uart_puts(" MAC=");
+    const char hex[]="0123456789ABCDEF";
+    for(unsigned i=0;i<6;++i) {if(i)hal_uart_putc(':');hal_uart_putc(hex[eth.mac[i]>>4]);hal_uart_putc(hex[eth.mac[i]&15]);}
+    hal_uart_puts("\r\n");
     hal_audio_info_t audio;hal_audio_get_info(&audio);
     hal_uart_puts("AUDIO hz=");hal_uart_hex(audio.sample_rate);hal_uart_puts(" control=");hal_uart_hex(audio.control);hal_uart_puts(" level=");hal_uart_hex(audio.level);hal_uart_puts(" underruns=");hal_uart_hex(audio.underruns);hal_uart_puts(" errors=");hal_uart_hex(audio.errors);hal_uart_puts(" amp=");hal_uart_hex(audio.amplifier);hal_uart_puts("\r\n");
     hal_stats_t stats;hal_get_stats(&stats);
@@ -24,10 +32,15 @@ int main(void) {
     hal_uart_puts("\r\nriscv-mini | RV32IM | DDR application at 40800000\r\n");
     hal_uart_puts("SYSTEM READY sd=");hal_uart_hex(sd_ready);hal_uart_puts(" spi_lcd=");hal_uart_hex(spi_lcd_ready);
     hal_uart_puts(" rgb_lcd=");hal_uart_hex(rgb_ready);hal_uart_puts("\r\n");
+    hal_eth_info_t identity;hal_eth_get_info(&identity);
+    if(spi_lcd_ready && identity.uid_length)hal_spi_lcd_network(identity.mac,0);
+    unsigned last_link=0;
     status();hal_uart_puts("Commands: help, status, ls, reboot, io, led HH, rgb RRGGBB (! also resets)\r\n> ");
     char line[32];unsigned used=0,overflow=0;
     for(;;) {
         hal_poll();
+        hal_eth_info_t link;hal_eth_get_info(&link);
+        if(spi_lcd_ready && link.link!=last_link) {hal_spi_lcd_link(link.link);last_link=link.link;}
         unsigned pressed,released;hal_buttons_take(&pressed,&released);
         if(pressed|released) {hal_uart_puts("\r\nBUTTON pressed=");hal_uart_hex(pressed);hal_uart_puts(" released=");hal_uart_hex(released);hal_uart_puts("\r\n> ");}
         int received=hal_uart_getc();if(received<0)continue;

@@ -1,6 +1,6 @@
 # 外围设备 HAL 与板级控制器计划
 
-日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，当前验收状态见 [M5a 验证](m5a-validation.md) / [M6 验证](m6-validation.md) / [M7 验证](m7-validation.md)。本页保留外围控制器方案和引脚核对；原生 SD 与音频已接入，Ethernet 和 USB Host 为后续工作。
+日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，当前验收状态见 [M5a 验证](m5a-validation.md) / [M6 验证](m6-validation.md) / [M7 验证](m7-validation.md)。本页保留外围控制器方案和引脚核对；原生SD、音频和Ethernet已接入，见 [M8验证](m8-validation.md)；USB Host为下一阶段。
 
 ## 1. 本轮确定的范围
 
@@ -29,7 +29,7 @@
 | `gateware/soc.py`、`gateware/board.json`、`firmware/drivers/`、`requirements.in` | 当前 SoC、频率、软件接口和固定依赖 |
 | `build/m4/gateware/impl/pnr/project.rpt.txt` | 当前资源占用，非未来估算 |
 
-M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、FatFs、独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。M6 默认使用原生四位 SD + DMA，SPI-SD 为独立构建回退；M7 已接入 PT8211/FIFO/DDR PCM ring DMA，默认静音。Ethernet、USB Host、嵌套中断和 RTOS 尚未接入。
+M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、FatFs、独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。M6 默认使用原生四位 SD + DMA，SPI-SD 为独立构建回退；M7 已接入 PT8211/FIFO/DDR PCM ring DMA，默认静音。M8已接入LiteEth/RTL8201F原始帧HAL；USB Host、嵌套中断和RTOS尚未接入。
 
 本轮把上述新增引脚清单与 M4 生成的 `riscv_mini.cst` 做了静态比对：新增设备之间的重复脚为已识别的 F10；与现有功能重叠的是 T10 复位和 SD 的原 SPI 引脚。该检查不代替 bank 电压、时钟专用引脚、配置复用和布局布线验收。
 
@@ -243,7 +243,7 @@ gateware/peripherals/      新控制器及板级桥接
 | Flash/UART 启动（当前已实现） | 独立 LiteX SPIMaster、受限分区；小 bootloader、DDR 应用 linker、镜像头、UART 恢复；固件存 Flash、载入 DDR | JEDEC/CRC、错误镜像拒绝、读写范围保护；应用 DDR 执行；持久配置与软件复位已通过；按用户要求跳过断电检查 |
 | M6：原生 SD（已接入） | LiteSDCard 四位 7.5 MHz、DMA、FatFs backend；保留 SPI fallback 构建 | 文件 CRC、多块传输、新文件写回、LCD 不欠载；本次按用户要求跳过拔插验收，详见 M6 验证 |
 | M7：音频（已接入） | PT8211 序列器、512 帧 PIO FIFO、DDR PCM ring/单 word DMA | line-in 左右独立音调、46.875 kHz 逻辑周期、静音、PIO 缺样统计及五分钟 SD/LCD 并发通过；见 M7 验证 |
-| M8：Ethernet | MDIO、LiteEth RMII MAC、原始帧 HAL、少量 packet slots、IRQ | PHY ID/链路、ARP/ICMP/UDP、收发 CRC/丢包、拔插网线恢复；不要把 link-up 当作 MAC 验收 |
+| M8：Ethernet（已接入） | RTL8201F MDIO、LiteEth RMII 100M全双工、2 RX/2 TX slots、IRQ、Flash UID派生MAC、SPI屏地址/链路 | 独立ARP/ICMP/UDP示例、五分钟SD/双屏/静音音频并发和拔插恢复；原始槽溢出与UDP实际丢包分别记录，见M8验证 |
 | M9：USB Host HID | 固定 OHCI netlist/TinyUSB；USB3317 初始化/serial bridge；48 MHz 域和 DMA/IRQ；键盘鼠标事件 | LS/FS 枚举、按下/释放/修饰键、鼠标、拔插和复位恢复；与 Ethernet 共用 F10 的联动恢复 |
 | M10：系统收尾 | DMA fairness、统一 reset/错误统计、文档/示例、全部设备同时启用 | 用户指定 **五分钟** 并发运行：DDR/LCD+SD+audio+网络+HID+monitor；无内存错误、无 LCD 欠载、CPU 可响应；各设备断开能恢复 |
 

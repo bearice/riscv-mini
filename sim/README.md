@@ -51,3 +51,13 @@ and requires actual suppression of the test tone; an unmuted tone fails.
 `scripts/audio_verify.py` runs the independent audio demo: PIO underrun,
 DMA/pause/resume/stop, optional Windows line-in capture, and five minutes
 of muted PCM DMA + SD file CRC + DDR LCD frame switching. See docs/audio.md.
+
+`sim/test_ethernet.py` exercises the real LiteEth Wishbone packet SRAM:
+little-endian RX words, two-slot ownership, queue-full/CRC/oversize drops,
+TX slot separation, partial last words under backpressure, and local reset
+clearing queued work. It also verifies Gowin synchronizer preservation attributes.
+It does not prove RMII electrical timing. The independent Ethernet app checks
+ARP/IP/ICMP/UDP parsing on the real CPU; `scripts/ethernet_verify.py` checks
+Flash UID-derived MAC against host computation/ARP, UDP payloads through MTU,
+ping, shared reset, and at most five minutes of SD/display/muted-audio coexistence.
+Raw slot drops and actual UDP timeouts are reported separately. See docs/ethernet.md.

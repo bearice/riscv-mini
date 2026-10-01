@@ -16,7 +16,7 @@ def main():
     failed = []
     for package, module in [
         ('migen', 'migen'), ('litex', 'litex'), ('litex-boards', 'litex_boards'),
-        ('litedram', 'litedram'), ('litesdcard', 'litesdcard'), ('litespi', 'litespi'),
+        ('litedram', 'litedram'), ('litesdcard', 'litesdcard'), ('litespi', 'litespi'), ('liteeth','liteeth.phy.rmii'),
         ('pythondata-cpu-vexriscv', 'pythondata_cpu_vexriscv'),
         ('pythondata-software-picolibc', 'pythondata_software_picolibc'),
         ('pythondata-software-compiler-rt', 'pythondata_software_compiler_rt'),

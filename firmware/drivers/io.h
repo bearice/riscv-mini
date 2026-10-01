@@ -10,6 +10,8 @@ void io_hex(uint32_t value);
 int spi_transfer(unsigned lcd, unsigned value, unsigned bits, unsigned *received);
 void spi_select(unsigned lcd, unsigned selected);
 int lcd_show(unsigned sd_ready);
+int lcd_network(const uint8_t mac[6],const uint8_t ip[4]);
+int lcd_link(unsigned up);
 int sd_mount(void);
 int sd_list(void);
 

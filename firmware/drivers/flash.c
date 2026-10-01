@@ -3,6 +3,7 @@
 #include "flash.h"
 #include <generated/csr.h>
 static unsigned capacity;
+static uint32_t jedec;
 unsigned flash_size(void) { return capacity; }
 static void select_flash(unsigned active) { flash_spi_cs_write(0x10000u|!!active); }
 static int transfer(unsigned value, unsigned bits, unsigned *received) {
@@ -45,6 +46,7 @@ int flash_init(uint32_t *id) {
     unsigned value=0;
     select_flash(1);int ok=transfer(0x9f,8,0)&&transfer(0xffffff,24,&value);select_flash(0);
     if(id) *id=value;
+    jedec=ok?value:0;
     /* Restrict IDs to supported 3.3 V parts; don't guess erase geometry for unknown devices. */
     int supported=value==0xef4016u || value==0xef7016u || value==0x0b4017u;
     if(ok && supported && ready(3000)) {capacity=1u<<(value&255u);return 1;}
@@ -78,4 +80,22 @@ int flash_program(unsigned address, const void *data, unsigned length) {
         address+=count;p+=count;length-=count;
     }
     return 1;
+}
+
+/* Factory UID, not a user-programmed data sector. XTX B uses SFDP 0x194;
+   supported Winbond parts use 4B + four dummy bytes and an 8-byte UID. */
+int flash_uid(uint8_t uid[16],unsigned *length) {
+    if(!uid || !length || !capacity)return 0;
+    *length=0;unsigned count=jedec==0x0b4017u?16u:8u,value;
+    select_flash(1);
+    int ok=jedec==0x0b4017u ? transfer(0x5a000194u,32,0)&&transfer(0xff,8,0) :
+        transfer(0x4b,8,0)&&transfer(0xffffffffu,32,0);
+    unsigned any=0,not_ff=0;
+    for(unsigned i=0;ok && i<count;++i) {
+        ok=transfer(0xff,8,&value);
+        if(ok) {uid[i]=value;any|=uid[i];not_ff|=uid[i]^255u;}
+    }
+    select_flash(0);if(!ok || !any || !not_ff)return 0;
+    for(unsigned i=count;i<16;++i)uid[i]=0;
+    *length=count;return 1;
 }

@@ -26,6 +26,7 @@ static hal_result_t disk_result(DRESULT r) {return r==RES_OK?HAL_OK:r==RES_PARER
 hal_result_t hal_sd_read(uint32_t sector,void *data,unsigned count) {return data?disk_result(disk_read(0,data,sector,count)):HAL_INVALID;}
 hal_result_t hal_sd_write(uint32_t sector,const void *data,unsigned count) {return data?disk_result(disk_write(0,data,sector,count)):HAL_INVALID;}
 hal_result_t hal_flash_probe(uint32_t *id,unsigned *bytes) {int ok=flash_init(id);if(bytes)*bytes=flash_size();return result(ok);}
+hal_result_t hal_flash_uid(uint8_t uid[16],unsigned *length) {return uid && length?result(flash_uid(uid,length)):HAL_INVALID;}
 hal_result_t hal_flash_read(unsigned address,void *data,unsigned length) {return data?result(flash_read(address,data,length)):HAL_INVALID;}
 hal_result_t hal_flash_program(unsigned address,const void *data,unsigned length) {
     if(!data || address<MINI_FLASH_WRITABLE || address>=MINI_FLASH_SIZE || length>MINI_FLASH_SIZE-address)return HAL_INVALID;
@@ -36,6 +37,8 @@ hal_result_t hal_flash_erase(unsigned address) {
     return result(flash_erase_sector(address));
 }
 hal_result_t hal_spi_lcd_show(unsigned sd_ready) {return result(lcd_show(sd_ready));}
+hal_result_t hal_spi_lcd_network(const uint8_t mac[6],const uint8_t ip[4]) {return mac?result(lcd_network(mac,ip)):HAL_INVALID;}
+hal_result_t hal_spi_lcd_link(unsigned up) {return result(lcd_link(!!up));}
 hal_result_t hal_video_init(void) {return result(video_init());}
 volatile uint16_t *hal_video_frame(unsigned slot) {return video_frame(slot);}
 hal_result_t hal_video_present(unsigned slot) {return slot>1?HAL_INVALID:result(video_present(slot));}

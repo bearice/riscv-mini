@@ -23,6 +23,7 @@ from gateware.video import RGBLCD
 from gateware.board_io import BoardIO, WS2812
 from gateware.sd import NativeSD
 from gateware.audio import Audio
+from gateware.ethernet import add_ethernet
 
 class ClockResetGenerator(LiteXModule):
     def __init__(self,platform):
@@ -122,3 +123,4 @@ class MiniSoC(SoCCore):
         self.audio=Audio(platform.request('audio_dac'),audio_bus)
         self.add_constant('AUDIO_SAMPLE_RATE',46875)
         self.add_constant('AUDIO_FIFO_FRAMES',512)
+        add_ethernet(self)

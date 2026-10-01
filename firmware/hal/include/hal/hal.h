@@ -34,6 +34,21 @@ unsigned hal_switches_read(void); /* bit0..3 = E9,E8,T4,T5; 1 is ON */
 void hal_buttons_take(unsigned *pressed,unsigned *released); /* coalesced transition masks */
 hal_result_t hal_ws2812_set(uint8_t red,uint8_t green,uint8_t blue);
 unsigned hal_ws2812_busy(void);
+/* Single main-loop owner; frames include Ethernet header, exclude preamble/FCS.
+   No IP stack or MAC address filtering is imposed by the raw-frame HAL. */
+#define HAL_ETH_MAX_FRAME 1514u
+typedef struct {uint32_t initialized,phy_address,phy_id,link,speed_mbps,full_duplex,
+    bmcr,bmsr,partner,rmii,ref_clock_hz,rx_frames,tx_frames,rx_drops,crc_errors,
+    preamble_errors,irqs,mdio_errors,link_changes,tx_busy,uid_length;uint8_t mac[6],flash_uid[16];} hal_eth_info_t;
+hal_result_t hal_eth_init(void); /* bounded setup; link may still be negotiating */
+void hal_eth_stop(void);
+void hal_eth_poll(void); /* also called by hal_poll; does not consume frames */
+void hal_eth_get_info(hal_eth_info_t *info);
+hal_result_t hal_eth_get_mac(uint8_t mac[6]); /* stable local unicast, seeded by factory Flash UID */
+hal_result_t hal_eth_mdio_read(unsigned address,unsigned reg,uint16_t *value);
+hal_result_t hal_eth_mdio_write(unsigned address,unsigned reg,uint16_t value);
+hal_result_t hal_eth_send(const void *frame,unsigned length); /* BUSY while one TX is owned */
+hal_result_t hal_eth_receive(void *frame,unsigned capacity,unsigned *length); /* BUSY: empty; INVALID: dropped oversized frame */
 hal_result_t hal_phys_reset(unsigned hold_ms); /* F10 resets BOTH Ethernet/USB PHYs */
 hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,unsigned *received);
 hal_result_t hal_spi_select(hal_spi_bus_t bus,unsigned selected);
@@ -44,10 +59,13 @@ hal_result_t hal_sd_list(void);
 hal_result_t hal_sd_read(uint32_t sector,void *data,unsigned count);
 hal_result_t hal_sd_write(uint32_t sector,const void *data,unsigned count);
 hal_result_t hal_flash_probe(uint32_t *id,unsigned *bytes);
+hal_result_t hal_flash_uid(uint8_t uid[16],unsigned *length);
 hal_result_t hal_flash_read(unsigned address,void *data,unsigned length);
 hal_result_t hal_flash_program(unsigned address,const void *data,unsigned length);
 hal_result_t hal_flash_erase(unsigned address);
 hal_result_t hal_spi_lcd_show(unsigned sd_ready);
+hal_result_t hal_spi_lcd_network(const uint8_t mac[6],const uint8_t ip[4]); /* NULL IP: unconfigured */
+hal_result_t hal_spi_lcd_link(unsigned up);
 hal_result_t hal_video_init(void);
 volatile uint16_t *hal_video_frame(unsigned slot);
 hal_result_t hal_video_present(unsigned slot);
