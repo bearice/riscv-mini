@@ -30,8 +30,12 @@ def main():
     p.add_argument('--board-ip',default='169.254.20.20')
     p.add_argument('--program',action='store_true');p.add_argument('--reset',action='store_true')
     p.add_argument('--soak-seconds',type=float,default=300)
+    p.add_argument('--settle-seconds',type=float,default=0,
+        help='Explicit quiet interval after shared PHY reset, before steady-state soak (0..30s)')
+    p.add_argument('--usb',action='store_true',help='M9: check connected HID receiver, USB-only/shared reset and OHCI frames')
     args=p.parse_args()
     if not 0<=args.soak_seconds<=300:p.error('Use 0..300 seconds')
+    if not 0<=args.settle_seconds<=30:p.error('Use 0..30 settling seconds')
     output=args.output_dir.resolve();validation,_=verified_output(output);image=args.image.read_bytes()
     unpack_image(image,validation['boot_image']['abi_tag'])
     report={'passed':False,'checks':{},'host_ip':args.host_ip,'interface_index':args.interface_index,
@@ -65,6 +69,24 @@ def main():
                     if audio['control']!=7 or audio['underruns'] or audio['overruns'] or audio['errors'] or audio['amp']:raise RuntimeError(text)
                     if b'underflows=00000000' not in text or b'SD ready=00000001' not in text or b'errors=00000000 drops=00000000 unhandled=00000000' not in text:raise RuntimeError(text)
                 return eth,text
+            def usb_status():
+                text=command('u');usb=fields(text,b'USB ready=')
+                if not usb['ready'] or not usb['phy_ready'] or usb['phy']!=0x00060424 or usb['phy_error'] or usb['errors'] or usb['key_drops'] or usb['report_drops']:
+                    raise RuntimeError('USB failure: '+text.decode(errors='replace'))
+                if not 0x40800000<=usb['hcca']<0x40c00000 or usb['hcca']&255:raise RuntimeError('OHCI HCCA must be 256-byte aligned in application DDR')
+                return usb,text
+            def await_usb():
+                deadline=time.monotonic()+10
+                while time.monotonic()<deadline:
+                    usb,text=usb_status()
+                    if usb['connected'] and usb['hid']:return usb
+                    time.sleep(.1)
+                raise RuntimeError('No enumerated HID receiver: '+text.decode(errors='replace'))
+            if args.usb:
+                report['checks']['usb_initial']=await_usb()
+                for i in range(3):
+                    if b'USB RESTART PASS' not in command('j'):raise RuntimeError('USB local restart failed')
+                    report['checks'][f'usb_restart_{i+1}']=await_usb()
             def await_link():
                 deadline=time.monotonic()+30
                 while time.monotonic()<deadline:
@@ -100,7 +122,16 @@ def main():
                 def echo(length):
                     nonlocal count,bytes_total
                     payload=bytes(((i*37+count*11)&255) for i in range(length));started=time.monotonic()
-                    udp.sendto(payload,(args.board_ip,1234));reply,peer=udp.recvfrom(2048)
+                    udp.sendto(payload,(args.board_ip,1234))
+                    try:reply,peer=udp.recvfrom(2048)
+                    except TimeoutError:
+                        report['failure']={'reason':'UDP timeout','packet':count,'payload_length':length,
+                            'elapsed_ms':(time.monotonic()-started)*1000}
+                        # Capture the still-running board, without retrying the
+                        # lost packet or turning a failure into a passing run.
+                        report['failure']['status']=command('s').decode(errors='replace')
+                        if args.usb:report['failure']['usb_status']=command('u').decode(errors='replace')
+                        raise
                     if reply!=payload or peer!=(args.board_ip,1234):raise RuntimeError('UDP payload/peer mismatch')
                     count+=1;bytes_total+=length;latencies.append((time.monotonic()-started)*1000)
                 sizes=[0,1,31,32,63,64,255,511,1024,1472]
@@ -111,15 +142,29 @@ def main():
                 if ping.returncode:raise RuntimeError('ICMP ping failed: '+repr(ping.stdout))
                 # F10 reset intentionally resets both PHYs; no host NIC mutation.
                 command('e');report['checks']['shared_reset']=await_link()
+                if args.usb:report['checks']['usb_shared_reset']=await_usb()
                 report['checks']['arp_after_reset']=resolve_arp()
                 for size in sizes:echo(size)
+                if args.settle_seconds:
+                    report['settling']={'seconds':args.settle_seconds,'status_before':status()[1].decode(errors='replace'),
+                        'scope':'No UDP test traffic during this explicit post-reset quiet interval; not part of soak'}
+                    print(f'Explicit post-reset settling interval: {args.settle_seconds}s (outside soak)',flush=True)
+                    deadline=time.monotonic()+args.settle_seconds
+                    while time.monotonic()<deadline:time.sleep(min(.1,max(0,deadline-time.monotonic())))
+                    report['settling']['status_after']=status()[1].decode(errors='replace')
                 command('d');baseline=status(True)[0]['drops'];started=time.monotonic();rounds=0;first=None;last=None
+                usb_before=await_usb() if args.usb else None
                 while time.monotonic()-started<args.soak_seconds:
                     for size in sizes:echo(size)
                     if b'FRAME PASS' not in command('f'):raise RuntimeError('Frame swap missing')
                     if b'SD READ PASS bytes=00001000 crc=08040e1e' not in command('r'):raise RuntimeError('SD CRC mismatch')
                     eth,text=status(True)
                     if not eth['link']:raise RuntimeError('Link lost: '+text.decode(errors='replace'))
+                    if args.usb:
+                        usb,usb_text=usb_status()
+                        if not usb['connected'] or not usb['hid']:raise RuntimeError('USB receiver lost: '+usb_text.decode(errors='replace'))
+                        if rounds and usb['frame']==usb_previous['frame']:raise RuntimeError('OHCI frame clock stopped')
+                        usb_previous=usb
                     audio=fields(text,b'AUDIO ');lcd=fields(text,b'LCD ')
                     now=(eth['rx'],eth['tx'],audio['played'],audio['fetched'],lcd['frames'],lcd['completed'])
                     if last is not None and any(a==b for a,b in zip(now,last)):raise RuntimeError('Counters stopped')
@@ -133,6 +178,7 @@ def main():
                     'udp_packets':count,'udp_timeouts':0,'payload_bytes':bytes_total,'max_rtt_ms':max(latencies),
                     'raw_rx_drops_before':baseline,'raw_rx_drops_after':status()[0]['drops']}
                 report['checks']['final_status']=status(bool(args.soak_seconds))[1].decode(errors='replace')
+                if args.usb:report['checks']['usb_soak']={'before':usb_before,'after':usb_status()[0]}
                 command('x')
                 report['passed']=True
     finally:

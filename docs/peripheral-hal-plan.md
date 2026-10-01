@@ -1,6 +1,6 @@
 # 外围设备 HAL 与板级控制器计划
 
-日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，当前验收状态见 [M5a 验证](m5a-validation.md) / [M6 验证](m6-validation.md) / [M7 验证](m7-validation.md)。本页保留外围控制器方案和引脚核对；原生SD、音频和Ethernet已接入，见 [M8验证](m8-validation.md)；USB Host为下一阶段。
+日期：2026-10-01。原规划基线为 M4，提交 `d3f2b2326aeb783ba54b43ae49db1352d066f0d6`。Flash/UART 启动和 M5a HAL/板级 IO 已接入，接口见 [bootloader](bootloader.md) / [HAL](hal.md)，验收状态见 [M5a 验证](m5a-validation.md) / [M6 验证](m6-validation.md) / [M7 验证](m7-validation.md)。本页保留外围控制器方案和引脚核对；原生SD、音频和Ethernet已接入，见 [M8验证](m8-validation.md)；USB Host M9 已接入，键盘实物输入验收延期，见 [USB](usb.md)。
 
 ## 1. 本轮确定的范围
 
@@ -29,7 +29,7 @@
 | `gateware/soc.py`、`gateware/board.json`、`firmware/drivers/`、`requirements.in` | 当前 SoC、频率、软件接口和固定依赖 |
 | `build/m4/gateware/impl/pnr/project.rpt.txt` | 当前资源占用，非未来估算 |
 
-M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、FatFs、独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。M6 默认使用原生四位 SD + DMA，SPI-SD 为独立构建回退；M7 已接入 PT8211/FIFO/DDR PCM ring DMA，默认静音。M8已接入LiteEth/RTL8201F原始帧HAL；USB Host、嵌套中断和RTOS尚未接入。
+M4 已通过用户要求的五分钟并发验收（实际 390.344 秒），两块屏幕由用户确认正常稳定。当前基线保留 UART、timer、DDR、两块 LCD、FatFs、独立 SPI Flash CPU 接口与 Flash/UART bootloader。M5a 增加 HAL、machine trap/IRQ、板级 GPIO/WS2812B；按键/DIP 和灯光人工检查仍以 M5a 验证页为准。M6 默认使用原生四位 SD + DMA，SPI-SD 为独立构建回退；M7 已接入 PT8211/FIFO/DDR PCM ring DMA，默认静音。M8 已接入 LiteEth/RTL8201F 原始帧 HAL；M9 已接入 OHCI/TinyUSB Host，嵌套中断和 RTOS 尚未接入。
 
 本轮把上述新增引脚清单与 M4 生成的 `riscv_mini.cst` 做了静态比对：新增设备之间的重复脚为已识别的 F10；与现有功能重叠的是 T10 复位和 SD 的原 SPI 引脚。该检查不代替 bank 电压、时钟专用引脚、配置复用和布局布线验收。
 
@@ -66,7 +66,7 @@ Dock U9 是 RTL8201F-VB-CG，10/100 Mbps PHY，以 RMII 连接 FPGA。
 
 先用 MDIO 扫描 PHY 地址、读 ID/链路/协商状态，再接 LiteEth RMII MAC 的 Wishbone 帧接口。启动阶段 CPU 收发原始 Ethernet 帧，验收 ARP、ICMP 或 UDP；TCP/IP 完整协议栈可后续加入 lwIP。示例硬编码 PHY 配置不能直接代替通用驱动。
 
-RMII 50 MHz 与 sys 60 MHz 之间用异步 FIFO。MDC 初始约 1 MHz，以 sys clock-enable 分频，无额外 PLL。先用有限数量的片上 RX/TX packet slots，避免未经验证的直接 DDR DMA；后续环形缓冲再接系统总线。
+RMII 50 MHz 与 sys 60 MHz 之间用异步 FIFO。当前 MDIO 为软件 bitbang，每半周期等待至少 1 µs，MDC ≤500 kHz，无额外 PLL。使用两个 RX 和两个 TX 片上 packet slots；后续网络 DDR ring/DMA 再接系统总线。
 
 MDIO/MDC 的 F16/F14 与 HDMI DDC、屏幕触摸/摄像头的 I²C 路由复用。当前 RGB 像素输出不冲突；接 Ethernet 时保留这两脚给 MDIO，未来触摸需要独立评估总线所有权。
 
@@ -89,9 +89,9 @@ Dock U6 是 USB3317，独立 26 MHz 参考振荡器，ULPI CLKOUT 为 60 MHz。�
 4. OHCI 控制 MMIO、IRQ、HCCA/ED/TD 及传输缓冲暴露给 CPU；TinyUSB 移植根端口复位、枚举、控制传输和 HID interrupt-IN。
 5. HAL 输出原始 HID report 与键盘按下/释放、修饰键、鼠标位移/按键事件；ASCII/键盘布局属于上层输入处理。
 
-首轮验收直接连接的低速/全速 Boot HID 键盘、鼠标，包含拔插重枚举和复位后恢复。复合设备/Report Protocol 逐步扩展；Hub、MSC/U 盘、USB Audio 和 480 Mbps 高速 Host 不纳入首轮承诺。PHY 具备高速能力不等于 OHCI 能高速运行。
+原规划目标为直接连接的低速/全速 Boot HID 键盘、鼠标及复位恢复。M9 本轮范围已缩为实际已连接的 FS 无线接收器；当前 PHY 固定 FS，未验证 LS。用户明确不拔插 USB，并将键盘实物输入测试延期。复合设备 raw reports 已暴露；Hub、MSC/U 盘、USB Audio 和 480 Mbps 高速 Host 不纳入本轮承诺。PHY 具备高速能力不等于 OHCI 能高速运行。
 
-本地 LiteX 已包含 `usb_ohci.py`，但环境尚未安装 `pythondata-misc-usb_ohci` netlist 包和 TinyUSB；需固定版本、核对许可/生成链并补入 lock。OHCI/serial bridge 和 TinyUSB 的结合尚未在本项目验证，先独立做 PHY/枚举试验，再合入全系统。UltraEmbedded 简化 USB Host 仅验证 FS，不能直接承诺覆盖常见 LS 键盘，因此不作为首选。
+M9 已固定 `pythondata-misc-usb_ohci` netlist 包并更新 lock，TinyUSB 0.20 的 Host/HID/OHCI 子集与许可位于 `firmware/vendor/tinyusb/`。USB3317 serial bridge、OHCI DMA 与 TinyUSB 已在实板枚举 Logitech `046D:C52B`、三个 HID 接口；真实键盘输入验收仍延期，见 [M9 验证](m9-validation.md)。
 
 USB 模式硬件开关需拨到 Host。原理图 VBUS 直接连板上 5 V，CPEN 未连接可控供电开关；HAL 不提供虚构的 VBUS 断电能力。使用实际 OTG 转接器验证供电、连接检测与枚举。
 
@@ -170,8 +170,8 @@ Flash/UART 装载已完成：应用独立存放于 Flash 或经 UART 下载，�
 | DDR init / POR | 核心板 27 MHz | 0 |
 | RGB LCD | 9 MHz，现有视频 PLL | 0 |
 | RMII | PHY 输出 50 MHz，独立域 | 0 |
-| USB ULPI 初始化 | PHY 输出 60 MHz，独立域 | 0 |
-| OHCI PHY | 首选 48 MHz，独立 PLL，控制/DMA 为 sys 60 MHz | 预计 1 |
+| USB ULPI 初始化 | PHY 输出 60 MHz，经相移 225° PLL，独立域 | 1 |
+| OHCI PHY | 48 MHz，独立 PLL，控制/DMA 为 sys 60 MHz | 1 |
 | 原生 SD CLK | 400 kHz / 7.5 MHz，sys 分频 | 0 |
 | SPI LCD / Flash | 6 MHz / 首版 10 MHz，sys 分频 | 0 |
 | Audio BCK / WS | 1.5 MHz / 46.875 kHz，sys 分频 | 0 |
@@ -182,7 +182,7 @@ USB PHY 的 60 MHz 与 CPU 的 60 MHz 异步，不可因频率相同省略 CDC�
 
 ### 4.2 当前资源约束
 
-| 项目 | 当前 M4 PnR |
+| 项目 | 历史 M4 PnR |
 | --- | ---: |
 | Logic | 7,633 / 20,736，37% |
 | BSRAM | **46 / 46，100%** |
@@ -193,6 +193,11 @@ USB PHY 的 60 MHz 与 CPU 的 60 MHz 异步，不可因频率相同省略 CDC�
 原 M4 ROM 为 48 KiB、SRAM 16 KiB，boot.bin 为 33,136 字节。当前基础版已将应用移到 Flash/DDR，ROM/SRAM 均为 8 KiB，M6 BSRAM 占用 18/46；M6 boot 镜像 6,560 字节，DDR app 镜像 24,704 字节（包含 48 字节 header）。优先把腾出的 BSRAM 分给 SD/USB/Ethernet/audio 的必要短缓冲，长缓冲在 DDR；小控制 FIFO 可采用 LUTRAM。
 
 PLL 总数初步够用，但 BSRAM 推断粒度、长线/时钟布线和新增 OHCI Logic 必须重新 PnR。不能用“剩 63% Logic”保证所有外设一定同时装得下。每阶段记录资源增量；若超预算，先减 packet slots/FIFO 与调试模块，避免削弱 DDR/LCD 已验证的可靠性。
+
+M9 实际 PnR 为 Logic 15,528/20,736、Register 8,414/16,173、BSRAM
+34/46、rPLL **4/4**，setup/hold 均无违反端点。USB 需要两颗 PLL；
+当前没有空闲 PLL。完整当前频率见 [时钟树](clocks.md)，上板验收边界见
+[M9 验证](m9-validation.md)，不能将历史 M4 的余量作为当前资源预算。
 
 ### 4.3 DDR 访问策略
 
@@ -244,12 +249,14 @@ gateware/peripherals/      新控制器及板级桥接
 | M6：原生 SD（已接入） | LiteSDCard 四位 7.5 MHz、DMA、FatFs backend；保留 SPI fallback 构建 | 文件 CRC、多块传输、新文件写回、LCD 不欠载；本次按用户要求跳过拔插验收，详见 M6 验证 |
 | M7：音频（已接入） | PT8211 序列器、512 帧 PIO FIFO、DDR PCM ring/单 word DMA | line-in 左右独立音调、46.875 kHz 逻辑周期、静音、PIO 缺样统计及五分钟 SD/LCD 并发通过；见 M7 验证 |
 | M8：Ethernet（已接入） | RTL8201F MDIO、LiteEth RMII 100M全双工、2 RX/2 TX slots、IRQ、Flash UID派生MAC、SPI屏地址/链路 | 独立ARP/ICMP/UDP示例、五分钟SD/双屏/静音音频并发和拔插恢复；原始槽溢出与UDP实际丢包分别记录，见M8验证 |
-| M9：USB Host HID | 固定 OHCI netlist/TinyUSB；USB3317 初始化/serial bridge；48 MHz 域和 DMA/IRQ；键盘鼠标事件 | LS/FS 枚举、按下/释放/修饰键、鼠标、拔插和复位恢复；与 Ethernet 共用 F10 的联动恢复 |
+| M9：USB Host HID（代码/自动项已接入，按键待验） | 固定 OHCI netlist/TinyUSB；USB3317 初始化/serial bridge；48 MHz 域和 DDR DMA/IRQ；Boot 键盘/鼠标与 raw HID API | FS 接收器枚举、三次 USB-only 重启、共享 F10、Flash/UART 恢复通过；显式复位后等待的五分钟稳定并发通过，复位早期网络突发丢包限制见 M9 验证。用户不在设备旁，实物按键/修饰键/LED 测试延期；不拔插 USB。LS、鼠标实物和 hub 待另行验收 |
 | M10：系统收尾 | DMA fairness、统一 reset/错误统计、文档/示例、全部设备同时启用 | 用户指定 **五分钟** 并发运行：DDR/LCD+SD+audio+网络+HID+monitor；无内存错误、无 LCD 欠载、CPU 可响应；各设备断开能恢复 |
 
 每个新增高速/跨域控制器做针对性仿真或协议检查，Gowin 综合/PnR 核查资源与相关 setup/hold，再上板。新增布线/资源失败时在独立构建配置处理，保留 M4 bitstream 和源码作为基线。五分钟是当前综合压力验收范围，不延长到三十分钟。
 
-USB PHY/控制器选型可在 Flash/UART 启动释放资源后提早做独立枚举探针，尽早发现接口/供电问题；按上表顺序合入，不把 USB 风险拖到最后才研究。全套外设的最终资源与性能仍待实际综合和上板，当前不宣称已经支持。
+当前所有已接入控制器已有实际 PnR 和上板自动结果；USB 的实物键盘输入、
+M10 更高负载与复位早期网络突发承载仍未验收。不把接口已编码或有限负载
+通过扩大为任意设备/任意网络流量均支持。
 
 ## 7. 尚待硬件核对
 

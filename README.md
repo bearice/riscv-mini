@@ -7,7 +7,7 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | 项目 | 配置 |
 | --- | --- |
 | CPU / 总线 | VexRiscv lite RV32IM，60 MHz，2 KiB I-cache，无 D-cache / L2 / MMU |
-| 片上存储 | 8 KiB boot ROM、8 KiB 工作 SRAM；SD/LCD/音频/网络驱动不在 bootloader 中 |
+| 片上存储 | 8 KiB boot ROM、8 KiB 工作 SRAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
@@ -16,10 +16,17 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 | 音频 | PT8211 PCM16 stereo，46,875 Hz，BCK 1.5 MHz；512 帧 FIFO、DDR ring DMA；默认静音 |
 | Ethernet | RTL8201F + LiteEth RMII，100 Mbps 全双工；50 MHz PHY REF_CLK，MDIO、2 RX / 2 TX packet slots、Flash UID 派生 MAC |
+| USB Host | USB3317 + Spinal OHCI + TinyUSB Host；FS 12 Mbit/s，48 MHz 收发引擎，DDR 描述符/DMA、IRQ、Boot 键盘/鼠标和 raw HID HAL |
+
+完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。M9 使用第四颗 PLL 为 ULPI 初始化接口提供相移 60 MHz，当前 PLL 为 4/4；CPU/DDR 保持 60/120 MHz。
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
-M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。M6 原生四位 SD 见 [原生 SD](docs/native-sd.md) / [M6 验证](docs/m6-validation.md)。M7 PT8211/FIFO/DDR ring DMA 已接入，见 [音频](docs/audio.md) / [M7 验证](docs/m7-validation.md)。M8 Ethernet 已接入，见 [Ethernet](docs/ethernet.md) / [M8 验证](docs/m8-validation.md)。USB Host HID 和 RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
+M9 自动枚举/软件复位及五分钟稳定并发结果见 [M9 验证](docs/m9-validation.md)。
+真实键盘输入验收按用户要求延期。并发窗口前显式等待复位后的本机网络初始化
+流量结束；立即复位后两个未过滤 RX 槽可能溢出并丢 UDP，限制与失败现场均记录在验证页。
+
+M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset。应用提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`，以及 `!` 复位快捷键。接口和示例见 [HAL](docs/hal.md)，实物验收状态见 [M5a 验证](docs/m5a-validation.md)。M6 原生四位 SD 见 [原生 SD](docs/native-sd.md) / [M6 验证](docs/m6-validation.md)。M7 PT8211/FIFO/DDR ring DMA 已接入，见 [音频](docs/audio.md) / [M7 验证](docs/m7-validation.md)。M8 Ethernet 已接入，见 [Ethernet](docs/ethernet.md) / [M8 验证](docs/m8-validation.md)。M9 USB Host HID 已接入，基础 monitor 在 UART 输出键盘 usage 的按下/释放通知，见 [USB](docs/usb.md)。RTOS 属于后续工作，见 [外围 HAL 计划](docs/peripheral-hal-plan.md)。
 
 ## 开发环境
 

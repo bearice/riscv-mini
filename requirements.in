@@ -6,6 +6,7 @@ litedram @ git+https://github.com/enjoy-digital/litedram.git@676871a1f50a1ab0073
 litesdcard @ git+https://github.com/enjoy-digital/litesdcard.git@17718d9258ac2dd62ac23e2eecd7ac613a050986
 litespi @ git+https://github.com/litex-hub/litespi.git@1efda7b0ffe48068239e9a3b559d29c94c83fcf2
 liteeth @ git+https://github.com/enjoy-digital/liteeth.git@013a6ad38c26317ac9588acd0660922981cc2a73
+pythondata-misc-usb_ohci @ git+https://github.com/litex-hub/pythondata-misc-usb_ohci.git@17c1d3d6548ea267e19aec3cb6d2e64335a1bb2a
 pythondata-cpu-vexriscv @ git+https://github.com/litex-hub/pythondata-cpu-vexriscv.git@642ecfed1c84460555d6d803d660cc60cfc1ecb6
 pythondata-software-picolibc @ git+https://github.com/litex-hub/pythondata-software-picolibc.git@6a13ccce7c575b32c102dd9dc52178505b81fe39
 pythondata-software-compiler-rt @ git+https://github.com/litex-hub/pythondata-software-compiler_rt.git@6eb76609c9627bf26635e57c63fb22cda7115887

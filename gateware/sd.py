@@ -4,6 +4,7 @@ from migen import ResetInserter,Signal
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 from litex.soc.interconnect import wishbone
+from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr_eventmanager import EventManager,EventSourcePulse
 from litesdcard.phy import SDPHY
 from litesdcard.frontend.dma import SDBlock2MemDMA,SDMem2BlockDMA
@@ -17,7 +18,14 @@ class NativeSD(LiteXModule):
         self.specials += MultiReg(pads.cd,card_detect)
         synchronized_pads=SimpleNamespace(clk=pads.clk,cmd=pads.cmd,data=pads.data,cd=card_detect)
         self.phy=SDPHY(synchronized_pads,soc.platform.device,soc.sys_clk_freq,cmd_timeout=.25,data_timeout=.5)
-        self.core=SDCore(self.phy)
+        # Keep each read descriptor stable for the complete PHY block, and
+        # isolate the PHY's block-end/timeout logic from the 32-bit core counter.
+        self.read_requests=ResetInserter()(stream.SyncFIFO([('block_length',10)],depth=2,buffered=True))
+        self.comb += self.read_requests.source.connect(self.phy.datar.sink)
+        core_phy=SimpleNamespace(cmdw=self.phy.cmdw,cmdr=self.phy.cmdr,dataw=self.phy.dataw,
+            datar=SimpleNamespace(sink=self.read_requests.sink,source=self.phy.datar.source))
+        self.core=SDCore(core_phy)
+        self.comb += self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE'))
         reader=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
         writer=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='w')
         self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness)

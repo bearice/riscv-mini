@@ -38,6 +38,9 @@ These checks do not replace real board switch/LED observation.
 status propagation, plus 400 kHz/15 MHz/7.5 MHz SD clock periods at sys 60 MHz.
 `--upstream` reproduces the pinned upstream CRC visibility defect (expected failure).
 It uses a PHY endpoint seam and does not prove connector timing.
+The actual SDCore descriptor FIFO is also exercised with early request arming,
+long PHY stalls, exactly three read blocks and timeout/abort flush. This checks
+the registered request seam added for M9 timing without replacing the core.
 `scripts/sd_verify.py` runs the independent SD demo on the board: existing file
 CRC, single/multi-block and unaligned callers, optional unique-file write/read,
 and five-minute LCD frame switching. See docs/m6-validation.md.
@@ -61,3 +64,14 @@ ARP/IP/ICMP/UDP parsing on the real CPU; `scripts/ethernet_verify.py` checks
 Flash UID-derived MAC against host computation/ARP, UDP payloads through MTU,
 ping, shared reset, and at most five minutes of SD/display/muted-audio coexistence.
 Raw slot drops and actual UDP timeouts are reported separately. See docs/ethernet.md.
+
+`sim/test_bus.py` exercises the registered Wishbone request/reply seam with
+delayed transfers, byte enables, bus errors and an abandoned transaction.
+`sim/test_usb_phy.py` exercises the USB3317 initialization FSM: ID read data
+with NXT low, turnaround, DIR preemption/retry, STP write termination and
+six-pin serial output mapping. `sim/test_usb_ulpi_timing.py` adds a quantized
+edge/delay model at two propagation corners; these checks do not prove USB
+electrical timing or HID input. `scripts/ethernet_verify.py --usb` checks the
+connected FS HID receiver, three local software restarts, shared F10 reset,
+DDR HCCA alignment, OHCI progress and <=5 minute media coexistence on hardware.
+Physical keyboard transitions remain a separate acceptance step. See docs/usb.md.

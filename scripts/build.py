@@ -96,14 +96,16 @@ def main():
     include=firmware/'include';generate_csr(csr,include)
     abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
     loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
+    usb=ROOT/'firmware/vendor/tinyusb/src'
     flags=['-march=rv32im_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror','-ffreestanding',
         '-fno-builtin','-ffunction-sections','-fdata-sections','-nostdlib','-nostartfiles','-msmall-data-limit=0',
-        '-I',firmware,'-I',include,'-I',output/'software/include','-I',drivers,'-I',loader,'-I',vendor,'-I',hal/'include']
+        '-I',firmware,'-I',include,'-I',output/'software/include','-I',drivers,'-I',loader,'-I',vendor,'-I',hal/'include','-I',usb]
     common=[ROOT/'firmware/boot/start.S',drivers/'uart.c',drivers/'time.c',drivers/'flash.c']
     for name,main,sources,linker in [
         ('boot',loader/'main.c',[ROOT/'firmware/boot/ddr.c'],loader/'boot.ld'),
         ('app',a.app.resolve(),[*[drivers/n for n in ('spi.c','lcd.c','sd_native.c' if a.sd_backend=='native' else 'sd.c','filesystem.c','string.c','video.c')],
-            *[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c','audio.c','ethernet.c')],vendor/'ff.c',vendor/'ffunicode.c'],loader/'app.ld')]:
+            *[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c','audio.c','ethernet.c','usb.c')],
+            *[usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','class/hid/hid_host.c','portable/ohci/ohci.c')],vendor/'ff.c',vendor/'ffunicode.c'],loader/'app.ld')]:
         elf=firmware/f'{name}.elf'
         # Whole-program optimization keeps the ROM loader compact; app stays
         # separately linked and carries SD/display drivers only in DDR.
@@ -123,7 +125,7 @@ def main():
     if actual!=expected:raise RuntimeError('ROM content mismatch')
     report={'profile':'base: Flash/UART bootloader + DDR application','rom_size_bytes':8192,'sram_size_bytes':8192,
         'firmware_bytes':size,'firmware_sha256':hashlib.sha256(raw).hexdigest(),'isa':'rv32im_zicsr_zifencei','abi':'ilp32',
-        'clock_hz':60000000,'ddr_clock_hz':120000000,'rtl':str(output/'gateware/riscv_mini.v'),
+        'clock_hz':60000000,'ddr_clock_hz':120000000,'usb_phy_clock_hz':48000000,'ulpi_clock_hz':60000000,'rtl':str(output/'gateware/riscv_mini.v'),
         'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,
                       'image_bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}}

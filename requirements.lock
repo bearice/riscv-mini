@@ -21,9 +21,13 @@ litedram @ git+https://github.com/enjoy-digital/litedram.git@676871a1f50a1ab0073
     #   -c requirements.lock
     #   -r requirements.in
 liteeth @ git+https://github.com/enjoy-digital/liteeth.git@013a6ad38c26317ac9588acd0660922981cc2a73
-    # via -r requirements.in
+    # via
+    #   -c requirements.lock
+    #   -r requirements.in
 liteiclink==2025.4
-    # via liteeth
+    # via
+    #   -c requirements.lock
+    #   liteeth
 litesdcard @ git+https://github.com/enjoy-digital/litesdcard.git@17718d9258ac2dd62ac23e2eecd7ac613a050986
     # via
     #   -c requirements.lock
@@ -71,6 +75,8 @@ pythondata-cpu-vexriscv @ git+https://github.com/litex-hub/pythondata-cpu-vexris
     # via
     #   -c requirements.lock
     #   -r requirements.in
+pythondata-misc-usb-ohci @ git+https://github.com/litex-hub/pythondata-misc-usb_ohci.git@17c1d3d6548ea267e19aec3cb6d2e64335a1bb2a
+    # via -r requirements.in
 pythondata-software-compiler-rt @ git+https://github.com/litex-hub/pythondata-software-compiler_rt.git@6eb76609c9627bf26635e57c63fb22cda7115887
     # via
     #   -c requirements.lock

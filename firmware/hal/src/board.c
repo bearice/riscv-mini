@@ -34,7 +34,7 @@ void hal_init(void) {
     hal_phys_reset(10);while(hal_ws2812_busy()) {} hal_ws2812_set(0,0,0);
     hal_audio_stop();hal_audio_mute(1);
 }
-void hal_poll(void) {hal_eth_poll();}
+void hal_poll(void) {hal_eth_poll();hal_usb_poll();}
 uint32_t hal_time_ms(void) {
     unsigned state=hal_irq_save();timer0_uptime_latch_write(1);uint64_t ticks=timer0_uptime_cycles_read();hal_irq_restore(state);
     return (uint32_t)(ticks/(CONFIG_CLOCK_FREQUENCY/1000u));
@@ -73,11 +73,13 @@ unsigned hal_ws2812_busy(void) {return ws2812_busy_read();}
 hal_result_t hal_phys_reset(unsigned hold_ms) {
     if(!hold_ms || hold_ms>1000)return HAL_INVALID;
     hal_eth_stop();
+    hal_usb_stop();
     phy_reset_out_write(0);hal_delay_ms(hold_ms<10?10:hold_ms);phy_reset_out_write(1);
-    hal_delay_ms(50);hal_eth_init();return HAL_OK;
+    hal_delay_ms(50);hal_eth_init();hal_usb_init();return HAL_OK;
 }
 void hal_reboot(void) {
     hal_eth_stop();
+    hal_usb_stop();
     hal_audio_stop();
     video_stop();hal_irq_save();uart_ev_enable_write(0);timer1_ev_enable_write(0);board_io_ev_enable_write(0);
     __asm__ volatile("csrw 0xbc0,zero\ncsrw mie,zero":::"memory");ctrl_reset_write(1);for(;;) {}

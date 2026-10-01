@@ -24,6 +24,8 @@ from gateware.board_io import BoardIO, WS2812
 from gateware.sd import NativeSD
 from gateware.audio import Audio
 from gateware.ethernet import add_ethernet
+from gateware.usb import add_usb
+from gateware.bus import WishbonePipeline
 
 class ClockResetGenerator(LiteXModule):
     def __init__(self,platform):
@@ -51,6 +53,10 @@ class ClockResetGenerator(LiteXModule):
         video_reset=Signal(name_override='lcd_video_async_reset');video_reset.attr.add('keep')
         self.comb += video_reset.eq(~vp.locked|self.cd_sys.rst)
         self.specials += AsyncResetSynchronizer(self.cd_video,video_reset)
+        self.cd_usb=ClockDomain('usb')
+        self.usb_pll=up=GW2APLL(devicename=platform.devicename,device=platform.device)
+        self.comb += up.reset.eq((counter!=0)|~reset_n)
+        up.register_clkin(clock,27e6);up.create_clkout(self.cd_usb,48e6,margin=0,with_reset=False)
 
 class SDControl(LiteXModule):
     def __init__(self,reset):
@@ -75,8 +81,10 @@ class MiniSoC(SoCCore):
         self.memory_port=SharedNativePort(self.sdram.crossbar.get_port())
         wb_ram=wishbone.Interface(data_width=32,address_width=32,addressing='word')
         self.bus.add_slave(name='main_ram',slave=wb_ram,region=SoCRegion(origin=0x40000000,size=128*1024*1024))
+        ram_request=wishbone.Interface(data_width=32,address_width=32,addressing='word')
+        self.ram_pipeline=WishbonePipeline(wb_ram,ram_request)
         wb_native=wishbone.Interface(data_width=128,address_width=32,addressing='word')
-        self.submodules += wishbone.Converter(wb_ram,wb_native)
+        self.submodules += wishbone.Converter(ram_request,wb_native)
         self.wishbone_bridge=LiteDRAMWishbone2Native(wb_native,self.memory_port.cpu,base_address=0x40000000)
         platform.add_extension([
             ('spi_lcd',0,Subsignal('clk',Pins('F12')),Subsignal('mosi',Pins('L15')),
@@ -124,3 +132,4 @@ class MiniSoC(SoCCore):
         self.add_constant('AUDIO_SAMPLE_RATE',46875)
         self.add_constant('AUDIO_FIFO_FRAMES',512)
         add_ethernet(self)
+        add_usb(self)

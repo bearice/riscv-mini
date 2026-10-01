@@ -18,6 +18,7 @@ def main():
         ('migen', 'migen'), ('litex', 'litex'), ('litex-boards', 'litex_boards'),
         ('litedram', 'litedram'), ('litesdcard', 'litesdcard'), ('litespi', 'litespi'), ('liteeth','liteeth.phy.rmii'),
         ('pythondata-cpu-vexriscv', 'pythondata_cpu_vexriscv'),
+        ('pythondata-misc-usb-ohci','pythondata_misc_usb_ohci'),
         ('pythondata-software-picolibc', 'pythondata_software_picolibc'),
         ('pythondata-software-compiler-rt', 'pythondata_software_compiler_rt'),
     ]:

@@ -18,8 +18,9 @@
 | display | SPI LCD 状态页，DDR RGB565 双帧的 init/frame/present/stop/status |
 | audio | PT8211 PCM16 stereo，46,875 Hz；PIO FIFO / DDR ring DMA、start/pause/stop/mute、进度及欠载统计；见 [音频](audio.md) |
 | ethernet | RTL8201F MDIO、100M full-duplex link、LiteEth原始帧、packet slots、IRQ/错误统计、Flash UID派生MAC；见 [Ethernet](ethernet.md) |
+| usb | OHCI Host、DDR 描述符/DMA、FS HID 枚举；Boot 键盘 usage/修饰键按下释放、Boot 鼠标相对运动、raw HID reports、异步键盘 LED；见 [USB](usb.md) |
 
-`hal_init()` 在应用启动时调用一次。当前是裸机单主循环：IRQ 只做 RX 搬运、计数和按键事件确认，SD/FatFs、SPI、显示和 Flash 传输在主循环执行。`hal_poll()` 每250 ms有界轮询PHY链路；它不消费网络包，应用需要调用 `hal_eth_receive()` 及时取走帧。SPI/文件系统 API 不支持多个调用者或 ISR 并发操作。
+`hal_init()` 在应用启动时调用一次。当前是裸机单主循环：IRQ 只做 RX 搬运、计数和按键事件确认，SD/FatFs、SPI、显示和 Flash 传输在主循环执行。`hal_poll()` 每250 ms有界轮询Ethernet PHY链路，并处理 TinyUSB 枚举及 HID 回调；应用需频繁调用。它不消费网络包，应用需要调用 `hal_eth_receive()` 及时取走帧，并取走 USB raw/键盘/鼠标事件以免队列溢出。SPI/文件系统及 USB API 不支持多个调用者或 ISR 并发操作。
 
 timer0 保留原来的自由运行计数，为既有驱动提供 32 位 tick 超时，同时增加 64 位 uptime；timer1 每 60000 sys 周期产生一次 IRQ，约 1 ms。毫秒 deadline 使用 `(int32_t)(now-deadline)`，适用于间隔小于 `2^31` 毫秒；原 ticks 的耗时比较使用无符号减法，不用普通大小比较。
 
@@ -39,11 +40,11 @@ timer0 保留原来的自由运行计数，为既有驱动提供 32 位 tick 超
 
 WS2812B 所有时序由 sys 状态机完成：每 bit 75 周期 = 1.25 µs，0 高 24 周期 = 400 ns，1 高 48 周期 = 800 ns，发送前初始低和发送后 latch 均至少 18000 周期 = 300 µs。颜色在提交时锁存，之后修改颜色寄存器不会改变正在发送的帧。无需新 PLL。
 
-`hal_phys_reset(hold_ms)` 先停止Ethernet IRQ/MAC并取消旧packet-slot所有权，把F10拉低至少10 ms，释放50 ms后重新初始化Ethernet。HAL_OK表示公共复位动作完成，PHY/MAC初始化结果由 `hal_eth_get_info()` 查询。它同时复位Ethernet/USB PHY，不控制VBUS；M9需在同一入口协调USB Host的停止和重建。
+`hal_phys_reset(hold_ms)` 先停止Ethernet IRQ/MAC和USB Host/DMA，取消旧packet-slot和USB队列所有权，把F10拉低至少10 ms，释放50 ms后重新初始化Ethernet与USB。HAL_OK表示公共复位动作完成，设备初始化结果由 `hal_eth_get_info()` / `hal_usb_get_info()` 查询。它同时复位Ethernet/USB PHY，不控制VBUS。`hal_usb_init()` 的单独重启用STP退出PHY串行模式，保持F10释放，不中断Ethernet。
 
 ## 中断与异常
 
-生成的SPI 回退的 IRQ 编号是 UART=0、timer0=1、board_io=2、timer1=3、ethmac=4；原生 SD 构建为 UART=0、timer0=1、sdcard=2、board_io=3、timer1=4、ethmac=5。runtime启用UART RX、board IO、timer1和成功初始化后的Ethernet；timer0 保留轮询。SD DMA 当前也使用有界轮询；SD event IRQ 定义在硬件中，未启用到 CPU runtime。使用 VexRiscv 的 `0xbc0` mask / `0xfc0` pending 和 machine external IRQ，初始化 `mtvec`、`mie.MEIE`、`mstatus.MIE`。
+生成的SPI 回退的 IRQ 编号是 UART=0、timer0=1、board_io=2、timer1=3、ethmac=4、usb_host=5；原生 SD 构建为 UART=0、timer0=1、sdcard=2、board_io=3、timer1=4、ethmac=5、usb_host=6。runtime启用UART RX、board IO、timer1及成功初始化后的Ethernet/USB；timer0 保留轮询。SD DMA 当前也使用有界轮询；SD event IRQ 定义在硬件中，未启用到 CPU runtime。USB IRQ 向 TinyUSB 主循环队列送完成事件。使用 VexRiscv 的 `0xbc0` mask / `0xfc0` pending 和 machine external IRQ，初始化 `mtvec`、`mie.MEIE`、`mstatus.MIE`。
 
 trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 字节对齐。默认异常输出 cause/pc/value 后停止；自定义 handler 若要恢复执行，需要正确更新 frame。尚无独立异常栈、嵌套 IRQ、调度器或 RTOS runtime。
 

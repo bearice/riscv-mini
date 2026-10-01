@@ -98,6 +98,10 @@ class SDCore(LiteXModule):
         self.comb += phy.datar.source.connect(data_read_fifo.sink)
 
         self.comb += [
+            # Payload remains stable outside the valid phase. Gating this with
+            # command/state builds a combinational path through PHY's block
+            # delimiter and back to the read-counter enable.
+            phy.datar.sink.block_length.eq(block_length),
             # Decode type of Cmd/Data from Register.
             cmd_type.eq(self.cmd_command.fields.cmd_type),
             cmd_crc_en.eq(self.cmd_command.fields.crc),
@@ -209,9 +213,8 @@ class SDCore(LiteXModule):
             # can drive DAT before the CMD response has fully completed.
             If(data_type == SDCARD_CTRL_DATA_TRANSFER_READ,
                 phy.datar.sink.valid.eq(data_read_count != block_count),
-                phy.datar.sink.block_length.eq(block_length),
                 phy.datar.sink.last.eq(data_read_count == (block_count - 1)),
-                If(phy.datar.sink.ready,
+                If(phy.datar.sink.valid & phy.datar.sink.ready,
                     NextValue(data_read_count, data_read_count + 1),
                 ),
             ),
@@ -285,9 +288,8 @@ class SDCore(LiteXModule):
         fsm.act("DATA-READ",
             # Send Data Response information to the PHY.
             phy.datar.sink.valid.eq(data_read_count != block_count),
-            phy.datar.sink.block_length.eq(block_length),
             phy.datar.sink.last.eq(data_read_count == (block_count - 1)),
-            If(phy.datar.sink.ready,
+            If(phy.datar.sink.valid & phy.datar.sink.ready,
                 NextValue(data_read_count, data_read_count + 1),
             ),
 

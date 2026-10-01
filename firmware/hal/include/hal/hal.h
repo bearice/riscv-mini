@@ -50,6 +50,20 @@ hal_result_t hal_eth_mdio_write(unsigned address,unsigned reg,uint16_t value);
 hal_result_t hal_eth_send(const void *frame,unsigned length); /* BUSY while one TX is owned */
 hal_result_t hal_eth_receive(void *frame,unsigned capacity,unsigned *length); /* BUSY: empty; INVALID: dropped oversized frame */
 hal_result_t hal_phys_reset(unsigned hold_ms); /* F10 resets BOTH Ethernet/USB PHYs */
+typedef struct {uint32_t initialized,connected,phy_ready,phy_error,phy_id,lines,device,
+    speed,hid_interfaces,mounts,unmounts,reports,key_events,key_drops,report_drops,rollovers,
+    errors,irqs,control,port_status,frame,hcca,mouse_events,mouse_drops;uint16_t vid,pid;} hal_usb_info_t;
+typedef struct {uint32_t time_ms;uint8_t device,interface,usage,pressed,modifiers;} hal_usb_key_t;
+typedef struct {uint8_t device,interface,length,data[64];} hal_usb_report_t;
+typedef struct {uint32_t time_ms;uint8_t device,interface,buttons;int8_t x,y,wheel;} hal_usb_mouse_t;
+hal_result_t hal_usb_init(void); /* bounded PHY/controller setup; enumeration runs in hal_poll */
+void hal_usb_stop(void);
+void hal_usb_poll(void);
+void hal_usb_get_info(hal_usb_info_t *info);
+hal_result_t hal_usb_key_take(hal_usb_key_t *key); /* USB keyboard usages, including E0..E7 modifiers */
+hal_result_t hal_usb_report_take(hal_usb_report_t *report); /* raw HID, single main-loop owner */
+hal_result_t hal_usb_mouse_take(hal_usb_mouse_t *mouse); /* Boot mouse relative motion/buttons */
+hal_result_t hal_usb_keyboard_leds(uint8_t device,uint8_t interface,uint8_t leds); /* async Num/Caps/Scroll/Compose/Kana */
 hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,unsigned *received);
 hal_result_t hal_spi_select(hal_spi_bus_t bus,unsigned selected);
 typedef struct {uint32_t sectors,clock_hz,bus_width,native,present,initialized,read_blocks,written_blocks,errors;} hal_sd_info_t;

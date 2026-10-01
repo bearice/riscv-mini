@@ -3,6 +3,30 @@
 #include "ff.h"
 #include <string.h>
 #include "packet_echo.h"
+static hal_usb_report_t last_report;
+static void usb_poll(void) {
+    hal_usb_poll();hal_usb_key_t key;
+    while(hal_usb_key_take(&key)==HAL_OK) {
+        hal_uart_puts(key.pressed?"USB KEY DOWN usage=":"USB KEY UP usage=");hal_uart_hex(key.usage);
+        hal_uart_puts(" modifiers=");hal_uart_hex(key.modifiers);hal_uart_puts(" itf=");hal_uart_hex(key.interface);hal_uart_puts("\r\n");
+    }
+    hal_usb_report_t report;while(hal_usb_report_take(&report)==HAL_OK)last_report=report;
+    hal_usb_mouse_t mouse;while(hal_usb_mouse_take(&mouse)==HAL_OK) {}
+}
+static void usb_status(void) {
+    hal_usb_info_t u;hal_usb_get_info(&u);
+    hal_uart_puts("USB ready=");hal_uart_hex(u.initialized);hal_uart_puts(" phy=");hal_uart_hex(u.phy_id);
+    hal_uart_puts(" phy_ready=");hal_uart_hex(u.phy_ready);hal_uart_puts(" phy_error=");hal_uart_hex(u.phy_error);
+    hal_uart_puts(" lines=");hal_uart_hex(u.lines);hal_uart_puts(" connected=");hal_uart_hex(u.connected);
+    hal_uart_puts(" vid=");hal_uart_hex(u.vid);hal_uart_puts(" pid=");hal_uart_hex(u.pid);hal_uart_puts(" speed=");hal_uart_hex(u.speed);
+    hal_uart_puts(" hid=");hal_uart_hex(u.hid_interfaces);hal_uart_puts(" reports=");hal_uart_hex(u.reports);
+    hal_uart_puts(" keys=");hal_uart_hex(u.key_events);hal_uart_puts(" key_drops=");hal_uart_hex(u.key_drops);
+    hal_uart_puts(" report_drops=");hal_uart_hex(u.report_drops);hal_uart_puts(" errors=");hal_uart_hex(u.errors);
+    hal_uart_puts(" irqs=");hal_uart_hex(u.irqs);hal_uart_puts(" frame=");hal_uart_hex(u.frame);hal_uart_puts(" control=");hal_uart_hex(u.control);
+    hal_uart_puts(" port=");hal_uart_hex(u.port_status);hal_uart_puts(" hcca=");hal_uart_hex(u.hcca);hal_uart_puts("\r\n");
+    hal_uart_puts("USB LAST itf=");hal_uart_hex(last_report.interface);hal_uart_puts(" length=");hal_uart_hex(last_report.length);
+    for(unsigned i=0;i<last_report.length;++i) {hal_uart_putc(' ');hal_uart_hex(last_report.data[i]);}hal_uart_puts("\r\n");
+}
 static void network_poll(void);
 static void ethernet_status(void);
 static void fill(void);
@@ -36,16 +60,20 @@ static void ethernet_status(void) {
     network_poll();
 }
 static void network_poll(void) {
-    if(pending_reply) {
-        hal_result_t result=hal_eth_send(packet,pending_reply);
-        if(result==HAL_BUSY || result==HAL_NO_MEDIA)return;
-        pending_reply=0;if(result!=HAL_OK)++discarded;
+    /* Drain both RX slots and transmit their replies before returning to
+       USB/audio work. Bound the loop even under continuous background traffic. */
+    for(unsigned budget=0;budget<4;++budget) {
+        if(pending_reply) {
+            hal_result_t result=hal_eth_send(packet,pending_reply);
+            if(result==HAL_BUSY || result==HAL_NO_MEDIA)return;
+            pending_reply=0;if(result!=HAL_OK)++discarded;
+        }
+        unsigned size;if(hal_eth_receive(packet,sizeof(packet),&size)!=HAL_OK)return;
+        unsigned type=net16(packet+12),protocol=(size>=34 && type==0x0800)?packet[23]:0;
+        pending_reply=packet_reply(packet,size);
+        if(!pending_reply) {++discarded;continue;}
+        if(type==0x0806)++arp_replies;else if(protocol==1)++icmp_replies;else ++udp_replies;
     }
-    unsigned size;if(hal_eth_receive(packet,sizeof(packet),&size)!=HAL_OK)return;
-    unsigned type=net16(packet+12),protocol=(size>=34 && type==0x0800)?packet[23]:0;
-    pending_reply=packet_reply(packet,size);
-    if(!pending_reply) {++discarded;return;}
-    if(type==0x0806)++arp_replies;else if(protocol==1)++icmp_replies;else ++udp_replies;
 }
 static uint32_t ring[32768],pcm[256];
 static unsigned phase,streaming,frame;
@@ -57,9 +85,16 @@ static uint32_t next_pcm(unsigned offset) {
     return (uint16_t)left|((uint32_t)(uint16_t)right<<16);
 }
 static void fill(void) {
-    network_poll();if(!streaming)return;
-    for(unsigned i=0;i<256;++i)pcm[i]=next_pcm(phase+i);
-    unsigned written=0;hal_result_t result=hal_audio_ring_write(pcm,256,&written);
+    network_poll();usb_poll();if(!streaming)return;
+    /* phase is the ring producer count. Generate only the newly freed space;
+       avoid preparing 256 samples on every poll when the ring is already full. */
+    hal_audio_info_t audio;hal_audio_get_info(&audio);
+    unsigned used=phase-audio.fetched;
+    if(used>32768) {streaming=0;hal_uart_puts("AUDIO REFILL FAIL\r\n");return;}
+    unsigned count=32768-used;if(count>256)count=256;
+    if(!count)return;
+    for(unsigned i=0;i<count;++i)pcm[i]=next_pcm(phase+i);
+    unsigned written=0;hal_result_t result=hal_audio_ring_write(pcm,count,&written);
     phase+=written;
     if(result!=HAL_OK && result!=HAL_BUSY) {streaming=0;hal_uart_puts("AUDIO REFILL FAIL\r\n");}
 }
@@ -184,7 +219,8 @@ int main(void) {
     for(unsigned i=0;i<identity.uid_length;++i) {uid[2*i]=hex[identity.flash_uid[i]>>4];uid[2*i+1]=hex[identity.flash_uid[i]&15];}
     uid[2*identity.uid_length]=0;hal_uart_puts(uid);hal_uart_puts("\r\n");
     ethernet_status();
-    hal_uart_puts("SYSTEM READY d=muted audio DMA x=stop s=status r=SD CRC f=frame e=shared PHY reset !=reboot\r\n> ");
+    usb_status();
+    hal_uart_puts("SYSTEM READY d=muted audio DMA x=stop s=status r=SD CRC f=frame e=shared PHY reset u=USB status j=USB restart !=reboot\r\n> ");
     unsigned last_link=0;
     for(;;) {
         hal_poll();fill();
@@ -196,6 +232,8 @@ int main(void) {
         if(ch=='d')begin();else if(ch=='s')status();else if(ch=='r')file_read();else if(ch=='f')swap_frame();
         else if(ch=='x') {streaming=0;hal_uart_puts(hal_audio_stop()==HAL_OK?"AUDIO STOP PASS\r\n":"AUDIO STOP FAIL\r\n");}
         else if(ch=='e') {pending_reply=0;hal_phys_reset(10);hal_uart_puts("PHY RESET DONE\r\n");ethernet_status();}
+        else if(ch=='u')usb_status();
+        else if(ch=='j') {hal_uart_puts(hal_usb_init()==HAL_OK?"USB RESTART PASS\r\n":"USB RESTART FAIL\r\n");usb_status();}
         hal_uart_puts("> ");
     }
 }

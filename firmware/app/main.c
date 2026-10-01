@@ -21,6 +21,10 @@ static void status(void) {
     const char hex[]="0123456789ABCDEF";
     for(unsigned i=0;i<6;++i) {if(i)hal_uart_putc(':');hal_uart_putc(hex[eth.mac[i]>>4]);hal_uart_putc(hex[eth.mac[i]&15]);}
     hal_uart_puts("\r\n");
+    hal_usb_info_t usb;hal_usb_get_info(&usb);
+    hal_uart_puts("USB host=48 MHz phy=");hal_uart_hex(usb.phy_id);hal_uart_puts(" ready=");hal_uart_hex(usb.initialized);
+    hal_uart_puts(" connected=");hal_uart_hex(usb.connected);hal_uart_puts(" VID=");hal_uart_hex(usb.vid);hal_uart_puts(" PID=");hal_uart_hex(usb.pid);
+    hal_uart_puts(" HID=");hal_uart_hex(usb.hid_interfaces);hal_uart_puts(" reports=");hal_uart_hex(usb.reports);hal_uart_puts(" errors=");hal_uart_hex(usb.errors);hal_uart_puts("\r\n");
     hal_audio_info_t audio;hal_audio_get_info(&audio);
     hal_uart_puts("AUDIO hz=");hal_uart_hex(audio.sample_rate);hal_uart_puts(" control=");hal_uart_hex(audio.control);hal_uart_puts(" level=");hal_uart_hex(audio.level);hal_uart_puts(" underruns=");hal_uart_hex(audio.underruns);hal_uart_puts(" errors=");hal_uart_hex(audio.errors);hal_uart_puts(" amp=");hal_uart_hex(audio.amplifier);hal_uart_puts("\r\n");
     hal_stats_t stats;hal_get_stats(&stats);
@@ -39,6 +43,13 @@ int main(void) {
     char line[32];unsigned used=0,overflow=0;
     for(;;) {
         hal_poll();
+        hal_usb_key_t key;
+        while(hal_usb_key_take(&key)==HAL_OK) {
+            hal_uart_puts(key.pressed?"\r\nUSB KEY DOWN usage=":"\r\nUSB KEY UP usage=");hal_uart_hex(key.usage);
+            hal_uart_puts(" modifiers=");hal_uart_hex(key.modifiers);hal_uart_puts("\r\n> ");
+        }
+        hal_usb_report_t report;while(hal_usb_report_take(&report)==HAL_OK) {}
+        hal_usb_mouse_t mouse;while(hal_usb_mouse_take(&mouse)==HAL_OK) {}
         hal_eth_info_t link;hal_eth_get_info(&link);
         if(spi_lcd_ready && link.link!=last_link) {hal_spi_lcd_link(link.link);last_link=link.link;}
         unsigned pressed,released;hal_buttons_take(&pressed,&released);
