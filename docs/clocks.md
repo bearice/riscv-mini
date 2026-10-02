@@ -16,14 +16,14 @@ Dock RTL8201F 25 MHz 晶振
   └─ PHY REF_CLK / FPGA RMII RX、TX、参考计数：50 MHz
 Dock USB3317 26 MHz 晶振
   └─ PHY ULPI CLKOUT：60 MHz（独立于 sys 60 MHz）
-       └─ ULPI rPLL：60 MHz / 225°（只用于 PHY 初始化与状态）
+       └─ ULPI rPLL：60 MHz / 247.5°（只用于 PHY 初始化与状态）
 ```
 
 USB PLL 数量为两颗，加上主时钟和显示 PLL，共四颗。OHCI 的控制寄存器、
 DMA、IRQ 在 sys 域，USB 收发引擎在 48 MHz 域，通过 core 内的同步器、toggle
 握手跨域。串行 DP/DM 接收先同步到 48 MHz；PHY 状态同步到 sys。ULPI 初始化
 采样采用 60 MHz 的原生下降沿触发器，数据和 STP 输出为寄存器。
-225° 相位与 FPGA 内部时钟布线延迟共同决定实际采样/发射位置；不能单看
+247.5° 相位与 FPGA 内部时钟布线延迟共同决定实际采样/发射位置；不能单看
 PLL 相位推断接口边沿。ULPI 输出约束以 PHY 外部时钟为参考保留 setup 和
 hold 检查，初始化输出仅增加一个 setup 周期，没有用对应 hold 例外放宽。
 
@@ -35,6 +35,7 @@ hold 检查，初始化输出仅增加一个 setup 周期，没有用对应 hold
 | 原生 SD | 初始化 400 kHz，工作 7.5 MHz，四位 SDR | sys /150、/8 |
 | RGB LCD | 9 MHz 像素，480×272，约 59.94 Hz | 显示 PLL；总时序 525×286 |
 | PT8211 | BCK 1.5 MHz；46,875 stereo frame/s | sys /40，每帧 32 bit |
+| I2S 麦克风 | BCLK 3 MHz；46,875 samples/s；WS 46.875 kHz | sys /20，每帧 64 bit；无新增 PLL/时钟域 |
 | MDIO | MDC ≤500 kHz，实际包含软件开销 | GPIO bitbang；每半周期等待至少 1 µs |
 | WS2812B | 800 kbit/s；latch ≥300 µs | sys 状态机 |
 | timer1 | 1 kHz IRQ | 60,000 sys 周期 |

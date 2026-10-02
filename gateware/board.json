@@ -176,6 +176,28 @@
     "max_blocks_per_command": 8,
     "status": "M6 native15MHz reads pass; stable native7.5MHz write/read. Hotplug acceptance skipped per user. See docs/m6-validation.md."
   },
+  "microphone": {
+    "marking": "ME27 X916; exact part unconfirmed",
+    "format": "standard_i2s_signed_pcm24_in_32bit_slots",
+    "sample_rate_hz": 46875,
+    "bck_hz": 3000000,
+    "clocks_per_frame": 64,
+    "snapshot_samples": 512,
+    "snapshot_fifo_bits": 48,
+    "data_pin": "P11",
+    "bck_pin": "R11",
+    "lr_pin": "M15",
+    "ws_pin": "J16",
+    "second_data_pin": "T6",
+    "second_bck_pin": "R8",
+    "second_lr_pin": "T8",
+    "second_ws_pin": "P9",
+    "stereo": "shared_bck_ws_first_lr0_second_lr1_pcm24_pairs",
+    "io_standard": "LVCMOS33",
+    "input_pull": "down",
+    "dma": false,
+    "status": "Stereo firmware checks and user-confirmed independent acoustic response/LCD stability passed on P11/R11/M15/J16 and T6/R8/T8/P9. T9 remains WS2812 only. See docs/microphone.md."
+  },
   "audio": {
     "part": "PT8211-S",
     "format": "pcm16_stereo_L_low16_R_high16",

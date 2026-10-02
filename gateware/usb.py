@@ -74,9 +74,10 @@ class USBHost(LiteXModule):
         # Keep the clock running for USB-only stop; F10 still resets the PLL.
         self.comb += pll.reset.eq(~soc.phy_reset.out.storage)
         pll.register_clkin(pads.clk,60e6)
-        # 225 degrees is a 135-degree advance modulo one period. Compensate
-        # the incoming/PLL/global insertion before the external sampling edge.
-        pll.create_clkout(self.cd_ulpi,60e6,phase=225,margin=0,with_reset=False)
+        # 247.5 degrees adds one 22.5-degree tap (~1.04ns at 60MHz) to the
+        # previous 225-degree phase. Keep output-enable hold margin when
+        # placement changes, while retaining the external setup budget.
+        pll.create_clkout(self.cd_ulpi,60e6,phase=247.5,margin=0,with_reset=False)
         self.specials += AsyncResetSynchronizer(self.cd_ulpi,
             soc.crg.cd_sys.rst|~soc.phy_reset.out.storage|~self._enable.storage|~pll.locked)
         init_pads=Record([('dir',1),('nxt',1),('stp',1)])

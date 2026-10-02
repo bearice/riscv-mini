@@ -17,6 +17,7 @@
 | flash | JEDEC/容量、read、受 `[2,4)` MiB 边界保护的 program/erase；无写后读回 |
 | display | SPI LCD 状态页，DDR RGB565 双帧的 init/frame/present/stop/status |
 | audio | PT8211 PCM16 stereo，46,875 Hz；PIO FIFO / DDR ring DMA、start/pause/stop/mute、进度及欠载统计；见 [音频](audio.md) |
+| mic | 标准 I2S PCM24，每路 46,875 samples/s；单麦克风时隙选择或双麦克风同步 512 对快照、读取及溢出统计；见 [麦克风](microphone.md) |
 | ethernet | RTL8201F MDIO、100M full-duplex link、LiteEth原始帧、packet slots、IRQ/错误统计、Flash UID派生MAC；见 [Ethernet](ethernet.md) |
 | usb | OHCI Host、DDR 描述符/DMA、FS HID 枚举；Boot 键盘 usage/修饰键按下释放、Boot 鼠标相对运动、raw HID reports、异步键盘 LED；见 [USB](usb.md) |
 

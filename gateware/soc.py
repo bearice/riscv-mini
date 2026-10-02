@@ -8,7 +8,7 @@ from litex.soc.cores.clock.gowin_gw2a import GW2APLL
 from litex.soc.integration.soc_core import SoCCore
 from litex.soc.integration.soc import SoCRegion
 from litex.soc.interconnect import wishbone
-from litex.build.generic_platform import Pins, Subsignal, IOStandard
+from litex.build.generic_platform import Pins, Subsignal, IOStandard, Misc
 from litex.soc.cores.spi import SPIMaster
 from litex.soc.cores.gpio import GPIOOut, GPIOIn
 from litex.soc.cores.timer import Timer
@@ -23,6 +23,7 @@ from gateware.video import RGBLCD
 from gateware.board_io import BoardIO, WS2812
 from gateware.sd import NativeSD
 from gateware.audio import Audio
+from gateware.microphone import Microphone
 from gateware.ethernet import add_ethernet
 from gateware.usb import add_usb
 from gateware.bus import WishbonePipeline
@@ -67,6 +68,8 @@ class MiniSoC(SoCCore):
     def __init__(self,rom_data=None,sd_backend="native"):
         if sd_backend not in ("native","spi"):raise ValueError("SD backend must be native or spi")
         platform=Platform(dock='standard',toolchain='gowin');self.crg=ClockResetGenerator(platform)
+        # SUG1220: prioritize timing over compilation speed at high utilization.
+        platform.toolchain.options.update(timing_driven=1,place_option=2,route_option=1)
         SoCCore.__init__(self,platform,clk_freq=60e6,ident='riscv-mini base: Flash/UART -> DDR',
             cpu_type='vexriscv',cpu_variant='lite',integrated_rom_size=8*1024,
             integrated_rom_init=rom_data or [],integrated_sram_size=8*1024,
@@ -118,7 +121,21 @@ class MiniSoC(SoCCore):
         buttons=Cat(*[platform.request('btn_n',i) for i in range(1,5)])
         self.board_io=BoardIO(platform.request('board_leds'),buttons,platform.request('board_switches'))
         self.irq.add('board_io',use_loc_if_exists=True)
+        # User-confirmed wiring: DA/CK/LR/WS = P11/R11/M15/J16.
+        platform.add_extension([('microphone',0,
+            Subsignal('data',Pins('P11'),Misc('PULL_MODE=DOWN')),
+            Subsignal('bck',Pins('R11'),Misc('PULL_MODE=NONE')),
+            Subsignal('lr',Pins('M15'),Misc('PULL_MODE=NONE')),
+            Subsignal('ws',Pins('J16'),Misc('PULL_MODE=NONE')),IOStandard('LVCMOS33'))])
+        platform.add_extension([('microphone_second',0,
+            Subsignal('data',Pins('T6'),Misc('PULL_MODE=DOWN')),
+            Subsignal('bck',Pins('R8'),Misc('PULL_MODE=NONE')),
+            Subsignal('lr',Pins('T8'),Misc('PULL_MODE=NONE')),
+            Subsignal('ws',Pins('P9'),Misc('PULL_MODE=NONE')),IOStandard('LVCMOS33'))])
+        self.mic=Microphone(platform.request('microphone'),second=platform.request('microphone_second'))
         self.ws2812=WS2812(platform.request('rgb_led'))
+        self.add_constant('MIC_SAMPLE_RATE',46875)
+        self.add_constant('MIC_SNAPSHOT_SAMPLES',512)
         # One output owns F10: both Ethernet and USB PHYs reset together.
         self.phy_reset=GPIOOut(platform.request('shared_phy_reset_n'),reset=0)
         self.timer0.add_uptime()

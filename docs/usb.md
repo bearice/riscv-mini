@@ -9,7 +9,7 @@ The Host uses the pinned Spinal OHCI core at 48 MHz (third PLL), with Wishbone
 control and DMA at sys 60 MHz. CPU and DDR remain 60/120 MHz. USB3317 is first
 read/configured over ULPI and then operates in six-pin serial mode, retaining
 its 60 MHz clock. A fourth PLL regenerates the ULPI 60 MHz clock to meet
-FPGA output setup (225-degree configured phase); its lock is part of the initialization reset. All four
+FPGA output setup/hold (247.5-degree configured phase); its lock is part of the initialization reset. All four
 PLLs are allocated. The current PHY configuration is full speed, 12 Mbit/s;
 high-speed USB, hubs, mass storage and arbitrary report-format keyboard
 decoding are outside this milestone. Generic HID reports remain available raw.

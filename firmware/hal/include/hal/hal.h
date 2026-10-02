@@ -85,6 +85,16 @@ volatile uint16_t *hal_video_frame(unsigned slot);
 hal_result_t hal_video_present(unsigned slot);
 hal_result_t hal_video_stop(void);
 void hal_video_status(void);
+/* Standard I2S PCM24 snapshots; single main-loop owner. Independent of WS2812. */
+typedef struct {uint32_t sample_rate,control,samples,last_sample,level,busy,done,captured,overruns,activity,last_right,activity_right;} hal_mic_info_t;
+typedef struct {int32_t left,right;} hal_mic_pair_t;
+hal_result_t hal_mic_start_stereo(void);
+hal_result_t hal_mic_read_stereo(hal_mic_pair_t *samples,unsigned capacity,unsigned *read);
+hal_result_t hal_mic_start(unsigned right_channel);
+void hal_mic_stop(void);
+hal_result_t hal_mic_capture(void);
+hal_result_t hal_mic_read(int32_t *samples,unsigned capacity,unsigned *read);
+void hal_mic_get_info(hal_mic_info_t *info);
 /* Stereo PCM word: signed left in bits15:0, signed right in bits31:16.
    Single main-loop owner. DMA ring must remain allocated until stop succeeds. */
 typedef struct {uint32_t sample_rate,control,level,frames,played,underruns,overruns,fetched,wraps,errors,busy,amplifier,last_sample;} hal_audio_info_t;

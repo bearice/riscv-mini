@@ -1,5 +1,12 @@
 # Simulation scope
 
+`sim/test_microphone.py` drives the actual I2S receiver with distinct positive
+and negative left/right PCM24 words and deliberately nonzero delay/padding bits.
+It checks the one-bit I2S delay, 64 BCLK/frame, clock divider, sign extension,
+two bounded snapshots, independent DA inputs paired in the same frame, identical
+clock outputs and LR=0/1 in stereo, FIFO draining and stop/cancel. It does not identify the
+physical microphone or verify electrical timing/acoustic response.
+
 Run `.venv/Scripts/python.exe sim/test_spi.py` from riscv-mini.
 The Migen transaction simulation checks 8/16-bit MSB-first transfers, mode-0
 clock edges, retained manual chip-select across transfers, idle clock level,

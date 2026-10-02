@@ -32,6 +32,9 @@ M5a 已接入 C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四�
 
 ## 固件测试命令
 
+外接 I2S 麦克风和大 LCD 波形 demo 见 [麦克风](docs/microphone.md)。接线以用户更正为准：DA=P11、CK=R11、LR=M15、WS=J16，另接 GND/3V3；T9 继续用于 WS2812。
+双麦克风 demo 为 `firmware/examples/microphone_stereo_demo.c`，第二只接 DA=T6、CK=R8、LR=T8、WS=P9；使用共享 I2S 时序分别显示两路波形，monitor 命令为 `test mic stereo`。T9 保留为独立 WS2812 输出。
+
 输入 `test` 列出 DDR、Flash、UART/IRQ、SD、两块 LCD、板级 IO、音频、Ethernet、USB 和并发测试命令。完整参数、读写影响和外部验收边界见 [固件测试命令](docs/firmware-tests.md)。例如：
 
 ```text

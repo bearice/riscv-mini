@@ -62,6 +62,15 @@ def add_ddr_init_exceptions(platform, with_video=False):
             # PHY MDIO input, free-running reference counter, MAC FIFO Gray
             # pointers and CRC/preamble pulse synchronizers cross async domains.
             pairs=re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl)
+            for mic_port in ('microphone_data','microphone_second_data'):
+                mic_stages=[dest for dest,src in pairs if src==mic_port]
+                if not mic_stages:continue
+                if len(mic_stages)!=1:raise ValueError(f'Unexpected microphone input stages: {mic_stages}')
+                stream.write('# I2S input pad path bounded; second synchronizer and receiver remain timed.\n')
+                stream.write(f'set_max_delay 25 -from [get_ports {{{mic_port}}}] -to [get_pins {{{mic_stages[0]}_s1/D}}]\n')
+                stream.write('# 3MHz BCLK/WS are registered sys clock-enable outputs, no new clock domain.\n')
+                prefix=mic_port.removesuffix('_data')
+                stream.write(f'set_max_delay 25 -from [get_pins {{mic*_s*/Q}}] -to [get_ports {{{prefix}_bck {prefix}_ws}}]\n')
             usb_stages=[dest for dest,src in pairs if re.fullmatch(
                 r'usb_(?:ulpi_(?:ready|error|id)|serial_lines)',src)]
             if usb_stages:
@@ -99,8 +108,8 @@ def add_ddr_init_exceptions(platform, with_video=False):
                 stream.write('set_input_delay -min 1 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_dir usb_ulpi_nxt usb_ulpi_data[*]}]\n')
                 stream.write('set_output_delay -max 5.5 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_stp usb_ulpi_data[*]}]\n')
                 stream.write('set_output_delay -min -0.5 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_stp usb_ulpi_data[*]}]\n')
-                # PLL P nominal edge +225deg + ~6.9ns insertion wraps into
-                # the next external cycle (~0.7ns after PHY rising). The link
+                # PLL P phase plus insertion wraps into the next external
+                # cycle, after PHY rising. The link
                 # consumes the preceding falling sample and launches for the
                 # FOLLOWING PHY rising edge. Account for that cycle label;
                 # retain the intervening edge's hold check.

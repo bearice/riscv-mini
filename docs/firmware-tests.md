@@ -18,6 +18,8 @@ boot ROM 仍只有 DDR 初始化和 Flash/UART 装载，不链接这些测试。
 | `test spi-lcd` | 执行 SPI LCD 初始化与状态页传输 | 颜色、字体、方向仍需人观察；屏幕无读回通道 |
 | `test io` | 逐一设置六个 LED 并读回、WS2812 busy 完成、读取按键/DIP | 寄存器检查不能替代灯光/按键实物观察；灯光短时改变，最后单色 LED 恢复、RGB 灯灭 |
 | `test audio` | 静音 PIO 256 帧与预期 underrun；DDR DMA、pause/resume、进度和错误 | 测试结束停止 DMA，恢复静音；不代表左右声道已听音通过 |
+| `test mic` | 启动左声道、等待 200 ms、采集并读取 512 个有符号 PCM24 样本，检查非恒定数据/无溢出，输出 min/max | 启动 BCLK/WS，结束后停止；不代替对声音响应和 LCD 波形的人工确认 |
+| `test mic stereo` | 两只麦克风共享 CK/WS，LR 分别为 0/1；读取 512 对 PCM24，检查两路非恒定、独立数值及无溢出 | 需要两只麦克风，输出各路 min/max；不代替声道归属和声音响应的人工确认 |
 | `test audio pio` | 只运行 PIO/预期 underrun 检查 | 预期产生的 underrun 会在 stop 时清零 |
 | `test audio start/stop/pause/resume` | 操作同一个 128 KiB PCM ring 的 DMA | start 默认静音，pause 保持 ring；resume 需要已 start |
 | `test audio tone` | 开启低幅度、左右不同频率的两秒音调，到期自动静音 | 这是主动发声命令，只在准备好听音/line-in 时运行；物理声音需外部确认 |

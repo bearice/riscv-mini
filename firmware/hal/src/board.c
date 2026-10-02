@@ -32,7 +32,7 @@ void hal_init(void) {
     timer1_reload_write(CONFIG_CLOCK_FREQUENCY/1000u-1);timer1_ev_pending_write(1);timer1_ev_enable_write(1);timer1_en_write(1);
     board_io_ev_enable_write(1);uart_ev_enable_write(2);hal_irq_runtime_start();
     hal_phys_reset(10);while(hal_ws2812_busy()) {} hal_ws2812_set(0,0,0);
-    hal_audio_stop();hal_audio_mute(1);
+    hal_audio_stop();hal_audio_mute(1);hal_mic_stop();
 }
 void hal_poll(void) {hal_eth_poll();hal_usb_poll();}
 uint32_t hal_time_ms(void) {
@@ -81,6 +81,7 @@ void hal_reboot(void) {
     hal_eth_stop();
     hal_usb_stop();
     hal_audio_stop();
+    hal_mic_stop();
     video_stop();hal_irq_save();uart_ev_enable_write(0);timer1_ev_enable_write(0);board_io_ev_enable_write(0);
     __asm__ volatile("csrw 0xbc0,zero\ncsrw mie,zero":::"memory");ctrl_reset_write(1);for(;;) {}
 }

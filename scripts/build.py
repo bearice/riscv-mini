@@ -109,7 +109,7 @@ def main():
     for name,main,sources,linker in [
         ('boot',loader/'main.c',[ROOT/'firmware/boot/ddr.c'],loader/'boot.ld'),
         ('app',a.app.resolve(),[*[drivers/n for n in ('spi.c','lcd.c','sd_native.c' if a.sd_backend=='native' else 'sd.c','filesystem.c','string.c','video.c')],
-            *[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c','audio.c','ethernet.c','usb.c')],
+            *[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c','audio.c','microphone.c','ethernet.c','usb.c')],
             *[usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','class/hid/hid_host.c','portable/ohci/ohci.c')],vendor/'ff.c',vendor/'ffunicode.c'],loader/'app.ld')]:
         elf=firmware/f'{name}.elf'
         # Whole-program optimization keeps the ROM loader compact; app stays

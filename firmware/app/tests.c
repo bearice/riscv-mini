@@ -278,6 +278,29 @@ static unsigned usb_restart(void) {
     hal_usb_stop();wait_ms(20);hal_usb_info_t stopped;hal_usb_get_info(&stopped);
     return !stopped.initialized && !stopped.phy_ready && hal_usb_init()==HAL_OK && usb_check();
 }
+static unsigned mic_check(unsigned stereo) {
+    unsigned ok=(stereo?hal_mic_start_stereo():hal_mic_start(0))==HAL_OK,n=0;
+    wait_ms(200);
+    if(ok)ok=hal_mic_capture()==HAL_OK;
+    hal_mic_info_t info;uint32_t start=hal_time_ms();
+    do {cooperate();hal_mic_get_info(&info);}while(ok && !info.done && hal_time_ms()-start<100);
+    if(ok)ok=info.done && !info.overruns && (stereo?
+        hal_mic_read_stereo((hal_mic_pair_t *)work,512,&n):hal_mic_read((int32_t *)work,512,&n))==HAL_OK && n==512;
+    unsigned different=0;
+    for(unsigned c=0;c<1+stereo;++c) {
+        int32_t lo=8388607,hi=-8388608;
+        for(unsigned i=0;i<n;++i) {
+            int32_t v=((int32_t *)work)[i*(1+stereo)+c];if(v<lo)lo=v;if(v>hi)hi=v;
+            if(stereo && !c && ((hal_mic_pair_t *)work)[i].left!=((hal_mic_pair_t *)work)[i].right)++different;
+        }
+        value(c?"\r\nMIC R samples=":"MIC L samples=",info.samples);value(" captured=",n);
+        value(" min=",(unsigned)lo);value(" max=",(unsigned)hi);value(" DA_HIGH_SEEN=",c?info.activity_right:info.activity);
+        ok=ok && lo>=-8388608 && hi<=8388607 && hi>lo;
+    }
+    if(stereo) {value(" different=",different);ok=ok && different && info.activity && info.activity_right;}
+    hal_uart_puts("\r\nMIC acoustic response requires sound and visual observation\r\n");
+    hal_mic_stop();return ok;
+}
 static void eth_status(void) {
     hal_eth_info_t e;hal_eth_get_info(&e);
     value("ETH ready=",e.initialized);value(" phy=",e.phy_id);value(" link=",e.link);
@@ -347,7 +370,7 @@ static unsigned soak(unsigned seconds) {
     return audio_stop() && ok;
 }
 void tests_help(void) {
-    hal_uart_puts("test ddr|flash|uart|irq|io|sd|sd blocks|sd write|lcd|lcd clear|spi-lcd\r\n");
+    hal_uart_puts("test ddr|flash|uart|irq|io|sd|sd blocks|sd write|lcd|lcd clear|spi-lcd|mic|mic stereo\r\n");
     hal_uart_puts("test audio|audio pio|audio start|audio stop|audio pause|audio resume|audio tone\r\n");
     hal_uart_puts("test eth|eth parser|eth start|eth stop|usb|usb stop|usb restart|phys|soak 1..300\r\n");
     hal_uart_puts("test usb input|usb input stop|usb leds DEVICE INTERFACE MASK (decimal)\r\n");
@@ -373,6 +396,7 @@ int tests_command(const char *command) {
     else if(!strcmp(name,"lcd clear"))ok=hal_video_init()==HAL_OK;
     else if(!strcmp(name,"spi-lcd")) {hal_sd_info_t s;hal_sd_get_info(&s);ok=hal_spi_lcd_show(s.initialized)==HAL_OK;hal_uart_puts("SPI LCD visual check required\r\n");}
     else if(!strcmp(name,"audio"))ok=audio_check();
+    else if(!strcmp(name,"mic") || !strcmp(name,"mic stereo"))ok=mic_check(!strcmp(name,"mic stereo"));
     else if(!strcmp(name,"audio pio"))ok=audio_pio();
     else if(!strcmp(name,"audio start"))ok=audio_begin();
     else if(!strcmp(name,"audio stop"))ok=audio_stop();
