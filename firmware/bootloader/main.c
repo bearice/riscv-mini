@@ -64,7 +64,10 @@ int main(void) {
     /* DDR PHY init briefly gates/restarts sys during initial configuration. */
     for(volatile unsigned i=0;i<480000;++i) {}
     puts_uart("\r\nriscv-mini BOOT | RV32IM | 60/120 MHz\r\n");
-    io_timer_init();rgb_lcd_enable_write(0);
+    io_timer_init();
+#if MINI_FEATURE_VIDEO
+    rgb_lcd_enable_write(0);
+#endif
     int ddr_ok=ddr_bringup();io_timer_init();
     uint32_t id=0;unsigned available=flash_init(&id);
     puts_uart("FLASH JEDEC=");io_hex(id);puts_uart(available?" READY\r\n":" UNAVAILABLE\r\n");

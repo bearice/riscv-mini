@@ -9,7 +9,11 @@ hal_result_t hal_mic_start(unsigned right) {
 }
 void hal_mic_stop(void) {mic_control_write(0);mic_clear_write(1);}
 hal_result_t hal_mic_start_stereo(void) {
+#if MINI_FEATURE_MIC_STEREO
     mic_control_write(0);mic_clear_write(1);mic_control_write(5);return HAL_OK;
+#else
+    return HAL_UNSUPPORTED;
+#endif
 }
 hal_result_t hal_mic_capture(void) {
     if(!(mic_control_read()&1))return HAL_INVALID;
@@ -31,6 +35,7 @@ hal_result_t hal_mic_read(int32_t *samples,unsigned capacity,unsigned *read) {
 }
 hal_result_t hal_mic_read_stereo(hal_mic_pair_t *samples,unsigned capacity,unsigned *read) {
     if(read)*read=0;
+    if(!MINI_FEATURE_MIC_STEREO)return HAL_UNSUPPORTED;
     if(!samples || !read || !capacity || !(mic_control_read()&4))return HAL_INVALID;
     if(!mic_done_read())return HAL_BUSY;
     if(mic_overruns_read())return HAL_IO;

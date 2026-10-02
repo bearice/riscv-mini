@@ -16,6 +16,8 @@ def abi_tag(csr):
     interface={'registers':csr['csr_registers'],'memories':csr['memories'],
                'interrupts':{k:v for k,v in csr.get('constants',{}).items() if k.lower().endswith('_interrupt')},
                'cpu':'vexriscv-lite-rv32im','sys_hz':60000000,'load':LOAD,'image_version':VERSION}
+    features={k:v for k,v in csr.get('constants',{}).items() if k.lower().startswith('mini_feature_')}
+    if features:interface['features']=features
     return zlib.crc32(json.dumps(interface,sort_keys=True,separators=(',',':')).encode())
 
 def pack_image(payload,abi):

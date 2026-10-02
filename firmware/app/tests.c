@@ -4,29 +4,47 @@
 #include <generated/csr.h>
 #include "ff.h"
 #include <string.h>
+#if MINI_FEATURE_ETH
 #include "../examples/packet_echo.h"
+#endif
 
 #define RING_FRAMES 32768u
 #define WORK_BYTES 8192u
 #define PIXELS (480u*272u)
-static uint32_t ring[RING_FRAMES],pcm[256],work[WORK_BYTES/4+1];
+static uint32_t work[WORK_BYTES/4+1];
+#if MINI_FEATURE_AUDIO
+static uint32_t ring[RING_FRAMES],pcm[256];
+static unsigned streaming,producer,audible_until;
+#endif
+#if MINI_FEATURE_ETH
 static uint8_t packet[HAL_ETH_MAX_FRAME];
-static unsigned streaming,producer,network,pending_reply,network_replies,network_ignored;
-static unsigned frame,audible_until,usb_input;
+static unsigned network,pending_reply,network_replies,network_ignored;
+#endif
+#if MINI_FEATURE_VIDEO
+static unsigned frame;
+#endif
+#if MINI_FEATURE_USB
+static unsigned usb_input;
+#endif
 static volatile unsigned ecall_armed,ecalls;
+#if MINI_FEATURE_AUDIO
 static const int16_t sine[32]={0,200,392,569,724,851,946,1004,1024,1004,946,851,724,569,392,200,
     0,-200,-392,-569,-724,-851,-946,-1004,-1024,-1004,-946,-851,-724,-569,-392,-200};
+#endif
 
 static void result(const char *name,unsigned ok) {
     hal_uart_puts("TEST ");hal_uart_puts(name);hal_uart_puts(ok?" PASS\r\n":" FAIL\r\n");
 }
 static void value(const char *name,uint32_t number) {hal_uart_puts(name);hal_uart_hex(number);}
+#if MINI_FEATURE_SD
 static uint32_t crc_update(uint32_t crc,const uint8_t *data,unsigned size) {
     for(unsigned i=0;i<size;++i) {
         crc^=data[i];for(unsigned b=0;b<8;++b)crc=(crc>>1)^((0u-(crc&1u))&0xedb88320u);
     }
     return crc;
 }
+#endif
+#if MINI_FEATURE_VIDEO
 static uint32_t crc_pixel(uint32_t crc,unsigned pixel) {
     /* Keep the two RGB565 bytes in registers instead of a DDR stack array. */
     for(unsigned byte=0;byte<2;++byte) {
@@ -35,11 +53,15 @@ static uint32_t crc_pixel(uint32_t crc,unsigned pixel) {
     }
     return crc;
 }
+#endif
+#if MINI_FEATURE_AUDIO
 static uint32_t sample(unsigned offset) {
     int16_t left=sine[(offset/2)&31],right=sine[(offset/3)&31];
     return (uint16_t)left|((uint32_t)(uint16_t)right<<16);
 }
+#endif
 void tests_poll(void) {
+#if MINI_FEATURE_USB
     hal_usb_key_t key;
     while(hal_usb_key_take(&key)==HAL_OK) {
         hal_uart_puts(key.pressed?"\r\nUSB KEY DOWN usage=":"\r\nUSB KEY UP usage=");hal_uart_hex(key.usage);
@@ -57,6 +79,8 @@ void tests_poll(void) {
         value("USB MOUSE buttons=",mouse.buttons);value(" x=",(int32_t)mouse.x);
         value(" y=",(int32_t)mouse.y);value(" wheel=",(int32_t)mouse.wheel);hal_uart_puts("\r\n");
     }
+#endif
+#if MINI_FEATURE_ETH
     if(network)for(unsigned budget=0;budget<4;++budget) {
         if(pending_reply) {
             hal_result_t sent=hal_eth_send(packet,pending_reply);
@@ -67,6 +91,8 @@ void tests_poll(void) {
         pending_reply=packet_reply(packet,size);
         if(pending_reply)++network_replies;else ++network_ignored;
     }
+#endif
+#if MINI_FEATURE_AUDIO
     if(streaming) {
         hal_audio_info_t audio;hal_audio_get_info(&audio);
         unsigned used=producer-audio.fetched;
@@ -84,15 +110,19 @@ void tests_poll(void) {
     if(audible_until && hal_deadline_reached(hal_time_ms(),audible_until)) {
         hal_audio_mute(1);audible_until=0;
     }
+#endif
 }
 static void cooperate(void) {tests_poll();hal_poll();}
 static void wait_ms(unsigned ms) {
     uint32_t start=hal_time_ms();while(hal_time_ms()-start<ms)cooperate();
 }
+#if MINI_FEATURE_AUDIO
 static unsigned audio_stop(void) {
     streaming=audible_until=0;hal_audio_mute(1);
     unsigned ok=hal_audio_stop()==HAL_OK;if(ok)hal_audio_mute(1);return ok;
 }
+#endif
+#if MINI_FEATURE_AUDIO
 static unsigned audio_begin(void) {
     if(!audio_stop() || hal_audio_ring_begin(ring,RING_FRAMES)!=HAL_OK)return 0;
     producer=0;
@@ -106,15 +136,21 @@ static unsigned audio_begin(void) {
     if(hal_audio_start()!=HAL_OK) {audio_stop();return 0;}
     streaming=1;return 1;
 }
+#endif
+#if MINI_FEATURE_AUDIO
 static unsigned audio_ok(void) {
     hal_audio_info_t a;hal_audio_get_info(&a);
     return streaming && !a.underruns && !a.overruns && !a.errors && !a.amplifier;
 }
+#endif
+#if MINI_FEATURE_AUDIO
 static void audio_status(void) {
     hal_audio_info_t a;hal_audio_get_info(&a);
     value("AUDIO played=",a.played);value(" fetched=",a.fetched);value(" underruns=",a.underruns);
     value(" overruns=",a.overruns);value(" errors=",a.errors);value(" amp=",a.amplifier);hal_uart_puts("\r\n");
 }
+#endif
+#if MINI_FEATURE_AUDIO
 static unsigned audio_pio(void) {
     if(!audio_stop())return 0;
     hal_audio_mute(1);
@@ -125,6 +161,8 @@ static unsigned audio_pio(void) {
     ok=ok && a.played==256 && a.underruns && !a.overruns && !a.errors && !a.amplifier;
     audio_status();return audio_stop() && ok;
 }
+#endif
+#if MINI_FEATURE_AUDIO
 static unsigned audio_check(void) {
     if(!audio_pio() || !audio_begin())return 0;
     wait_ms(1000);hal_audio_info_t before,after;hal_audio_get_info(&before);
@@ -135,6 +173,7 @@ static unsigned audio_check(void) {
     ok=ok && audio_ok() && after.played>before.played;
     audio_status();return audio_stop() && ok;
 }
+#endif
 static unsigned ddr_check(void) {
     volatile uint32_t *words=work;
     static const uint32_t masks[]={0,0xffffffffu,0xaaaaaaaa,0x55555555};
@@ -152,6 +191,7 @@ static unsigned ddr_check(void) {
     }
     value("DDR scratch bytes=",WORK_BYTES);hal_uart_puts(" (not a full 128MiB test)\r\n");return 1;
 }
+#if MINI_FEATURE_FLASH
 static unsigned flash_check(void) {
     uint32_t id;unsigned bytes,length;uint8_t uid[16];
     if(hal_flash_probe(&id,&bytes)!=HAL_OK || hal_flash_uid(uid,&length)!=HAL_OK || !length)return 0;
@@ -160,6 +200,8 @@ static unsigned flash_check(void) {
     for(unsigned i=0;i<length;++i) {hal_uart_putc(hex[uid[i]>>4]);hal_uart_putc(hex[uid[i]&15]);}
     hal_uart_puts(" (read-only, no write verification)\r\n");return 1;
 }
+#endif
+#if MINI_FEATURE_FILESYSTEM
 static unsigned sd_read(void) {
     if(hal_sd_mount()!=HAL_OK)return 0;
     FIL file;if(f_open(&file,"RVTEST00.BIN",FA_READ)!=FR_OK)return 0;
@@ -173,8 +215,10 @@ static unsigned sd_read(void) {
     value("SD bytes=",total);value(" crc=",~crc);hal_uart_puts("\r\n");
     return ok && total==4096 && ~crc==0x08040e1eu;
 }
+#endif
+#if MINI_FEATURE_SD
 static unsigned sd_blocks(void) {
-    if(hal_sd_mount()!=HAL_OK)return 0;
+    if(hal_sd_init()!=HAL_OK)return 0;
     uint8_t *buffer=(uint8_t *)work+1;uint32_t crc=~0u;
     for(unsigned sector=0;sector<16;++sector) {
         if(hal_sd_read(sector,buffer,1)!=HAL_OK)return 0;
@@ -182,7 +226,11 @@ static unsigned sd_blocks(void) {
     }
     return hal_sd_read(0,buffer,16)==HAL_OK && crc_update(~0u,buffer,8192)==crc;
 }
+#endif
+#if MINI_FEATURE_FILESYSTEM
 static uint8_t sd_pattern(unsigned offset) {return (offset*17u)^(offset>>8)^0x5au;}
+#endif
+#if MINI_FEATURE_FILESYSTEM
 static unsigned sd_write(void) {
     if(hal_sd_mount()!=HAL_OK)return 0;
     FIL file;char name[]="RVT00000.BIN";FRESULT rc=FR_EXIST;
@@ -208,6 +256,8 @@ static unsigned sd_write(void) {
     }
     return f_close(&file)==FR_OK && ok && offset==65536;
 }
+#endif
+#if MINI_FEATURE_VIDEO
 static unsigned video_check(void) {
     frame=rgb_lcd_active_read()^1u;volatile uint16_t *pixels=hal_video_frame(frame);
     uint32_t expected=~0u;
@@ -233,6 +283,8 @@ static unsigned video_check(void) {
     wait_ms(40);hal_video_status();
     return ok && rgb_lcd_completed_read()!=before && !rgb_lcd_underflows_read();
 }
+#endif
+#if MINI_FEATURE_USB
 static void usb_status(void) {
     hal_usb_info_t u;hal_usb_get_info(&u);
     value("USB initialized=",u.initialized);value(" phy_ready=",u.phy_ready);value(" phy=",u.phy_id);
@@ -242,6 +294,8 @@ static void usb_status(void) {
     value(" key_drops=",u.key_drops);value(" mouse_drops=",u.mouse_drops);
     value(" report_drops=",u.report_drops);hal_uart_puts("\r\n");
 }
+#endif
+#if MINI_FEATURE_USB
 static unsigned usb_schedule_ok(unsigned hcca,unsigned interfaces) {
     /* Read a bounded snapshot of the real OHCI periodic ED chain. Disable
        CPU IRQs so the HCD cannot free/reassign TDs during this check. */
@@ -264,6 +318,8 @@ static unsigned usb_schedule_ok(unsigned hcca,unsigned interfaces) {
     if(!ok)hal_uart_puts("USB periodic TD ownership FAIL\r\n");
     return ok;
 }
+#endif
+#if MINI_FEATURE_USB
 static unsigned usb_check(void) {
     uint32_t start=hal_time_ms();hal_usb_info_t before,after;
     hal_usb_get_info(&before);if(!before.initialized) {usb_status();return 0;}
@@ -274,10 +330,14 @@ static unsigned usb_check(void) {
         after.frame!=before.frame && after.hcca>=0x40800000 && after.hcca<0x40c00000 && !(after.hcca&255) &&
         usb_schedule_ok(after.hcca,after.hid_interfaces);
 }
+#endif
+#if MINI_FEATURE_USB
 static unsigned usb_restart(void) {
     hal_usb_stop();wait_ms(20);hal_usb_info_t stopped;hal_usb_get_info(&stopped);
     return !stopped.initialized && !stopped.phy_ready && hal_usb_init()==HAL_OK && usb_check();
 }
+#endif
+#if MINI_FEATURE_MIC
 static unsigned mic_check(unsigned stereo) {
     unsigned ok=(stereo?hal_mic_start_stereo():hal_mic_start(0))==HAL_OK,n=0;
     wait_ms(200);
@@ -301,12 +361,16 @@ static unsigned mic_check(unsigned stereo) {
     hal_uart_puts("\r\nMIC acoustic response requires sound and visual observation\r\n");
     hal_mic_stop();return ok;
 }
+#endif
+#if MINI_FEATURE_ETH
 static void eth_status(void) {
     hal_eth_info_t e;hal_eth_get_info(&e);
     value("ETH ready=",e.initialized);value(" phy=",e.phy_id);value(" link=",e.link);
     value(" rx=",e.rx_frames);value(" tx=",e.tx_frames);value(" drops=",e.rx_drops);
     value(" replies=",network_replies);value(" ignored=",network_ignored);hal_uart_puts("\r\n");
 }
+#endif
+#if MINI_FEATURE_ETH
 static unsigned eth_check(void) {
     hal_eth_info_t e;hal_eth_get_info(&e);uint8_t uid[16];unsigned length;
     if(!e.initialized || hal_flash_uid(uid,&length)!=HAL_OK || !length)return 0;
@@ -317,17 +381,35 @@ static unsigned eth_check(void) {
     return !memcmp(e.mac,expected,6) && !e.mdio_errors && !e.crc_errors && !e.preamble_errors &&
         (e.phy_id&0xfffffff0u)==0x001cc810u && e.ref_clock_hz>49000000 && e.ref_clock_hz<51000000;
 }
+#endif
+#if MINI_FEATURE_ETH
 static unsigned eth_start(void) {
     if(!eth_check() || hal_eth_get_mac(echo_mac)!=HAL_OK)return 0;
     network=1;pending_reply=network_replies=network_ignored=0;
     hal_spi_lcd_network(echo_mac,echo_ip);
     hal_uart_puts("ETH echo active IP=169.254.20.20 UDP=1234; host ARP/ping/UDP required\r\n");return 1;
 }
+#endif
 void hal_exception_handler(hal_trap_frame_t *f) {
     if(ecall_armed && f->cause==11) {++ecalls;f->pc+=4;return;}
     value("FAULT cause=",f->cause);value(" pc=",f->pc);value(" value=",f->value);hal_uart_puts("\r\n");
     for(;;)__asm__ volatile("nop");
 }
+#if MINI_FEATURE_ETH || MINI_FEATURE_USB
+static unsigned phys_check(void) {
+#if MINI_FEATURE_ETH
+    pending_reply=0;
+#endif
+    unsigned ok=hal_phys_reset(10)==HAL_OK;
+#if MINI_FEATURE_USB
+    ok=ok && usb_check();
+#endif
+#if MINI_FEATURE_ETH
+    ok=ok && eth_check();
+#endif
+    return ok;
+}
+#endif
 static unsigned irq_check(void) {
     hal_stats_t before,after;hal_get_stats(&before);unsigned count=ecalls;
     ecall_armed=1;__asm__ volatile("ecall":::"memory");ecall_armed=0;
@@ -338,17 +420,25 @@ static unsigned irq_check(void) {
         after.timer_irqs-before.timer_irqs>=20 && !after.unhandled_irqs &&
         hal_deadline_reached(5,0xfffffff0u) && !hal_deadline_reached(0xfffffff0u,5);
 }
+#if MINI_FEATURE_BOARD_IO || MINI_FEATURE_WS2812
 static unsigned io_check(void) {
-    unsigned previous=hal_leds_get(),ok=1;
+    unsigned ok=1;
+#if MINI_FEATURE_BOARD_IO
+    unsigned previous=hal_leds_get();
     for(unsigned i=0;i<6;++i) {hal_leds_set(1u<<i);ok=ok && hal_leds_get()==(1u<<i);wait_ms(100);}
     hal_leds_set(previous);
+#endif
+#if MINI_FEATURE_WS2812
     ok=ok && hal_ws2812_set(16,8,4)==HAL_OK;
     uint32_t start=hal_time_ms();
     while(hal_ws2812_busy() && hal_time_ms()-start<10)cooperate();
     ok=ok && !hal_ws2812_busy();hal_ws2812_set(0,0,0);
+#endif
     value("IO keys=",hal_buttons_read());value(" dip=",hal_switches_read());hal_uart_puts(" (visual/input check required)\r\n");
     return ok;
 }
+#endif
+#if MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO
 static unsigned soak(unsigned seconds) {
     if(!audio_begin())return 0;
     uint32_t start=hal_time_ms();unsigned round=0,ok=1;
@@ -369,51 +459,161 @@ static unsigned soak(unsigned seconds) {
     value("SOAK rounds=",round);value(" elapsed_ms=",hal_time_ms()-start);audio_status();
     return audio_stop() && ok;
 }
+#endif
 void tests_help(void) {
-    hal_uart_puts("test ddr|flash|uart|irq|io|sd|sd blocks|sd write|lcd|lcd clear|spi-lcd|mic|mic stereo\r\n");
+    hal_uart_puts("test ddr|uart|irq\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
+#if MINI_FEATURE_FLASH
+    hal_uart_puts("test flash\r\n");
+#endif
+#if MINI_FEATURE_BOARD_IO || MINI_FEATURE_WS2812
+    hal_uart_puts("test io\r\n");
+#endif
+#if MINI_FEATURE_SD
+    hal_uart_puts("test sd blocks\r\n");
+#endif
+#if MINI_FEATURE_FILESYSTEM
+    hal_uart_puts("test sd|sd write\r\n");
+#endif
+#if MINI_FEATURE_VIDEO
+    hal_uart_puts("test lcd|lcd clear\r\n");
+#endif
+#if MINI_FEATURE_SPI_LCD
+    hal_uart_puts("test spi-lcd\r\n");
+#endif
+#if MINI_FEATURE_MIC
+    hal_uart_puts("test mic\r\n");
+#endif
+#if MINI_FEATURE_MIC_STEREO
+    hal_uart_puts("test mic stereo\r\n");
+#endif
+#if MINI_FEATURE_AUDIO
     hal_uart_puts("test audio|audio pio|audio start|audio stop|audio pause|audio resume|audio tone\r\n");
-    hal_uart_puts("test eth|eth parser|eth start|eth stop|usb|usb stop|usb restart|phys|soak 1..300\r\n");
+#endif
+#if MINI_FEATURE_ETH
+    hal_uart_puts("test eth|eth parser|eth start|eth stop\r\n");
+#endif
+#if MINI_FEATURE_USB
+    hal_uart_puts("test usb|usb stop|usb restart\r\n");
     hal_uart_puts("test usb input|usb input stop|usb leds DEVICE INTERFACE MASK (decimal)\r\n");
+#endif
+#if MINI_FEATURE_ETH || MINI_FEATURE_USB
+    hal_uart_puts("test phys\r\n");
+#endif
+#if MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO
+    hal_uart_puts("test soak 1..300\r\n");
+#endif
 }
+#if MINI_FEATURE_USB || (MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO)
 static unsigned number(const char **text,unsigned *n) {
     const char *p=*text;unsigned value=0;if(*p<'0' || *p>'9')return 0;
     do {value=value*10u+(unsigned)(*p++-'0');if(value>300)return 0;}while(*p>='0' && *p<='9');
     *text=p;*n=value;return 1;
 }
+#endif
 int tests_command(const char *command) {
     if(strcmp(command,"test") && strncmp(command,"test ",5))return 0;
     if(!strcmp(command,"test")) {tests_help();return 1;}
     const char *name=command+5;unsigned ok=0,known=1;
+    if((!MINI_FEATURE_FLASH && !strncmp(name,"flash",5)) ||
+       (!MINI_FEATURE_SD && !strncmp(name,"sd",2)) ||
+       (!MINI_FEATURE_FILESYSTEM && (!strcmp(name,"sd") || !strcmp(name,"sd write"))) ||
+       (!MINI_FEATURE_VIDEO && !strncmp(name,"lcd",3)) ||
+       (!MINI_FEATURE_SPI_LCD && !strncmp(name,"spi-lcd",7)) ||
+       (!MINI_FEATURE_AUDIO && !strncmp(name,"audio",5)) ||
+       (!MINI_FEATURE_MIC && !strncmp(name,"mic",3)) ||
+       (!MINI_FEATURE_MIC_STEREO && !strcmp(name,"mic stereo")) ||
+       (!MINI_FEATURE_ETH && !strncmp(name,"eth",3)) ||
+       (!MINI_FEATURE_USB && !strncmp(name,"usb",3)) ||
+       (!(MINI_FEATURE_BOARD_IO || MINI_FEATURE_WS2812) && !strcmp(name,"io")) ||
+       (!(MINI_FEATURE_ETH || MINI_FEATURE_USB) && !strcmp(name,"phys")) ||
+       (!(MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO) && !strncmp(name,"soak",4))) {
+        hal_uart_puts("UNSUPPORTED: feature disabled in this build\r\n");return 1;
+    }
     if(!strcmp(name,"ddr"))ok=ddr_check();
+#if MINI_FEATURE_FLASH
     else if(!strcmp(name,"flash"))ok=flash_check();
+#endif
     else if(!strcmp(name,"uart")) {hal_stats_t s;hal_get_stats(&s);value("UART irqs=",s.uart_irqs);value(" drops=",s.uart_drops);hal_uart_puts(" (received test uart command)\r\n");ok=s.uart_irqs && !s.uart_drops;}
     else if(!strcmp(name,"irq"))ok=irq_check();
+#if MINI_FEATURE_BOARD_IO || MINI_FEATURE_WS2812
     else if(!strcmp(name,"io"))ok=io_check();
+#endif
+#if MINI_FEATURE_FILESYSTEM
     else if(!strcmp(name,"sd"))ok=sd_read();
+#endif
+#if MINI_FEATURE_SD
     else if(!strcmp(name,"sd blocks"))ok=sd_blocks();
+#endif
+#if MINI_FEATURE_FILESYSTEM
     else if(!strcmp(name,"sd write"))ok=sd_write();
+#endif
+#if MINI_FEATURE_VIDEO
     else if(!strcmp(name,"lcd")) {ok=video_check();hal_uart_puts("LCD visual color/orientation check required\r\n");}
+#endif
+#if MINI_FEATURE_VIDEO
     else if(!strcmp(name,"lcd clear"))ok=hal_video_init()==HAL_OK;
+#endif
+#if MINI_FEATURE_SPI_LCD
     else if(!strcmp(name,"spi-lcd")) {hal_sd_info_t s;hal_sd_get_info(&s);ok=hal_spi_lcd_show(s.initialized)==HAL_OK;hal_uart_puts("SPI LCD visual check required\r\n");}
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio"))ok=audio_check();
+#endif
+#if MINI_FEATURE_MIC
     else if(!strcmp(name,"mic") || !strcmp(name,"mic stereo"))ok=mic_check(!strcmp(name,"mic stereo"));
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio pio"))ok=audio_pio();
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio start"))ok=audio_begin();
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio stop"))ok=audio_stop();
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio pause")) {hal_audio_pause();ok=1;}
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio resume"))ok=streaming && hal_audio_start()==HAL_OK;
+#endif
+#if MINI_FEATURE_AUDIO
     else if(!strcmp(name,"audio tone")) {ok=streaming || audio_begin();if(ok) {hal_audio_mute(0);audible_until=hal_time_ms()+2000;hal_uart_puts("AUDIO low-amplitude stereo tone for 2s; external capture/listening required\r\n");}}
+#endif
+#if MINI_FEATURE_ETH
     else if(!strcmp(name,"eth"))ok=eth_check();
+#endif
+#if MINI_FEATURE_ETH
     else if(!strcmp(name,"eth parser"))ok=hal_eth_get_mac(echo_mac)==HAL_OK && packet_check((uint8_t *)work);
+#endif
+#if MINI_FEATURE_ETH
     else if(!strcmp(name,"eth start"))ok=eth_start();
+#endif
+#if MINI_FEATURE_ETH
     else if(!strcmp(name,"eth stop")) {network=pending_reply=0;hal_eth_info_t e;hal_eth_get_info(&e);hal_spi_lcd_network(e.mac,0);ok=1;}
+#endif
+#if MINI_FEATURE_USB
     else if(!strcmp(name,"usb"))ok=usb_check();
+#endif
+#if MINI_FEATURE_USB
     else if(!strcmp(name,"usb input")) {usb_input=1;hal_uart_puts("TEST usb input READY: raw/key/mouse events; physical input acceptance pending\r\n");return 1;}
+#endif
+#if MINI_FEATURE_USB
     else if(!strcmp(name,"usb input stop")) {usb_input=0;ok=1;}
+#endif
+#if MINI_FEATURE_USB
     else if(!strcmp(name,"usb stop")) {hal_usb_stop();wait_ms(20);hal_usb_info_t u;hal_usb_get_info(&u);usb_status();ok=!u.initialized && !u.phy_ready;}
+#endif
+#if MINI_FEATURE_USB
     else if(!strcmp(name,"usb restart"))ok=usb_restart();
-    else if(!strcmp(name,"phys")) {pending_reply=0;ok=hal_phys_reset(10)==HAL_OK && usb_check() && eth_check();}
+#endif
+#if MINI_FEATURE_ETH || MINI_FEATURE_USB
+    else if(!strcmp(name,"phys"))ok=phys_check();
+#endif
+#if MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO
     else if(!strncmp(name,"soak ",5)) {unsigned seconds;const char *p=name+5;if(number(&p,&seconds) && !*p && seconds)ok=soak(seconds);else known=0;}
+#endif
+#if MINI_FEATURE_USB
     else if(!strncmp(name,"usb leds ",9)) {
         const char *p=name+9;unsigned device,itf,leds;
         if(number(&p,&device) && *p++==' ' && number(&p,&itf) && *p++==' ' && number(&p,&leds) && !*p && device<=255 && itf<4 && leds<32) {
@@ -421,6 +621,7 @@ int tests_command(const char *command) {
             if(ok) {hal_uart_puts("TEST usb leds QUEUED (physical LED completion not verified)\r\n");return 1;}
         } else known=0;
     }
+#endif
     else known=0;
     if(known)result(name,ok);else {hal_uart_puts("ERR test command/argument\r\n");tests_help();}
     return 1;

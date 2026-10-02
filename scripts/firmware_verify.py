@@ -22,10 +22,16 @@ def main():
     parser.add_argument('--program',action='store_true');parser.add_argument('--reset',action='store_true')
     parser.add_argument('--sd-write',action='store_true')
     parser.add_argument('--soak-seconds',type=int,default=0)
+    parser.add_argument('--mic',action='store_true',help='Also test the externally connected microphone(s)')
     args=parser.parse_args()
     if not 0<=args.soak_seconds<=300:parser.error('Use 0..300 seconds')
     if args.program and args.reset:parser.error('Use --program or --reset')
     output=args.output_dir.resolve();validation,_=verified_output(output)
+    features=validation.get('features',{})
+    def enabled(name):return features.get(name,True)
+    if args.sd_write and not enabled('filesystem'):parser.error('--sd-write requires filesystem')
+    if args.soak_seconds and not all(enabled(n) for n in ('filesystem','video','usb','audio')):parser.error('Soak requires filesystem/video/usb/audio')
+    if args.mic and not enabled('mic'):parser.error('--mic requires mic')
     image=(args.image or output/'firmware/app.img').read_bytes()
     unpack_image(image,validation['boot_image']['abi_tag'])
     report={'passed':False,'bitstream_sha256':validation['bitstream_sha256'],
@@ -45,21 +51,34 @@ def main():
                     'expected':marker.decode(),'matched':marker in text,'output':text.decode(errors='replace')})
                 if marker not in text:raise RuntimeError(name+': '+text.decode(errors='replace'))
                 print(name+' OK',flush=True)
-            for name in ('uart','irq','ddr','flash','sd','sd blocks','lcd','lcd clear','spi-lcd',
-                         'io','audio','eth','eth parser','usb','usb stop'):
-                command('test '+name)
-            command('test usb','TEST usb FAIL')
-            for _ in range(3):command('test usb restart')
-            command('test phys')
-            command('test usb input','TEST usb input READY');command('test usb input stop')
+            cases=[('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
+                ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('lcd',enabled('video')),
+                ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
+                ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),
+                ('eth',enabled('eth')),('eth parser',enabled('eth')),('usb',enabled('usb')),('usb stop',enabled('usb'))]
+            for name,available in cases:
+                command('test '+name,None if available else 'UNSUPPORTED: feature disabled')
+            if enabled('usb'):
+                command('test usb','TEST usb FAIL')
+                for _ in range(3):command('test usb restart')
+            if enabled('usb') or enabled('eth'):command('test phys')
+            if enabled('usb'):
+                command('test usb input','TEST usb input READY');command('test usb input stop')
             for name in ('audio start','audio pause','audio resume','audio stop','eth start','eth stop'):
-                command('test '+name)
-            for invalid in ('soak 0','soak 301','usb leds 1 4 0','usb leds 1','unknown'):
+                if enabled('audio' if name.startswith('audio') else 'eth'):command('test '+name)
+            invalids=['unknown']
+            if all(enabled(n) for n in ('filesystem','video','usb','audio')):invalids+=['soak 0','soak 301']
+            if enabled('usb'):invalids+=['usb leds 1 4 0','usb leds 1']
+            for invalid in invalids:
                 command('test '+invalid,'ERR test command/argument')
+            if args.mic:
+                command('test mic')
+                if enabled('mic_stereo'):command('test mic stereo')
             if args.sd_write:command('test sd write')
             if args.soak_seconds:
                 command(f'test soak {args.soak_seconds}',timeout=args.soak_seconds+90)
-            command('test lcd clear');command('test audio stop');command('test eth stop')
+            for name,feature in [('lcd clear','video'),('audio stop','audio'),('eth stop','eth')]:
+                if enabled(feature):command('test '+name)
             command('status','CPU/sys=60 MHz DDR=120 MHz')
             report['passed']=True
     finally:

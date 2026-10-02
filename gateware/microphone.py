@@ -31,7 +31,7 @@ class Microphone(LiteXModule):
         stereo = self._control.storage[2] if second is not None else 0
         clear = self._clear.wr_stb
         arm = self._capture.wr_stb & run
-        self.fifo = fifo = ResetInserter()(SyncFIFOBuffered(48, snapshot_samples))
+        self.fifo = fifo = ResetInserter()(SyncFIFOBuffered(48 if second is not None else 24, snapshot_samples))
         count = Signal(max=half_period)
         bit = Signal(6, reset=63)
         bck = Signal(); ws = Signal(reset=1)
@@ -53,7 +53,7 @@ class Microphone(LiteXModule):
             word.eq(Cat(serial, shift[:23])),
             word_right.eq(Cat(serial_right, shift_right[:23])),
             self._sample.status.eq(Cat(fifo.dout[:24], Replicate(fifo.dout[23], 8))),
-            self._sample_right.status.eq(Cat(fifo.dout[24:], Replicate(fifo.dout[47], 8))),
+            self._sample_right.status.eq(Cat(fifo.dout[24:], Replicate(fifo.dout[47], 8)) if second is not None else 0),
             self._level.status.eq(fifo.level),
             fifo.reset.eq(clear | arm | ~run),
             fifo.we.eq(valid & self._busy.status & ~clear & ~arm),

@@ -8,12 +8,20 @@ static int parse_hex(const char *p,unsigned digits,unsigned *value) {
     *value=n;return 1;
 }
 static void status(void) {
-    hal_uart_puts("CPU/sys=60 MHz DDR=120 MHz LCD=9 MHz UART=115200\r\n");
+    hal_uart_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
+#if MINI_FEATURE_VIDEO
+    hal_uart_puts("LCD=9 MHz\r\n");
+#endif
+#if MINI_FEATURE_FLASH
     uint32_t id=0;unsigned bytes=0;unsigned ok=hal_flash_probe(&id,&bytes)==HAL_OK;
     hal_uart_puts("FLASH JEDEC=");hal_uart_hex(id);hal_uart_puts(" bytes=");hal_uart_hex(bytes);hal_uart_puts(ok?" READY\r\n":" UNAVAILABLE\r\n");
+#endif
+#if MINI_FEATURE_SD
     hal_sd_info_t sd;hal_sd_get_info(&sd);
     hal_uart_puts("SD native=");hal_uart_hex(sd.native);hal_uart_puts(" width=");hal_uart_hex(sd.bus_width);hal_uart_puts(" hz=");hal_uart_hex(sd.clock_hz);hal_uart_puts(" sectors=");hal_uart_hex(sd.sectors);hal_uart_puts(" present=");hal_uart_hex(sd.present);hal_uart_puts(" ready=");hal_uart_hex(sd.initialized);hal_uart_puts(" reads=");hal_uart_hex(sd.read_blocks);hal_uart_puts(" writes=");hal_uart_hex(sd.written_blocks);hal_uart_puts(" errors=");hal_uart_hex(sd.errors);hal_uart_puts("\r\n");
+#endif
     hal_video_status();
+#if MINI_FEATURE_ETH
     hal_eth_info_t eth;hal_eth_get_info(&eth);
     hal_uart_puts("ETH phy=");hal_uart_hex(eth.phy_id);hal_uart_puts(" addr=");hal_uart_hex(eth.phy_address);
     hal_uart_puts(" ready=");hal_uart_hex(eth.initialized);hal_uart_puts(" link=");hal_uart_hex(eth.link);
@@ -22,18 +30,26 @@ static void status(void) {
     const char hex[]="0123456789ABCDEF";
     for(unsigned i=0;i<6;++i) {if(i)hal_uart_putc(':');hal_uart_putc(hex[eth.mac[i]>>4]);hal_uart_putc(hex[eth.mac[i]&15]);}
     hal_uart_puts("\r\n");
+#endif
+#if MINI_FEATURE_USB
     hal_usb_info_t usb;hal_usb_get_info(&usb);
     hal_uart_puts("USB host=48 MHz phy=");hal_uart_hex(usb.phy_id);hal_uart_puts(" ready=");hal_uart_hex(usb.initialized);
     hal_uart_puts(" connected=");hal_uart_hex(usb.connected);hal_uart_puts(" VID=");hal_uart_hex(usb.vid);hal_uart_puts(" PID=");hal_uart_hex(usb.pid);
     hal_uart_puts(" HID=");hal_uart_hex(usb.hid_interfaces);hal_uart_puts(" reports=");hal_uart_hex(usb.reports);hal_uart_puts(" errors=");hal_uart_hex(usb.errors);hal_uart_puts("\r\n");
+#endif
+#if MINI_FEATURE_AUDIO
     hal_audio_info_t audio;hal_audio_get_info(&audio);
     hal_uart_puts("AUDIO hz=");hal_uart_hex(audio.sample_rate);hal_uart_puts(" control=");hal_uart_hex(audio.control);hal_uart_puts(" level=");hal_uart_hex(audio.level);hal_uart_puts(" underruns=");hal_uart_hex(audio.underruns);hal_uart_puts(" errors=");hal_uart_hex(audio.errors);hal_uart_puts(" amp=");hal_uart_hex(audio.amplifier);hal_uart_puts("\r\n");
+#endif
     hal_stats_t stats;hal_get_stats(&stats);
     hal_uart_puts("IRQ timer=");hal_uart_hex(stats.timer_irqs);hal_uart_puts(" uart=");hal_uart_hex(stats.uart_irqs);hal_uart_puts(" buttons=");hal_uart_hex(stats.button_irqs);hal_uart_puts(" drops=");hal_uart_hex(stats.uart_drops);hal_uart_puts(" unhandled=");hal_uart_hex(stats.unhandled_irqs);hal_uart_puts("\r\n");
+#if MINI_FEATURE_BOARD_IO
     hal_uart_puts("IO leds=");hal_uart_hex(hal_leds_get());hal_uart_puts(" keys=");hal_uart_hex(hal_buttons_read());hal_uart_puts(" dip=");hal_uart_hex(hal_switches_read());hal_uart_puts("\r\n");
+#endif
 }
 int main(void) {
-    hal_init();unsigned sd_ready=hal_sd_mount()==HAL_OK;unsigned spi_lcd_ready=hal_spi_lcd_show(sd_ready)==HAL_OK;unsigned rgb_ready=hal_video_init()==HAL_OK;
+    hal_init();unsigned sd_ready=(MINI_FEATURE_FILESYSTEM?hal_sd_mount():hal_sd_init())==HAL_OK;
+    unsigned spi_lcd_ready=hal_spi_lcd_show(sd_ready)==HAL_OK;unsigned rgb_ready=hal_video_init()==HAL_OK;
     hal_uart_puts("\r\nriscv-mini | RV32IM | DDR application at 40800000\r\n");
     hal_uart_puts("SYSTEM READY sd=");hal_uart_hex(sd_ready);hal_uart_puts(" spi_lcd=");hal_uart_hex(spi_lcd_ready);
     hal_uart_puts(" rgb_lcd=");hal_uart_hex(rgb_ready);hal_uart_puts("\r\n");

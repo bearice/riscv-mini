@@ -68,6 +68,7 @@ hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,uns
 hal_result_t hal_spi_select(hal_spi_bus_t bus,unsigned selected);
 typedef struct {uint32_t sectors,clock_hz,bus_width,native,present,initialized,read_blocks,written_blocks,errors;} hal_sd_info_t;
 void hal_sd_get_info(hal_sd_info_t *info);
+hal_result_t hal_sd_init(void); /* raw block access, does not require FatFs */
 hal_result_t hal_sd_mount(void);
 hal_result_t hal_sd_list(void);
 hal_result_t hal_sd_read(uint32_t sector,void *data,unsigned count);

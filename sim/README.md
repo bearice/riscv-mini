@@ -1,5 +1,12 @@
 # Simulation scope
 
+`sim/test_features.py` verifies peripheral dependencies and rejects images for
+a different feature configuration even when CSR addresses match. `sim/test_rtl.py`
+checks hierarchical SDC targets for every bit of a vector synchronizer, reset
+nets and external USB core instances. `scripts/build_matrix.py` compiles the
+29 supported on/off/backend cases and checks their CSR/pad presence; it does
+not prove routed timing or hardware behavior.
+
 `sim/test_microphone.py` drives the actual I2S receiver with distinct positive
 and negative left/right PCM24 words and deliberately nonzero delay/padding bits.
 It checks the one-bit I2S delay, 64 BCLK/frame, clock divider, sign extension,
