@@ -61,3 +61,28 @@ MMU 测试覆盖 MPRV 下 Sv32 load；硬件具有 M/S/U，不等于用户进程
 该候选用于最终 Flash 更新：FPGA 配置写偏移 0，匹配应用写偏移 0x200000。
 沿用 erase/program，不做写后读回校验；正常启动仍执行镜像 CRC/ABI 检查。
 发布日志留在候选目录，不用生成测试核替代已验收 CPU。
+
+## Flash 更新后的追加检查
+
+提交 `b0e64d381d4187ede9a53bfe908e55766150a11c` 后，已完成 FPGA
+配置 erase/program 和匹配应用安装。配置写偏移 0，应用写偏移
+0x200000；正常 Flash 启动输出 `BOOT FLASH entry=40800000`、
+`SYSTEM READY`，镜像 ABI `adf18467`、CRC32 `4a45a1ec`。
+未做 Flash 写后读回验证或整板断电测试。
+
+第一次 Flash 启动后的追加 `test usb` 失败：PHY ready=1、ID=00060424、
+port/lines=1，SOF/IRQ 持续计数，但 connected=0、HID=0；驱动 errors=0
+不能代表枚举成功。`test usb restart` 立即恢复为 046d:c52b、三个 HID
+接口，没有拔插接收器。该单次异常的根因尚未确认，不能宣称已修复。
+
+随后保持同一镜像与接收器连接，三次 Flash 软件复位启动全部通过；
+六次从 Flash 重新加载 FPGA 后检查全部通过，其中三次先停在 bootloader
+十秒；另外三次重新加载后让正常主循环运行五秒再检查，也全部通过。
+没有为无法复现的异常加入重试或延长超时。这些结果缩小了复现范围，
+不证明偶发启动问题已消失，最终验收仍保留这个限制。
+
+证据位于 `build/rtl-diagnosis/`：`flash-runtime-console.log`（首次失败）、
+`flash-usb-restart.log`、`usb-boot-probe.log`、`usb-reload-probe.json`、
+`usb-idle-probe.json`。Flash 编程和正常启动证据位于候选目录：
+`configuration-programmer.log`、`configuration-reload.log`、
+`boot-upload-uart.log`、`flash-release.json`。上述追加检查未改变硬件或固件。
