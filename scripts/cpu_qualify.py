@@ -34,7 +34,8 @@ def main():
     parser.add_argument('--audio-clock',choices=('dds','sys','legacy'),default='dds')
     parser.add_argument('--profile', choices=('full', 'minimal'), default='full')
     parser.add_argument('--output-dir', required=True, type=Path)
-    parser.add_argument('--rom', type=Path, default=ROOT/'build/modular-full-good/firmware/boot.bin')
+    parser.add_argument('--rom', type=Path, default=ROOT/'build/base/firmware/boot.bin',
+                        help='ROM image used to keep realistic ROM resource usage; build it first with scripts/build.py')
     parser.add_argument('--without', action='append', choices=Features.names(), default=[])
     parser.add_argument('--retiming', action='store_true',
                         help='Emit set_option -retiming 1; verify native Gowin synthesis settings before claiming it is active')

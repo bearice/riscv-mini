@@ -95,6 +95,10 @@ def pnr_report(output):
     return counts,resources
 
 def main():
+    # Compiler and vendor tools write scratch files; keep them inside the build
+    # tree so a locked-down %TEMP% cannot break a build.
+    scratch=ROOT/'build/.tmp'; scratch.mkdir(parents=True,exist_ok=True)
+    for name in ('TMP','TMPDIR','TEMP'): os.environ[name]=str(scratch)
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--cpu-verilog',type=Path)
     p.add_argument('--cpu-rtl-dir',type=Path,default=ROOT/'build/cpu-features',help='Generated independent CPU variants')
@@ -112,7 +116,7 @@ def main():
         group.add_argument('--with-'+flag,dest=name,action='store_true',default=None)
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
-    p.add_argument('--l2-size',type=int,choices=(0,4096,8192),default=0,help='Shared write-through read cache in bytes; 0 disables it')
+    p.add_argument('--l2-size',type=int,choices=(0,4096,8192),default=4096,help='Shared write-through read cache in bytes; 0 disables it. Default profile includes 4 KiB.')
     p.add_argument('--place-option',type=int,choices=range(5),default=3)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')

@@ -10,7 +10,7 @@ SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使
 
 ## 固定硬件与内存
 
-CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 7.5 MHz 工作（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，无 L2；minimal 使用 lite 核，仅有 2 KiB I-cache。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
+CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 7.5 MHz 工作（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享读缓存 L2；minimal 使用 lite 核，仅有 2 KiB I-cache。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
 
 | 地址 | 用途 |
 | --- | --- |
@@ -44,7 +44,7 @@ payload 长度为 4 到 2097104 字节；entry 必须四字节对齐并落在 pa
 
 UART 115200 8N1：loader 输出 `READY HEADER` 后收头；验证通过后输出 `READY DATA`。每包是 uint32 sequence、uint16 count、最多 128 字节数据、覆盖该包前缀和数据的 CRC32；精确顺序和末包长度受检查。成功 ACK 为 `K` 加 uint32 sequence。每个字节等待超时为三秒；失败排空输入并返回 `BL>`。所有数据收完后，再校验 DDR 中的完整 payload。
 
-加载完成使用 `fence` 和 `fence.i`，关闭 machine IRQ，跳转应用入口；应用 `_start` 初始化独立栈、data/BSS，再调用 `main`。M5a 应用的 `hal_init()` 另外安装 trap/IRQ 运行时并启用已注册的 IRQ；bootloader 自身保持轮询，无 HAL/SD/LCD 驱动。RTOS 属于后续工作。
+加载完成使用 `fence` 和 `fence.i`，关闭 machine IRQ，跳转应用入口；应用 `_start` 初始化独立栈、data/BSS，再调用 `main`。DDR 应用的 `hal_init()` 另外安装 trap/IRQ 运行时并启用已注册的 IRQ；bootloader 自身保持轮询，无 HAL/SD/LCD 驱动。RTOS 属于后续工作。
 
 ## 恢复和命令
 
@@ -59,10 +59,10 @@ DDR 初始化后等待两秒。无输入默认从 Flash 启动；无有效镜像
 | `i` | Flash ID 和镜像头状态 |
 | `!` | 软件复位 |
 
-DDR 基础应用提供 `help` / `status` / `ls` / `reboot` 和 `!`，M5a 增加 `io` / `led HH` / `rgb RRGGBB` 板级控制。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，验收统一通过 `test ...` 子命令进入，不在正常启动时自动执行大范围测试。
+DDR 基础应用提供 `help` / `status` / `ls` / `reboot` 和 `!`，同时提供 `io` / `led HH` / `rgb RRGGBB` 板级控制。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，验收统一通过 `test ...` 子命令进入，不在正常启动时自动执行大范围测试。
 
 ## 验证
 
 `scripts/boot_verify.py --program --install` 会写 Flash 应用区，检查 UART/Flash 执行、两次自动 Flash 软件重启、应用状态、SD 根目录读取，并拒绝坏头 CRC、错误 ABI、错误 load、零/越界长度、不对齐/越界 entry、flags、坏包 CRC、UART 截断超时和 payload CRC 不一致。Flash 安装本身不读回；镜像 CRC 检查发生在 UART 接收或启动装载时。完整 UART 日志和验收 JSON 写入 `build/base/`。
 
-`sim/test_boot_image.py` 检查主机格式/边界/CRC，`sim/test_programmer_result.py` 检查 Gowin 失败日志识别；其他仿真范围见 [sim/README.md](../sim/README.md)。`boot_verify.py --reset --soak-seconds 300` 做五分钟只读状态/SD 根目录检查，确认帧/完成计数持续增长、欠载为零，不再执行历史全内存/整帧内容校验。`cold_boot.py` 只监听外部断电重启，不发软件复位。PnR 报告必须 setup/hold 均无违例。硬件冷启动与持续运行结果记录在 [基础版验证](base-validation.md)，不能以软件复位替代断电测试。
+`sim/test_boot_image.py` 检查主机格式/边界/CRC，`sim/test_programmer_result.py` 检查 Gowin 失败日志识别；其他仿真范围见 [sim/README.md](../sim/README.md)。`boot_verify.py --reset --soak-seconds 300` 做五分钟只读状态/SD 根目录检查，确认帧/完成计数持续增长、欠载为零。`cold_boot.py` 只监听外部断电重启，不发软件复位。PnR 报告必须 setup/hold 均无违例。软件复位与断电冷启动是不同检查，不能互相替代。

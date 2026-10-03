@@ -1,24 +1,24 @@
-# M9 USB Host
+# USB Host (ULPI PHY, backends)
 
-This page records the original OHCI baseline. The default backend is now
-the sys60 PIO/serial Host described in [usb-light.md](usb-light.md), using
-three PLLs with the RGB LCD. Select `--usb-backend ohci` to reproduce the
-baseline below. Pin mapping, PHY initialization and the public HID HAL remain
-shared; DMA, HCCA and Spinal CDC details below apply only to OHCI.
+The default backend is the sys60 PIO/serial Host described in
+[usb-light.md](usb-light.md). Select `--usb-backend ohci` for the Spinal OHCI
+baseline described in the last sections of this page. Pin mapping, PHY
+initialization and the public HID HAL are shared by both backends; DMA, HCCA
+and Spinal CDC details apply only to OHCI.
 
 Dock U6 is USB3317 with a 26 MHz crystal and 60 MHz ULPI CLKOUT (T15).
 DATA[0:7] is G11/H12/J12/H13/T14/R13/P13/R12; STP/DIR/NXT is K11/K12/K13.
 F10 resets both USB3317 and Ethernet RTL8201F and has one GPIO owner.
 The USB OTG connector is separate from the BL702 debugger/serial connector.
 
-The Host uses the pinned Spinal OHCI core at 48 MHz (third PLL), with Wishbone
+The optional OHCI backend uses the pinned Spinal OHCI core at 48 MHz (third PLL), with Wishbone
 control and DMA at sys 60 MHz. CPU and DDR remain 60/120 MHz. USB3317 is first
 read/configured over ULPI and then operates in six-pin serial mode, retaining
 its 60 MHz clock. A fourth PLL regenerates the ULPI 60 MHz clock to meet
 FPGA output setup/hold (247.5-degree configured phase); its lock is part of the initialization reset. All four
 PLLs are allocated. The current PHY configuration is full speed, 12 Mbit/s;
 high-speed USB, hubs, mass storage and arbitrary report-format keyboard
-decoding are outside this milestone. Generic HID reports remain available raw.
+decoding are outside the supported feature set. Generic HID reports remain available raw.
 
 Register initialization reads Vendor/Product ID `0424:0006`, writes Function
 Control `04=45`, OTG Control `0A=26`, and Interface Control `07=09`. Register
@@ -29,8 +29,12 @@ has a 150 ms PHY deadline and OHCI reset/ownership waits are bounded.
 
 OHCI registers occupy `0xB1000000..0xB1000FFF`. HCCA (256-byte aligned), ED/TD
 lists, enumeration buffers and HID buffers are in application DDR. No extra
-CPU SRAM ring is required. The VexRiscv lite core has no data cache; fences
-protect DMA handoffs. IRQ 6 queues TinyUSB events; enumeration and HID callbacks
+CPU SRAM ring is required. The default build includes a 4 KiB shared read cache
+(`--l2-size 4096`), and the cache never caches writes, so fences protect DMA handoffs. The
+USB Host IRQ number
+follows LiteX peripheral add order (UART0=0, timer0=1, timer1=2, board_io=3,
+sdcard=4, ethmac=5, usb_host=6; SPI SD backend has no `sdcard` so later
+numbers shift). IRQ queues TinyUSB events; enumeration and HID callbacks
 run from `hal_poll()`. Applications must call it frequently and drain queues.
 The API has one main-loop owner. Raw queue capacity is 8 reports of at most
 64 bytes; key queue capacity is 32 transitions. Overflows are counted.
@@ -51,7 +55,7 @@ USB. A USB-only restart uses STP and does not reset F10 or Ethernet. Reboot
 stops USB before returning to ROM. `hal_usb_get_info` exposes PHY status,
 VID/PID, interfaces, report/event counters, errors, root-port status and HCCA.
 
-M10 keeps the ULPI PLL running while the USB enable CSR is zero, so the
+The design keeps the ULPI PLL running while the USB enable CSR is zero, so the
 synchronous initialization FSM can clear ready/ID. Resetting that PLL on
 disable was observed to leave ready=1 after repeated stops. F10 still resets
 the PLL; the domain's enable/reset/lock logic still holds the FSM in reset.
@@ -61,9 +65,10 @@ PHY FSM simulation alone cannot reproduce a stopped physical PLL.
 Current on-board commands are `test usb`, `test usb stop/restart`,
 `test usb input`, `test usb leds ...` and `test phys`. Batch execution uses
 `scripts/firmware_verify.py`; physical input and LED acceptance require manual action.
-See [firmware commands](firmware-tests.md) and [M10 review](m10-review.md).
-Keyboard/mouse input was verified on 2026-10-01 after fixing OHCI dummy-TD
-ownership; see [input validation](usb-input-validation.md). LED output remains untested.
+See [firmware commands](firmware-tests.md).
+Keyboard/mouse input was verified on 2026-10-01 after fixing the OHCI
+dummy-TD ownership bug (a transfer descriptor owned by the controller was
+never released, so the periodic list stalled); LED output remains untested.
 
 The base monitor prints key usages over UART. The independent
 `firmware/examples/ethernet_demo.c` adds `u` for USB diagnostics and `j` for
@@ -76,8 +81,7 @@ It never asks for or requires physical USB removal.
 traffic from the steady-state soak. It defaults to zero, is recorded outside
 the soak window and is not a UDP retry. Immediate post-reset UDP loss on the
 unfiltered two-slot Ethernet receiver remains a known limitation; see
-[M9 validation](m9-validation.md). Its deferred physical keyboard test was
-subsequently completed with the limited input sequence documented above.
+[usb-light.md](usb-light.md).
 
 Simulation: `.venv/Scripts/python.exe sim/test_usb_phy.py` exercises the actual
 initialization FSM. It does not prove electrical USB timing or enumeration.
@@ -97,8 +101,7 @@ max/min 5.5/-0.5 ns. The phase-shifted initialization outputs target the next
 external rising edge after internal clock insertion; their setup-only
 multicycle constraint retains the intervening hold check. Serial TX has an
 explicit 25 ns launch-to-pad bound, including output and clock-insertion budget.
-Historical M9 acceptance and identity are in m9-validation.md; current M10
-reset fixes and command acceptance are in m10-review.md.
+Current acceptance evidence is in [系统设计](system-design.md).
 
 Primary references: [USB3317 datasheet, §§4.3,6.2,6.3,7.1](https://ww1.microchip.com/downloads/aemDocuments/documents/UNG/ProductDocuments/DataSheets/00002366A.pdf),
 [Spinal OHCI](https://github.com/litex-hub/pythondata-misc-usb_ohci/tree/17c1d3d6548ea267e19aec3cb6d2e64335a1bb2a),

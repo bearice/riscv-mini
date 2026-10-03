@@ -21,8 +21,8 @@ and invalid transfer length handling. Loopback CSRs were removed from the
 base SoC; actual Flash, SD and SPI LCD transactions are verified on hardware.
 
 DDR training, CPU DDR access, SD file CRC, and LCD display are checked on the
-board; see docs/m1-validation.md and docs/m2-validation.md. SPI simulation
-does not verify electrical timing.
+board; see docs/hardware-ddr-boot.md and docs/system-design.md. SPI
+simulation does not verify electrical timing.
 
 `sim/test_video.py` checks full 480x272 LCD scan periods, sync pulse widths,
 pixel order and last-marked frame recovery after an injected pixel underrun.
@@ -32,8 +32,8 @@ This covers the scanner, not real DDR arbitration or connector electrical timing
 callers, delayed single-cycle replies, changing data after the reply, and
 consumer backpressure. It verifies CPU/video response ownership, write data
 and byte enables, and transaction serialization. It does not model the DDR
-PHY or prove electrical timing. Historical M4 stress results are recorded in
-docs/m4-validation.md; current base acceptance is in docs/base-validation.md.
+PHY or prove electrical timing. Current board acceptance for shared-port
+coexistence is recorded in docs/system-design.md.
 
 `sim/test_boot_image.py` verifies the host image header, CRC, truncation,
 entry/load boundaries and UART packet framing. `scripts/boot_verify.py` also
@@ -57,7 +57,7 @@ long PHY stalls, exactly three read blocks and timeout/abort flush. This checks
 the registered request seam added for M9 timing without replacing the core.
 `scripts/sd_verify.py` runs the independent SD demo on the board: existing file
 CRC, single/multi-block and unaligned callers, optional unique-file write/read,
-and five-minute LCD frame switching. See docs/m6-validation.md.
+and five-minute LCD frame switching. See docs/native-sd.md.
 
 `sim/test_audio.py` decodes actual BCK/WS/DIN for stereo sample/bit order,
 including the current DDS 48k clock enables and the legacy integer-divider path.

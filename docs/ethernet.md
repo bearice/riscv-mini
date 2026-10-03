@@ -50,7 +50,7 @@ Gowin `syn_keep` / `syn_preserve` 保留 MultiReg 两级触发器，避免宽位
 
 RX IRQ 只屏蔽持续有效的 RX 通知，不确认释放包；主循环复制后确认并重新允许通知。TX IRQ 确认完成、归还发送槽。`tx_frames` 为成功提交到 MAC 的帧数，完成通知表示 SRAM 内容已被 MAC 消费，不能当作线端送达或对端 ACK。
 
-所有 API 为单主循环所有者；ISR 不做文件系统、拷包或 MDIO。`hal_phys_reset()` 先停止 Ethernet，F10 拉低至少 10 ms，释放并等待恢复后重新初始化；这也复位 USB PHY，M9 需接入 USB Host 的停止和重建逻辑。`hal_reboot()` 先停止 Ethernet/音频/视频再软件复位。
+所有 API 为单主循环所有者；ISR 不做文件系统、拷包或 MDIO。`hal_phys_reset()` 依次执行 `hal_eth_stop()` 与 `hal_usb_stop()`，F10 拉低至少 10 ms，释放并等待 50 ms 后重新初始化 Ethernet 与 USB Host；`hal_reboot()` 先停止 Ethernet/音频/视频再软件复位。
 
 ## 独立验收程序
 
@@ -68,7 +68,7 @@ Get-NetIPAddress -AddressFamily IPv4
 .venv/Scripts/python.exe scripts/ethernet_verify.py --program --host-ip 169.254.48.203 --interface-index 79 --soak-seconds 300
 ```
 
-脚本绑定指定的现有IP和Windows IP_UNICAST_IF，并在启动/共享复位后通过源地址限定的SendARP解析邻居，依次检查协商、UDP 长度0..1472、ping、共享 reset 后恢复，以及最多300秒的网络/SD CRC/LCD/静音音频并发。不修改主机 IP、路由或防火墙配置。五分钟结论与实物拔插结果见 [M8 验证](m8-validation.md)。
+脚本绑定指定的现有IP和Windows IP_UNICAST_IF，并在启动/共享复位后通过源地址限定的SendARP解析邻居，依次检查协商、UDP 长度0..1472、ping、共享 reset 后恢复，以及最多300秒的网络/SD CRC/LCD/静音音频并发。不修改主机 IP、路由或防火墙配置。五分钟结论与实物拔插结果见 [系统设计](system-design.md)。
 
 ## Flash 身份与 SPI 状态页
 
@@ -79,3 +79,7 @@ Get-NetIPAddress -AddressFamily IPv4
 SPI屏显示完整MAC、IP和ETH LINK UP/DOWN，保留DDR/SD状态。独立示例拥有固定IPv4 `169.254.20.20`；基础应用没有IP栈，显示IP UNCONFIGURED。仅更新网络文本所在行，MAC用大写十六进制和冒号，IP用十进制和句点。
 
 CPU拷包加两槽RX不能保证吸收任意100M突发，也没有硬件目的地址过滤。验收记录原始`rx_drops`起止值，UDP则要求每次请求完整回显、没有超时；两者不能等同。该示例吞吐不能当作100 Mbps线速验收，后续若需要线速/突发承载，应增加过滤、缓冲或DMA。
+
+## 当前限制
+
+两个未过滤 RX 槽不能保证吸收任意 100 Mbps 突发；主机启动后的 DHCP/IPv6/多播流量也可能导致槽溢出。`rx_drops` 与应用 UDP 丢包是不同指标。PHY 初始化不等待协商，调用者应在有界期限内轮询 link。基础应用不提供 IP 栈；测试示例使用 169.254.20.20 / UDP 1234。MAC 来自工厂 UID，不能作为安全身份。

@@ -29,7 +29,7 @@
     "framebuffer_base": "0x47e00000",
     "framebuffer_next": "0x47e40000",
     "reserved_bytes": 2097152,
-    "status": "Base LCD-only DDR scanout; black initial canvas. Historical M4 visual/stress acceptance in docs/m4-validation.md.",
+    "status": "Base LCD-only DDR scanout; black initial canvas. See docs/video-spec.md and docs/system-design.md.",
     "pixel_clock_hz": 9000000,
     "frame_bytes": 261120,
     "framebuffer_spacing_bytes": 262144,
@@ -142,16 +142,19 @@
     "phy_reset_shared_pin": "F10",
     "system_reset_pin": "T10",
     "configuration_switch_pin": "B10",
-    "status": "Implemented; input/lighting physical acceptance pending. See docs/m5a-validation.md."
+    "status": "Implemented; input/lighting physical acceptance pending. See docs/hal.md."
   },
   "hal": {
     "irq_sources": {
       "uart": 0,
       "timer0": 1,
-      "sdcard": 2,
+      "timer1": 2,
       "board_io": 3,
-      "timer1": 4
+      "sdcard": 4,
+      "ethmac": 5,
+      "usb_host": 6
     },
+    "irq_note": "Numbers follow LiteX peripheral registration order in gateware/soc.py; a build without the sdcard interrupt (SPI SD backend) shifts every later source down by one.",
     "timer_irq_hz": 1000,
     "uart_rx_buffer_bytes": 128,
     "runtime_location": "ddr_application",
@@ -176,7 +179,7 @@
     "dma": "sys_wishbone",
     "bounce_bytes": 4096,
     "max_blocks_per_command": 8,
-    "status": "M6 native15MHz reads pass; stable native7.5MHz write/read. Hotplug acceptance skipped per user. See docs/m6-validation.md."
+    "status": "Native 15 MHz reads pass; stable native 7.5 MHz write/read. Hotplug acceptance skipped per user. See docs/native-sd.md."
   },
   "microphone": {
     "marking": "ME27 X916; exact part unconfirmed",
@@ -214,6 +217,6 @@
     "dma": "sys_wishbone_single_word_ring",
     "max_ring_frames": 65535,
     "default_muted": true,
-    "status": "M7 implemented; independent validation in docs/m7-validation.md."
+    "status": "Implemented; 48 kHz DDS clock, DDR ring DMA and acceptance in docs/audio.md."
   }
 }

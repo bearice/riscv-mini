@@ -2,9 +2,9 @@
 
 Source: [`firmware/examples/usb_input_demo.c`](../firmware/examples/usb_input_demo.c).
 This standalone DDR application uses the existing RGB LCD scanner and USB HAL.
-It needs the OHCI TD ownership fix documented in [input validation](usb-input-validation.md).
-No gateware or bootloader change is needed for the current native-SD M10 bitstream
-(ABI `945c4952`).
+It uses the selected USB HAL backend; the default is the lightweight PIO host.
+No gateware or bootloader change is needed; the application ABI must match the
+FPGA build currently running on the board (ABI is generated per build; current full is `552653d0`).
 
 The 480×272 RGB565 screen contains a 36-column, eight-row text area, a mouse
 arrow and three lines of input/device status. Typing wraps at the right edge;
@@ -44,7 +44,7 @@ Build and load using PowerShell from `riscv-mini`:
 # Select an existing successfully routed FPGA build with the matching ABI.
 # The board must already be running that configuration.
 & ./.venv/Scripts/python.exe scripts/boot_upload.py --reset --mode uart `
-    --output-dir build/m10-release --image build/usb-input-demo/firmware/app.img
+    --output-dir <that-fpga-build-dir> --image build/usb-input-demo/firmware/app.img
 ```
 
 The boot client checks the existing FPGA build's PnR evidence, bitstream hash
@@ -62,20 +62,5 @@ reboot
 frame-swap failures, LCD scan progress/underflows, UART/IRQ errors and US-layout
 case/modifier mappings. Human input and screen appearance still need observation.
 Serial `!` or `reboot` returns to the loader; without menu input, the previous
-Flash monitor runs again after its two-second boot selection window. That
-Flash monitor does not yet contain this session's USB TD fix.
 
-The initial build has text/data/BSS of 31,524 / 56 / 7,424 bytes and a 31,628-byte
-boot image. In addition, the two existing DDR framebuffer slots start at
-`0x47E00000` and `0x47E40000`; each visible image uses 261,120 bytes. CPU/sys
-remains 60 MHz and DDR CK remains 120 MHz. Build and UART observation evidence
-is kept under ignored `build/usb-input-demo/`.
-
-On-board acceptance on 2026-10-01 passed: the user confirmed cursor following,
-keyboard text and the screen picture were all normal. The final `test demo`
-passed after 135 key presses and 135 releases, 2,082 mouse events and 2,352 HID
-reports; the text contained `hello world`. Shift/Caps Lock and Escape changes
-were also visible in the UART snapshots. USB errors, key/mouse/raw queue drops,
-frame-swap failures and RGB LCD underflows were all zero. The cursor reached
-the top-left screen boundary. `demo-observation.json` and `demo-uart.log` retain
-the session evidence, and the demo was left running in DDR afterward.
+软件复位后恢复 Flash 中的基础 monitor；demo 为独立 DDR 应用，运行时需要不断轮询 USB 并提交帧。

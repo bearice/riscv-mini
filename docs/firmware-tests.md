@@ -29,9 +29,9 @@ boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测
 | `test eth parser` | CRC/checksum、UDP MTU/奇数长度、截断、fragment 拒绝、ARP | 使用与独立示例共用的协议验收向量；不是线上收发 |
 | `test eth start` | 启用 ARP/ICMP/UDP1234 回显，SPI LCD 显示 MAC 与 `169.254.20.20` | 需要外部主机发包；每轮有界处理 RX，不保证两个 RX 槽能承受任意突发 |
 | `test eth stop` | 停止回显并恢复 SPI LCD 的 IP UNCONFIGURED | PHY/HAL 仍运行；不修改主机网卡配置 |
-| `test usb` | PHY ID/ready、HID 枚举、错误/队列、DDR HCCA 对齐、OHCI frame 推进，以及实际周期 ED 链的 TD 所有权 | 接收器空闲也可通过；不能代替真实按键输入 |
-| `test usb stop` | 停止 OHCI/PHY 初始化逻辑，检查 ready 清零 | 保持接收器连接，禁用时 ULPI PLL 仍运行以完成状态复位 |
-| `test usb restart` | 停止状态检查、重新初始化、枚举与 OHCI 进度 | 不需要拔插设备 |
+| `test usb` | PHY ID/ready、HID 枚举、错误/队列、DDR HCCA 对齐，以及 OHCI 后端下的 frame 推进和实际周期 ED 链的 TD 所有权 | 接收器空闲也可通过；不能代替真实按键输入 |
+| `test usb stop` | 停止 Host/PHY 初始化逻辑，检查 ready 清零 | 保持接收器连接，禁用时 ULPI PLL 仍运行以完成状态复位 |
+| `test usb restart` | 停止状态检查、重新初始化、枚举与 Host 进度 | 不需要拔插设备 |
 | `test usb input` / `test usb input stop` | 开/关 raw HID 和鼠标事件输出；键盘按下/释放始终输出 | 返回 READY 表示等待实物输入，没有输入时不判 PASS；鼠标坐标为带符号值的 32 位十六进制 |
 | `test usb leds DEVICE INTERFACE MASK` | 调用异步 HID LED 发送；参数为十进制、mask 0..31 | 返回 QUEUED 只表示驱动接受请求，需看键盘灯；device/interface 可从 raw HID 输出取得 |
 | `test phys` | 共享 F10 复位后 USB 恢复枚举、Ethernet PHY/MAC 恢复 | 两个 PHY 一起复位，运行中的网络请求可能丢失 |
@@ -40,7 +40,7 @@ boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测
 `TEST ... PASS` 表示表中“自动检查”通过。测试不修改 Flash；SD 写入、
 音频发声、共享 PHY 复位和屏幕/灯光改变都只在对应命令显式运行时发生。
 `test soak` 不自动打开 Ethernet 回显；需要并发网络时先执行 `test eth start`，
-再让主机持续发 UDP，结束后执行 `test eth stop`。网络突发丢包限制见 [M9 验证](m9-validation.md)。
+再让主机持续发 UDP，结束后执行 `test eth stop`。网络突发丢包限制见 [轻量 USB](usb-light.md)。
 
 ## 批量运行
 

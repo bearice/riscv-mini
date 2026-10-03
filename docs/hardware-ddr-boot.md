@@ -1,80 +1,15 @@
-# Hardware DDR boot and compact ROM
+# 硬件 DDR 启动
 
-Working source moves DDR initialization/training into `gateware/ddr_boot.py`.
-There is no integrated SRAM. The 4 KiB ROM polls ready/failure in stack-free
-assembly. On ready it initializes loader data/BSS/stack in reserved DDR
-`0x407fe000..0x407fffff`, stack top `0x40800000`. Application code still starts
-at `0x40800000`, with stack top `0x40c00000`.
+`gateware/ddr_boot.py` 完成 DDR JEDEC 初始化和逐 byte lane 读训练；片上没有集成 SRAM。4 KiB ROM 先以无栈汇编轮询 ready/failed，成功后才在 `0x407fe000..0x407fffff` 建立 data/BSS 和启动栈，SP=`0x40800000`。应用入口同为 `0x40800000`，应用栈顶为 `0x40c00000`。
 
-Hardware executes JEDEC reset/release, mode registers (DLL-off CL6/CWL6), ZQ,
-and two-lane training across four bitslips and 256 delay settings, checking
-three seeds (42/84/36), read-data-valid and burst detect. It picks the widest
-window midpoint and verifies it. Scratch is bank0/row0/column0. Controller and
-crossbar stay reset; masters are gated until handover. Failure stops commands;
-ROM reports failure/timeout without accessing a DDR stack.
+硬件执行 reset/release、模式寄存器（DLL-off，CL6/CWL6）、ZQ 校准，再对两个 lane 遍历四种 bitslip 与 256 个 delay setting。检查三个训练种子 42/84/36、read-data-valid 和 burst detect，选择最宽通过窗口的中点并再次验证。scratch 使用 bank0/row0/column0；控制器和 crossbar 在训练期间保持复位，master 在 handover 前被阻止。失败后停止命令，ROM 不访问 DDR 栈就输出失败或超时。
 
-Full SoC reset now resets DMA/peripherals and restarts training together, while
-keeping PHY init/DLL clock alive. A final candidate must qualify software reset
-with this connection; the earlier working candidate did not retrain on CPU reset.
+完整 SoC 软件复位同时复位 DMA/外设并重新训练 DDR，PHY 初始化/DLL 所需时钟保持运行。训练状态和 lane 结果可从生成 CSR 及 monitor 状态读取。
 
-## Loader size
+## ROM 内容和边界
 
-Loader links startup, UART, time, compact loader-only Flash and main with
-`-Os -flto`. SD, display, filesystem and Flash UID remain in the DDR app.
-Bounds, ABI, UART framing, CRC, finite timeouts and header-last Flash install
-remain. There is no post-write Flash readback verification.
+ROM 只链接启动汇编、UART、计时、紧凑 Flash 驱动与镜像装载器，使用 `-Os -flto`。不含 SD、LCD、文件系统、音频、网络、USB 或 Flash UID 逻辑。保留地址/长度/ABI/CRC 检查、有界超时、UART framing、header-last 安装；没有 Flash 写后读回验证。
 
-| Snapshot | Bytes | Evidence |
-| --- | ---: | --- |
-| Previous software DDR boot | 6584 | `build/soc-layout/release/validation.json` |
-| First hardware DDR boot | 4712 | `build/ddr-hw/boot-size-before.json` |
-| Compact, no C/B | 4024 | `build/ddr-hw/boot-size-compact.json` |
-| C only | 2856 | `build/ddr-hw/boot-size-c-only.json` |
-| C + Zba/Zbb/Zbs | 2852 | `build/ddr-hw/boot-size-cb.json` |
+4 KiB 链接上限由 [`boot.ld`](../firmware/bootloader/boot.ld) 和 [`scripts/build.py`](../scripts/build.py) 强制检查，实际大小随工具和 LTO 构建而变。函数空间可用 `scripts/boot_size.py ELF --json REPORT` 检查，LTO 内联函数空间会计入调用者。
 
-C gives nearly all the ROM savings; B saves four additional bytes. Reproduce
-function/section analysis with `scripts/boot_size.py ELF --json REPORT`.
-LTO inlined callees are attributed to their caller.
-
-| Function | First HW loader → C+B bytes |
-| --- | ---: |
-| main (includes receive/install/probe) | 1552 → 938 |
-| flash_program | 336 → 194 |
-| from_flash | 272 → 134 |
-| flash_read | 264 → 100 |
-| _start | 224 → 190 |
-| image_valid | 204 → 142 |
-| execute | 144 → 78 |
-| uart_byte | 144 → 90 |
-| write_enable | 120 → 62 |
-| ready | 112 → 82 |
-| status | 96 → 46 |
-| image_crc | 80 → 56 |
-| uart_read | 76 → 46 |
-| io_puts | 52 → 28 |
-| io_putchar | 28 → 18 |
-| io_ticks | 24 → 16 |
-
-Former transfer (176 bytes) becomes byte (90) plus address_command (74).
-io_hex (100) is no longer linked. JSON reports include exact symbols/padding.
-
-## Verified boundaries
-
-First `build/ddr-hw/release` used ROM6KiB, SRAM0, loader4712, BSRAM40/46,
-PnR setup0/hold0 and passed board firmware commands. ROM4KiB candidates require
-fresh checks. `tests/ddr_boot_test.py` checks fake-PHY JEDEC/training/failure,
-missing data-valid/burst and reset; electrical timing is outside simulation.
-Hardware training does not replace the removed software startup data-bit,
-address-alias and three-region memory tests. `test ddr` covers 8 KiB, not 128 MiB.
-
-Original C+B PnR had 293 setup violations. Two-cycle I-cache plus injector
-reduced this to six, still not deployable. New C-only/no-C plus L2 experiments
-are described in [l2-cache.md](l2-cache.md). Failed-timing candidates are not
-programmed by the normal upload tool.
-
-The final no-C/L2 candidate now qualifies the 4KiB-ROM/no-SRAM boot flow,
-five full software resets, UART error boundaries and a five-minute external
-network/audio/SD/USB/display run. See the L2 page for exact evidence. Its
-4024-byte ROM leaves72 bytes; the C-only/L2 ROM is2888 bytes but not accepted
-because both board attempts stopped at the preready DDR error path. Persistent
-Flash remains unchanged; this trial runs FPGA SRAM plus UART-loaded application.
+`sim/test_ddr_boot.py` 检查 JEDEC 命令、模拟窗口选择、handover 和失败路径，不能替代电气训练。硬件训练不是完整 128 MiB 内存测试；`test ddr` 只覆盖 8 KiB。镜像格式、Flash 分区和更新操作见 [bootloader](bootloader.md)。

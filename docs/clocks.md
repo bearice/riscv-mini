@@ -1,7 +1,7 @@
 # 当前时钟树
 
 固定 CPU/sys 60 MHz、DDR CK 120 MHz；默认 USB 为 sys60 PIO/串行后端。
-最终资源和上板状态以相应验证页为准。
+资源总量见 [系统设计](system-design.md)。
 
 ```text
 核心板 27 MHz
@@ -50,20 +50,20 @@ Host 和桥接复位来自 sys reset、USB reset CSR 和同步后的 ready。
 USB3317 CLKOUT 与 sys 名义频率相同但独立，初始化状态仍需 CDC；
 新的 Host 和串行引擎直接使用 sys，与该外部 60 MHz 不构成同步关系。
 
-M10 修复连续停止后 ready/ID 残留：USB-only disable 保持 ULPI PLL 运行，
+USB 停止/重启：USB-only disable 保持 ULPI PLL 运行，
 以 enable 复位初始化 FSM，确保同步寄存器有时钟完成清零。F10 物理复位仍
 复位该 PLL。当前 rPLL、PRIMARY、LW 分别为 3/4、8/8、8/8，完整占用见
 [轻量 USB 资源报告](usb-light.md)。
 
-使用 `--usb-backend ohci` 可回到原 M9/M10 时钟配置：额外的 48 MHz PLL
+使用 `--usb-backend ohci` 可回到OHCI 时钟配置：额外的 48 MHz PLL
 驱动 Spinal OHCI serial PHY，控制寄存器、DMA 和 IRQ 在 sys 域，通过核内
-同步器和 toggle 握手跨域。该配置总计四颗 PLL，历史完整报告见
-[M10 资源报告](m10-review.md)。
+同步器和 toggle 握手跨域。该配置总计四颗 PLL，OHCI 后端说明见
+[USB Host](usb.md)。
 
-## 音频 DDS（2026-10-02）
+## 音频 DDS
 
 默认 `--audio-clock dds`。相位累加器按构建时 `sys_clk_freq` 与 `128 × 48000` 求最大公约数，产生精确有理数速率的麦克风 BCK 边沿使能；DAC 每隔一次使用同一使能。60 MHz 下 step/modulus 为 64/625，麦克风相邻边沿间隔 9 或 10 sys 周期，DAC 为 19 或 20；完整帧为 1250 sys 周期。120 MHz 参数仿真时比值为 32/625，仍为 48 kHz。
 
 GPIO 边沿带有小于一个 sys 周期的量化误差；60 MHz 下一个周期为 16.667 ns。DDS 不提供独立低抖动的 12.288/24.576 MHz MCLK；PT8211 与当前 I2S 麦克风只需 BCK/WS。所有 PCM FIFO、DMA 和串行状态机保留在 sys 域，没有音频 CDC 或新增 PLL。
 
-`--audio-clock sys` 是 DDS 的兼容别名；`--audio-clock legacy` 保留原整数分频 46,875 Hz，供对比历史验收。已放弃串联 PLL 方案：用户要求避免音频依赖主 PLL 的 120 MHz 频率配置，并保留空闲 PLL。时钟链单独 PnR 通过不能代表整机或音频硬件验收。
+`--audio-clock sys` 是 DDS 的兼容别名；`--audio-clock legacy` 提供整数分频 46,875 Hz。当前默认 DDS 不占用独立音频 PLL。
