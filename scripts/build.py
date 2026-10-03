@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from scripts.boot_image import LOAD, FLASH_OFFSET, abi_tag, pack_image
 from gateware.features import Features
+from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, cpu_filename, pll_count
 
 def checked(command,log=None):
     command=[str(part) for part in command]
@@ -26,17 +27,18 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True):
+def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
         raw=binary.read_bytes();raw+=bytes((-len(raw))%4)
         data=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features)
+    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock)
+    soc.platform.toolchain.options.update(place_option=place_option,route_option=route_option)
     if hierarchical:
         from gateware.rtl import split_verilog
-        split_verilog(soc.platform)
+        split_verilog(soc.platform,deep=deep_verilog)
     builder=Builder(soc,output_dir=str(output),compile_software=False,compile_gateware=synthesize,
                     csr_json=str(output/'csr.json'),csr_csv=str(output/'csr.csv'),hierarchical=hierarchical)
     builder.build(run=synthesize,build_name='riscv_mini')
@@ -55,6 +57,17 @@ def generate_csr(csr,include):
         lines += [f'#define CSR_{name.upper()}_ADDR 0x{addr:08x}u',f'#define CSR_{name.upper()}_SIZE {count}',
                   f'static inline {typ} {name}_read(void) {{ return {reads}; }}',
                   f'static inline void {name}_write({typ} value) {{ {writes} }}']
+    # Read-only compatibility accessors share the gateware layout definition.
+    from gateware.csr_layout import STATUS_LAYOUTS
+    for bank, words in STATUS_LAYOUTS.items():
+        for word, fields in words:
+            packed = bank+'_'+word
+            if packed not in csr['csr_registers']:continue
+            shift = 0
+            for name, width in fields:
+                mask = (1 << width)-1
+                lines.append(f'static inline uint32_t {bank}_{name}_read(void) {{ return ({packed}_read() >> {shift}) & 0x{mask:x}u; }}')
+                shift += width
     (include/'generated').mkdir(parents=True,exist_ok=True)
     (include/'hw').mkdir(exist_ok=True)
     (include/'generated/csr.h').write_text('\n'.join(lines)+'\n',encoding='utf-8')
@@ -83,23 +96,43 @@ def pnr_report(output):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--sd-backend',choices=('native','spi'),default='native')
+    p.add_argument('--cpu-verilog',type=Path)
+    p.add_argument('--cpu-rtl-dir',type=Path,default=ROOT/'build/cpu-features',help='Generated independent CPU variants')
+    p.add_argument('--cpu-variant',choices=('lite','full','linux'),default=None)
+    p.add_argument('--usb-backend',choices=('ohci','ultra'),default='ultra')
+    p.add_argument('--sd-backend',choices=('native','spi'),default=None,help='Legacy alias; prefer --sd-profile')
+    p.add_argument('--sd-profile',choices=SD_PROFILES,default=None)
+    p.add_argument('--audio-clock',choices=('dds','sys','legacy'),default='dds')
     p.add_argument('--profile',choices=('full','minimal'),default='full')
     p.add_argument('--flat-verilog',action='store_true',help='Compatibility output; default is hierarchical modules in separate files')
+    p.add_argument('--deep-verilog',action='store_true',help='Diagnostic full internal hierarchy; default separates SoC blocks')
     for name in Features.names():
         group=p.add_mutually_exclusive_group()
         flag=name.replace('_','-')
         group.add_argument('--with-'+flag,dest=name,action='store_true',default=None)
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
+    p.add_argument('--place-option',type=int,choices=range(5),default=3)
+    p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--app',type=Path,default=ROOT/'firmware/app/main.c',help='DDR application source; bootloader is unchanged')
     p.add_argument('--generate-only',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--rom',type=Path,help=argparse.SUPPRESS)
-    a=p.parse_args();output=a.output_dir.resolve()
-    try:features=Features.resolve(a.profile,{name:getattr(a,name) for name in Features.names()})
+    a=p.parse_args();a.audio_clock='dds' if a.audio_clock=='sys' else a.audio_clock;output=a.output_dir.resolve()
+    if a.flat_verilog and a.deep_verilog:p.error('Use flat or deep Verilog, not both')
+    overrides={name:getattr(a,name) for name in Features.names()}
+    try:
+        features=Features.resolve(a.profile,overrides)
+        a.sd_profile,features=storage_profile(a.sd_profile,a.sd_backend,features,overrides)
+        a.sd_backend='native' if a.sd_profile in ('lite','full') else 'spi' if a.sd_profile=='spi' else 'none'
+        if a.cpu_verilog is None and (features.mmu or features.fpu):
+            a.cpu_verilog=a.cpu_rtl_dir/cpu_filename(features.mmu,features.fpu)
+            if not a.cpu_verilog.is_file():raise ValueError(f'Missing CPU RTL {a.cpu_verilog}; run scripts/cpu_generate.py first')
+        features,a.cpu_variant,cpu_dcache=cpu_configuration(features,overrides,a.cpu_verilog,a.cpu_variant)
+        expected_plls=pll_count(features,a.usb_backend,a.audio_clock)
     except ValueError as error:p.error(str(error))
-    config_args=features.arguments()+(['--flat-verilog'] if a.flat_verilog else [])
+    config_args=['--cpu-variant',a.cpu_variant]+(['--cpu-verilog',str(a.cpu_verilog.resolve())] if a.cpu_verilog else [])+['--usb-backend',a.usb_backend,'--sd-profile',a.sd_profile,'--audio-clock',a.audio_clock]+features.arguments()+(['--flat-verilog'] if a.flat_verilog else [])+(['--deep-verilog'] if a.deep_verilog else [])
+    config_args+=['--place-option',str(a.place_option),'--route-option',str(a.route_option)]
     requirements={'microphone_demo.c':('mic','video'),
                   'microphone_stereo_demo.c':('mic','mic_stereo','video'),
                   'usb_input_demo.c':('usb','video'),'ethernet_demo.c':('eth',),
@@ -107,23 +140,24 @@ def main():
     if a.app.resolve().parent==ROOT/'firmware/examples':
         missing=[name for name in requirements.get(a.app.name,()) if not getattr(features,name)]
         if missing:p.error(f'{a.app.name} requires enabled modules: {", ".join(missing)}')
-    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog);return
+    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option);return
     output.mkdir(parents=True,exist_ok=True)
     tools=json.loads((ROOT/'.tools.local.json').read_text());gcc=Path(tools['gcc']);toolbin=gcc.parent
     os.environ['PATH']=os.pathsep.join([str(toolbin),str(Path(tools['gowin']).parent),os.environ['PATH']])
     os.environ['PYTHONUTF8']='1'
-    checked([sys.executable,__file__,'--generate-only','--output-dir',output,'--sd-backend',a.sd_backend,*config_args],output/'generate.log')
+    checked([sys.executable,__file__,'--generate-only','--output-dir',output,*config_args],output/'generate.log')
     csr=json.loads((output/'csr.json').read_text())
     if csr['constants']['config_sd_native']!=int(a.sd_backend=='native'):raise ValueError('SD hardware/backend mismatch')
     for name,base,size in [('rom',0,8192),('sram',0x10000000,8192),('main_ram',0x40000000,128*1024*1024)]:
         if csr['memories'][name]['base']!=base or csr['memories'][name]['size']!=size:raise ValueError(f'Unexpected {name} layout')
     firmware=output/'firmware';firmware.mkdir(exist_ok=True)
     include=firmware/'include';generate_csr(csr,include)
-    (include/'features.h').write_text(features.header(),encoding='utf-8')
+    isa='rv32im'+('af' if features.fpu else '')+'_zicsr_zifencei'
+    (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_SD_PROFILE "{a.sd_profile}"\n',encoding='utf-8')
     abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
     loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
     usb=ROOT/'firmware/vendor/tinyusb/src'
-    flags=['-march=rv32im_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror','-ffreestanding',
+    flags=['-DMINI_CPU_DCACHE='+str(int(cpu_dcache)), '-DMINI_SD_LITE='+str(int(a.sd_profile=='lite')), '-march='+isa,'-mabi=ilp32','-Os','-Wall','-Wextra','-Werror','-ffreestanding',
         '-fno-builtin','-ffunction-sections','-fdata-sections','-nostdlib','-nostartfiles','-msmall-data-limit=0',
         '-I',firmware,'-I',include,'-I',output/'software/include','-I',drivers,'-I',loader,'-I',vendor,'-I',hal/'include','-I',usb,
         '-include',include/'features.h']
@@ -137,7 +171,9 @@ def main():
     if features.video:app_sources.append(drivers/'video.c')
     for feature,source in [('audio','audio.c'),('mic','microphone.c'),('eth','ethernet.c'),('usb','usb.c')]:
         if getattr(features,feature):app_sources.append(hal/'src'/source)
-    if features.usb:app_sources += [usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','class/hid/hid_host.c','portable/ohci/ohci.c')]
+    if features.usb:
+        app_sources += [usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','class/hid/hid_host.c')]
+        app_sources.append(hal/'src/hcd_ultra.c' if a.usb_backend=='ultra' else usb/'portable/ohci/ohci.c')
     firmware_sizes={}
     for name,main,sources,linker in [
         ('boot',loader/'main.c',[ROOT/'firmware/boot/ddr.c'],loader/'boot.ld'),
@@ -157,7 +193,7 @@ def main():
     binary=firmware/'boot.bin';size=binary.stat().st_size
     if size>8192:raise RuntimeError('Boot ROM overflow')
     image=pack_image((firmware/'app.bin').read_bytes(),abi);(firmware/'app.img').write_bytes(image)
-    command=[sys.executable,__file__,'--generate-only','--output-dir',output,'--rom',binary,'--sd-backend',a.sd_backend,*config_args]
+    command=[sys.executable,__file__,'--generate-only','--output-dir',output,'--rom',binary,*config_args]
     if a.synthesize:command+=['--synthesize']
     checked(command,output/('synthesis.log' if a.synthesize else 'generate-rom.log'))
     # ROM content is validated independently of the compiler exit code.
@@ -172,9 +208,17 @@ def main():
     if actual!=expected:raise RuntimeError('ROM content mismatch')
     report={'profile':a.profile,'boot_sources':['flash','uart'] if features.flash else ['uart'],'rom_size_bytes':8192,'sram_size_bytes':8192,
         'firmware_bytes':size,'firmware_sha256':hashlib.sha256(raw).hexdigest(),'firmware_sizes':firmware_sizes,
-        'isa':'rv32im_zicsr_zifencei','abi':'ilp32',
-        'clock_hz':60000000,'ddr_clock_hz':120000000,'usb_phy_clock_hz':48000000 if features.usb else 0,'ulpi_clock_hz':60000000 if features.usb else 0,'rtl':str(output/'gateware/riscv_mini.v'),
+        'cpu_variant':a.cpu_variant,'cpu_verilog':str(a.cpu_verilog.resolve()) if a.cpu_verilog else None,'isa':isa,'abi':'ilp32',
+        'cpu_capabilities':{'mmu':features.mmu,'fpu':features.fpu,'dcache':cpu_dcache},
+        'sd_profile':a.sd_profile,'audio_clock':a.audio_clock,
+        'expected_plls':expected_plls,'audio_reference_hz':60000000,
+        'audio_sample_rate':(46875 if a.audio_clock=='legacy' else 48000) if features.audio else 0,
+        'mic_sample_rate':(46875 if a.audio_clock=='legacy' else 48000) if features.mic else 0,
+        'clock_hz':60000000,'ddr_clock_hz':120000000,'usb_backend':a.usb_backend,'usb_phy_clock_hz':(60000000 if a.usb_backend=='ultra' else 48000000) if features.usb else 0,'ulpi_clock_hz':60000000 if features.usb else 0,'rtl':str(output/'gateware/riscv_mini.v'),
         'features':features.as_dict(),'verilog_mode':'flat' if a.flat_verilog else 'hierarchical',
+        'netlist_hierarchy':None if a.flat_verilog else 0,
+        'rtl_hierarchy':'flat' if a.flat_verilog else 'deep' if a.deep_verilog else 'blocks',
+        'place_option':a.place_option,'route_option':a.route_option,
         'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,
                       'image_bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}}

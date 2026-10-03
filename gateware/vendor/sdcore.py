@@ -22,14 +22,14 @@ from litesdcard.crc import CRC
 # SDCore -------------------------------------------------------------------------------------------
 
 class SDCore(LiteXModule):
-    def __init__(self, phy):
+    def __init__(self, phy, bounded=True):
         self.sink   = stream.Endpoint([("data", 8)])
         self.source = stream.Endpoint([("data", 8)])
         self.irq = Signal()
 
         # Cmd Registers.
         self.cmd_argument = CSRStorage(32, description="SDCard Cmd Argument.")
-        self.cmd_command  = CSRStorage(32, fields=[
+        self.cmd_command  = CSRStorage(14 if bounded else 32, fields=[
             CSRField("cmd_type",  offset=0, size=2, description="Core/PHY Cmd transfer type."),
             CSRField("crc",       offset=2, size=1, description="Enable CRC7 check for response."),
             CSRField("data_type", offset=5, size=2, description="Core/PHY Data transfer type."),
@@ -54,7 +54,7 @@ class SDCore(LiteXModule):
 
         # Block Length/Count Registers.
         self.block_length = CSRStorage(10, description="Data transfer Block Length (in bytes).")
-        self.block_count  = CSRStorage(32, description="Data transfer Block Count.")
+        self.block_count  = CSRStorage(4 if bounded else 32, description="Data transfer Block Count.")
 
         # # #
 
@@ -82,7 +82,7 @@ class SDCore(LiteXModule):
 
         data_type    = Signal(2)
         data_count   = Signal(32)
-        data_read_count = Signal(32)
+        data_read_count = Signal(4 if bounded else 32)
         data_done    = Signal()
         data_error   = Signal()
         data_timeout = Signal()

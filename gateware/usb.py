@@ -1,4 +1,4 @@
-"""USB3317 ULPI bring-up, six-pin PHY and DDR-backed OHCI Host."""
+"""USB3317 initialization and selectable serial full-speed Host backends."""
 from pathlib import Path
 from migen import *
 from migen.fhdl.specials import Tristate
@@ -126,11 +126,20 @@ class USBHost(LiteXModule):
         target.write_text(rtl)
         soc.platform.add_source(str(target))
 
-def add_usb(soc):
+def add_usb(soc,backend='ultra'):
     soc.platform.add_extension([('usb_ulpi',0,Subsignal('data',Pins('G11 H12 J12 H13 T14 R13 P13 R12')),
         Subsignal('clk',Pins('T15')),Subsignal('stp',Pins('K11')),Subsignal('dir',Pins('K12')),
         Subsignal('nxt',Pins('K13')),IOStandard('LVCMOS33'))])
     pads=soc.platform.request('usb_ulpi')
+    if backend=='ultra':
+        from gateware.usb_ultra import USBHostUltra
+        soc.usb_host=USBHostUltra(soc,pads)
+        soc.bus.add_slave(name='usb_pio',slave=soc.usb_host.wb_ctrl,
+            region=SoCRegion(origin=0xb1000000,size=4096,cached=False))
+        soc.add_constant('CONFIG_USB_ULTRA',1)
+        soc.irq.add('usb_host',use_loc_if_exists=True)
+        soc.platform.add_period_constraint(pads.clk,1e9/60e6)
+        return
     soc.usb_host=USBHost(soc,pads)
     ohci_bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
     soc.usb_pipeline=WishbonePipeline(ohci_bus,soc.usb_host.wb_ctrl)

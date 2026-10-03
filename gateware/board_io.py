@@ -1,4 +1,5 @@
 """Dock IO in schematic order; all logic runs on sys clock enables."""
+from gateware.csr_layout import packed_status
 from migen import Signal, If, Cat, Mux
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
@@ -8,10 +9,7 @@ from litex.soc.interconnect.csr_eventmanager import EventManager, EventSourceLev
 class BoardIO(LiteXModule):
     def __init__(self,leds,buttons_n,switches,debounce_cycles=300000):
         self._leds=CSRStorage(6,name='leds')
-        self._buttons=CSRStatus(4,name='buttons')
-        self._switches=CSRStatus(4,name='switches')
-        self._pressed=CSRStatus(4,name='pressed')
-        self._released=CSRStatus(4,name='released')
+        packed_status(self, 'board_io')
         self._clear=CSR(8,name='clear')
         raw=Signal(4);stable=Signal(4);switch_sync=Signal(4)
         self.specials += [MultiReg(~buttons_n,raw),MultiReg(switches,switch_sync)]

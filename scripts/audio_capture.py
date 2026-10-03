@@ -78,12 +78,12 @@ def tone_amplitude(samples,rate,hz):
         real+=(value-mean)*math.cos(angle);imag+=(value-mean)*math.sin(angle)
     return 2*math.hypot(real,imag)/(len(samples)*32768)
 
-def analyze(path):
+def analyze(path,source_rate=46875):
     with wave.open(str(path),'rb') as wav:
         rate=wav.getframerate();assert wav.getnchannels()==2 and wav.getsampwidth()==2
         data=array.array('h',wav.readframes(wav.getnframes()))
     channels=[data[i::2] for i in (0,1)];result=[]
-    for channel,expected,other in zip(channels,(46875/64,46875/96),(46875/96,46875/64)):
+    for channel,expected,other in zip(channels,(source_rate/64,source_rate/96),(source_rate/96,source_rate/64)):
         active=channel[round(.25*rate):round(1.5*rate)];silent=channel[round(2.5*rate):round(3.5*rate)]
         # Coarse peak and a local refinement tolerate board/host oscillator ppm.
         peaks=[(tone_amplitude(active,rate,expected+delta),expected+delta) for delta in range(-8,9)]
@@ -108,7 +108,8 @@ if __name__=='__main__':
     parser.add_argument('--list',action='store_true');parser.add_argument('--device',default='Line In')
     parser.add_argument('--output',type=Path,default=Path('build/m7-line-in.wav'))
     parser.add_argument('--analyze',type=Path)
+    parser.add_argument('--source-rate',type=int,default=46875,help='FPGA audio frame rate (48000 in PLL mode)')
     args=parser.parse_args()
     if args.list:print(json.dumps(devices(),indent=2,ensure_ascii=False))
-    elif args.analyze:print(json.dumps(analyze(args.analyze),indent=2))
+    elif args.analyze:print(json.dumps(analyze(args.analyze,args.source_rate),indent=2))
     else:print(record(args.output,device_name=args.device))

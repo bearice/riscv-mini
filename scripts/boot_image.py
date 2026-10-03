@@ -18,6 +18,7 @@ def abi_tag(csr):
                'cpu':'vexriscv-lite-rv32im','sys_hz':60000000,'load':LOAD,'image_version':VERSION}
     features={k:v for k,v in csr.get('constants',{}).items() if k.lower().startswith('mini_feature_')}
     if features:interface['features']=features
+    if csr.get('constants',{}).get('config_usb_ultra'):interface['usb_backend']='ultra'
     return zlib.crc32(json.dumps(interface,sort_keys=True,separators=(',',':')).encode())
 
 def pack_image(payload,abi):

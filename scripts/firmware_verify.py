@@ -56,6 +56,11 @@ def main():
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
                 ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),
                 ('eth',enabled('eth')),('eth parser',enabled('eth')),('usb',enabled('usb')),('usb stop',enabled('usb'))]
+            capabilities = validation.get('cpu_capabilities')
+            if capabilities is not None:
+                cases=[('fpu',capabilities['fpu']),('mmu',capabilities['mmu']),*cases]
+            elif validation.get('cpu_variant')=='linux' and validation.get('cpu_verilog'):
+                cases=[('fpu',True),('mmu',True),*cases]
             for name,available in cases:
                 command('test '+name,None if available else 'UNSUPPORTED: feature disabled')
             if enabled('usb'):

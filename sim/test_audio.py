@@ -3,17 +3,27 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from migen import Signal
+from migen import Signal, If, ClockDomain
 from migen.fhdl.specials import Memory
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from gateware.audio import Audio
+from gateware.audio_clock import AudioDDS
 
 
-def fixture(depth=8, half=2):
+def fixture(depth=8, half=2, enable_period=1,rate_sys=False):
     pads=SimpleNamespace(**{n:Signal() for n in ('bck','ws','din','pa_en')})
     bus=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
-    return Audio(pads,bus,half_period=half,fifo_depth=depth),pads,bus
+    enable=Signal(reset=1) if enable_period==1 else Signal()
+    dut=Audio(pads,bus,half_period=half,fifo_depth=depth,clock_enable=enable)
+    if rate_sys:
+        dut.submodules.reference=reference=AudioDDS(60000000)
+        dut.comb += enable.eq(reference.dac_tick)
+    elif enable_period>1:
+        count=Signal(max=enable_period)
+        dut.sync += If(count==enable_period-1,count.eq(0)).Else(count.eq(count+1))
+        dut.comb += enable.eq(count==enable_period-1)
+    return dut,pads,bus
 
 def simulate(dut,processes):
     fragment=dut.get_fragment()
@@ -22,24 +32,24 @@ def simulate(dut,processes):
         if isinstance(memory,Memory):
             for port in memory.ports:
                 if port.dat_r is None:port.dat_r=Signal(memory.width)
-    run_simulation(fragment,processes)
+    run_simulation(fragment,processes,clocks={'sys':10})
 
-def pio_and_serial():
-    dut,pads,bus=fixture();words=[];periods=[];sequence=[0x80017fff,0x1234fedc,0xa55a5aa5]
+def pio_and_serial(enable_period=1,rate_sys=False):
+    dut,pads,bus=fixture(half=1 if rate_sys else 2,enable_period=enable_period,rate_sys=rate_sys);words=[];periods=[];sequence=[0x80017fff,0x1234fedc,0xa55a5aa5]
     def bench():
         assert not (yield pads.pa_en)
         for word in sequence:
             yield dut._sample.wr_data.eq(word);yield dut._sample.wr_stb.eq(1);yield
             yield dut._sample.wr_stb.eq(0);yield
         yield dut._control.storage.eq(1)
-        for _ in range(128*6):yield
+        for _ in range(128*6*enable_period):yield
         assert (yield dut._played.status)==3
         assert (yield dut._underruns.status)>0
         # PIO mute consumes samples but exposes only zero to the DAC and amp.
         yield dut._control.storage.eq(5)
         yield dut._sample.wr_data.eq(0xffffffff);yield dut._sample.wr_stb.eq(1);yield
         yield dut._sample.wr_stb.eq(0)
-        for _ in range(256):
+        for _ in range(256*enable_period):
             yield
             assert not (yield pads.pa_en)
         assert (yield dut._last_sample.status)==0
@@ -59,12 +69,12 @@ def pio_and_serial():
                     group=[];ws_prev=ws
                 group.append(din)
             last=bck;cycle+=1;yield
-    simulate(dut,[bench(),decode()])
+    simulate(dut,[bench(),decode()] )
     packed=[(right<<16)|left for (ws,right),(next_ws,left) in zip(words,words[1:]) if ws==0 and next_ws==1]
     assert sequence[1] in packed and sequence[2] in packed,packed
     assert packed.index(sequence[1])<packed.index(sequence[2])
     assert packed[-1]==0,packed
-    assert periods and set(periods)=={4},set(periods)
+    assert periods and (set(periods)<={39,40} if rate_sys else set(periods)=={4*enable_period}),set(periods)
     print('Audio pins PASS: right WS=0 / left WS=1, MSB first, stereo order, zeros on underrun/mute')
 
 def dma_and_stop():
@@ -150,4 +160,4 @@ def real_clock():
     assert len(ws_rises)>2 and all(b-a==1280 for a,b in zip(ws_rises,ws_rises[1:]))
     print('Audio clock PASS: 60MHz / 40 = 1.5MHz BCK, / 1280 = 46875Hz stereo frames')
 
-pio_and_serial();dma_and_stop();real_clock()
+pio_and_serial();pio_and_serial(5);pio_and_serial(20,rate_sys=True);dma_and_stop();real_clock()

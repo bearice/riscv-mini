@@ -3,6 +3,16 @@
 _start:
     csrw mie, zero
     csrci mstatus, 8
+#if MINI_FEATURE_MMU
+    csrw satp, zero
+#endif
+#if MINI_FEATURE_FPU
+    li t0, 0x6000
+    csrs mstatus, t0
+#endif
+#if MINI_CPU_DCACHE
+    .word 0x0000500f
+#endif
     la sp, _stack_top
     .option push
     .option norelax

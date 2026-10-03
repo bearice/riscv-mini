@@ -23,7 +23,7 @@ class GowinMultiReg:
         return impl
 
 
-def add_ddr_init_exceptions(platform, with_video=False):
+def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
     original_verilog=platform.get_verilog
     def verilog(*args, special_overrides=None, **kwargs):
         overrides=dict(special_overrides or {});overrides[MultiReg]=GowinMultiReg
@@ -34,6 +34,8 @@ def add_ddr_init_exceptions(platform, with_video=False):
     def build(vns):
         result = original(vns)
         rtl=Path(f'{platform.toolchain._build_name}.v').read_text()
+        hierarchical = bool(re.search(r'^module\s+\w+__usb_host\b', rtl, re.M))
+        usb_phy_path = 'usb_host/usb_fs_phy' if hierarchical else 'usb_fs_phy'
         aliases={'ddr_init_pause'}
         for _ in range(8):
             found={dest for dest,source in re.findall(r'assign\s+(\w+)\s*=\s*(\w+)\s*;',rtl) if source in aliases}
@@ -73,7 +75,7 @@ def add_ddr_init_exceptions(platform, with_video=False):
                 stream.write(f'set_max_delay 25 -from [get_pins {{mic*_s*/Q}}] -to [get_ports {{{prefix}_bck {prefix}_ws}}]\n')
             usb_stages=[dest for dest,src in pairs if re.fullmatch(
                 r'usb_(?:ulpi_(?:ready|error|id)|serial_lines)',src)]
-            if usb_stages:
+            if usb_stages and usb_backend=="ohci":
                 if len(usb_stages)!=4:raise ValueError(f'Unexpected USB PHY CDC stages: {usb_stages}')
                 declarations={name:int(msb)+1 for msb,name in re.findall(r'reg\s+\[(\d+):0\]\s+(\w+)',rtl)}
                 stream.write('# USB PHY status: first stage only; ID is stable before ready.\n')
@@ -122,6 +124,35 @@ def add_ddr_init_exceptions(platform, with_video=False):
                 # in this limit as well; it is not a 25ns USB bit period.
                 stream.write('set_max_delay 25 -from [get_pins {UsbOhciWishbone_Dw32_Pc1_Pf48000000/back_buffer_0_*write*_regNext*_s*/Q}] -to [get_ports {usb_ulpi_data[*]}]\n')
                 stream.write('set_false_path -hold -from [get_pins {UsbOhciWishbone_Dw32_Pc1_Pf48000000/back_buffer_0_*write*_regNext*_s*/Q}] -to [get_ports {usb_ulpi_data[*]}]\n')
+            if usb_stages and usb_backend=='ultra':
+                # Host and serial PHY share sys60. ULPI is initialization only.
+                declarations={name:int(msb)+1 for msb,name in re.findall(r'reg\s+\[(\d+):0\]\s+(\w+)',rtl)}
+                first=[dest for dest,src in pairs if re.fullmatch(
+                    r'usb_(?:ulpi_(?:ready|error|id)|ultra_(?:lines|irq_raw))',src)]
+                for name in first:
+                    width=declarations.get(name,1)
+                    targets=[f'{name}_{i}_s1/D' for i in range(width)] if width>1 else [f'{name}_s1/D']
+                    for target in targets:stream.write(f'set_false_path -to [get_pins {{{target}}}]\n')
+                resets=[name for name,body in re.findall(r'\bDFFP\s+(\w+)\s*\((.*?)\);',rtl,re.S)
+                    if re.search(r'\.CLK\s*\(ulpi_clk\)',body)]
+                for name in resets:stream.write(f'set_false_path -to [get_pins {{{name}/PRESET}}]\n')
+                stream.write('set_input_delay -max 4 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_dir usb_ulpi_nxt usb_ulpi_data[*]}]\n')
+                stream.write('set_input_delay -min 1 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_dir usb_ulpi_nxt usb_ulpi_data[*]}]\n')
+                stream.write('set_output_delay -max 5.5 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_stp usb_ulpi_data[*]}]\n')
+                stream.write('set_output_delay -min -0.5 -clock [get_clocks {usb_ulpi_clk}] [get_ports {usb_ulpi_stp usb_ulpi_data[*]}]\n')
+                # Regenerated phase clock wraps into the following external
+                # cycle. Inputs sample the falling edge and outputs target
+                # the next PHY rising edge; keep the intervening hold check.
+                init_sources = ('usb_host*_s*/Q usbhost_state*_s*/Q usb_ulpi_ready_s1/Q'
+                    if hierarchical else 'usbphyinit_*_s*/Q add_usb_phy_output*_s*/Q add_usb_phy_stp_s0/Q usb_ulpi_ready_s1/Q')
+                stream.write(f'set_multicycle_path 2 -setup -from [get_pins {{{init_sources}}}] -to [get_ports {{usb_ulpi_stp usb_ulpi_data[*]}}]\n')
+                stream.write('# Serial RX pad paths terminate at first-stage capture only.\n')
+                rx_pins = ' '.join(f'{usb_phy_path}/{name}_s0/D' for name in ('rx_dp_ms','rx_dn_ms','rxd_ms'))
+                tx_pins = ' '.join(f'{usb_phy_path}/{name}_s1/Q' for name in ('out_dp_q','out_dn_q','rx_en_q'))
+                stream.write(f'set_max_delay 25 -from [get_ports {{usb_ulpi_data[*]}}] -to [get_pins {{{rx_pins}}}]\n')
+                stream.write(f'set_false_path -hold -to [get_pins {{{rx_pins}}}]\n')
+                stream.write(f'set_max_delay 25 -from [get_pins {{{tx_pins}}}] -to [get_ports {{usb_ulpi_data[*]}}]\n')
+                stream.write(f'set_false_path -hold -from [get_pins {{{tx_pins}}}] -to [get_ports {{usb_ulpi_data[*]}}]\n')
             eth_stages=[dest for dest,src in pairs if re.fullmatch(
                 r'(?:eth_ref_gray|eth_mdio_in|'
                 r'minisoc_core_(?:rx|tx)_cdc_cdc_graycounter[01]_q|'

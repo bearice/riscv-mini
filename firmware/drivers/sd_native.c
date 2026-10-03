@@ -49,7 +49,11 @@ static int wait_dma(unsigned write) {
     do {
         if(write?sdcard_mem2block_dma_error_read():sdcard_block2mem_dma_error_read())return 0;
         if(write?sdcard_mem2block_dma_done_read():sdcard_block2mem_dma_done_read()) {
-            __asm__ volatile("fence rw,rw":::"memory");return 1;
+            __asm__ volatile("fence rw,rw":::"memory");
+#if MINI_CPU_DCACHE
+            if(!write)__asm__ volatile(".word 0x0000500f":::"memory");
+#endif
+            return 1;
         }
         if(!present())return 0;
     } while((uint32_t)(io_ticks()-start)<CONFIG_CLOCK_FREQUENCY);

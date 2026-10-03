@@ -1,9 +1,11 @@
 # 模块化构建
 
-默认构建启用全部现有功能，并生成实际的 Verilog 模块层级。CPU（VexRiscv
-lite）、DDR、UART、8 KiB boot ROM、8 KiB SRAM、计时器/IRQ 和系统控制器
+默认 full 构建启用全部现有功能、MMU+FPU 和 SD lite，并生成实际的 Verilog 模块层级。CPU（VexRiscv）、DDR、UART、8 KiB boot ROM、8 KiB SRAM、计时器/IRQ 和系统控制器
 构成固定内核：当前启动协议要求把应用装入 DDR，因此这些不作为可关闭外设。
 CPU/sys 60 MHz、DDR 120 MHz 不变。
+默认 Gowin `place_option=3`、`route_option=2`、`netlist_hierarchy=0`，可用
+`--place-option` / `--route-option` 覆盖。最终完整验收见
+[2026-10-03 full 验收](full-validation-2026-10-03.md)。
 
 ## 功能开关
 
@@ -13,9 +15,11 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 
 | NAME | 功能 | 依赖 |
 | --- | --- | --- |
+| `mmu` | Sv32、M/S/U；full 默认开启 | 匹配生成的 CPU RTL |
+| `fpu` | 单精度 FPU；full 默认开启，与 MMU 独立 | 匹配生成的 CPU RTL |
 | `flash` | 启动/应用 SPI Flash 驱动与控制器 | 内核 |
 | `spi-lcd` | 240×135 SPI LCD 控制器和驱动 | 无其他可选功能 |
-| `sd` | microSD 控制器、块读写驱动 | `--sd-backend native` 或 `spi` |
+| `sd` | microSD 控制器、块读写驱动 | `--sd-profile none/spi/lite/full`，默认 lite |
 | `filesystem` | FatFs、挂载和文件操作 | `sd` |
 | `video` | 480×272 RGB LCD、DDR 显示 DMA、9 MHz PLL | DDR 内核 |
 | `board-io` | 六单色 LED、四用户按键、四 DIP、按键 IRQ | 无其他可选功能 |
@@ -24,12 +28,16 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 | `mic` | 第一组 I2S 麦克风、24-bit 512 样本快照 FIFO | 无新增 PLL |
 | `mic-stereo` | 第二组麦克风、48-bit 512 对样本 FIFO | `mic` |
 | `eth` | RTL8201F RMII、MAC、包 SRAM、HAL | `flash`，保留 Flash UID 派生 MAC |
-| `usb` | USB3317、OHCI、DDR DMA、HID HAL、48/60 MHz PLL | DDR 内核 |
+| `usb` | USB3317、PIO Host、HID HAL，sys60 串行 PHY；一颗初始化 PLL | 可选 OHCI 回退 |
 
 未明确启用的默认依赖项会随父功能一起关闭：例如 `--without-sd` 同时关闭
 默认的 FatFs，`--without-flash` 同时关闭默认 Ethernet。若明确指定互相冲突
 的开关，则构建立即报错；例如 `--with-filesystem --without-sd`。最小配置
 下启用依赖功能时需一起指定其父功能。
+
+CPU 能力、SD profile 和 DDS 音频配置的完整命令及验证边界见
+[配置说明](configuration-profiles.md)。`full` profile 默认启用全部外设，
+MMU/FPU 默认开启；minimal 默认关闭，两者仍可分别覆盖。音频默认平均 48 kHz 的共用 DDS，保留旧整数分频作对照。
 
 ```powershell
 # 全功能、独立模块 Verilog，运行 Gowin 综合/布局布线。
@@ -57,7 +65,10 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 
 ## Verilog 文件
 
-默认使用 LiteX 的 hierarchical converter，保留模块实例和显式端口。文件
+默认使用 LiteX 的 hierarchical converter，保留 SoC 各功能块的模块实例和显式端口。
+块内的 FSM、FIFO、CSR 实现内联在所属模块中；当前 full 配置输出 35 个模块，
+外部 CPU 和 USB 核另列入源文件列表。`--deep-verilog` 可用于诊断完整内部层级，
+但完整层级的布线结果不能替代默认配置的验收。文件
 布局为：
 
 ```text
@@ -70,7 +81,7 @@ gateware/
     riscv_mini__audio.v                 仅启用 audio 时存在
     riscv_mini__mic.v                   仅启用 mic 时存在
     riscv_mini__usb_host.v              仅启用 usb 时存在
-    ...                                子模块、CSR bank、总线等
+    ...                                其他外设、CSR bank、总线等 SoC 块
   rtl-manifest.json                     生成的模块名与文件映射
   sources.f                            RTL 源列表，包括外部 CPU/OHCI 核
   run.tcl                              Gowin 工程包含所有所需源文件

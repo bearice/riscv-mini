@@ -1,12 +1,12 @@
 # PT8211 音频输出
 
-M7 接入 Dock 3713 的 PT8211-S 双声道 DAC 和 PA_EN，全部在 sys 60 MHz 域工作。BCK 每 20 sys 周期翻转：1.5 MHz、32 BCK/立体声帧、**46,875 Hz**。没有新增 fabric clock 或 PLL，CPU/总线仍为 60 MHz，DDR CK 120 MHz。暂不提供 44.1/48 kHz 或录音输入。
+当前默认音频使用共用 DDS，平均 BCK 1.536 MHz、32 BCK/立体声帧、48,000 Hz。所有逻辑保留在 sys 域，无新增 PLL；GPIO 边沿量化到 sys 周期，详见 [时钟树](clocks.md)。`--audio-clock legacy` 保留 M7 的 1.5 MHz / 46,875 Hz，历史验收报告对应该模式。录音输入由独立 [麦克风](microphone.md) 模块提供。
 
 ## 线序与 PCM
 
 | 信号 | FPGA 引脚 | 时序 |
 | --- | --- | --- |
-| BCK | N15 | 连续 1.5 MHz，即使暂停仍保持时钟、发送零 |
+| BCK | N15 | 连续平均 1.536 MHz，即使暂停仍保持时钟、发送零 |
 | DIN | P15 | 16 位二补码，MSB 先传，在 BCK 下降沿更新 |
 | WS | P16 | 低为右声道，高为左声道，每声道 16 BCK |
 | PA_EN | R16 | 高有效；复位、暂停、停止和 mute 均关闭 |

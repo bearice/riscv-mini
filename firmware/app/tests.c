@@ -2,6 +2,7 @@
 #include "tests.h"
 #include <hal/hal.h>
 #include <generated/csr.h>
+#include <generated/soc.h>
 #include "ff.h"
 #include <string.h>
 #if MINI_FEATURE_ETH
@@ -290,6 +291,7 @@ static void usb_status(void) {
     value("USB initialized=",u.initialized);value(" phy_ready=",u.phy_ready);value(" phy=",u.phy_id);
     value(" connected=",u.connected);value(" VID=",u.vid);value(" PID=",u.pid);value(" HID=",u.hid_interfaces);
     value(" frame=",u.frame);value(" HCCA=",u.hcca);value(" errors=",u.errors);hal_uart_puts("\r\n");
+    value("USB control=",u.control);value(" port=",u.port_status);value(" lines=",u.lines);value(" irqs=",u.irqs);hal_uart_puts("\r\n");
     value("USB key_events=",u.key_events);value(" mouse_events=",u.mouse_events);
     value(" key_drops=",u.key_drops);value(" mouse_drops=",u.mouse_drops);
     value(" report_drops=",u.report_drops);hal_uart_puts("\r\n");
@@ -297,6 +299,10 @@ static void usb_status(void) {
 #endif
 #if MINI_FEATURE_USB
 static unsigned usb_schedule_ok(unsigned hcca,unsigned interfaces) {
+#if CONFIG_USB_ULTRA
+    extern unsigned hcd_ultra_validate(unsigned);
+    return hcca==0 && hcd_ultra_validate(interfaces);
+#else
     /* Read a bounded snapshot of the real OHCI periodic ED chain. Disable
        CPU IRQs so the HCD cannot free/reassign TDs during this check. */
     unsigned state=hal_irq_save(),seen[32],count=0,endpoints=0,ok=1;
@@ -317,6 +323,7 @@ static unsigned usb_schedule_ok(unsigned hcca,unsigned interfaces) {
     if(address || endpoints<interfaces)ok=0;
     if(!ok)hal_uart_puts("USB periodic TD ownership FAIL\r\n");
     return ok;
+#endif
 }
 #endif
 #if MINI_FEATURE_USB
@@ -327,7 +334,10 @@ static unsigned usb_check(void) {
     wait_ms(20);hal_usb_get_info(&after);usb_status();
     return after.initialized && after.phy_ready && after.connected && after.hid_interfaces &&
         after.phy_id==0x60424 && !after.phy_error && !after.errors && !after.key_drops && !after.mouse_drops && !after.report_drops &&
-        after.frame!=before.frame && after.hcca>=0x40800000 && after.hcca<0x40c00000 && !(after.hcca&255) &&
+        after.frame!=before.frame &&
+#if !CONFIG_USB_ULTRA
+        after.hcca>=0x40800000 && after.hcca<0x40c00000 && !(after.hcca&255) &&
+#endif
         usb_schedule_ok(after.hcca,after.hid_interfaces);
 }
 #endif
@@ -367,6 +377,12 @@ static void eth_status(void) {
     hal_eth_info_t e;hal_eth_get_info(&e);
     value("ETH ready=",e.initialized);value(" phy=",e.phy_id);value(" link=",e.link);
     value(" rx=",e.rx_frames);value(" tx=",e.tx_frames);value(" drops=",e.rx_drops);
+    value(" crc=",e.crc_errors);value(" preamble=",e.preamble_errors);value(" mdio=",e.mdio_errors);
+    value(" pending=",ethmac_sram_writer_ev_pending_read());
+    value(" slot=",ethmac_sram_writer_slot_read());value(" length=",ethmac_sram_writer_length_read());
+    value(" tx_ready=",ethmac_sram_reader_ready_read());value(" tx_level=",ethmac_sram_reader_level_read());
+    value(" tx_pending=",ethmac_sram_reader_ev_pending_read());value(" tx_enable=",ethmac_sram_reader_ev_enable_read());
+    value(" tx_busy=",e.tx_busy);
     value(" replies=",network_replies);value(" ignored=",network_ignored);hal_uart_puts("\r\n");
 }
 #endif
@@ -461,6 +477,12 @@ static unsigned soak(unsigned seconds) {
 }
 #endif
 void tests_help(void) {
+#if MINI_FEATURE_FPU
+    hal_uart_puts("test fpu\r\n");
+#endif
+#if MINI_FEATURE_MMU
+    hal_uart_puts("test mmu\r\n");
+#endif
     hal_uart_puts("test ddr|uart|irq\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
 #if MINI_FEATURE_FLASH
     hal_uart_puts("test flash\r\n");
@@ -510,11 +532,46 @@ static unsigned number(const char **text,unsigned *n) {
     *text=p;*n=value;return 1;
 }
 #endif
+#if MINI_FEATURE_FPU
+static unsigned fpu_check(void) {
+    unsigned result, flags;
+    __asm__ volatile("csrw fcsr,zero\nfmv.w.x ft0,%2\nfmv.w.x ft1,%3\nfadd.s ft2,ft0,ft1\nfmv.x.w %0,ft2\ncsrr %1,fcsr"
+        :"=r"(result),"=r"(flags):"r"(0x40000000u),"r"(0x40400000u):"ft0","ft1","ft2","memory");
+    value("FPU 2+3 bits=",result);value(" flags=",flags);hal_uart_puts("\r\n");
+    return result==0x40a00000u && !(flags&31u);
+}
+#endif
+#if MINI_FEATURE_MMU
+/* Sv32 data translation under MPRV: M-mode instructions stay physical.
+ * No C memory operations while MPRV is active; interrupts remain disabled.
+ * Two level1 superpage mappings resolve a virtual address to a distinct page.
+ */
+static _Alignas(4096) uint32_t mmu_root[1024];
+static unsigned mmu_check(void) {
+    unsigned irq=hal_irq_save();
+    for(unsigned i=0;i<1024;++i)mmu_root[i]=0;
+    const uint32_t physical=0x47001000u,virtual_address=0x20001000u;
+    volatile uint32_t *target=(volatile uint32_t *)physical;
+    uint32_t saved=*target;*target=0x53563332u;
+    mmu_root[virtual_address>>22]=((0x47000000u>>12)<<10)|0xcfu; /* V R W X A D */
+    __asm__ volatile("fence rw,rw\n.word 0x0000500f":::"memory");
+    unsigned satp=0x80000000u|((uintptr_t)mmu_root>>12),loaded,old_status;
+    __asm__ volatile("csrr %1,mstatus\ncsrw satp,%2\nsfence.vma zero,zero\n"
+        "li t0,0x1800\ncsrc mstatus,t0\nli t0,0x20800\ncsrs mstatus,t0\n"
+        "lw %0,0(%3)\nli t0,0x20000\ncsrc mstatus,t0\ncsrw mstatus,%1\n"
+        "csrw satp,zero\nsfence.vma zero,zero"
+        :"=&r"(loaded),"=&r"(old_status):"r"(satp),"r"(virtual_address):"t0","memory");
+    *target=saved;hal_irq_restore(irq);
+    value("Sv32 translated read=",loaded);hal_uart_puts("\r\n");return loaded==0x53563332u;
+}
+#endif
 int tests_command(const char *command) {
     if(strcmp(command,"test") && strncmp(command,"test ",5))return 0;
     if(!strcmp(command,"test")) {tests_help();return 1;}
     const char *name=command+5;unsigned ok=0,known=1;
-    if((!MINI_FEATURE_FLASH && !strncmp(name,"flash",5)) ||
+    if((!MINI_FEATURE_MMU && !strcmp(name,"mmu")) ||
+       (!MINI_FEATURE_FPU && !strcmp(name,"fpu")) ||
+       (!MINI_FEATURE_FLASH && !strncmp(name,"flash",5)) ||
        (!MINI_FEATURE_SD && !strncmp(name,"sd",2)) ||
        (!MINI_FEATURE_FILESYSTEM && (!strcmp(name,"sd") || !strcmp(name,"sd write"))) ||
        (!MINI_FEATURE_VIDEO && !strncmp(name,"lcd",3)) ||
@@ -529,6 +586,14 @@ int tests_command(const char *command) {
        (!(MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO) && !strncmp(name,"soak",4))) {
         hal_uart_puts("UNSUPPORTED: feature disabled in this build\r\n");return 1;
     }
+#if MINI_FEATURE_FPU
+    if(!strcmp(name,"fpu"))ok=fpu_check();
+    else
+#endif
+#if MINI_FEATURE_MMU
+    if(!strcmp(name,"mmu"))ok=mmu_check();
+    else
+#endif
     if(!strcmp(name,"ddr"))ok=ddr_check();
 #if MINI_FEATURE_FLASH
     else if(!strcmp(name,"flash"))ok=flash_check();

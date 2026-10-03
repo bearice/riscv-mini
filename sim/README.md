@@ -60,6 +60,7 @@ CRC, single/multi-block and unaligned callers, optional unique-file write/read,
 and five-minute LCD frame switching. See docs/m6-validation.md.
 
 `sim/test_audio.py` decodes actual BCK/WS/DIN for stereo sample/bit order,
+including the current DDS 48k clock enables and the legacy integer-divider path.
 underrun zeros and mute. It checks real 60MHz clock enables (1.5MHz BCK /
 46875Hz frames), DMA word order, ring wrap/ownership, request release,
 stop during a delayed DDR reply, framebuffer boundary rejection and bus errors.

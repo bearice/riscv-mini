@@ -10,6 +10,10 @@
 #define CFG_TUH_HID_EPIN_BUFSIZE 64
 #define CFG_TUH_HID_EPOUT_BUFSIZE 64
 #define CFG_TUH_MEM_ALIGN __attribute__((aligned(4)))
+#include <generated/soc.h>
+#if !CONFIG_USB_ULTRA
 #define TUP_USBIP_OHCI
 #define TUP_USBIP_OHCI_LITEX
 #define TUP_OHCI_RHPORTS 1
+
+#endif

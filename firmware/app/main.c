@@ -1,5 +1,6 @@
 /* Minimal DDR-resident base application; public device APIs live in hal/, reusing drivers/ backends. */
 #include <hal/hal.h>
+#include <generated/soc.h>
 #include <string.h>
 #include "tests.h"
 static int parse_hex(const char *p,unsigned digits,unsigned *value) {
@@ -9,6 +10,7 @@ static int parse_hex(const char *p,unsigned digits,unsigned *value) {
 }
 static void status(void) {
     hal_uart_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
+    hal_uart_puts("CPU ISA=" MINI_CPU_ISA " SD profile=" MINI_SD_PROFILE "\r\n");
 #if MINI_FEATURE_VIDEO
     hal_uart_puts("LCD=9 MHz\r\n");
 #endif
@@ -33,7 +35,12 @@ static void status(void) {
 #endif
 #if MINI_FEATURE_USB
     hal_usb_info_t usb;hal_usb_get_info(&usb);
-    hal_uart_puts("USB host=48 MHz phy=");hal_uart_hex(usb.phy_id);hal_uart_puts(" ready=");hal_uart_hex(usb.initialized);
+#if CONFIG_USB_ULTRA
+    hal_uart_puts("USB PIO/serial=60 MHz phy=");
+#else
+    hal_uart_puts("USB host=48 MHz phy=");
+#endif
+    hal_uart_hex(usb.phy_id);hal_uart_puts(" ready=");hal_uart_hex(usb.initialized);
     hal_uart_puts(" connected=");hal_uart_hex(usb.connected);hal_uart_puts(" VID=");hal_uart_hex(usb.vid);hal_uart_puts(" PID=");hal_uart_hex(usb.pid);
     hal_uart_puts(" HID=");hal_uart_hex(usb.hid_interfaces);hal_uart_puts(" reports=");hal_uart_hex(usb.reports);hal_uart_puts(" errors=");hal_uart_hex(usb.errors);hal_uart_puts("\r\n");
 #endif

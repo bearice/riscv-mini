@@ -1,4 +1,5 @@
 """PT8211: sys clock enables, stereo FIFO and bounded single-word DDR DMA."""
+from gateware.csr_layout import packed_status
 from migen import Signal, If, Cat, Mux, ResetInserter, Constant
 from migen.genlib.fifo import SyncFIFOBuffered
 from litex.gen import LiteXModule
@@ -6,13 +7,13 @@ from litex.soc.interconnect.csr import CSR, CSRStorage, CSRStatus
 
 
 class Audio(LiteXModule):
-    def __init__(self, pads, bus, half_period=20, fifo_depth=512):
-        if half_period < 2 or fifo_depth < 4:
+    def __init__(self, pads, bus, half_period=20, fifo_depth=512, clock_enable=1):
+        if half_period < 1 or fifo_depth < 4:
             raise ValueError('Audio clock/FIFO too small')
         self._control = CSRStorage(3, name='control')  # run, DMA, mute
         self._clear = CSR(name='clear')  # stop/drain before reconfiguration
         self._sample = CSR(32, name='sample')  # PIO packed L low16 / R high16
-        self._level = CSRStatus(16, name='level')
+        packed_status(self, 'audio')
         self._frames = CSRStatus(32, name='frames')
         self._played = CSRStatus(32, name='played')
         self._underruns = CSRStatus(32, name='underruns')
@@ -23,16 +24,13 @@ class Audio(LiteXModule):
         self._producer = CSRStorage(32, name='producer')  # monotonic committed frames
         self._fetched = CSRStatus(32, name='fetched')  # monotonic DMA frames, ring ownership
         self._wraps = CSRStatus(32, name='wraps')
-        self._errors = CSRStatus(3, name='errors')  # config / ownership / bus
-        self._busy = CSRStatus(name='busy')
-        self._amplifier = CSRStatus(name='amplifier')
         self.fifo = fifo = ResetInserter()(SyncFIFOBuffered(32, fifo_depth-1))
         clear = self._clear.wr_stb
         run, dma, mute = (self._control.storage[i] for i in range(3))
         busy = Signal(); aborted = Signal(); address = Signal(bus.adr_width)
         index = Signal(16); available = Signal(32); valid_config = Signal()
         dma_result = Signal(); pio = Signal(); take = Signal(); boundary = Signal()
-        count = Signal(max=half_period); bck = Signal(); bit = Signal(5, reset=31)
+        count = Signal(max=max(2,half_period)); bck = Signal(); bit = Signal(5, reset=31)
         shift = Signal(32); din = Signal(); ws = Signal()
         incoming = Signal(32)
         self.comb += [
@@ -47,7 +45,7 @@ class Audio(LiteXModule):
             dma_result.eq(busy & bus.ack & ~bus.err & ~aborted & dma & ~clear),
             pio.eq(self._sample.wr_stb & ~dma & ~clear),
             fifo.we.eq(dma_result | pio), fifo.din.eq(Mux(dma_result, bus.dat_r, self._sample.wr_data)),
-            boundary.eq((count == half_period-1) & bck & (bit == 31)),
+            boundary.eq(clock_enable & (count == half_period-1) & bck & (bit == 31)),
             take.eq(boundary & run & fifo.readable & ~clear), fifo.re.eq(take),
             incoming.eq(Mux(take & ~mute, fifo.dout, 0)),
         ]
@@ -74,7 +72,7 @@ class Audio(LiteXModule):
         ]
         # DIN/WS change only on falling BCK, with a full half-period of setup.
         # A 32-bit FIFO word transmits right MSB first, then left MSB first.
-        self.sync += If(count == half_period-1,
+        serializer = If(count == half_period-1,
             count.eq(0), bck.eq(~bck),
             If(bck,
                 If(bit == 31,
@@ -87,6 +85,7 @@ class Audio(LiteXModule):
                 ).Else(bit.eq(bit+1), shift.eq(shift << 1), din.eq(shift[30]), ws.eq(bit >= 15))
             )
         ).Else(count.eq(count+1))
+        self.sync += If(clock_enable, serializer)
         # Stop/clear immediately mutes the amp; discard a partial old word too.
         self.sync += If(~run | clear, shift.eq(0), din.eq(0))
         self.sync += If(clear,

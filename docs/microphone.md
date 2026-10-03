@@ -242,3 +242,6 @@ ABI `e858c7bc`。仅经 UART 装载应用，FPGA 仍是已验收的 `build/mic-a
 `build/mic-perf-upload.log` 和 `build/mic-perf-build.log`。测量后
 `test mic stereo` PASS，demo errors、FIFO overruns、USB errors/drops、LCD
 underflows 均为 0，见 `build/mic-perf-check.log`。保持实时显示，未写 Flash。
+
+
+当前默认共用 DDS：平均 BCLK 3.072 MHz、每路 48,000 samples/s。旧双麦克风验收数据为 legacy 模式的 46,875 Hz；新配置边界见 [配置与验证](configuration-profiles.md)。

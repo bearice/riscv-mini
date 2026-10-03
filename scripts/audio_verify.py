@@ -41,7 +41,7 @@ def main():
                 if not line:raise RuntimeError('Missing audio status')
                 fields={'hz':int(line[1].split()[0],16)}
                 fields.update({k.decode():int(v,16) for k,v in re.findall(rb'(\w+)=([0-9a-f]{8})',line[1])})
-                if fields['hz']!=46875 or fields['errors'] or fields['overruns'] or fields['amp']:
+                if fields['hz']!=validation.get('audio_sample_rate',46875) or fields['errors'] or fields['overruns'] or fields['amp']:
                     raise RuntimeError('Audio status: '+text.decode(errors='replace'))
                 if running and (fields['control']!=7 or fields['underruns']):raise RuntimeError('DMA stream underrun or not running/muted')
                 if b'underflows=00000000' not in text or b'SD ready=00000001' not in text or b'errors=00000000 drops=00000000 unhandled=00000000' not in text:
@@ -65,7 +65,7 @@ def main():
                 if not args.skip_capture:
                     wav=output/'audio-line-in.wav'
                     device=record(wav,device_name=args.device,on_start=lambda:command('u'))
-                    capture=analyze(wav);capture['device']=device;report['capture']=capture
+                    capture=analyze(wav,validation.get('audio_sample_rate',46875));capture['device']=device;report['capture']=capture
                     print('Line-in: '+json.dumps(capture),flush=True)
                     for channel in capture['channels']:
                         if abs(channel['peak_hz']-channel['expected_hz'])>3 or channel['tone_amplitude']<.0001 or channel['separation_db']<12 or channel['clipped_samples']:

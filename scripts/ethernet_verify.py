@@ -73,7 +73,9 @@ def main():
                 text=command('u');usb=fields(text,b'USB ready=')
                 if not usb['ready'] or not usb['phy_ready'] or usb['phy']!=0x00060424 or usb['phy_error'] or usb['errors'] or usb['key_drops'] or usb['report_drops']:
                     raise RuntimeError('USB failure: '+text.decode(errors='replace'))
-                if not 0x40800000<=usb['hcca']<0x40c00000 or usb['hcca']&255:raise RuntimeError('OHCI HCCA must be 256-byte aligned in application DDR')
+                if validation.get('usb_backend')=='ultra':
+                    if usb['hcca']!=0:raise RuntimeError('PIO host must not expose an OHCI HCCA')
+                elif not 0x40800000<=usb['hcca']<0x40c00000 or usb['hcca']&255:raise RuntimeError('OHCI HCCA must be 256-byte aligned in application DDR')
                 return usb,text
             def await_usb():
                 deadline=time.monotonic()+10

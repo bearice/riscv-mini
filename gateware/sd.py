@@ -7,12 +7,13 @@ from litex.soc.interconnect import wishbone
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr_eventmanager import EventManager,EventSourcePulse
 from litesdcard.phy import SDPHY
-from litesdcard.frontend.dma import SDBlock2MemDMA,SDMem2BlockDMA
+from gateware.vendor.sddma import SDBlock2MemDMA,SDMem2BlockDMA
 from gateware.vendor.sdcore import SDCore
 
 @ResetInserter()
 class NativeSD(LiteXModule):
-    def __init__(self,soc):
+    def __init__(self,soc,profile='lite'):
+        if profile not in ('lite','full'):raise ValueError('Native SD profile must be lite/full')
         pads=soc.platform.request('sdcard')
         card_detect=Signal()
         self.specials += MultiReg(pads.cd,card_detect)
@@ -24,12 +25,12 @@ class NativeSD(LiteXModule):
         self.comb += self.read_requests.source.connect(self.phy.datar.sink)
         core_phy=SimpleNamespace(cmdw=self.phy.cmdw,cmdr=self.phy.cmdr,dataw=self.phy.dataw,
             datar=SimpleNamespace(sink=self.read_requests.sink,source=self.phy.datar.source))
-        self.core=SDCore(core_phy)
+        self.core=SDCore(core_phy,bounded=profile=='lite')
         self.comb += self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE'))
         reader=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
         writer=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='w')
-        self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness)
-        self.mem2block=SDMem2BlockDMA(reader,soc.cpu.endianness)
+        self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness,bounded=profile=='lite')
+        self.mem2block=SDMem2BlockDMA(reader,soc.cpu.endianness,bounded=profile=='lite')
         self.comb += [self.core.source.connect(self.block2mem.sink),self.mem2block.source.connect(self.core.sink)]
         soc.bus.add_master(name='sdcard_block2mem',master=writer)
         soc.bus.add_master(name='sdcard_mem2block',master=reader)

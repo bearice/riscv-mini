@@ -20,7 +20,7 @@ static uint16_t background_pixel(unsigned x,unsigned y,unsigned channel) {
 static void setup(unsigned slot) {
     volatile uint16_t *fb=hal_video_frame(slot);
     fill(fb,0,0,480,272,BG);text(fb,12,8,"STEREO I2S MICROPHONES",2,CYAN,BG);
-    text(fb,12,32,"46875Hz / 24bit  A:auto  +/-:gain  Space:hold",1,WHITE,BG);
+    text(fb,12,32,MIC_SAMPLE_RATE==48000?"48000Hz / 24bit  A:auto  +/-:gain  Space:hold":"46875Hz / 24bit  A:auto  +/-:gain  Space:hold",1,WHITE,BG);
     for(unsigned c=0;c<2;++c) {
         for(unsigned y=top[c];y<top[c]+H;++y) {
             for(unsigned x=X;x<X+W;++x)fb[y*480+x]=background_pixel(x,y,c);
@@ -194,7 +194,7 @@ int main(void) {
     }
     uint32_t ticks=hal_ticks();setup(1);setup_cycles[1]=hal_ticks()-ticks;
     hal_video_present(1);active=1;ticks=hal_ticks();setup(0);setup_cycles[0]=hal_ticks()-ticks;hal_delay_ms(200);
-    hal_uart_puts("STEREO MIC DEMO | shared I2S 3MHz / 46875Hz / signed24\r\nSYSTEM READY\r\n> ");
+    hal_uart_puts(MIC_SAMPLE_RATE==48000?"STEREO MIC DEMO | shared I2S 3.072MHz / 48000Hz / signed24\r\nSYSTEM READY\r\n> ":"STEREO MIC DEMO | shared I2S 3MHz / 46875Hz / signed24\r\nSYSTEM READY\r\n> ");
     char line[40];unsigned length=0;uint32_t next=hal_time_ms();
     for(;;) {
         hal_poll();drain_usb();int ch=hal_uart_getc();if(ch=='!')hal_reboot();

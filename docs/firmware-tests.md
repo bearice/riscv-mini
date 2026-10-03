@@ -62,3 +62,15 @@ HDL 模拟、外部 IO 边沿模型、Gowin PnR/资源报告、主机 UDP 收发
 ROM 的坏镜像/分包 CRC/截断拒绝仍由 `scripts/boot_verify.py` 经 UART 测试真正的
 bootloader，不在正常应用里复制另一套 loader。对应 `sim/` 检查与旧独立示例保留；
 常规板上验收优先使用本页的 monitor 命令，不再需要临时探针固件。
+
+已运行 monitor 时，`scripts/monitor_external_verify.py` 可调用 `test audio tone`
+并经本机 Line In 检查左右声道、频率和自动静音；再调用 `test eth start`，
+经指定网卡执行 ARP、ping、UDP echo，并交替执行现有 SD/LCD/USB 命令。
+该脚本只承担 UART 传输和外部观测，不复位、不写 Flash、不修改网卡配置。
+
+```powershell
+& $MiniPython scripts/monitor_external_verify.py --output-dir build/base --audio --host-ip 169.254.25.153 --interface-index 80 --seconds 30
+```
+
+主机 IP 和接口序号必须按当前连接查询；示例数值不是固件配置。执行音频选项会
+播放两秒低幅度测试音，输出连接 Line In 时用于自动测量。

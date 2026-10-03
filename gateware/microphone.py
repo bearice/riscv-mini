@@ -1,4 +1,5 @@
 """Standard I2S master receiver: continuous clocks, bounded snapshot FIFO."""
+from gateware.csr_layout import packed_status
 from migen import Signal, If, Cat, Replicate, ResetInserter
 from migen.genlib.cdc import MultiReg
 from migen.genlib.fifo import SyncFIFOBuffered
@@ -7,32 +8,27 @@ from litex.soc.interconnect.csr import CSR, CSRStorage, CSRStatus
 
 
 class Microphone(LiteXModule):
-    def __init__(self, pads, half_period=10, snapshot_samples=512, second=None):
-        if half_period < 4 or snapshot_samples < 4:
+    def __init__(self, pads, half_period=10, snapshot_samples=512, second=None, clock_enable=1):
+        if half_period < 1 or snapshot_samples < 4:
             raise ValueError('I2S clock/snapshot too small')
         self._control = CSRStorage(3, name='control')  # enable, mono right slot, stereo pair
         self._capture = CSR(name='capture')
         self._clear = CSR(name='clear')
         self._pop = CSR(name='pop')
         self._sample = CSRStatus(32, name='sample')  # sign-extended PCM24
-        self._level = CSRStatus(16, name='level')
-        self._busy = CSRStatus(name='busy')
-        self._done = CSRStatus(name='done')
-        self._captured = CSRStatus(16, name='captured')
+        packed_status(self, 'mic')
         self._samples = CSRStatus(32, name='samples')
         self._last_sample = CSRStatus(32, name='last_sample')
         self._overruns = CSRStatus(32, name='overruns')
-        self._activity = CSRStatus(name='activity')  # DA observed high since start/clear
         self._sample_right = CSRStatus(32, name='sample_right')
         self._last_right = CSRStatus(32, name='last_right')
-        self._activity_right = CSRStatus(name='activity_right')
         self.enabled = run = self._control.storage[0]
         right = self._control.storage[1]
         stereo = self._control.storage[2] if second is not None else 0
         clear = self._clear.wr_stb
         arm = self._capture.wr_stb & run
         self.fifo = fifo = ResetInserter()(SyncFIFOBuffered(48 if second is not None else 24, snapshot_samples))
-        count = Signal(max=half_period)
+        count = Signal(max=max(2,half_period))
         bit = Signal(6, reset=63)
         bck = Signal(); ws = Signal(reset=1)
         serial = Signal(name_override='mic_serial_sync')
@@ -47,7 +43,7 @@ class Microphone(LiteXModule):
         rising = Signal(); valid = Signal(); word = Signal(24)
         self.comb += [
             pads.bck.eq(bck), pads.ws.eq(ws & run), pads.lr.eq(right & ~stereo),
-            rising.eq(run & (count == half_period-1) & ~bck),
+            rising.eq(run & clock_enable & (count == half_period-1) & ~bck),
             # WS changes at bit0; bit0 is the I2S one-bit delay. Capture 1..24.
             valid.eq(rising & (bit[5] == (stereo | right)) & (bit[:5] == 24) & (~stereo | have_left)),
             word.eq(Cat(serial, shift[:23])),
@@ -60,7 +56,7 @@ class Microphone(LiteXModule):
             If(stereo, fifo.din.eq(Cat(left_word, word_right))).Else(fifo.din.eq(word)),
             fifo.re.eq(self._pop.wr_stb & fifo.readable),
         ]
-        self.sync += If(run,
+        serializer = If(run,
             If(count == half_period-1,
                 count.eq(0), bck.eq(~bck),
                 If(bck, bit.eq(bit+1), If(bit == 31, ws.eq(1)).Elif(bit == 63, ws.eq(0)))
@@ -70,6 +66,7 @@ class Microphone(LiteXModule):
                     If(stereo & ~bit[5] & (bit[:5] == 24), left_word.eq(word), have_left.eq(1)))
             ).Else(count.eq(count+1))
         ).Else(count.eq(0), bck.eq(0), ws.eq(1), bit.eq(63), shift.eq(0))
+        self.sync += If(clock_enable | ~run, serializer)
         self.sync += If(valid,
             self._samples.status.eq(self._samples.status+1),
             If(stereo,

@@ -5,8 +5,12 @@
 #include <string.h>
 #include "tusb.h"
 #include "host/hcd.h"
+#if CONFIG_USB_ULTRA
+#include <hal/usb_ultra.h>
+#else
 #include "portable/ohci/ohci.h"
 #define OHCI ((volatile ohci_registers_t *)USB_OHCI_BASE)
+#endif
 static hal_usb_info_t info;
 static unsigned running,polling;
 static volatile unsigned irqs,controller_errors;
@@ -19,15 +23,22 @@ bool hcd_dcache_clean(void const *p,uint32_t n) {(void)p;(void)n;__asm__ volatil
 bool hcd_dcache_invalidate(void const *p,uint32_t n) {(void)p;(void)n;__asm__ volatile("fence rw,rw":::"memory");return true;}
 static void usb_irq(void *unused) {
     (void)unused;++irqs;
+#if !CONFIG_USB_ULTRA
     if(OHCI->interrupt_status & OHCI->interrupt_enable & (1u<<4))++controller_errors;
+#endif
     hcd_int_handler(0,true);
 }
 bool hcd_deinit(uint8_t port) {(void)port;usb_host_reset_write(1);return true;}
 void hal_usb_stop(void) {
     running=0;hal_irq_enable(USB_HOST_INTERRUPT,0);
     if(tuh_inited()) {
+        hcd_int_disable(0);
+#if CONFIG_USB_ULTRA
+        /* TinyUSB deinit still accesses HCD registers. Reset follows it. */
+#else
         OHCI->interrupt_disable=0xffffffffu;
         OHCI->control=0; /* Stop scheduling before TinyUSB releases descriptors. */
+#endif
         uint32_t deadline=hal_time_ms()+10;while(!hal_deadline_reached(hal_time_ms(),deadline)) {}
         tuh_deinit(0);
     }
@@ -45,7 +56,9 @@ hal_result_t hal_usb_init(void) {
     if(info.phy_id!=0x00060424u) {++info.errors;return HAL_IO;}
     usb_host_reset_write(0);
     deadline=hal_time_ms()+2;while(!hal_deadline_reached(hal_time_ms(),deadline)) {}
+#if !CONFIG_USB_ULTRA
     if((OHCI->revision&255)!=0x10) {++info.errors;usb_host_reset_write(1);return HAL_IO;}
+#endif
     hal_irq_attach(USB_HOST_INTERRUPT,usb_irq,0);
     tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
     if(!tuh_init(0)) {++info.errors;hal_usb_stop();return HAL_IO;}
@@ -53,12 +66,22 @@ hal_result_t hal_usb_init(void) {
 }
 void hal_usb_poll(void) {
     if(!running || polling)return;
-    polling=1;tuh_task();polling=0;
+    polling=1;
+#if CONFIG_USB_ULTRA
+    hcd_ultra_poll();
+#endif
+    tuh_task();polling=0;
 }
 void hal_usb_get_info(hal_usb_info_t *out) {
     if(!out)return;
     info.phy_ready=usb_host_ready_read();info.phy_error=usb_host_error_read();info.lines=usb_host_lines_read();info.phy_id=usb_host_id_read();
-    if(running) {info.control=OHCI->control;info.port_status=OHCI->rhport_status[0];info.frame=OHCI->frame_number;info.hcca=OHCI->hcca;}
+    if(running) {
+#if CONFIG_USB_ULTRA
+        info.control=hcd_ultra_control();info.port_status=hcd_ultra_status();info.frame=hcd_frame_number(0);info.hcca=0;
+#else
+        info.control=OHCI->control;info.port_status=OHCI->rhport_status[0];info.frame=OHCI->frame_number;info.hcca=OHCI->hcca;
+#endif
+    }
     unsigned state=hal_irq_save();*out=info;out->irqs=irqs;out->errors+=controller_errors;hal_irq_restore(state);
 }
 hal_result_t hal_usb_key_take(hal_usb_key_t *out) {

@@ -6,7 +6,7 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 
 | 项目 | 配置 |
 | --- | --- |
-| CPU / 总线 | VexRiscv lite RV32IM，60 MHz，2 KiB I-cache，无 D-cache / L2 / MMU |
+| CPU / 总线 | full 默认 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I/D-cache、Sv32，无 L2；可独立关闭 MMU/FPU |
 | 片上存储 | 8 KiB boot ROM、8 KiB 工作 SRAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
@@ -14,11 +14,13 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | SD | 原生四位 SDR + Wishbone DMA，初始化 400 kHz、工作 7.5 MHz，FatFs；可选 SPI 回退 |
 | SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
-| 音频 | PT8211 PCM16 stereo，46,875 Hz，BCK 1.5 MHz；512 帧 FIFO、DDR ring DMA；默认静音 |
+| 音频 | PT8211 PCM16 stereo，48,000 Hz，平均 BCK 1.536 MHz；512 帧 FIFO、DDR ring DMA；默认静音 |
 | Ethernet | RTL8201F + LiteEth RMII，100 Mbps 全双工；50 MHz PHY REF_CLK，MDIO、2 RX / 2 TX packet slots、Flash UID 派生 MAC |
-| USB Host | USB3317 + Spinal OHCI + TinyUSB Host；FS 12 Mbit/s，48 MHz 收发引擎，DDR 描述符/DMA、IRQ、Boot 键盘/鼠标和 raw HID HAL |
+| USB Host | USB3317 + Ultraembedded PIO Host + TinyUSB；FS 12 Mbit/s，sys 60 MHz 串行收发，IRQ、Boot 键盘/鼠标和 raw HID HAL；可选 OHCI 回退 |
 
-完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。M9 使用第四颗 PLL 为 ULPI 初始化接口提供相移 60 MHz，当前 PLL 为 4/4；CPU/DDR 保持 60/120 MHz。当前源码 review、完整资源报告和验收边界见 [M10 收尾](docs/m10-review.md)；PRIMARY 和 LW 时钟资源均为 8/8，扩展前需重新评估时钟布线。
+完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。默认轻量 USB 移除了 48 MHz PLL，当前 PLL 为 3/4；ULPI 仅用于 USB3317 初始化，仍保留相移 60 MHz PLL。CPU/DDR 保持 60/120 MHz。当前 USB 实现、资源和验收见 [轻量 USB](docs/usb-light.md)；[M10 收尾](docs/m10-review.md) 保留原 OHCI 基线。PRIMARY 和 LW 仍为 8/8，扩展前需重新评估时钟布线。
+
+MMU/FPU 独立开关、SD none/spi/lite/full 四种 profile 及 48 kHz 共用 DDS 见 [配置与验证](docs/configuration-profiles.md)。full 默认 MMU+FPU、SD lite；minimal 默认关闭 MMU/FPU。分模块 RTL 诊断见 [默认值修复](docs/rtl-defaults.md)。
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
@@ -93,6 +95,9 @@ bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载�
 默认串口 `COM4`、调试器 location `107569`，其他连接使用 `--port` / `--location`。工具检查 PnR 和 bitstream hash。普通应用更新只擦写 Flash `[2,4)` MiB，前 2 MiB FPGA 配置由 CPU 驱动的地址范围保护。按用户要求，Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 使用普通 exFlash Erase/Program，不执行 Verify。配置更新会替换 FPGA bitstream，应与匹配的 `app.img` 一起更新。
 
 详细启动流程、镜像格式、分区、恢复命令和验证范围见 [bootloader](docs/bootloader.md)。
+当前默认 full 配置的时序、资源、音频/网络及五分钟实板验收见
+[2026-10-03 验收](docs/full-validation-2026-10-03.md)；RV32GCB 仅综合的
+对照结果见 [资源实验](docs/rv32gcb-resources.md)。
 
 ## 目录
 

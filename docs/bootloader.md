@@ -10,7 +10,7 @@ SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使
 
 ## 固定硬件与内存
 
-CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 7.5 MHz 工作（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 BCK 1.5 MHz / stereo 46,875 Hz，sys clock-enable 分频。音频仅在 DDR 应用侧驱动，默认静音。CPU lite 有 2 KiB I-cache，无 D-cache/L2。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
+CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 7.5 MHz 工作（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，无 L2；minimal 使用 lite 核，仅有 2 KiB I-cache。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
 
 | 地址 | 用途 |
 | --- | --- |
@@ -59,7 +59,7 @@ DDR 初始化后等待两秒。无输入默认从 Flash 启动；无有效镜像
 | `i` | Flash ID 和镜像头状态 |
 | `!` | 软件复位 |
 
-DDR 基础应用提供 `help` / `status` / `ls` / `reboot` 和 `!`，M5a 增加 `io` / `led HH` / `rgb RRGGBB` 板级控制。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，旧自检命令不再进入产品 monitor。
+DDR 基础应用提供 `help` / `status` / `ls` / `reboot` 和 `!`，M5a 增加 `io` / `led HH` / `rgb RRGGBB` 板级控制。`ls` 不写 SD，最多列出 64 个根目录项。HAL 保留 SD block read/write、Flash 受限读写、SPI 事务、LCD 与视频接口，验收统一通过 `test ...` 子命令进入，不在正常启动时自动执行大范围测试。
 
 ## 验证
 

@@ -4,6 +4,8 @@ from dataclasses import dataclass, fields
 
 @dataclass(frozen=True)
 class Features:
+    mmu: bool = True
+    fpu: bool = True
     flash: bool = True
     spi_lcd: bool = True
     sd: bool = True

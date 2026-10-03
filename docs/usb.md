@@ -1,5 +1,11 @@
 # M9 USB Host
 
+This page records the original OHCI baseline. The default backend is now
+the sys60 PIO/serial Host described in [usb-light.md](usb-light.md), using
+three PLLs with the RGB LCD. Select `--usb-backend ohci` to reproduce the
+baseline below. Pin mapping, PHY initialization and the public HID HAL remain
+shared; DMA, HCCA and Spinal CDC details below apply only to OHCI.
+
 Dock U6 is USB3317 with a 26 MHz crystal and 60 MHz ULPI CLKOUT (T15).
 DATA[0:7] is G11/H12/J12/H13/T14/R13/P13/R12; STP/DIR/NXT is K11/K12/K13.
 F10 resets both USB3317 and Ethernet RTL8201F and has one GPIO owner.

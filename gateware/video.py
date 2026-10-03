@@ -1,4 +1,5 @@
 """480x272 RGB565 LCD scanout. One bounded DMA frame per scan period."""
+from gateware.csr_layout import packed_status
 from migen import Signal, If, Cat, ClockSignal, ClockDomainsRenamer
 from migen.genlib.cdc import MultiReg, PulseSynchronizer
 from litex.gen import LiteXModule
@@ -64,8 +65,7 @@ class RGBLCD(LiteXModule):
         if FRAME_BYTES%word_bytes: raise ValueError('Frame must contain complete native words')
         self._enable = CSRStorage(name='enable')
         self._select = CSRStorage(name='select')
-        self._active = CSRStatus(name='active')
-        self._busy = CSRStatus(name='busy')
+        packed_status(self, 'rgb_lcd')
         self._frames = CSRStatus(32,name='frames')
         self._completed = CSRStatus(32,name='completed')
         self._underflows = CSRStatus(32,name='underflows')

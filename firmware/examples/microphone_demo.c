@@ -1,6 +1,7 @@
 /* Live I2S microphone snapshots on the RGB LCD; serial tests stay in firmware. */
 #include <hal/hal.h>
 #include <generated/csr.h>
+#include <generated/soc.h>
 #include "rgb_canvas.h"
 enum { BG=0x1084, GRID=0x2945, WHITE=0xffff, GREEN=0x07e0, CYAN=0x07ff, YELLOW=0xffe0 };
 enum { X=16, Y=62, W=448, H=160, CENTER=142, N=512 };
@@ -15,7 +16,7 @@ static void setup(unsigned slot) {
     volatile uint16_t *fb=hal_video_frame(slot);
     fill(fb,0,0,480,272,BG);
     text(fb,12,8,"I2S MICROPHONE",2,CYAN,BG);
-    text(fb,12,32,"46875 samples/s  24-bit  512 points / 10.9 ms",1,WHITE,BG);
+    text(fb,12,32,MIC_SAMPLE_RATE==48000?"48000 samples/s  24-bit  512 points / 10.7 ms":"46875 samples/s  24-bit  512 points / 10.9 ms",1,WHITE,BG);
     text(fb,12,46,"Speak or clap. A:auto  +/-:gain  Space:hold  L/R:channel",1,WHITE,BG);
     for(unsigned y=Y;y<Y+H;++y) {
         for(unsigned x=X;x<X+W;++x)fb[y*480+x]=background_pixel(x,y);
@@ -139,7 +140,7 @@ int main(void) {
         hal_uart_puts("MIC DEMO INIT FAIL\r\n");for(;;)if(hal_uart_getc()=='!')hal_reboot();
     }
     setup(1);hal_video_present(1);active=1;setup(0);hal_delay_ms(200);
-    hal_uart_puts("MIC WAVEFORM DEMO | I2S 3MHz / 46875Hz / signed24\r\nSYSTEM READY\r\n> ");
+    hal_uart_puts(MIC_SAMPLE_RATE==48000?"MIC WAVEFORM DEMO | I2S 3.072MHz / 48000Hz / signed24\r\nSYSTEM READY\r\n> ":"MIC WAVEFORM DEMO | I2S 3MHz / 46875Hz / signed24\r\nSYSTEM READY\r\n> ");
     char line[40];unsigned length=0;uint32_t next=hal_time_ms();
     for(;;) {
         hal_poll();drain_usb();int ch=hal_uart_getc();if(ch=='!')hal_reboot();
