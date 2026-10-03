@@ -10,7 +10,7 @@ SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使
 
 ## 固定硬件与内存
 
-CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 7.5 MHz 工作（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享读缓存 L2；minimal 使用 lite 核，仅有 2 KiB I-cache。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
+CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 15 MHz 读 / 7.5 MHz 写（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享读缓存 L2；minimal 使用 lite 核，仅有 2 KiB I-cache。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
 
 | 地址 | 用途 |
 | --- | --- |

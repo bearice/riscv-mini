@@ -75,4 +75,6 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 
 原生 SD 的块缓冲、错误取消和运行频率见 [原生 SD](native-sd.md)。
 
+`hal_sd_set_read_clock()` 仅调整原生 SD 读频率，重新初始化恢复默认值；写频率独立保留 7.5 MHz。SD info 同时报告实际、读、写时钟和 High Speed 协商状态。更高频率的只读检查由 BIOS `bench sd HZ` 提供，见 [性能测试](benchmark.md)。
+
 `hal_flash_uid()` 读取工厂唯一序列号。SPI LCD提供 `hal_spi_lcd_network(mac,ip)` 与 `hal_spi_lcd_link(up)`，支持冒号/句点字形和局部更新。基础monitor默认显示实际MAC和IP UNCONFIGURED；显式 `test eth start` 启用测试用 ARP/ICMP/UDP 子集并显示测试 IP，`test eth stop` 恢复未配置状态。独立Ethernet示例也拥有自己的测试地址，HAL本身不提供完整IP栈。见 [Ethernet](ethernet.md)。

@@ -51,8 +51,9 @@ static unsigned receive(unsigned *port) {
     *port=get16(rx+34);return *port?u-8:0;
 }
 #endif
-int bios_tftp_get(const uint8_t server[4],const char *path,void *dest,unsigned cap,unsigned *length) {
+static int tftp_transfer(const uint8_t server[4],const char *path,void *dest,unsigned cap,unsigned *length) {
 #if MINI_FEATURE_ETH
+    *length=0;
     unsigned path_n=0;while(path_n<64 && path[path_n])++path_n;
     if(!path_n || path_n==64 || hal_eth_get_mac(mac)!=HAL_OK)return 0;
     memcpy(server_ip,server,4);peer_ready=remote_port=0;
@@ -79,6 +80,7 @@ int bios_tftp_get(const uint8_t server[4],const char *path,void *dest,unsigned c
                 if(!remote_port)remote_port=port;
                 unsigned bytes=n-4;if(bytes>cap-offset)return 0;
                 memcpy((uint8_t *)dest+offset,rx+46,bytes);offset+=bytes;
+                *length=offset;bios_load_progress(offset);
                 set16(ack+2,block);if(!udp_send(ack,4,remote_port))return 0;
                 ++expected;retry=0;last=hal_time_ms();
                 if(bytes<512) {
@@ -102,4 +104,10 @@ int bios_tftp_get(const uint8_t server[4],const char *path,void *dest,unsigned c
 #else
     (void)server;(void)path;(void)dest;(void)cap;(void)length;return 0;
 #endif
+}
+
+int bios_tftp_get(const uint8_t server[4],const char *path,void *dest,unsigned cap,unsigned *length) {
+    *length=0;bios_load_begin("TFTP");
+    int ok=tftp_transfer(server,path,dest,cap,length);
+    bios_load_end(*length,ok);return ok;
 }

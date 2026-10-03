@@ -30,10 +30,11 @@ hold 检查，初始化输出仅增加一个 setup 周期，没有用对应 hold
 
 | 设备 | 信号频率 / 更新率 | 来源 |
 | --- | --- | --- |
+| OpenSBI machine timer | 60 MHz、64 位计数 / comparator，MTIP | sys；仅 MMU 配置启用，无新增 PLL |
 | UART | 115200 bit/s，8N1 | sys 分频 |
 | Flash SPI | 10 MHz | sys 分频 |
 | SPI LCD | 6 MHz | sys 分频 |
-| 原生 SD | 初始化 400 kHz，工作 7.5 MHz，四位 SDR | sys /150、/8 |
+| 原生 SD | 初始化 400 kHz，读 15 MHz / 写 7.5 MHz，四位 SDR | sys /150、/4（读）、/8（写） |
 | RGB LCD | 9 MHz 像素，480×272，约 59.94 Hz | 显示 PLL；总时序 525×286 |
 | PT8211 | 平均 BCK 1.536 MHz；48,000 stereo frame/s | 共用 DDS /2 边沿使能，每帧 32 bit |
 | I2S 麦克风 | 平均 BCLK 3.072 MHz；48,000 samples/s；WS 48 kHz | 共用 DDS 边沿使能，每帧 64 bit；无新增 PLL/时钟域 |

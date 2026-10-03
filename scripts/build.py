@@ -27,7 +27,7 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2,l2_size=0):
+def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=4,route_option=2,l2_size=0):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
@@ -117,7 +117,7 @@ def main():
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
     p.add_argument('--l2-size',type=int,choices=(0,4096,8192),default=4096,help='Shared write-through read cache in bytes; 0 disables it. Default profile includes 4 KiB.')
-    p.add_argument('--place-option',type=int,choices=range(5),default=3)
+    p.add_argument('--place-option',type=int,choices=range(5),default=4)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--app',type=Path,default=ROOT/'firmware/bios/main.c',help='DDR firmware source (default: resident BIOS); bootloader is unchanged')
@@ -194,7 +194,7 @@ def main():
         compact=['-flto','-DMINI_BOOTLOADER=1'] if name=='boot' else ['-DMINI_BOOTLOADER=0']
         if name=='app' and main==ROOT/'firmware/examples/monitor.c':sources=[*sources,ROOT/'firmware/diagnostics/tests.c']
         if name=='app' and main==ROOT/'firmware/bios/main.c':
-            sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','settings.c','boot.c','network.c','enter.S')]]
+            sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','settings.c','boot.c','network.c','benchmark.c','enter.S')]]
             compact+=['-DMINI_BIOS=1']
         checked([gcc,*flags,*compact,*common,flash_source,main,*sources,'-T',linker,'-Wl,--gc-sections',f'-Wl,-Map,{firmware/f"{name}.map"}','-lgcc','-o',elf])
         checked([toolbin/'riscv-none-elf-objcopy.exe','-O','binary',elf,firmware/f'{name}.bin'])

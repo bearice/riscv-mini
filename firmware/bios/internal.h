@@ -28,4 +28,11 @@ int bios_self_test(void);
 int bios_exception_hook(hal_trap_frame_t *frame);
 void bios_post(void);
 void bios_poll(void);
+int bios_benchmark_command(const char *command);
 void bios_enter(unsigned entry,const struct bios_info *info,unsigned stack);
+
+/* One synchronous loader owns progress; dots represent completed 64 KiB. */
+void bios_load_begin(const char *source);
+void bios_load_progress(unsigned bytes);
+void bios_load_end(unsigned bytes,int ok);
+void bios_boot_timing(const char *phase,unsigned start);

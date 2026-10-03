@@ -1,7 +1,7 @@
 # CPU、SD 和音频配置
 
 CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--profile full` 选择全部外设、MMU+FPU、SD lite、音频 DDS。MMU 和 FPU 仍可独立关闭；`--profile minimal` 默认不启用 MMU/FPU。
-默认输出 SoC 块模块层级，Gowin place=3 / route=2；完整当前实板验收见
+默认输出 SoC 块模块层级，Gowin place=4 / route=2；完整当前实板验收见
 [系统设计](system-design.md)。当前资源见该页。
 
 | CPU 参数 | 能力 | 外部 RTL |
@@ -17,8 +17,8 @@ CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--pro
 | --- | --- | --- |
 | `none` | 无 SD | 同时移除 FatFs |
 | `spi` | SPI SD，工作 6 MHz | 软件 SPI 读写，可选 FatFs |
-| `lite` | 精简原生四位，工作 7.5 MHz | 最多 8 扇区/4 KiB 一次 DMA，可选 FatFs |
-| `full` | 通用原生四位，工作 7.5 MHz | 保留更宽地址/长度和通用 DMA，可选 FatFs |
+| `lite` | 精简原生四位，读 15 MHz / 写 7.5 MHz | 最多 8 扇区/4 KiB 一次 DMA，可选 FatFs |
+| `full` | 通用原生四位，读 15 MHz / 写 7.5 MHz | 保留更宽地址/长度和通用 DMA，可选 FatFs |
 
 full 的 HAL 当前仍以最多 8 扇区分块；更宽硬件不代表 HAL 已改成大块传输。显式 SD profile 会在 minimal 配置中启用 SD；`none` 与显式启用文件系统冲突时拒绝构建。旧 `--sd-backend native/spi` 仍作为兼容入口，不能与 `--sd-profile` 同时指定。bootloader 仍只含 Flash/UART，不含 SD 或显示驱动。
 

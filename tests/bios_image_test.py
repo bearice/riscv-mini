@@ -7,6 +7,13 @@ class ImageTest(unittest.TestCase):
     def test_roundtrip(self):
         data=image.pack(bytes(range(256))*3,4096)
         h,p=image.unpack(data);self.assertEqual(h[4],4096);self.assertEqual(len(p),768)
+    def test_os_image_has_distinct_entry_contract(self):
+        data=image.pack(b"abcd",4096,os_image=True)
+        header,payload=image.unpack(data)
+        self.assertEqual(header[0],image.OS_MAGIC)
+        self.assertEqual(payload,b"abcd")
+        bad=bytearray(data);bad[-1]^=1
+        with self.assertRaises(ValueError):image.unpack(bad)
     def test_invalid_layout(self):
         for payload,memory,entry in [(b'x',4,image.LOAD),(b'abcd',3,image.LOAD),
                 (b'abcd',image.LIMIT-image.LOAD,image.LOAD),(b'abcd',4,image.LOAD+1),

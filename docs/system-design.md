@@ -4,12 +4,14 @@
 
 ## 系统概览
 
-Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 4 KiB boot ROM 启动，等待硬件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 DDR monitor 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md)）。
+Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 4 KiB boot ROM 启动，等待硬件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 DDR monitor 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
 - CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享读缓存 L2；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
 - 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，片上 ROM 保持 Flash/UART 装载职责。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
+
+MMU 配置另有 60 MHz 的独立 64 位机器定时器，接 MTIP；S-mode 外设 mask/pending CSR 为 `0x9c0` / `0xdc0`。OpenSBI 的 OSB1 一次性交接与保护边界见 [OpenSBI](opensbi-port.md)。
 
 ## 地址映射
 
@@ -97,22 +99,22 @@ CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼�
 
 ## 当前 full 资源与构建身份
 
-配置：MMU+FPU、无 C/B、L2 4 KiB、SD lite、USB ultra、DDS、全部外设。CSR 镜像 ABI 为 `552653d0`；不同功能组合必须重新生成匹配固件，不能把该 ABI 当作所有 profile 的固定值。
+配置：MMU+FPU、无 C/B、L2 4 KiB、SD lite、USB ultra、DDS、全部外设。CSR 镜像 ABI 为 `43623d5e`；不同功能组合必须重新生成匹配固件，不能把该 ABI 当作所有 profile 的固定值。
 
 | PnR 资源 | 使用 / 可用 |
 | --- | ---: |
-| Logic | 18,820 / 20,736 |
-| Register | 10,771 / 16,173 |
-| CLS | 10,118 / 10,368 |
+| Logic | 19,117 / 20,736 |
+| Register | 11,063 / 16,173 |
+| CLS | 10,202 / 10,368 |
 | BSRAM | 43 / 46 |
 | PLL | 3 / 4 |
 | PRIMARY / LW | 各 8 / 8 |
 | IO / IOLOGIC | 139 / 207；62 / 207 |
 
-Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。本页记录当前默认配置的布局布线资源快照，不表示可以提高运行频率。ROM 配置容量 4096 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
+Gowin V1.9.12.04，place=4、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。本页记录当前默认配置的布局布线资源快照，不表示可以提高运行频率。ROM 配置容量 4096 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
 
 Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/main.c`](../firmware/bootloader/main.c) 与 [`scripts/boot_upload.py`](../scripts/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
 
 ## 文档索引
 
-[板级参考](board-reference.md) · [时钟树](clocks.md) · [硬件启动](hardware-ddr-boot.md) · [L2 缓存](l2-cache.md) · [MMU/FPU](cpu-mmu-fpu.md) · [CSR 打包](csr-packing.md) · [模块化构建](modular-build.md) · [功能配置](configuration-profiles.md) · [分模块 RTL](rtl-defaults.md) · [BSRAM 归属](bsram-audit.md) · [HAL](hal.md) · [bootloader](bootloader.md) · [BIOS](bios.md) · [固件测试命令](firmware-tests.md) · [原生 SD](native-sd.md) · [视频规格](video-spec.md) · [音频](audio.md) · [麦克风](microphone.md) · [Ethernet](ethernet.md) · [USB Host](usb.md) · [轻量 USB](usb-light.md) · [键鼠 demo](usb-input-demo.md)
+[板级参考](board-reference.md) · [时钟树](clocks.md) · [硬件启动](hardware-ddr-boot.md) · [L2 缓存](l2-cache.md) · [MMU/FPU](cpu-mmu-fpu.md) · [CSR 打包](csr-packing.md) · [模块化构建](modular-build.md) · [功能配置](configuration-profiles.md) · [分模块 RTL](rtl-defaults.md) · [BSRAM 归属](bsram-audit.md) · [HAL](hal.md) · [bootloader](bootloader.md) · [BIOS](bios.md) · [OpenSBI](opensbi-port.md) · [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md) · [原生 SD](native-sd.md) · [视频规格](video-spec.md) · [音频](audio.md) · [麦克风](microphone.md) · [Ethernet](ethernet.md) · [USB Host](usb.md) · [轻量 USB](usb-light.md) · [键鼠 demo](usb-input-demo.md)

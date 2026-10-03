@@ -5,6 +5,12 @@
 #include "diskio.h"
 #include <generated/soc.h>
 extern void sd_get_info(hal_sd_info_t *info);
+#if MINI_FEATURE_SD && CONFIG_SD_NATIVE
+extern hal_result_t sd_set_read_clock(unsigned clock_hz);
+hal_result_t hal_sd_set_read_clock(unsigned clock_hz) {return sd_set_read_clock(clock_hz);}
+#else
+hal_result_t hal_sd_set_read_clock(unsigned clock_hz) {(void)clock_hz;return HAL_UNSUPPORTED;}
+#endif
 #if MINI_FEATURE_SD
 void hal_sd_get_info(hal_sd_info_t *info) {if(info)sd_get_info(info);}
 hal_result_t hal_sd_init(void) {return disk_initialize(0)?HAL_NO_MEDIA:HAL_OK;}

@@ -86,3 +86,20 @@ void bios_console_poll(void) {
     if(hal_video_present(back)==HAL_OK) {slot=back;dirty=0;}
     next_render=hal_time_ms()+16;
 }
+
+static unsigned load_started,load_next;
+void bios_load_begin(const char *source) {
+    load_started=hal_time_ms();load_next=64u*1024u;
+    bios_puts("LOAD ");bios_puts(source);bios_puts(" (dot=64 KiB) ");
+}
+void bios_load_progress(unsigned bytes) {
+    while(bytes>=load_next) {bios_putc('.');load_next+=64u*1024u;}
+}
+void bios_load_end(unsigned bytes,int ok) {
+    bios_puts(ok?" done ":" failed ");bios_decimal(bytes);bios_puts(" bytes, ");
+    bios_decimal(hal_time_ms()-load_started);bios_puts(" ms\r\n");
+}
+void bios_boot_timing(const char *phase,unsigned start) {
+    bios_puts("BOOT ");bios_puts(phase);bios_puts(": ");
+    bios_decimal(hal_time_ms()-start);bios_puts(" ms\r\n");
+}

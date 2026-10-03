@@ -15,7 +15,7 @@
 | 音频 | 1 | PCM FIFO 和输出缓冲 |
 | 合计 | 43 | 应用、启动栈和帧缓冲位于外部 DDR |
 
-BSRAM 数量取决于端口、位宽及写粒度，不能只按有效字节数推算。D-cache/TX 按字节写可能拆成多个 bank；CPU 多读端口寄存器文件会复制存储。USB PIO、UART、SPI、CSR 和 DDR 控制器不占 BSRAM，但仍消耗寄存器/LUT RAM。
+BSRAM 数量取决于端口、位宽及写粒度，不能只按有效字节数推算。D-cache/TX 按字节写可能拆成多个 bank；CPU 多读端口寄存器文件会复制存储。USB PIO、UART、SPI 和 CSR 不占 BSRAM，但仍消耗寄存器/LUT RAM。
 
 启动栈/data/BSS 保留区为 `0x407fe000..0x407fffff`，应用 SP 为 `0x40c00000`，应用预留 64 KiB 栈。没有地址 `0x10000000` 的集成 SRAM。默认 4 KiB L2 采用整条 128-bit refill 写，避免按字节拆分数据 RAM；8 KiB 配置尚未上板验证。
 

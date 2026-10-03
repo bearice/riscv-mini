@@ -40,3 +40,18 @@ bios_enter:
     lw s11,52(sp)
     addi sp,sp,64
     ret
+
+/* OSB1 entry: OpenSBI owns M-mode traps and will enter its S-mode payload. */
+.global bios_os_enter
+bios_os_enter:
+    mv t0,a0
+    csrci mstatus,8
+    csrw mie,zero
+    csrw 0xbc0,zero
+    csrw 0x9c0,zero
+    csrw satp,zero
+    sfence.vma
+    li a0,0
+    li a1,0
+    li a2,0
+    jr t0

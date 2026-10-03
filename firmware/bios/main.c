@@ -52,7 +52,8 @@ static int parse_hex(const char *p,unsigned digits,unsigned *value) {
     *value=n;return 1;
 }
 static void command(char *s) {
-    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, io, led HH, rgb RRGGBB\r\ntest bios, test ... (test alone lists diagnostics), reboot\r\n");return;}
+    if(bios_benchmark_command(s))return;
+    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\n");return;}
     if(!strcmp(s,"status")) {
         bios_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=");bios_decimal(MINI_FEATURE_MMU);
         bios_puts(" FPU=");bios_decimal(MINI_FEATURE_FPU);bios_puts("\r\n");settings_show();hal_video_status();

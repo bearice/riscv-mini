@@ -1,8 +1,10 @@
 #include "internal.h"
 #include "payload.h"
 #include "ff.h"
+#include <generated/csr.h>
 #include <string.h>
 #define STAGING ((uint8_t *)0x47000000u)
+extern void bios_os_enter(uint32_t entry) __attribute__((noreturn));
 static const struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),0x40000000,128u*1024*1024,
     BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0x47e00000,0x47e40000},480,272,960,565,
     MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4),60000000};
@@ -42,7 +44,14 @@ int bios_file_read(const char *path,unsigned offset,void *data,unsigned capacity
 int bios_payload_check(const void *image,unsigned length) {
     if(length<sizeof(struct bios_image))return 0;
     const struct bios_image *h=image;
-    return bios_header_valid(h,length) && h->crc==bios_crc((const uint8_t *)image+sizeof(*h),h->file_bytes);
+    if(!bios_header_valid(h,length))return 0;
+    uint32_t crc=~0u;const uint8_t *data=(const uint8_t *)image+sizeof(*h);
+    for(unsigned offset=0;offset<h->file_bytes;) {
+        unsigned bytes=h->file_bytes-offset;if(bytes>65536)bytes=65536;
+        crc=bios_crc_update(crc,data+offset,bytes);offset+=bytes;
+        bios_poll();
+    }
+    return h->crc==~crc;
 }
 int bios_self_test(void) {
     struct {struct bios_image h;uint8_t data[4];} v={{BIOS_IMAGE_MAGIC,1,BIOS_PAYLOAD_BASE,4,64,BIOS_PAYLOAD_BASE,0,0},{1,2,3,4}};
@@ -58,19 +67,33 @@ int bios_self_test(void) {
         bios_call(BIOS_AUDIO_CONTROL,99,0,0,0)==-1;
 }
 int bios_payload_run(const void *image,unsigned length) {
+    unsigned start=hal_time_ms();
+    bios_puts("BOOT checking image...\r\n");
     if(!bios_payload_check(image,length)) {bios_puts("BOOT rejected: format/range/version/CRC\r\n");return -1;}
+    bios_boot_timing("CRC",start);
     struct bios_image h;memcpy(&h,image,sizeof(h));
+    if(h.magic==BIOS_OS_IMAGE_MAGIC && !MINI_FEATURE_MMU)return -1;
     /* BIOS owns all drivers. Quiesce output/capture DMA before handing over. */
     if(hal_audio_stop()!=HAL_OK && MINI_FEATURE_AUDIO)return -1;
     hal_audio_mute(1);hal_mic_stop();
+    start=hal_time_ms();
     memcpy((void *)h.load,(const uint8_t *)image+sizeof(h),h.file_bytes);
+    bios_boot_timing("copy",start);start=hal_time_ms();
     memset((void *)(h.load+h.file_bytes),0,h.memory_bytes-h.file_bytes);
     __asm__ volatile("fence rw,rw":::"memory");
 #if MINI_CPU_DCACHE
     __asm__ volatile(".word 0x0000500f":::"memory");
 #endif
     __asm__ volatile("fence.i":::"memory");
+    bios_boot_timing("zero/cache sync",start);
     bios_puts("BOOT payload entry=");bios_hex(h.entry);bios_puts("\r\n");
+    if(h.magic==BIOS_OS_IMAGE_MAGIC) {
+        hal_usb_stop();hal_eth_stop();
+        if(hal_video_stop()!=HAL_OK && MINI_FEATURE_VIDEO)return -1;
+        timer1_en_write(0);timer1_ev_enable_write(0);uart_ev_enable_write(0);
+        bios_puts("BOOT OpenSBI (one-way)\r\n");
+        bios_os_enter(h.entry);
+    }
     bios_enter(h.entry,&info,BIOS_PAYLOAD_LIMIT);
     /* A returning payload must not leave DMA reading its old storage. */
     hal_audio_stop();hal_audio_mute(1);
@@ -81,12 +104,14 @@ int bios_sd_boot(const char *path) {
     FIL f;UINT count;unsigned n;
     if(hal_sd_mount()!=HAL_OK || f_open(&f,path,FA_READ)!=FR_OK) {bios_puts("BOOT SD unavailable/file missing\r\n");return -1;}
     n=f_size(&f);if(n<sizeof(struct bios_image) || n>BIOS_IMAGE_MAX+sizeof(struct bios_image)) {f_close(&f);return -1;}
+    bios_load_begin("SD");
     unsigned offset=0;FRESULT r=FR_OK;
     while(offset<n) {unsigned bytes=n-offset;if(bytes>4096)bytes=4096;
         r=f_read(&f,STAGING+offset,bytes,&count);if(r!=FR_OK || count!=bytes)break;
-        offset+=count;bios_poll();
+        offset+=count;bios_load_progress(offset);bios_poll();
     }
     FRESULT c=f_close(&f);
+    bios_load_end(offset,r==FR_OK && c==FR_OK && offset==n);
     return r==FR_OK && c==FR_OK && offset==n?bios_payload_run(STAGING,n):-1;
 #else
     (void)path;return -1;

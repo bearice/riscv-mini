@@ -1,0 +1,3 @@
+config PLATFORM_RISCV_MINI
+	bool
+	default y

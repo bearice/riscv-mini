@@ -30,9 +30,27 @@ _start:
     addi t3, t3, -1
     bnez t3, .Lddr_wait
 .Lddr_failed:
-    la a0, .Lddr_error
+    /* Status fits 16 bits. Emit it without a stack or any DDR access. */
+    mv t4, t1
+    li t5, 4
     li t0, MINI_UART_TXFULL
     li t1, MINI_UART_RXTX
+.Lddr_status_hex:
+    srli a1, t4, 12
+    andi a1, a1, 15
+    li a0, 10
+    bltu a1, a0, .Lddr_status_digit
+    addi a1, a1, 7
+.Lddr_status_digit:
+    addi a1, a1, 48
+.Lddr_status_tx:
+    lw t2, 0(t0)
+    bnez t2, .Lddr_status_tx
+    sw a1, 0(t1)
+    slli t4, t4, 4
+    addi t5, t5, -1
+    bnez t5, .Lddr_status_hex
+    la a0, .Lddr_error
 .Lddr_error_next:
     lbu a1, 0(a0)
     beqz a1, .Lddr_halt

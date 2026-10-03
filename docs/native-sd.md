@@ -4,7 +4,11 @@
 
 ## 频率与引脚
 
-sys 为 60 MHz。初始化 divider=150 得到 400 kHz；正常 divider=8 得到 **7.5 MHz**。15 MHz 的读取曾上板通过，但首笔 CMD24 写数据响应失败；单独降低时钟后写入/读回通过。当前选用稳定的 7.5 MHz，15 MHz 写采样裕量属于后续优化，不能把读通过当作写通过。
+sys 为 60 MHz。初始化 divider=150 得到 400 kHz；默认读取 divider=4，**15 MHz**；写入 divider=8，**7.5 MHz**。驱动仅在空闲、命令之间切换，等待旧半周期结束；相同频率不重复等待。15 MHz 读取已通过重复 CRC 和五分钟检查，15 MHz 写数据响应仍未验收，所以写路径保持 7.5 MHz，不能把读通过当作写通过。
+
+`hal_sd_set_read_clock()` 可在主循环空闲时选择 7.5/10/15/30 MHz，对应 divider=8/6/4/2；SPI/disabled 返回 UNSUPPORTED，重新初始化恢复默认 15 MHz。`hal_sd_get_info()` 的 clock_hz 是当前实际时钟，另有 read_clock_hz、write_clock_hz、high_speed 表示读策略、写策略与 CMD6 协商状态。
+
+30 MHz 超过默认速度模式 25 MHz 上限，驱动先以低速执行 CMD6 check/set，读取 64 B switch status，检查 Group1 的 High Speed 支持和选择结果，不进行 UHS/1.8 V 切换。此次实卡 CMD6 成功，但 30 MHz 读取失败，因此该档仅保留为显式实验接口，默认不用。支持/选择字段对应 [Linux MMC 的原始实现](https://github.com/torvalds/linux/blob/master/drivers/mmc/core/sd.c)，速度模式参见 [SD Association](https://www.sdcard.org/developers/sd-standard-overview/bus-speed-default-speed-high-speed-uhs-sd-express/)。
 
 | 信号 | FPGA 引脚 |
 | --- | --- |

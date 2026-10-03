@@ -5,6 +5,7 @@
 | 目录 | 职责 |
 | --- | --- |
 | `bios/` | 默认常驻 BIOS：setup/POST、TTY、图形与 IO 服务、设置、SD/TFTP 引导；`include/bios.h` 为二级程序的公开 ABI |
+| `opensbi/` | 单 hart M-mode SBI 平台、兼容补丁和 S/U-mode 硬件探针；使用 OSB1 镜像由 BIOS 一次性交接 |
 | `bootloader/` | 小型 ROM loader、ROM Flash 驱动和镜像协议；`boot.ld` 为 ROM，`app.ld` 为 DDR 固件链接布局 |
 | `boot/` | ROM 与 DDR 固件共用的启动汇编，按构建宏选择启动路径 |
 | `hal/` | 公共设备 API、IRQ/trap、板级 IO，以及音频/麦克风/网络/USB 实现 |
@@ -24,3 +25,5 @@
 ```
 
 前三种生成由 ROM 直接装载的 DDR 固件。`bios_demo.c` 和 `nyancat_demo.c` 使用独立裸机 SDK，生成由 BIOS 装载的 RPB1 程序，不能作为 `build.py --app` 入口。[Nyan Cat 示例](../docs/nyancat-demo.md) 包含 GIF 帧转换、动态背景和循环 BGM。ABI、内存所有权和命令见 [BIOS](../docs/bios.md)，硬件检查见 [固件测试命令](../docs/firmware-tests.md)。生产固件和诊断不引用 examples 内的实现。
+
+OpenSBI 的构建工具、镜像布局、CSR timer 和验收边界见 [OpenSBI 平台](../docs/opensbi-port.md)。它不链接 BIOS 的设备 HAL，普通 RPB1 程序仍使用原来的可返回 BIOS ABI。

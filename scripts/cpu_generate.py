@@ -7,6 +7,7 @@ Java 8 and sbt-launch 1.9.7. No installed packages are modified.
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,9 +29,19 @@ def main():
     base = Path(pythondata_cpu_vexriscv.data_location)
     for name in ('src', 'project'):
         shutil.copytree(base/name, output/name, dirs_exist_ok=True)
+    # Keep upstream checkout untouched. TM permission must exist even when
+    # OpenSBI emulates time/timeh instead of exposing a hardware time port.
+    vex_local=output/'ext/VexRiscv'
+    shutil.copytree(args.vexriscv_source,vex_local,dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('.git','target'))
+    csr_source=vex_local/'src/main/scala/vexriscv/plugin/CsrPlugin.scala'
+    csr_text=csr_source.read_text()
+    tm_anchor='if(utimeAccess != CsrAccess.NONE)    rw(csrId, 1 -> TM)'
+    if csr_text.count(tm_anchor)!=1:raise ValueError('Unsupported counter permission mapping')
+    csr_source.write_text(csr_text.replace(tm_anchor,'rw(csrId, 1 -> TM) // Also governs firmware-emulated time'))
     build = (base/'build.sbt').read_text()
     build = build.replace('file("ext/VexRiscv")',
-                          'file('+json.dumps(args.vexriscv_source.resolve().as_posix())+')')
+                          'file('+json.dumps(vex_local.as_posix())+')')
     (output/'build.sbt').write_text(build)
     target = output/'src/main/scala/vexriscv/GenCoreDefault.scala'
     source = target.read_text()
@@ -39,6 +50,9 @@ def main():
         'val parser = new scopt.OptionParser[ArgConfig]("VexRiscvGen") {':
             'val parser = new scopt.OptionParser[ArgConfig]("VexRiscvGen") {\n'
             '      opt[Boolean]("fpu") action { (v,c) => c.copy(fpu=v) }',
+        'CsrPluginConfig.linuxFull(mtVecInit = argConfig.machineTrapVector).copy(ebreakGen = false)':
+            'CsrPluginConfig.linuxFull(mtVecInit = argConfig.machineTrapVector).copy(ebreakGen = false, '
+            'misaExtensionsInit = 0x141101 | (if(argConfig.fpu) 0x20 else 0))',
         '// CPU configuration':
             'if(argConfig.fpu) plugins += new FpuPlugin(externalFpu=false,\n'
             '        p=vexriscv.ip.fpu.FpuParameter(withDouble=false,\n'
@@ -61,13 +75,19 @@ def main():
         f'--fpu {fpu}{pipeline} --outputFile {name}'
         for csr, fpu, name in variants
     ]
+    java_tmp = output/'java-tmp'
+    java_tmp.mkdir(exist_ok=True)
     with (output/'generate.log').open('w') as log:
         subprocess.run([str(args.java.resolve()), '-Xmx3G',
+                        '-Djna.tmpdir='+str(java_tmp), '-Djava.io.tmpdir='+str(java_tmp),
+                        '-Dsbt.global.base='+str(output/'sbt-global'),
+                        '-Dsbt.io.jdktimestamps=true', '-Dsbt.ivy.home='+str(output/'ivy'),
                         '-Dsbt.override.build.repos=true',
                         '-Dsbt.repository.config='+str(repositories),
                         '-Dsbt.boot.directory='+str(output/'sbt-boot'),
                         '-jar', str(args.sbt_launch.resolve()), *commands],
-                       cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True)
+                       cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True,
+                       env={**os.environ, 'TMP':str(java_tmp), 'TEMP':str(java_tmp)})
     report = {'commands': commands, 'pipeline': {
                   'relaxed_pc_calculation': args.relaxed_pc_calculation,
                   'extra_fetch_stage': args.relaxed_pc_calculation},

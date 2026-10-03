@@ -118,7 +118,7 @@ class MiniSoC(SoCCore):
         platform=Platform(dock='standard',toolchain='gowin')
         self.crg=ClockResetGenerator(platform,features,usb_backend)
         # SUG1220: prioritize timing over compilation speed at high utilization.
-        platform.toolchain.options.update(timing_driven=1,place_option=2,route_option=1)
+        platform.toolchain.options.update(timing_driven=1,place_option=4,route_option=2)
         SoCCore.__init__(
             self, platform, clk_freq=60e6, ident='riscv-mini',
             cpu_type='vexriscv', cpu_variant=cpu_variant,
@@ -129,6 +129,9 @@ class MiniSoC(SoCCore):
         )
         if cpu_verilog is not None:
             self.cpu.use_external_variant(str(Path(cpu_verilog).resolve()))
+        # Independent machine timer for SBI TIME; peripheral IRQ timers remain.
+        if features.mmu:
+            self.cpu.add_timer()
         capabilities=cpu_capabilities(cpu_verilog) if cpu_verilog else {}
         self.add_constant('CONFIG_CPU_COMPRESSED',int(capabilities.get('compressed',False)))
         self.add_constant('CONFIG_CPU_BITMANIP',sum(1<<i for i,name in enumerate(('Zba','Zbb','Zbs'))

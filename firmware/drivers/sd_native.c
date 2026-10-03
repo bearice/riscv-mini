@@ -10,6 +10,11 @@
 
 enum {RESP_NONE=0,RESP_SHORT=1,RESP_LONG=2,RESP_BUSY=3,RESP_CRC=4,DATA_READ=32,DATA_WRITE=64};
 static unsigned initialized,high_capacity,rca,width,clock_hz=400000;
+/* Experimental read clocks are selected by HAL; initialization restores this
+ * qualified default. Keep the independently accepted write clock unchanged. */
+#define SD_READ_CLOCK_HZ 15000000u
+#define SD_WRITE_CLOCK_HZ 7500000u
+static unsigned read_clock_hz=SD_READ_CLOCK_HZ,high_speed,switch_supported;
 static uint32_t sectors,read_blocks,written_blocks,errors;
 static _Alignas(4) uint8_t bounce[4096];
 static unsigned present(void) {return !(sdcard_phy_card_detect_read()&1u);}
@@ -21,7 +26,12 @@ static void reset_controller(void) {
     sdcard_phy_clocker_divider_write(150);sdcard_phy_settings_write(0);
     sdcard_phy_cmdr_timeout_write(CONFIG_CLOCK_FREQUENCY/4u);
     sdcard_phy_datar_timeout_write(CONFIG_CLOCK_FREQUENCY/2u);
-    width=1;clock_hz=400000;
+    width=1;clock_hz=400000;high_speed=0;
+}
+static void set_clock(unsigned hz) {
+    if(clock_hz==hz)return;
+    sdcard_phy_clocker_divider_write(CONFIG_CLOCK_FREQUENCY/hz);clock_hz=hz;
+    io_delay_ms(1); /* Finish old half-period before issuing another command. */
 }
 static int wait_event(unsigned data) {
     uint32_t start=io_ticks();
@@ -70,6 +80,29 @@ static void start_dma(unsigned write,unsigned bytes) {
     }
 }
 static void stop_dma(void) {sdcard_block2mem_dma_enable_write(0);sdcard_mem2block_dma_enable_write(0);}
+static int switch_function(uint32_t argument) {
+    sdcard_core_block_length_write(64);sdcard_core_block_count_write(1);start_dma(0,64);
+    int ok=checked_command(6,argument,RESP_SHORT|RESP_CRC|DATA_READ) && wait_event(1) && wait_dma(0);
+    stop_dma();return ok;
+}
+hal_result_t sd_set_read_clock(unsigned hz) {
+    if(hz!=7500000u && hz!=10000000u && hz!=15000000u && hz!=30000000u)return HAL_INVALID;
+    if(!initialized || !present())return HAL_NO_MEDIA;
+    if(hz>25000000u && !high_speed) {
+        if(!switch_supported)return HAL_UNSUPPORTED;
+        set_clock(SD_WRITE_CLOCK_HZ);
+        /* Group1 function1=HighSpeed; all other groups F=unchanged. The 64B
+         * status is MSB-first: support at byte13, selected function at byte16. */
+        if(!switch_function(0x00fffff1u))goto fail;
+        if(!(bounce[13]&2u))return HAL_UNSUPPORTED;
+        if(!switch_function(0x80fffff1u))goto fail;
+        if((bounce[16]&15u)!=1u)return HAL_UNSUPPORTED;
+        high_speed=1;io_delay_ms(1);
+    }
+    read_clock_hz=hz;set_clock(hz);return HAL_OK;
+fail:
+    ++errors;initialized=0;reset_controller();return HAL_IO;
+}
 static unsigned csd_bits(unsigned low,unsigned count) {
     unsigned word=low/32,shift=low%32;uint64_t value=response(word);
     if(shift+count>32)value|=(uint64_t)response(word+1)<<32;
@@ -95,6 +128,7 @@ DSTATUS disk_initialize(BYTE drive) {
     if(!command(2,0,RESP_LONG|RESP_CRC) || !command(3,0,RESP_SHORT|RESP_CRC))goto fail;
     if(response(0)&0xe000u)goto fail; /* R6 error bits, not R1/RCA. */
     rca=response(0)>>16;if(!rca || !command(9,rca<<16,RESP_LONG|RESP_CRC))goto fail;
+    switch_supported=!!(csd_bits(84,12)&(1u<<10));
     unsigned version=csd_bits(126,2);
     if(version==1) {
         unsigned size=csd_bits(48,22);if(size==0x3fffffu)goto fail;
@@ -113,7 +147,8 @@ DSTATUS disk_initialize(BYTE drive) {
     stop_dma();
     if(!(bounce[1]&4) || !app_command(6,2))goto fail;
     sdcard_phy_settings_write(1);width=4;
-    sdcard_phy_clocker_divider_write(8);clock_hz=7500000;initialized=1;
+    set_clock(SD_WRITE_CLOCK_HZ);initialized=1;
+    if(sd_set_read_clock(SD_READ_CLOCK_HZ)!=HAL_OK)goto fail;
     puts_uart("SD init PASS: native4 DMA sectors=");io_hex(sectors);
     puts_uart(" SDHC=");io_hex(high_capacity);puts_uart(" hz=");io_hex(clock_hz);puts_uart("\r\n");
     return 0;
@@ -131,6 +166,7 @@ static DRESULT transfer(BYTE drive,void *buffer,LBA_t sector,UINT count,unsigned
     if(drive || !buffer || !count)return RES_PARERR;
     if(disk_status(drive))return RES_NOTRDY;
     if(sector>=sectors || count>sectors-sector)return RES_PARERR;
+    set_clock(write?SD_WRITE_CLOCK_HZ:read_clock_hz);
     uint8_t *data=buffer;
     while(count) {
         unsigned blocks=count>8?8:count,bytes=blocks*512;
@@ -148,6 +184,10 @@ static DRESULT transfer(BYTE drive,void *buffer,LBA_t sector,UINT count,unsigned
     }
     return RES_OK;
 fail:
+    puts_uart("SD transfer FAIL cmd_event=");io_hex(sdcard_core_cmd_event_read());
+    puts_uart(" data_event=");io_hex(sdcard_core_data_event_read());
+    puts_uart(" dma_error=");io_hex(write?sdcard_mem2block_dma_error_read():sdcard_block2mem_dma_error_read());
+    puts_uart(" response=");io_hex(response(0));puts_uart("\r\n");
     ++errors;initialized=0;reset_controller();return present()?RES_ERROR:RES_NOTRDY;
 }
 DRESULT disk_read(BYTE drive,BYTE *buffer,LBA_t sector,UINT count) {return transfer(drive,buffer,sector,count,0);}
@@ -165,5 +205,6 @@ DRESULT disk_ioctl(BYTE drive,BYTE cmd,void *buffer) {
     return RES_PARERR;
 }
 void sd_get_info(hal_sd_info_t *info) {
-    *info=(hal_sd_info_t){sectors,clock_hz,width,1,present(),!disk_status(0),read_blocks,written_blocks,errors};
+    *info=(hal_sd_info_t){sectors,clock_hz,width,1,present(),!disk_status(0),read_blocks,written_blocks,errors,
+        read_clock_hz,SD_WRITE_CLOCK_HZ,high_speed};
 }

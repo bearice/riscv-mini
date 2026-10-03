@@ -71,9 +71,13 @@ hal_result_t hal_usb_mouse_take(hal_usb_mouse_t *mouse); /* Boot mouse relative 
 hal_result_t hal_usb_keyboard_leds(uint8_t device,uint8_t interface,uint8_t leds); /* async Num/Caps/Scroll/Compose/Kana */
 hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,unsigned *received);
 hal_result_t hal_spi_select(hal_spi_bus_t bus,unsigned selected);
-typedef struct {uint32_t sectors,clock_hz,bus_width,native,present,initialized,read_blocks,written_blocks,errors;} hal_sd_info_t;
+typedef struct {uint32_t sectors,clock_hz,bus_width,native,present,initialized,read_blocks,written_blocks,errors,
+    read_clock_hz,write_clock_hz,high_speed;} hal_sd_info_t;
 void hal_sd_get_info(hal_sd_info_t *info);
 hal_result_t hal_sd_init(void); /* raw block access, does not require FatFs */
+/* Native only, idle main-loop owner: 7.5/10/15/30 MHz. 30 requires CMD6 HS.
+   Reinitialization restores the driver default; writes always use 7.5 MHz. */
+hal_result_t hal_sd_set_read_clock(unsigned clock_hz);
 hal_result_t hal_sd_mount(void);
 hal_result_t hal_sd_list(void);
 hal_result_t hal_sd_read(uint32_t sector,void *data,unsigned count);

@@ -2,7 +2,7 @@
 
 `gateware/ddr_boot.py` 完成 DDR JEDEC 初始化和逐 byte lane 读训练；片上没有集成 SRAM。4 KiB ROM 先以无栈汇编轮询 ready/failed，成功后才在 `0x407fe000..0x407fffff` 建立 data/BSS 和启动栈，SP=`0x40800000`。应用入口同为 `0x40800000`，应用栈顶为 `0x40c00000`。
 
-硬件执行 reset/release、模式寄存器（DLL-off，CL6/CWL6）、ZQ 校准，再对两个 lane 遍历四种 bitslip 与 256 个 delay setting。检查三个训练种子 42/84/36、read-data-valid 和 burst detect，选择最宽通过窗口的中点并再次验证。scratch 使用 bank0/row0/column0；控制器和 crossbar 在训练期间保持复位，master 在 handover 前被阻止。失败后停止命令，ROM 不访问 DDR 栈就输出失败或超时。
+硬件执行 reset/release、模式寄存器（DLL-off，CL6/CWL6）、ZQ 校准，再对两个 lane 遍历四种 bitslip 与 256 个 delay setting。检查三个训练种子 42/84/36、read-data-valid 和 burst detect，选择最宽通过窗口的中点并再次验证。scratch 使用 bank0/row0/column0；控制器和 crossbar 在训练期间保持复位，master 在 handover 前被阻止。失败后停止命令，ROM 不访问 DDR 栈就输出失败或超时；消息前四个十六进制字符为硬件 status 低 16 位，bit0 ready、bit1 failed、bit2 lane、bits8:15 FSM state。
 
 完整 SoC 软件复位同时复位 DMA/外设并重新训练 DDR，PHY 初始化/DLL 所需时钟保持运行。训练状态和 lane 结果可从生成 CSR 及 monitor 状态读取。
 

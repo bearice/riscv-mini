@@ -1,5 +1,7 @@
 # DDR 常驻 BIOS
 
+性能测试命令与计时边界见 [BIOS benchmark](benchmark.md)。
+
 默认固件是 `firmware/bios/main.c`。片上 ROM 仍只负责等待硬件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--app firmware/examples/monitor.c` 单独构建。
 
 ## 启动与内存
@@ -20,7 +22,7 @@ BIOS 装载完成后先初始化 HAL、显示和设置，执行有界 POST，然
 
 交接时 BIOS 停止音频 DMA、静音并停止麦克风，复制程序、清零 BSS，维护 D/I-cache 后跳转。常驻驱动和中断保持运行。SDK 建立程序自己的 `gp`；trap 切换到 BIOS 的 `gp` 并恢复调用者寄存器，程序返回时恢复 BIOS 栈及 callee-saved 寄存器。代码见 [装载和服务](../firmware/bios/boot.c)、[交接](../firmware/bios/enter.S)、[trap](../firmware/hal/src/trap.S)。
 
-这版 ABI 面向可信的 M-mode 裸机程序，要求保留 BIOS 的 `mtvec`、中断运行和未启用分页的环境。程序定期调用 `BIOS_POLL` 服务 USB 和终端。它没有进程隔离；地址参数检查防止常见误传，不能限制 M-mode 代码直接访问硬件。RTOS/OS 的独立交接、SBI、S-mode 运行和设备所有权移交尚未实现。
+这版 ABI 面向可信的 M-mode 裸机程序，要求保留 BIOS 的 `mtvec`、中断运行和未启用分页的环境。程序定期调用 `BIOS_POLL` 服务 USB 和终端。它没有进程隔离；地址参数检查防止常见误传，不能限制 M-mode 代码直接访问硬件。OSB1 镜像使用独立的一次性交接，停止 BIOS 驱动并由 OpenSBI 接管 M-mode、进入 S-mode；此时 BIOS ECALL 服务不再有效。详见 [OpenSBI](opensbi-port.md)。
 
 ## POST、TTY 与图形
 
@@ -67,6 +69,11 @@ TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大
 
 网络引导采用同一链路上的静态 IPv4、ARP、UDP 和 TFTP octet，RRQ 发送到服务器 UDP69，后续锁定服务器 TID。支持 512 B DATA/ACK、重复块、重传和最终 ACK 等待；整 512 B 文件用零长度 DATA 结束。ARP 最多 10 秒；数据超时 1 秒、最多 5 次重试，传输总上限 120 秒。检查 IPv4/UDP 长度、校验和和分片标志。不支持 DHCP、网关、IPv4 options、分片、TFTP options 或认证。只在可信的直连/局域网使用；CRC 是完整性检查，不是签名。
 
+SD 和 TFTP 装载每完成 64 KiB 打印一个点，并同步显示到 LCD TTY；结束时报告实际字节数、毫秒数和成功/失败。
+随后分别打印 CRC、复制、清零和缓存同步的耗时。CRC32 使用 256 项查表，镜像格式及校验结果不变。
+TFTP 为 512 B 停等协议，吞吐受逐块往返和软件轮询限制；最后保留约 1.1 秒重复 DATA 确认窗口。
+固定地址的二进制镜像包含链接布局中的空洞，传输大小可能显著大于有效代码。
+
 ## 程序格式和 ABI
 
 [公开 C 接口](../firmware/bios/include/bios.h) 与 [程序 SDK](../scripts/bios_payload.py) 不依赖生成的 CSR 地址。ABI=1、ILP32：`a7=0x42494f53`，`a6=功能号`，`a0..a5=参数`，`a0=返回值`。负值表示错误（GETC/MOUSE 的 -1 也表示暂无输入）。TIME 返回毫秒计数的 32 位原始位模式，差值应按 uint32_t 处理。
@@ -100,7 +107,7 @@ BEGIN 停止旧播放并设置程序拥有的环形缓冲区，WRITE 部分接�
 先预填数据，再 PLAY 和 UNMUTE；PAUSE 保留队列，STOP 清空 DMA 状态。程序返回时 BIOS
 停止并静音音频，再恢复 TTY。实际示例见 [Nyan Cat](nyancat-demo.md)。
 
-RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version、load、file_bytes、memory_bytes、entry、数据 CRC32、头前 28 B 的 CRC32。load 必须为 `0x41000000`，entry 四字节对齐且在文件范围内，memory_bytes 包含 BSS 且保留顶端 64 KiB 栈。文件总长度必须精确匹配头和载荷；两个 CRC、版本和范围均检查后才执行。它与 ROM 使用的 CSR ABI app.img 格式分离，不是 ELF 或 PC BIOS 兼容格式。
+RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version、load、file_bytes、memory_bytes、entry、数据 CRC32、头前 28 B 的 CRC32。load 必须为 `0x41000000`，entry 四字节对齐且在文件范围内，memory_bytes 包含 BSS 且保留顶端 64 KiB 栈。文件总长度必须精确匹配头和载荷；两个 CRC、版本和范围均检查后才执行。它与 ROM 使用的 CSR ABI app.img 格式分离，不是 ELF 或 PC BIOS 兼容格式。OSB1 使用相同头字段、CRC 和范围限制，magic=`0x3142534f`，只允许 MMU 配置，入口按 OpenSBI 契约传参且不返回 BIOS。
 
 ## 构建与使用
 
