@@ -6,6 +6,28 @@
 static const struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),0x40000000,128u*1024*1024,
     BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0x47e00000,0x47e40000},480,272,960,565,
     MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4),60000000};
+void bios_sd_list(void) {
+#if MINI_FEATURE_FILESYSTEM
+    if(hal_sd_mount()!=HAL_OK) {bios_puts("LS: SD unavailable\r\n");return;}
+    DIR directory;FILINFO entry;
+    FRESULT r=f_opendir(&directory,"/");
+    if(r!=FR_OK) {bios_puts("LS: open failed FatFs=");bios_decimal(r);bios_puts("\r\n");return;}
+    unsigned count=0;
+    bios_puts("SD /\r\n");
+    for(;;) {
+        r=f_readdir(&directory,&entry);
+        if(r!=FR_OK || !entry.fname[0])break;
+        bios_puts(entry.fname);if(entry.fattrib&AM_DIR)bios_putc('/');bios_puts("\r\n");
+        ++count;bios_poll();
+    }
+    FRESULT closed=f_closedir(&directory);
+    if(r==FR_OK)r=closed;
+    if(r!=FR_OK) {bios_puts("LS: read/close failed FatFs=");bios_decimal(r);bios_puts("\r\n");}
+    else {bios_puts("LS: ");bios_decimal(count);bios_puts(" entries\r\n");}
+#else
+    bios_puts("LS: filesystem disabled\r\n");
+#endif
+}
 int bios_file_read(const char *path,unsigned offset,void *data,unsigned capacity) {
 #if MINI_FEATURE_FILESYSTEM
     FIL f;UINT count;

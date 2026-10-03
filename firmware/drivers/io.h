@@ -3,6 +3,8 @@
 #include <generated/soc.h>
 void puts_uart(const char *text);
 void putchar_uart(char ch);
+/* Optional text-console mirror; callback must not write back to UART. */
+void io_console_mirror(void (*callback)(char));
 void io_timer_init(void);
 uint32_t io_ticks(void);
 void io_delay_ms(unsigned ms);

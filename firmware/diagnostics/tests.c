@@ -133,6 +133,15 @@ static void cooperate(void) {
 static void wait_ms(unsigned ms) {
     uint32_t start=hal_time_ms();while(hal_time_ms()-start<ms)cooperate();
 }
+#if MINI_FEATURE_FILESYSTEM && MINI_FEATURE_VIDEO && MINI_FEATURE_USB && MINI_FEATURE_AUDIO
+static int console_getc(void) {
+#if MINI_BIOS
+    extern int bios_getc(void);return bios_getc();
+#else
+    return hal_uart_getc();
+#endif
+}
+#endif
 #if MINI_FEATURE_AUDIO
 static unsigned audio_stop(void) {
     streaming=audible_until=0;hal_audio_mute(1);
@@ -519,11 +528,11 @@ static unsigned soak(unsigned seconds) {
     hal_uart_puts("SOAK START muted; ! reboots, other input ignored\r\n");
     while(hal_time_ms()-start<seconds*1000u) {
         /* A full CRC round can exceed the nominal one-second wait slot. */
-        int ch;while((ch=hal_uart_getc())>=0)if(ch=='!')hal_reboot();
+        cooperate();int ch;while((ch=console_getc())>=0)if(ch=='!')hal_reboot();
         if(!sd_read() || !video_check() || !usb_check() || !audio_ok()) {ok=0;break;}
         ++round;
         while(hal_time_ms()-start<round*1000u && hal_time_ms()-start<seconds*1000u) {
-            cooperate();int ch=hal_uart_getc();if(ch=='!')hal_reboot();
+            cooperate();int ch=console_getc();if(ch=='!')hal_reboot();
         }
         if(!(round%30)) {value("SOAK rounds=",round);value(" elapsed_ms=",hal_time_ms()-start);hal_uart_puts("\r\n");}
     }

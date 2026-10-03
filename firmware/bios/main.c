@@ -69,7 +69,7 @@ static void command(char *s) {
     if(!strncmp(s,"rgb ",4)) {unsigned v;if(!parse_hex(s+4,6,&v))bios_puts("ERR rgb color\r\n");else if(hal_ws2812_set(v>>16,v>>8,v)!=HAL_OK)bios_puts("ERR rgb unavailable/busy\r\n");return;}
     if(!strcmp(s,"post")) {bios_post();return;}
     if(!strcmp(s,"test bios")) {bios_puts(bios_self_test()?"BIOS TEST PASS\r\n":"BIOS TEST FAIL\r\n");return;}
-    if(!strcmp(s,"ls")) {hal_sd_list();return;}
+    if(!strcmp(s,"ls")) {bios_sd_list();return;}
     if(!strcmp(s,"reboot"))hal_reboot();
     if(!strcmp(s,"tty")) {bios_video_mode(0);return;}
     if(!strcmp(s,"graphics")) {bios_video_mode(1);return;}

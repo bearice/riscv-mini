@@ -8,6 +8,7 @@ static unsigned x,y,slot,video,mode,caps,dirty=1,next_render;
 static uint8_t queue[128];static unsigned head,tail;
 static struct bios_mouse pointer;
 static unsigned pointer_pending;
+static void terminal_putc(char c);
 static int32_t accumulate(int32_t value,int delta) {value+=delta;return value>32767?32767:value<-32767?-32767:value;}
 static void enqueue(unsigned c) {if(c && head-tail<sizeof(queue))queue[head++&127]=c;}
 static char key_char(unsigned k,unsigned mods) {
@@ -29,9 +30,9 @@ static char key_char(unsigned k,unsigned mods) {
 void bios_console_init(unsigned lcd_ok) {
     (void)fill;(void)text;
     video=lcd_ok;memset(screen,' ',sizeof(screen));memset(drawn,0,sizeof(drawn));x=y=slot=mode=0;dirty=1;
+    hal_console_mirror(terminal_putc);
 }
-void bios_putc(char c) {
-    hal_uart_putc(c);
+static void terminal_putc(char c) {
     if(c=='\r')x=0;
     else if(c=='\n') {x=0;++y;}
     else if(c=='\b') {if(x)--x;}
@@ -41,6 +42,7 @@ void bios_putc(char c) {
     if(y==ROWS) {for(unsigned r=1;r<ROWS;++r)memcpy(screen[r-1],screen[r],COLS);memset(screen[ROWS-1],' ',COLS);y=ROWS-1;}
     dirty=1;
 }
+void bios_putc(char c) {hal_uart_putc(c);}
 void bios_puts(const char *s) {while(*s)bios_putc(*s++);}
 void bios_hex(uint32_t n) {const char h[]="0123456789abcdef";for(int b=28;b>=0;b-=4)bios_putc(h[(n>>b)&15]);}
 void bios_decimal(uint32_t n) {char digits[10];unsigned count=0;do {digits[count++]='0'+n%10;n/=10;}while(n);while(count)bios_putc(digits[--count]);}

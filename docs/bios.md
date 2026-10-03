@@ -24,6 +24,14 @@ BIOS 装载完成后先初始化 HAL、显示和设置，执行有界 POST，然
 
 ## POST、TTY 与图形
 
+BIOS 的命令、POST、驱动诊断及 `test ...` 文本统一镜像到 LCD TTY 和串口。
+控制台初始化时注册 HAL 文本镜像回调，旧驱动的字符串、字符和十六进制输出也经过该路径；
+回调只更新 TTY 字符缓冲，避免再次发送串口造成递归或重复输出。图形模式下字符缓冲继续维护，
+执行 `tty` 后重新显示。启动 ROM 和底层二进制 UART 传输不接入文字镜像。
+输入使用 BIOS 的 UART/USB 键盘共同队列，包括 `test soak` 中的软件复位键。
+`ls` 列出 SD 根目录，在目录名后添加 `/`，结束时报告条目数；空目录为 `0 entries`，
+挂载、目录访问失败及文件系统未启用都有明确提示。
+
 POST 检查 1 KiB DDR scratch、定时器进度、Flash JEDEC、SD 挂载、Ethernet/USB PHY、HID 枚举和 BIOS ECALL。它检查设备是否可用，不覆盖全部 DDR，也不证明物理音频、网络对端或屏幕颜色正确。缺失可选设备会报告 unavailable/FAIL，但 setup 仍可使用。完整硬件检查通过现有 `test ...` 命令显式运行，boot ROM 不链接这些测试。
 
 TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大 LCD 的 **80×34、6×8 字符格**。支持 US ASCII、Shift、Caps Lock、换行、制表符、Backspace 和滚屏。字符队列容量 128，满时丢弃新字符；无 ANSI escape、Unicode、键盘自动重复和编辑历史。LCD 根据脏字符更新后换帧。图形模式使用两个 480×272 RGB565 帧槽，stride=960 B，写完后显式 present；`tty` 恢复文字画面。

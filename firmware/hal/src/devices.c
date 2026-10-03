@@ -13,6 +13,7 @@ static __attribute__((unused)) hal_result_t result(int ok) {return ok?HAL_OK:HAL
 void hal_uart_puts(const char *text) {puts_uart(text);}
 void hal_uart_putc(char ch) {putchar_uart(ch);}
 void hal_uart_hex(uint32_t value) {io_hex(value);}
+void hal_console_mirror(void (*callback)(char)) {io_console_mirror(callback);}
 hal_result_t hal_spi_transfer(hal_spi_bus_t bus,unsigned value,unsigned bits,unsigned *received) {
     if((bus!=HAL_SPI_SD && bus!=HAL_SPI_LCD) || !bits || bits>(bus==HAL_SPI_SD?8u:16u))return HAL_INVALID;
     if((!MINI_FEATURE_SD || CONFIG_SD_NATIVE) && bus==HAL_SPI_SD)return HAL_UNSUPPORTED;

@@ -17,6 +17,7 @@ void bios_settings_default(void);
 int bios_settings_load(void);
 int bios_settings_save(void);
 int bios_sd_boot(const char *path);
+void bios_sd_list(void);
 int bios_net_boot(const uint8_t server[4],const char *path);
 int bios_fetch(const char *path);
 int bios_tftp_get(const uint8_t server[4],const char *path,void *dest,unsigned capacity,unsigned *length);

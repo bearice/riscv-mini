@@ -27,6 +27,8 @@ hal_result_t hal_uart_write(const void *data,size_t size,unsigned timeout_ms,siz
 void hal_uart_puts(const char *text);
 void hal_uart_putc(char ch);
 void hal_uart_hex(uint32_t value);
+/* Mirror all driver/diagnostic text into a terminal; callback cannot emit UART. */
+void hal_console_mirror(void (*callback)(char));
 void hal_leds_set(unsigned mask); /* bit0..5 = schematic Orange_LED[0..5]; 1 is on */
 unsigned hal_leds_get(void);
 unsigned hal_buttons_read(void); /* bit0..3 = Key2..5; 1 is pressed */
