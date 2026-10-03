@@ -44,6 +44,11 @@ hal_trap_entry:
     sw t0,136(sp)
     csrr t0,mtval
     sw t0,140(sp)
+    /* Payloads may use a different gp. C dispatch belongs to this firmware. */
+    .option push
+    .option norelax
+    la gp,__global_pointer$
+    .option pop
     mv a0,sp
     call hal_trap_dispatch
     lw t0,128(sp)

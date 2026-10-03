@@ -6,7 +6,7 @@
 #include "ff.h"
 #include <string.h>
 #if MINI_FEATURE_ETH
-#include "../examples/packet_echo.h"
+#include "../common/packet_echo.h"
 #endif
 
 #define RING_FRAMES 32768u
@@ -61,25 +61,34 @@ static uint32_t sample(unsigned offset) {
     return (uint16_t)left|((uint32_t)(uint16_t)right<<16);
 }
 #endif
-void tests_poll(void) {
 #if MINI_FEATURE_USB
-    hal_usb_key_t key;
-    while(hal_usb_key_take(&key)==HAL_OK) {
-        hal_uart_puts(key.pressed?"\r\nUSB KEY DOWN usage=":"\r\nUSB KEY UP usage=");hal_uart_hex(key.usage);
-        value(" modifiers=",key.modifiers);hal_uart_puts("\r\n");
-    }
-    hal_usb_report_t report;
-    while(hal_usb_report_take(&report)==HAL_OK)if(usb_input) {
-        value("USB RAW device=",report.device);value(" interface=",report.interface);value(" bytes=",report.length);
+void tests_usb_key(const hal_usb_key_t *key) {
+#if MINI_BIOS
+    if(!usb_input)return;
+#endif
+    hal_uart_puts(key->pressed?"\r\nUSB KEY DOWN usage=":"\r\nUSB KEY UP usage=");hal_uart_hex(key->usage);
+    value(" modifiers=",key->modifiers);hal_uart_puts("\r\n");
+}
+void tests_usb_report(const hal_usb_report_t *report) {
+    if(usb_input) {
+        value("USB RAW device=",report->device);value(" interface=",report->interface);value(" bytes=",report->length);
         hal_uart_puts(" data=");static const char hex[]="0123456789ABCDEF";
-        for(unsigned i=0;i<report.length;++i) {hal_uart_putc(hex[report.data[i]>>4]);hal_uart_putc(hex[report.data[i]&15]);}
+        for(unsigned i=0;i<report->length;++i) {hal_uart_putc(hex[report->data[i]>>4]);hal_uart_putc(hex[report->data[i]&15]);}
         hal_uart_puts("\r\n");
     }
-    hal_usb_mouse_t mouse;
-    while(hal_usb_mouse_take(&mouse)==HAL_OK)if(usb_input) {
-        value("USB MOUSE buttons=",mouse.buttons);value(" x=",(int32_t)mouse.x);
-        value(" y=",(int32_t)mouse.y);value(" wheel=",(int32_t)mouse.wheel);hal_uart_puts("\r\n");
+}
+void tests_usb_mouse(const hal_usb_mouse_t *mouse) {
+    if(usb_input) {
+        value("USB MOUSE buttons=",mouse->buttons);value(" x=",(int32_t)mouse->x);
+        value(" y=",(int32_t)mouse->y);value(" wheel=",(int32_t)mouse->wheel);hal_uart_puts("\r\n");
     }
+}
+#endif
+void tests_poll(void) {
+#if MINI_FEATURE_USB && !MINI_BIOS
+    hal_usb_key_t key;while(hal_usb_key_take(&key)==HAL_OK)tests_usb_key(&key);
+    hal_usb_report_t report;while(hal_usb_report_take(&report)==HAL_OK)tests_usb_report(&report);
+    hal_usb_mouse_t mouse;while(hal_usb_mouse_take(&mouse)==HAL_OK)tests_usb_mouse(&mouse);
 #endif
 #if MINI_FEATURE_ETH
     if(network)for(unsigned budget=0;budget<4;++budget) {
@@ -113,7 +122,14 @@ void tests_poll(void) {
     }
 #endif
 }
-static void cooperate(void) {tests_poll();hal_poll();}
+static void cooperate(void) {
+    tests_poll();
+#if MINI_BIOS
+    extern void bios_poll(void);bios_poll();
+#else
+    hal_poll();
+#endif
+}
 static void wait_ms(unsigned ms) {
     uint32_t start=hal_time_ms();while(hal_time_ms()-start<ms)cooperate();
 }
@@ -443,6 +459,10 @@ static unsigned eth_start(void) {
 }
 #endif
 void hal_exception_handler(hal_trap_frame_t *f) {
+#if MINI_BIOS
+    extern int bios_exception_hook(hal_trap_frame_t *frame);
+    if(bios_exception_hook(f))return;
+#endif
     if(ecall_armed && f->cause==11) {++ecalls;f->pc+=4;return;}
     value("FAULT cause=",f->cause);value(" pc=",f->pc);value(" value=",f->value);hal_uart_puts("\r\n");
     for(;;)__asm__ volatile("nop");
@@ -513,6 +533,9 @@ static unsigned soak(unsigned seconds) {
 }
 #endif
 void tests_help(void) {
+#if MINI_BIOS
+    hal_uart_puts("test bios\r\n");
+#endif
 #if MINI_FEATURE_FPU
     hal_uart_puts("test fpu\r\n");
 #endif

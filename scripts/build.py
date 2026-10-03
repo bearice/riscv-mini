@@ -120,7 +120,7 @@ def main():
     p.add_argument('--place-option',type=int,choices=range(5),default=3)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
-    p.add_argument('--app',type=Path,default=ROOT/'firmware/app/main.c',help='DDR application source; bootloader is unchanged')
+    p.add_argument('--app',type=Path,default=ROOT/'firmware/bios/main.c',help='DDR firmware source (default: resident BIOS); bootloader is unchanged')
     p.add_argument('--generate-only',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--rom',type=Path,help=argparse.SUPPRESS)
     a=p.parse_args();a.audio_clock='dds' if a.audio_clock=='sys' else a.audio_clock;output=a.output_dir.resolve()
@@ -192,7 +192,10 @@ def main():
         # Whole-program optimization keeps the ROM loader compact; app stays
         # separately linked and carries SD/display drivers only in DDR.
         compact=['-flto','-DMINI_BOOTLOADER=1'] if name=='boot' else ['-DMINI_BOOTLOADER=0']
-        if name=='app' and main==ROOT/'firmware/app/main.c':sources=[*sources,ROOT/'firmware/app/tests.c']
+        if name=='app' and main==ROOT/'firmware/examples/monitor.c':sources=[*sources,ROOT/'firmware/diagnostics/tests.c']
+        if name=='app' and main==ROOT/'firmware/bios/main.c':
+            sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','settings.c','boot.c','network.c','enter.S')]]
+            compact+=['-DMINI_BIOS=1']
         checked([gcc,*flags,*compact,*common,flash_source,main,*sources,'-T',linker,'-Wl,--gc-sections',f'-Wl,-Map,{firmware/f"{name}.map"}','-lgcc','-o',elf])
         checked([toolbin/'riscv-none-elf-objcopy.exe','-O','binary',elf,firmware/f'{name}.bin'])
         sizes=subprocess.check_output([str(toolbin/'riscv-none-elf-size.exe'),str(elf)],text=True)

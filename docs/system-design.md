@@ -9,7 +9,7 @@ Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统�
 - CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享读缓存 L2；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
-- 应用入口提供 `help`、`status`、`ls`、`reboot`、`io`、`led HH`、`rgb RRGGBB`、`test ...` 与 `!` 复位快捷键。
+- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，片上 ROM 保持 Flash/UART 装载职责。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
 
 ## 地址映射
 
@@ -78,7 +78,9 @@ CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼�
 | `gateware/` | SoC、SD backend、DDR 端口调度、视频扫描、L2、约束与板级配置 |
 | `firmware/boot/` | 共用启动汇编；ROM 无栈等待硬件 DDR ready |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
-| `firmware/app/` | DDR 基础应用与 monitor |
+| `firmware/bios/` | 默认常驻 BIOS、公开服务 ABI 与裸机 SDK |
+| `firmware/diagnostics/` | BIOS 与 monitor 共用自检 |
+| `firmware/common/` | 共用绘图与网络辅助代码 |
 | `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |
 | `firmware/hal/` | 公共 C/C++ API、trap/IRQ、板级 IO、音频、Ethernet、USB Host |
 | `firmware/examples/` | 独立 HAL/SD/音频/网络/麦克风验收应用与键鼠 demo，经 UART 装入 DDR |
@@ -113,4 +115,4 @@ Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`
 
 ## 文档索引
 
-[板级参考](board-reference.md) · [时钟树](clocks.md) · [硬件启动](hardware-ddr-boot.md) · [L2 缓存](l2-cache.md) · [MMU/FPU](cpu-mmu-fpu.md) · [CSR 打包](csr-packing.md) · [模块化构建](modular-build.md) · [功能配置](configuration-profiles.md) · [分模块 RTL](rtl-defaults.md) · [BSRAM 归属](bsram-audit.md) · [HAL](hal.md) · [bootloader](bootloader.md) · [固件测试命令](firmware-tests.md) · [原生 SD](native-sd.md) · [视频规格](video-spec.md) · [音频](audio.md) · [麦克风](microphone.md) · [Ethernet](ethernet.md) · [USB Host](usb.md) · [轻量 USB](usb-light.md) · [键鼠 demo](usb-input-demo.md)
+[板级参考](board-reference.md) · [时钟树](clocks.md) · [硬件启动](hardware-ddr-boot.md) · [L2 缓存](l2-cache.md) · [MMU/FPU](cpu-mmu-fpu.md) · [CSR 打包](csr-packing.md) · [模块化构建](modular-build.md) · [功能配置](configuration-profiles.md) · [分模块 RTL](rtl-defaults.md) · [BSRAM 归属](bsram-audit.md) · [HAL](hal.md) · [bootloader](bootloader.md) · [BIOS](bios.md) · [固件测试命令](firmware-tests.md) · [原生 SD](native-sd.md) · [视频规格](video-spec.md) · [音频](audio.md) · [麦克风](microphone.md) · [Ethernet](ethernet.md) · [USB Host](usb.md) · [轻量 USB](usb-light.md) · [键鼠 demo](usb-input-demo.md)

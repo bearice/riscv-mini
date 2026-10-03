@@ -2,7 +2,7 @@
 #include <hal/hal.h>
 #include <generated/csr.h>
 #include <generated/soc.h>
-#include "rgb_canvas.h"
+#include "../common/rgb_canvas.h"
 enum { BG=0x1084, GRID=0x2945, WHITE=0xffff, GREEN=0x07e0, CYAN=0x07ff, YELLOW=0xffe0 };
 enum { X=16, Y=62, W=448, H=160, CENTER=142, N=512 };
 static int32_t samples[N],minimum,maximum,mean;

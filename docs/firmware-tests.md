@@ -1,7 +1,7 @@
 # 固件测试命令
 
-所有板上检查都从 DDR monitor 的 `test ...` 命令进入；上电不自动执行。
-输入 `test` 或 `help` 显示清单。代码在 `firmware/app/tests.c`，
+板上详细检查从 BIOS/DDR monitor 的 `test ...` 命令进入；BIOS 上电执行有界 POST，详细测试显式调用。
+输入 `test` 显示清单。BIOS 增加 `test bios` 检查引导镜像和服务接口，见 [BIOS](bios.md)。代码在 `firmware/diagnostics/tests.c`，
 boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测试。
 
 | 命令 | 自动检查 | 影响与验收边界 |

@@ -2,7 +2,9 @@
 
 Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 4 KiB boot ROM 启动，
 由硬件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。
-验收统一为 DDR monitor 的 `test ...` 命令。系统整体结构、地址映射、中断映射与文档索引见
+默认 DDR 固件为常驻 BIOS，提供 POST、LCD/UART 文字终端、USB 键盘、图形与 IO 服务，
+支持从 SD/TFTP 引导自定义裸机程序；接口与用法见 [BIOS](docs/bios.md)。
+验收统一为 BIOS/DDR monitor 的 `test ...` 命令。系统整体结构、地址映射、中断映射与文档索引见
 [系统设计](docs/system-design.md)；板级引脚与电气约束见 [板级参考](docs/board-reference.md)。
 
 ## 当前配置
@@ -35,7 +37,8 @@ MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/r
 `--l2-size 0` 关闭。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 
-RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用；扫描器和 DMA 保留，
+RGB LCD 默认显示 BIOS 的 80×34 字符终端；图形模式提供 RGB565 双帧槽。独立基础 monitor
+（`--app firmware/examples/monitor.c`）启动时显示黑色画布；扫描器和 DMA 保留，
 `video_frame()` / `video_present()` 提供写帧和换帧接口，见 [显示规格](docs/video-spec.md)。HDMI 暂缓。
 独立 [键鼠图形 demo](docs/usb-input-demo.md) 在大 LCD 上显示鼠标光标、键盘文字和输入状态，
 通过 UART 装入 DDR；源码为 `firmware/examples/usb_input_demo.c`。
@@ -150,10 +153,12 @@ Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 
 | `gateware/` | SoC、可选 SD backend、DDR 端口调度、视频扫描、时序约束和板级配置 |
 | `firmware/boot/` | 共用启动汇编；ROM 无栈等待硬件 DDR ready |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
-| `firmware/app/` | DDR 基础应用和小型串口入口 |
+| `firmware/bios/` | 默认常驻 BIOS：POST、TTY、设置、系统服务与 SD/TFTP 引导 |
+| `firmware/diagnostics/` | BIOS 与 monitor 共用的板级自检命令 |
+| `firmware/common/` | 固件与示例共用的绘图、网络辅助代码 |
 | `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |
 | `firmware/hal/` | 公共 C/C++ API、trap/IRQ、板级 IO、音频、Ethernet 和 USB Host |
-| `firmware/examples/` | 独立 HAL/SD/音频/网络验收应用和 RGB LCD 键鼠 demo，通过 UART 装入 DDR |
+| `firmware/examples/` | 可选 monitor、HAL/SD/音频/网络/键鼠应用；bios_demo.c 使用二级程序 SDK |
 | `firmware/vendor/` / `gateware/vendor/` | 固定版本第三方源码、许可证与本地补丁说明 |
 | `scripts/` | 环境、构建、镜像打包、上传和板级验收 |
 | `sim/` | SPI、DDR 调度、视频扫描、镜像/传输协议验证 |

@@ -2,7 +2,7 @@
 #include <hal/hal.h>
 #include "ff.h"
 #include <string.h>
-#include "packet_echo.h"
+#include "../common/packet_echo.h"
 static hal_usb_report_t last_report;
 static void usb_poll(void) {
     hal_usb_poll();hal_usb_key_t key;

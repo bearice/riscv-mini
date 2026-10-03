@@ -74,8 +74,14 @@ def main():
             app=s.upload(image);record('uart_boot',app)
             ready=b'SYSTEM READY sd=00000001 spi_lcd=00000001 rgb_lcd=00000001'
             audio_idle=f'AUDIO hz={validation["audio_sample_rate"]:08x} control=00000004 level=00000000 underruns=00000000 errors=00000000 amp=00000000'.encode()
-            if ready not in app or b'underflows=00000000' not in app or audio_idle not in app: raise RuntimeError('Peripheral/audio idle regression')
-            for command,marker in [(b'status\r',b'FLASH JEDEC=000b4017'),(b'ls\r',b'RVTEST00.BIN'),(b'help\r',b'help, status, ls, reboot')]:
+            def healthy(text):
+                if b'RISCV MINI BIOS 1' in text:
+                    if any(marker not in text for marker in (b'SYSTEM READY - BIOS',b'POST SD PASS',b'POST RGB LCD PASS')):return False
+                    port.write(b'status\r');status=s.until(b'> ',30);record('bios_idle_status',status)
+                    return b'underflows=00000000' in status and audio_idle in status
+                return ready in text and b'underflows=00000000' in text and audio_idle in text
+            if not healthy(app): raise RuntimeError('Peripheral/audio idle regression')
+            for command,marker in [(b'status\r',b'FLASH JEDEC=000b4017'),(b'ls\r',b'RVTEST00.BIN'),(b'help\r',b'help, status')]:
                 port.write(command);response=s.until(b'> ',30)
                 if marker not in response or b' FAIL' in response: raise RuntimeError(response)
                 record(command.decode().strip(),response)
@@ -83,11 +89,11 @@ def main():
             if a.install:
                 record('flash_install',s.upload(image,True))
                 port.write(b'f');app=s.until(b'> ')
-                if b'BOOT FLASH' not in app or ready not in app or audio_idle not in app:raise RuntimeError('Flash boot/audio idle failed')
+                if b'BOOT FLASH' not in app or not healthy(app):raise RuntimeError('Flash boot/audio idle failed')
                 record('flash_boot',app)
                 for index in range(2):
                     port.write(b'!');port.flush();app=s.until(b'> ',120)
-                    if b'BOOT FLASH' not in app or ready not in app or audio_idle not in app:raise RuntimeError('Automatic Flash reboot/audio idle failed')
+                    if b'BOOT FLASH' not in app or not healthy(app):raise RuntimeError('Automatic Flash reboot/audio idle failed')
                     record(f'flash_auto_reset_{index+1}',app)
             else: record('uart_final',s.upload(image))
             if a.soak_seconds:

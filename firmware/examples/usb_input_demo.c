@@ -10,7 +10,7 @@ static unsigned key_down, key_up, mouse_events, last_usage, last_pressed, modifi
 static int mouse_x=WIDTH/2, mouse_y=HEIGHT/2, wheel;
 static struct {int x,y;unsigned drawn;uint16_t pixels[12*18];} cursor[2];
 
-#include "rgb_canvas.h"
+#include "../common/rgb_canvas.h"
 
 static void background(unsigned slot) {
     volatile uint16_t *fb=hal_video_frame(slot);
