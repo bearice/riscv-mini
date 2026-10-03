@@ -19,6 +19,9 @@ for child,parent in [('filesystem','sd'),('mic_stereo','mic'),('eth','flash')]:
 full={'csr_registers':{},'memories':{},'constants':{'mini_feature_filesystem':1}}
 raw={'csr_registers':{},'memories':{},'constants':{'mini_feature_filesystem':0}}
 assert abi_tag(full)!=abi_tag(raw)
+compressed={**full,'constants':{**full['constants'],'config_cpu_compressed':1}}
+bitmanip={**compressed,'constants':{**compressed['constants'],'config_cpu_bitmanip':7}}
+assert len({abi_tag(full),abi_tag(compressed),abi_tag(bitmanip)})==3
 image=pack_image(b'1234',abi_tag(full))
 try:unpack_image(image,abi_tag(raw))
 except ValueError:pass

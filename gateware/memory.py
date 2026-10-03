@@ -11,7 +11,7 @@ from litex.gen import LiteXModule
 from litedram.common import LiteDRAMNativePort
 
 class SharedNativePort(LiteXModule):
-    def __init__(self, native):
+    def __init__(self, native, enabled=1):
         self.cpu=cpu=LiteDRAMNativePort('both',native.address_width,native.data_width)
         self.video=video=LiteDRAMNativePort('read',native.address_width,native.data_width)
         owner=Signal()
@@ -21,12 +21,12 @@ class SharedNativePort(LiteXModule):
         self.comb += choose.eq(video.cmd.valid)
         self.fsm=fsm=FSM(reset_state='CMD')
         fsm.act('CMD',
-            native.cmd.valid.eq(cpu.cmd.valid | video.cmd.valid),
+            native.cmd.valid.eq(enabled & (cpu.cmd.valid | video.cmd.valid)),
             native.cmd.addr.eq(Mux(choose,video.cmd.addr,cpu.cmd.addr)),
             native.cmd.we.eq(~choose & cpu.cmd.we),
             native.cmd.last.eq(Mux(choose,video.cmd.last,cpu.cmd.last)),
-            cpu.cmd.ready.eq(native.cmd.ready & ~choose),
-            video.cmd.ready.eq(native.cmd.ready & choose),
+            cpu.cmd.ready.eq(enabled & native.cmd.ready & ~choose),
+            video.cmd.ready.eq(enabled & native.cmd.ready & choose),
             If(native.cmd.valid & native.cmd.ready,
                 NextValue(owner,choose),
                 If(native.cmd.we,NextState('WRITE')).Else(NextState('READ_WAIT'))))

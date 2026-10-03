@@ -7,7 +7,7 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 | 项目 | 配置 |
 | --- | --- |
 | CPU / 总线 | full 默认 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I/D-cache、Sv32，无 L2；可独立关闭 MMU/FPU |
-| 片上存储 | 8 KiB boot ROM、8 KiB 工作 SRAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
+| 片上存储 | 当前源码为 4 KiB boot ROM、无工作 SRAM；硬件初始化 DDR，bootloader 栈/data/BSS 使用保留 DDR；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
@@ -21,6 +21,10 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从小型片�
 完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。默认轻量 USB 移除了 48 MHz PLL，当前 PLL 为 3/4；ULPI 仅用于 USB3317 初始化，仍保留相移 60 MHz PLL。CPU/DDR 保持 60/120 MHz。当前 USB 实现、资源和验收见 [轻量 USB](docs/usb-light.md)；[M10 收尾](docs/m10-review.md) 保留原 OHCI 基线。PRIMARY 和 LW 仍为 8/8，扩展前需重新评估时钟布线。
 
 MMU/FPU 独立开关、SD none/spi/lite/full 四种 profile 及 48 kHz 共用 DDS 见 [配置与验证](docs/configuration-profiles.md)。full 默认 MMU+FPU、SD lite；minimal 默认关闭 MMU/FPU。分模块 RTL 诊断见 [默认值修复](docs/rtl-defaults.md)。
+
+硬件 DDR 启动、ROM 缩减和函数大小见 [硬件启动](docs/hardware-ddr-boot.md)。
+可选 `--l2-size 4096` 添加共享读缓存，默认 `0`；写直达 DDR，帧缓冲绕过。
+C-only / 无 C/B 的资源与上板比较见 [L2 实验](docs/l2-cache.md)。
 
 RGB LCD 基础应用启动时清空两帧，显示黑色画布，供后续图形应用使用。它不再显示旧验收色条、灰阶或角标。扫描器和 DMA 保留，`video_frame()` / `video_present()` 提供写帧和换帧接口。HDMI 暂缓。
 
@@ -104,7 +108,7 @@ bootloader 初始化和训练 DDR，等待两秒，然后从 Flash 自动装载�
 | 路径 | 内容 |
 | --- | --- |
 | `gateware/` | SoC、可选 SD backend、DDR 端口调度、视频扫描、时序约束和板级配置 |
-| `firmware/boot/` | 共用启动汇编、仅 bootloader 使用的 DDR 初始化/训练 |
+| `firmware/boot/` | 共用启动汇编；ROM 无栈等待硬件 DDR ready |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
 | `firmware/app/` | DDR 基础应用和小型串口入口 |
 | `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |

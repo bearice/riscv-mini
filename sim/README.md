@@ -97,6 +97,11 @@ It uses captured resource rows and temporary reports; it does not run synthesis.
 
 Run all local checks from the repository root (no board or programming required):
 
+`tests/ddr_boot_test.py` additionally covers hardware training against a fake
+PHY. `tests/l2_test.py` checks the write-through shared cache against delayed
+wide memory, including byte writes, bypass, abort and reset. These do not
+substitute for Gowin RAM mapping, PnR or board acceptance.
+
 ```powershell
 Get-ChildItem sim/test_*.py | ForEach-Object {
     & .venv/Scripts/python.exe $_.FullName

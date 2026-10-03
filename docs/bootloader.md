@@ -2,11 +2,11 @@
 
 ## 架构与职责
 
-CPU 的复位地址为片上 ROM `0x00000000`。bootloader 完成 UART/timer、DDR JEDEC 初始化及读训练、必要的有界存储检查、SPI NOR 探测，然后通过 **Flash 或 UART 两条替代路径**把同一应用装入 `0x40800000`，校验后同步指令缓存并跳转。没有额外的第二级引导程序。
+CPU 的复位地址为片上 ROM `0x00000000`。硬件完成 DDR JEDEC 初始化与读训练，ROM 用无栈汇编等待 ready/failure；成功后才启用保留 DDR 工作区，完成 UART/timer、SPI NOR 探测，通过 **Flash 或 UART 两条替代路径**把同一应用装入 `0x40800000`，校验后同步指令缓存并跳转。没有额外的第二级引导程序。
 
-bootloader 仅链接 `start.S`、`uart.c`、`time.c`、`flash.c`、`bootloader/main.c`、`boot/ddr.c`，使用 `-Os -flto` 和 section GC。没有 SD/FatFs、SPI LCD、RGB LCD 的软件驱动。DDR 必须先初始化，才能接收或读取 DRAM 中的应用。DDR 初始化保留按 lane/bitslip/tap 寻找最大有效读窗口，以及数据位、地址别名和三个 4 KiB 区域的有界检查；旧的大范围内存和执行压力测试已移除。
+bootloader 仅链接 `start.S`、`uart.c`、`time.c`、精简的 `bootloader/flash.c` 和 `bootloader/main.c`，使用 `-Os -flto` 和 section GC。没有 SD/FatFs、LCD 或软件 DDR 训练。硬件按 lane/bitslip/tap 寻找最大有效窗口并复验中点；旧软件数据位、地址别名和三个 4 KiB 区域检查已移除，不由硬件训练替代。应用 `test ddr` 检查 8 KiB scratch，详见 [硬件启动](hardware-ddr-boot.md)。
 
-SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使用 DDR 的代码、数据、BSS 和栈；片上 8 KiB SRAM 是 bootloader 工作区，不包含完整应用。RGB LCD 初始化为黑色双缓冲，SPI LCD 显示基本状态。
+SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使用 DDR 的代码、数据、BSS 和栈；bootloader 工作区是保留的 8 KiB DDR，没有片上 SRAM。RGB LCD 初始化为黑色双缓冲，SPI LCD 显示基本状态。
 
 ## 固定硬件与内存
 
@@ -14,8 +14,8 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 
 | 地址 | 用途 |
 | --- | --- |
-| `0x00000000`，8 KiB | boot ROM，随 FPGA 配置更新 |
-| `0x10000000`，8 KiB | boot SRAM / 栈 |
+| `0x00000000`，4 KiB | boot ROM，随 FPGA 配置更新 |
+| `0x407fe000`，8 KiB | bootloader DDR 工作区，栈顶 `0x40800000` |
 | `0x40000000`，128 MiB | DDR 总范围 |
 | `0x40300000` | SPI LCD 的 DDR 工作帧 |
 | `0x40800000`–`0x40c00000` | 当前 DDR 应用 linker 区域；末尾留 64 KiB 栈 |

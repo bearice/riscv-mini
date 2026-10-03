@@ -73,7 +73,7 @@ def main():
             record('payload_crc',rejected)
             app=s.upload(image);record('uart_boot',app)
             ready=b'SYSTEM READY sd=00000001 spi_lcd=00000001 rgb_lcd=00000001'
-            audio_idle=b'AUDIO hz=0000b71b control=00000004 level=00000000 underruns=00000000 errors=00000000 amp=00000000'
+            audio_idle=f'AUDIO hz={validation["audio_sample_rate"]:08x} control=00000004 level=00000000 underruns=00000000 errors=00000000 amp=00000000'.encode()
             if ready not in app or b'underflows=00000000' not in app or audio_idle not in app: raise RuntimeError('Peripheral/audio idle regression')
             for command,marker in [(b'status\r',b'FLASH JEDEC=000b4017'),(b'ls\r',b'RVTEST00.BIN'),(b'help\r',b'help, status, ls, reboot')]:
                 port.write(command);response=s.until(b'> ',30)

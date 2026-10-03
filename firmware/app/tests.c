@@ -175,7 +175,43 @@ static unsigned audio_check(void) {
     audio_status();return audio_stop() && ok;
 }
 #endif
+static unsigned l2_check(void) {
+#if CONFIG_L2_SIZE
+    volatile uint32_t *words=(volatile uint32_t *)0x40d00000u;
+    unsigned state=hal_irq_save(),ok=1;
+    uint32_t ticks[2],stats[2];
+    for(unsigned mode=0;mode<2;++mode) {
+        l2_enable_write(mode);
+        for(unsigned i=0;i<64;++i)words[i]=0x12340000u+i;
+        __asm__ volatile("fence rw,rw":::"memory");
+        uint32_t start=hal_ticks();
+        for(unsigned round=0;round<8;++round) {
+#if MINI_CPU_DCACHE
+            __asm__ volatile(".word 0x0000500f":::"memory");
+#endif
+            for(unsigned i=0;i<64;++i)if(words[i]!=0x12340000u+i)ok=0;
+        }
+        ticks[mode]=hal_ticks()-start;stats[mode]=l2_stats_read();
+    }
+    volatile uint8_t *bytes=(volatile uint8_t *)words;
+    bytes[1]=0xabu;
+    __asm__ volatile("fence rw,rw":::"memory");
+#if MINI_CPU_DCACHE
+    __asm__ volatile(".word 0x0000500f":::"memory");
+#endif
+    ok=ok && words[0]==0x1234ab00u && (uint16_t)(stats[1]-stats[0])!=0;
+    hal_irq_restore(state);
+    value("L2 bytes=",CONFIG_L2_SIZE);value(" bypass ticks=",ticks[0]);value(" cached ticks=",ticks[1]);
+    value(" hit/miss counters=",stats[1]);hal_uart_puts(" (L1 flushed between passes)\r\n");
+    return ok;
+#else
+    hal_uart_puts("UNSUPPORTED: L2 disabled in this build\r\n");return 1;
+#endif
+}
 static unsigned ddr_check(void) {
+    value("DDR hardware status=",sdram_boot_status_read());
+    value(" lane0=",sdram_boot_lane0_read());value(" lane1=",sdram_boot_lane1_read());hal_uart_puts("\r\n");
+    if((sdram_boot_status_read()&3u)!=1u)return 0;
     volatile uint32_t *words=work;
     static const uint32_t masks[]={0,0xffffffffu,0xaaaaaaaa,0x55555555};
     for(unsigned p=0;p<6;++p) {
@@ -483,7 +519,7 @@ void tests_help(void) {
 #if MINI_FEATURE_MMU
     hal_uart_puts("test mmu\r\n");
 #endif
-    hal_uart_puts("test ddr|uart|irq\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
+    hal_uart_puts("test isa|l2|ddr|uart|irq\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
 #if MINI_FEATURE_FLASH
     hal_uart_puts("test flash\r\n");
 #endif
@@ -532,6 +568,41 @@ static unsigned number(const char **text,unsigned *n) {
     *text=p;*n=value;return 1;
 }
 #endif
+static unsigned isa_check(void) {
+    unsigned result;
+    value("CPU C=",MINI_CPU_COMPRESSED);value(" B=",CONFIG_CPU_BITMANIP);hal_uart_puts("\r\n");
+#if MINI_CPU_COMPRESSED
+    __asm__ volatile(".option push\n.option rvc\nc.li a0,7\nc.addi a0,9\nc.mv %0,a0\n.option pop"
+        :"=&r"(result)::"a0");
+    if(result!=16)return 0;
+#endif
+#if MINI_CPU_BITMANIP
+#define BINARY(op,a,b,want) do { __asm__ volatile(op " %0,%1,%2":"=r"(result):"r"((uint32_t)(a)),"r"((uint32_t)(b))); if(result!=(uint32_t)(want))return 0; } while(0)
+#define UNARY(op,a,want) do { __asm__ volatile(op " %0,%1":"=r"(result):"r"((uint32_t)(a))); if(result!=(uint32_t)(want))return 0; } while(0)
+#define IMMEDIATE(op,a,imm,want) do { __asm__ volatile(op " %0,%1," #imm:"=r"(result):"r"((uint32_t)(a))); if(result!=(uint32_t)(want))return 0; } while(0)
+    BINARY("sh1add",3,5,11);BINARY("sh2add",3,5,17);BINARY("sh3add",3,5,29);
+    BINARY("andn",0x12345678,0x00ff00ff,0x12005600);
+    BINARY("orn",0x12345678,0x00ff00ff,0xff34ff78);
+    BINARY("xnor",0x12345678,0x00ff00ff,0xed34a978);
+    UNARY("clz",0,32);UNARY("ctz",0,32);UNARY("cpop",0xffffffff,32);
+    UNARY("clz",1,31);UNARY("ctz",0x80000000,31);UNARY("cpop",0x80000001,2);
+    BINARY("min",0x80000000,1,0x80000000);BINARY("minu",0x80000000,1,1);
+    BINARY("max",0x80000000,1,1);BINARY("maxu",0x80000000,1,0x80000000);
+    UNARY("sext.b",0x80,0xffffff80);UNARY("sext.h",0x8001,0xffff8001);
+    UNARY("zext.h",0xffff8001,0x8001);UNARY("orc.b",0x00120034,0x00ff00ff);
+    UNARY("rev8",0x12345678,0x78563412);
+    BINARY("rol",0x12345678,8,0x34567812);BINARY("ror",0x12345678,8,0x78123456);
+    IMMEDIATE("rori",0x12345678,8,0x78123456);
+    BINARY("bset",0,31,0x80000000);BINARY("bclr",0xffffffff,0,0xfffffffe);
+    BINARY("bext",0x80000000,31,1);BINARY("binv",0,31,0x80000000);
+    IMMEDIATE("bseti",0,5,0x20);IMMEDIATE("bclri",0xffffffff,5,0xffffffdf);
+    IMMEDIATE("bexti",0x20,5,1);IMMEDIATE("binvi",0x20,5,0);
+#undef BINARY
+#undef UNARY
+#undef IMMEDIATE
+#endif
+    (void)result;return 1;
+}
 #if MINI_FEATURE_FPU
 static unsigned fpu_check(void) {
     unsigned result, flags;
@@ -594,7 +665,9 @@ int tests_command(const char *command) {
     if(!strcmp(name,"mmu"))ok=mmu_check();
     else
 #endif
-    if(!strcmp(name,"ddr"))ok=ddr_check();
+    if(!strcmp(name,"isa"))ok=isa_check();
+    else if(!strcmp(name,"l2"))ok=l2_check();
+    else if(!strcmp(name,"ddr"))ok=ddr_check();
 #if MINI_FEATURE_FLASH
     else if(!strcmp(name,"flash"))ok=flash_check();
 #endif

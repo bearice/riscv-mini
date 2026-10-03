@@ -161,16 +161,15 @@ class GW2DDRPHY(Module, AutoCSR):
         cwl_sys_latency = get_sys_latency(nphases, cwl)
 
         # Registers --------------------------------------------------------------------------------
-        self._dly_sel = CSRStorage(databits//8)
-
-        self._rdly_dq_rst         = CSR()
-        self._rdly_dq_inc         = CSR()
-        self._rdly_dq_dir         = CSRStorage()
-        self._rdly_dq_bitslip_rst = CSR()
-        self._rdly_dq_bitslip     = CSR()
-
-        self._burstdet_clr  = CSR()
-        self._burstdet_seen = CSRStatus(databits//8)
+        # Owned exclusively by the autonomous DDR boot sequencer.
+        self.dly_sel = Signal(databits//8)
+        self.rdly_dq_rst = Signal()
+        self.rdly_dq_inc = Signal()
+        self.rdly_dq_dir = Signal()
+        self.rdly_dq_bitslip_rst = Signal()
+        self.rdly_dq_bitslip = Signal()
+        self.burstdet_clr = Signal()
+        self.burstdet_seen = Signal(databits//8)
 
         # Observation
         self.datavalid = Signal(databits//8)
@@ -303,13 +302,13 @@ class GW2DDRPHY(Module, AutoCSR):
                 i_PCLK     = ClockSignal("sys"),
                 i_FCLK     = ClockSignal("sys2x"),
                 i_DLLSTEP  = self.init.delay,
-                i_HOLD     = pause | self._dly_sel.storage[i],
+                i_HOLD     = pause | self.dly_sel[i],
 
                 # Control
                 # Calibrate the read delay, keeping the FIFO clock source fixed.
-                i_RLOADN   = ~(self._dly_sel.storage[i] & self._rdly_dq_rst.wr_stb),
-                i_RMOVE    = self._dly_sel.storage[i] & self._rdly_dq_inc.wr_stb,
-                i_RDIR     = self._rdly_dq_dir.storage,
+                i_RLOADN   = ~(self.dly_sel[i] & self.rdly_dq_rst),
+                i_RMOVE    = self.dly_sel[i] & self.rdly_dq_inc,
+                i_RDIR     = self.rdly_dq_dir,
                 i_WLOADN   = 0,
                 i_WMOVE    = 0,
                 i_WDIR     = 1,
@@ -334,8 +333,8 @@ class GW2DDRPHY(Module, AutoCSR):
             burstdet_d = Signal()
             self.sync += [
                 burstdet_d.eq(burstdet),
-                If(self._burstdet_clr.wr_stb,  self._burstdet_seen.status[i].eq(0)),
-                If(burstdet & ~burstdet_d, self._burstdet_seen.status[i].eq(1)),
+                If(self.burstdet_clr, self.burstdet_seen[i].eq(0)),
+                If(burstdet & ~burstdet_d, self.burstdet_seen[i].eq(1)),
             ]
 
             # DQS ----------------------------------------------------------------------------------
@@ -419,8 +418,8 @@ class GW2DDRPHY(Module, AutoCSR):
                     o_Q1    = dq_o_oen,
                 )
                 dq_i_bitslip = BitSlip(4,
-                    rst    = self._dly_sel.storage[i] & self._rdly_dq_bitslip_rst.wr_stb,
-                    slp    = self._dly_sel.storage[i] & self._rdly_dq_bitslip.wr_stb,
+                    rst    = self.dly_sel[i] & self.rdly_dq_bitslip_rst,
+                    slp    = self.dly_sel[i] & self.rdly_dq_bitslip,
                     cycles = 1)
                 self.submodules += dq_i_bitslip
                 self.specials += Instance("IDES4_MEM",

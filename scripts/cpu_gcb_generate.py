@@ -50,6 +50,8 @@ def main():
     p.add_argument('--java',type=Path,required=True)
     p.add_argument('--sbt-launch',type=Path,required=True)
     p.add_argument('--output-dir',type=Path,required=True)
+    p.add_argument('--pipelined-fetch',action='store_true',help='Use two-cycle I-cache plus an instruction injector register')
+    p.add_argument('--single-precision-only',action='store_true',help='Skip the double-precision resource experiment')
     a=p.parse_args();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
     base=a.base_generator.resolve()
     for name in ('src','project'):shutil.copytree(base/name,out/name,dirs_exist_ok=True)
@@ -73,6 +75,13 @@ def main():
     for anchor,replacement in replacements.items():
         if source.count(anchor)!=1:raise ValueError('Unsupported generator anchor: '+anchor)
         source=source.replace(anchor,replacement)
+    if a.pipelined_fetch:
+        anchor='twoCycleCache = !argConfig.compressedGen'
+        if source.count(anchor)!=1:raise ValueError('Unsupported I-cache pipeline anchor')
+        source=source.replace(anchor,'twoCycleCache = true')
+        anchor='relaxedPcCalculation = argConfig.relaxedPcCalculation,'
+        if source.count(anchor)!=1:raise ValueError('Unsupported fetch injector anchor')
+        source=source.replace(anchor,anchor+'\n            injectorStage = true,')
     target.write_text(source)
     plugin_hashes={}
     dest=out/'src/main/scala/vexriscv/plugin';dest.mkdir(parents=True,exist_ok=True)
@@ -89,6 +98,7 @@ def main():
     repo=out/'repositories';shutil.copy2(base/'repositories',repo)
     variants=[('VexRiscv_MmuFpuC',False,False),('VexRiscv_MmuFpuCB',False,True),
               ('VexRiscv_MmuGCB',True,True)]
+    if a.single_precision_only:variants=variants[:2]
     commands=[f'runMain vexriscv.GenCoreDefault --csrPluginConfig linux --iCacheSize 2048 '
               '--dCacheSize 2048 --singleCycleMulDiv false --singleCycleShift false '
               f'--fpu true --compressedGen true --doubleGen {str(d).lower()} '
@@ -97,8 +107,9 @@ def main():
         subprocess.run([str(a.java.resolve()),'-Xmx3G','-Dsbt.override.build.repos=true',
                         '-Dsbt.repository.config='+str(repo),'-jar',str(a.sbt_launch.resolve()),
                         *commands],cwd=out,stdout=log,stderr=subprocess.STDOUT,check=True)
-    bridge_double_cpu(out/'VexRiscv_MmuGCB.v')
-    report={'commands':commands,'pipeline':{'relaxed_pc_calculation':False},
+    if not a.single_precision_only:bridge_double_cpu(out/'VexRiscv_MmuGCB.v')
+    report={'commands':commands,'pipeline':{'relaxed_pc_calculation':False,
+            'two_cycle_icache':a.pipelined_fetch,'injector_register':a.pipelined_fetch},
             'plugin_hashes':plugin_hashes,'cpu_rtls':{},'board_test':'not performed',
             'boundary':'Synthesis candidate; no ISA compliance or timing/hardware qualification'}
     for name,d,b in variants:

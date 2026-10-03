@@ -19,6 +19,10 @@ def abi_tag(csr):
     features={k:v for k,v in csr.get('constants',{}).items() if k.lower().startswith('mini_feature_')}
     if features:interface['features']=features
     if csr.get('constants',{}).get('config_usb_ultra'):interface['usb_backend']='ultra'
+    extensions={name:csr.get('constants',{}).get('config_cpu_'+name,0) for name in ('compressed','bitmanip')}
+    if any(extensions.values()):interface['cpu_extensions']=extensions
+    l2_size=csr.get('constants',{}).get('config_l2_size',0)
+    if l2_size:interface['l2']={'size':l2_size,'policy':'write-through/write-invalidate'}
     return zlib.crc32(json.dumps(interface,sort_keys=True,separators=(',',':')).encode())
 
 def pack_image(payload,abi):

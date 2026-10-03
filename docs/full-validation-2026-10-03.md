@@ -86,3 +86,36 @@ port/lines=1，SOF/IRQ 持续计数，但 connected=0、HID=0；驱动 errors=0
 `usb-idle-probe.json`。Flash 编程和正常启动证据位于候选目录：
 `configuration-programmer.log`、`configuration-reload.log`、
 `boot-upload-uart.log`、`flash-release.json`。上述追加检查未改变硬件或固件。
+
+## MiniSoC 模块重排后的新 ABI 与 Flash（2026-10-03）
+
+用户允许 IRQ ABI 改变后，`MiniSoC.__init__` 改按配置/CPU、平台/时钟、
+DDR、系统定时器/板级 IO、Flash/SD、显示、音频/麦克风、Ethernet/USB、
+feature 常量分组。定时器先注册，不再为了旧 ABI 维持 SD 在前的顺序。
+CSR 地址及内存映射保持不变；默认 full IRQ 为 UART=0、timer0=1、
+timer1=2、board_io=3、sdcard=4、ethmac=5、usb_host=6。
+
+**当前板上 Flash 使用此版本**，新 ABI 为 `997bd228`，应用 CRC32 为
+`49d015c2`；此前 `adf18467` 应用不能与新配置混用。bootloader 和应用
+均重新编译，配置及应用分别写入偏移 0 / 0x200000。
+
+新候选位于 `build/soc-layout/release/`。独立完整构建通过 Setup/Hold
+0/0；PnR Logic=18785、Register=10776、CLS=10081、BSRAM=43、PLL=3。
+CPU/sys 60 MHz、DDR 120 MHz、SD lite、MMU/FPU、USB ultra、DDS 48k
+保持原配置。FPGA FS SHA256 为
+`0eeee9249394c4149543f205011ec898f42d43be292dfbd07cad4ff4d1324536`，
+应用镜像 SHA256 为
+`361894e4c99298c6a8c2b8f15fce51027b29e9fd201854c48a7d5ab990e270fd`。
+
+36 种固件命令检查通过，SD 新建并读回 `RVT00009.BIN`；音频 Line In
+实测左 750 Hz、右 500 Hz，通过声道分离及静音检查、无削波。五分钟
+网络/SD/USB/音频/显示并发实际 300.953 秒、55 轮、550 个 UDP 包，
+189915 bytes payload、零超时/数据不匹配，最大 RTT 32 ms。
+
+写入 Flash 后三次启动通过：每次让主循环先运行五秒，再执行 IRQ、USB、
+Ethernet、SD、FPU、MMU 检查。证据为该候选的 `validation.json`、
+`firmware-verification.json`、`external-verification.json`、
+`configuration-programmer.log`、`configuration-reload.log`、
+`boot-upload-uart.log`、`flash-check.json` 及对应 UART 日志。
+本轮未做写后读回验证、整板断电或新的屏幕/键鼠物理观察。
+此前单次 USB 枚举异常未复现，根因仍未知，不宣称此重排修复了它。

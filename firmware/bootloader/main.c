@@ -33,10 +33,10 @@ static int receive_image(struct image_header *h) {
     }
     __asm__ volatile("fence rw,rw" ::: "memory");
     if(image_crc((const volatile void *)h->load,h->length)!=h->crc) { puts_uart("ERR PAYLOAD CRC\r\n");return 0; }
-    puts_uart("IMAGE VERIFIED CRC32=");io_hex(h->crc);puts_uart("\r\n");return 1;
+    return 1;
 }
 static void execute(const struct image_header *h, const char *source) {
-    puts_uart("BOOT ");puts_uart(source);puts_uart(" entry=");io_hex(h->entry);puts_uart("\r\n");
+    puts_uart("BOOT ");puts_uart(source);puts_uart("\r\n");
     while(uart_txfull_read()) {}
     __asm__ volatile("csrw mie,zero\ncsrci mstatus,8\nfence rw,rw\n.word 0x0000100f" ::: "memory");
     ((void(*)(void))h->entry)();
@@ -49,7 +49,7 @@ static int from_flash(unsigned available) {
     if(!flash_read(IMAGE_OFFSET+sizeof(h),(void *)h.load,h.length)) { puts_uart("ERR FLASH IO\r\n");return 0; }
     __asm__ volatile("fence rw,rw" ::: "memory");
     if(image_crc((const volatile void *)h.load,h.length)!=h.crc) { puts_uart("ERR FLASH CRC\r\n");return 0; }
-    puts_uart("IMAGE VERIFIED CRC32=");io_hex(h.crc);puts_uart("\r\n");execute(&h,"FLASH");return 1;
+    execute(&h,"FLASH");return 1;
 }
 static int install(const struct image_header *h) {
     unsigned end=IMAGE_OFFSET+sizeof(*h)+h->length;
@@ -60,36 +60,28 @@ static int install(const struct image_header *h) {
     puts_uart("FLASH INSTALLED\r\n");return 1;
 }
 int main(void) {
-    extern int ddr_bringup(void);
-    /* DDR PHY init briefly gates/restarts sys during initial configuration. */
-    for(volatile unsigned i=0;i<480000;++i) {}
-    puts_uart("\r\nriscv-mini BOOT | RV32IM | 60/120 MHz\r\n");
+    puts_uart("\r\nriscv-mini BOOT\r\n");
     io_timer_init();
 #if MINI_FEATURE_VIDEO
     rgb_lcd_enable_write(0);
 #endif
-    int ddr_ok=ddr_bringup();io_timer_init();
     uint32_t id=0;unsigned available=flash_init(&id);
-    puts_uart("FLASH JEDEC=");io_hex(id);puts_uart(available?" READY\r\n":" UNAVAILABLE\r\n");
-    puts_uart("FLASH BYTES=");io_hex(flash_size());puts_uart("\r\n");
-    puts_uart("IMAGE ABI=");io_hex(MINI_IMAGE_ABI);puts_uart(" load=40800000 flash=00200000\r\n");
+    puts_uart(available?"FLASH READY\r\n":"FLASH UNAVAILABLE\r\n");
     puts_uart("BOOT SELECT: b=menu, u=UART; Flash auto in 2s\r\n");
     uint8_t choice=0;
-    if(!uart_byte(&choice,2000) && ddr_ok) from_flash(available);
-    if(!ddr_ok) puts_uart("ERR DDR: loading disabled; reset to retry\r\n");
+    if(!uart_byte(&choice,2000)) from_flash(available);
     for(;;) {
         if(choice=='u' || choice=='p') {
             struct image_header h;
-            if(!ddr_ok) puts_uart("ERR DDR\r\n");
-            else if(choice=='p' && !available) puts_uart("ERR FLASH UNAVAILABLE\r\n");
+            if(choice=='p' && !available) puts_uart("ERR FLASH UNAVAILABLE\r\n");
             else if(receive_image(&h)) {
                 if(choice=='u') execute(&h,"UART");
                 else if(!install(&h)) puts_uart("ERR FLASH INSTALL\r\n");
             }
             drain_uart();
-        } else if(choice=='f' && ddr_ok) from_flash(available);
+        } else if(choice=='f') from_flash(available);
         else if(choice=='i') {
-            puts_uart("FLASH JEDEC=");io_hex(id);puts_uart(available?" READY\r\n":" UNAVAILABLE\r\n");
+            puts_uart(available?"FLASH READY\r\n":"FLASH UNAVAILABLE\r\n");
             struct image_header h;
             int valid=available && flash_read(IMAGE_OFFSET,&h,sizeof(h)) && image_valid(&h);
             puts_uart(valid?"FLASH HEADER VALID\r\n":"FLASH HEADER INVALID\r\n");

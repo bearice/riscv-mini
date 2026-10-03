@@ -1,6 +1,8 @@
 """CPU capabilities and storage profiles used by all build entry points."""
 from dataclasses import replace
 from pathlib import Path
+import hashlib
+import json
 
 SD_PROFILES = ('none', 'spi', 'lite', 'full')
 
@@ -27,8 +29,24 @@ def storage_profile(profile, backend, features, overrides=None):
 
 def cpu_capabilities(path):
     rtl = Path(path).read_text(encoding='utf-8')
-    return {'mmu':'MmuPlugin' in rtl, 'fpu':'FpuPlugin' in rtl,
-            'dcache':'module DataCache' in rtl}
+    capabilities = {'mmu':'MmuPlugin' in rtl, 'fpu':'FpuPlugin' in rtl,
+                    'dcache':'module DataCache' in rtl, 'compressed':False, 'bitmanip':[]}
+    metadata = Path(path).parent/'generator.json'
+    if metadata.is_file():
+        record = json.loads(metadata.read_text()).get('cpu_rtls', {}).get(Path(path).stem)
+        if record:
+            if record['sha256'] != hashlib.sha256(Path(path).read_bytes()).hexdigest():
+                raise ValueError('CPU RTL no longer matches generator metadata')
+            capabilities.update(compressed=record.get('compressed', False), bitmanip=record.get('bitmanip', []))
+    return capabilities
+
+
+def cpu_isa(features, capabilities):
+    isa = 'rv32im'+('a' if features.mmu or features.fpu else '')+('f' if features.fpu else '')
+    if capabilities.get('compressed'):isa += 'c'
+    extensions = [name.lower() for name in capabilities.get('bitmanip', [])]
+    if any(name not in ('zba','zbb','zbs') for name in extensions):raise ValueError('Unsupported B subset')
+    return isa+'_'+ '_'.join([*extensions, 'zicsr', 'zifencei'])
 
 
 def cpu_configuration(features, overrides, path=None, variant=None):

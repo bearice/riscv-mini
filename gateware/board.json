@@ -5,7 +5,7 @@
   "input_clock_hz": 27000000,
   "system_clock_hz": 60000000,
   "cpu": "vexriscv",
-  "cpu_variant": "lite",
+  "cpu_variant": "linux",
   "ddr": {
     "part": "H5TQ1G63EFR",
     "size_bytes": 134217728,
@@ -14,7 +14,7 @@
     "rows": 8192,
     "columns": 1024,
     "speed_suffix": "PBC",
-    "status": "Fixed60/120MHz DLL-off CL6/CWL6; ROM init, DDR HAL app; Wishbone SD DMA shares CPU bridge. See docs/m6-validation.md.",
+    "status": "Fixed60/120MHz DLL-off CL6/CWL6; hardware initialization/training, reserved DDR loader stack, optional shared L2. See docs/hardware-ddr-boot.md and docs/l2-cache.md.",
     "clock_hz": 120000000,
     "dll_off": true,
     "cl": 6,
@@ -87,8 +87,10 @@
     }
   },
   "boot": {
-    "rom_bytes": 8192,
-    "sram_bytes": 8192,
+    "rom_bytes": 4096,
+    "sram_bytes": 0,
+    "ddr_work_base": "0x407fe000",
+    "ddr_work_bytes": 8192,
     "application_address": "0x40800000",
     "application_linker_bytes": 4194304,
     "auto_flash_delay_ms": 2000,
@@ -201,8 +203,8 @@
   "audio": {
     "part": "PT8211-S",
     "format": "pcm16_stereo_L_low16_R_high16",
-    "sample_rate_hz": 46875,
-    "bck_hz": 1500000,
+    "sample_rate_hz": 48000,
+    "bck_hz": 1536000,
     "bck_pin": "N15",
     "din_pin": "P15",
     "ws_pin": "P16",

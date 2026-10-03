@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from scripts.boot_image import LOAD, FLASH_OFFSET, abi_tag, pack_image
 from gateware.features import Features
-from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, cpu_filename, pll_count
+from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, cpu_filename, pll_count, cpu_capabilities, cpu_isa
 
 def checked(command,log=None):
     command=[str(part) for part in command]
@@ -27,14 +27,14 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2):
+def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2,l2_size=0):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
         raw=binary.read_bytes();raw+=bytes((-len(raw))%4)
         data=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock)
+    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size)
     soc.platform.toolchain.options.update(place_option=place_option,route_option=route_option)
     if hierarchical:
         from gateware.rtl import split_verilog
@@ -112,6 +112,7 @@ def main():
         group.add_argument('--with-'+flag,dest=name,action='store_true',default=None)
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
+    p.add_argument('--l2-size',type=int,choices=(0,4096,8192),default=0,help='Shared write-through read cache in bytes; 0 disables it')
     p.add_argument('--place-option',type=int,choices=range(5),default=3)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
@@ -133,6 +134,7 @@ def main():
     except ValueError as error:p.error(str(error))
     config_args=['--cpu-variant',a.cpu_variant]+(['--cpu-verilog',str(a.cpu_verilog.resolve())] if a.cpu_verilog else [])+['--usb-backend',a.usb_backend,'--sd-profile',a.sd_profile,'--audio-clock',a.audio_clock]+features.arguments()+(['--flat-verilog'] if a.flat_verilog else [])+(['--deep-verilog'] if a.deep_verilog else [])
     config_args+=['--place-option',str(a.place_option),'--route-option',str(a.route_option)]
+    config_args+=['--l2-size',str(a.l2_size)]
     requirements={'microphone_demo.c':('mic','video'),
                   'microphone_stereo_demo.c':('mic','mic_stereo','video'),
                   'usb_input_demo.c':('usb','video'),'ethernet_demo.c':('eth',),
@@ -140,7 +142,7 @@ def main():
     if a.app.resolve().parent==ROOT/'firmware/examples':
         missing=[name for name in requirements.get(a.app.name,()) if not getattr(features,name)]
         if missing:p.error(f'{a.app.name} requires enabled modules: {", ".join(missing)}')
-    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option);return
+    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size);return
     output.mkdir(parents=True,exist_ok=True)
     tools=json.loads((ROOT/'.tools.local.json').read_text());gcc=Path(tools['gcc']);toolbin=gcc.parent
     os.environ['PATH']=os.pathsep.join([str(toolbin),str(Path(tools['gowin']).parent),os.environ['PATH']])
@@ -148,12 +150,16 @@ def main():
     checked([sys.executable,__file__,'--generate-only','--output-dir',output,*config_args],output/'generate.log')
     csr=json.loads((output/'csr.json').read_text())
     if csr['constants']['config_sd_native']!=int(a.sd_backend=='native'):raise ValueError('SD hardware/backend mismatch')
-    for name,base,size in [('rom',0,8192),('sram',0x10000000,8192),('main_ram',0x40000000,128*1024*1024)]:
+    for name,base,size in [('rom',0,4096),('main_ram',0x40000000,128*1024*1024)]:
         if csr['memories'][name]['base']!=base or csr['memories'][name]['size']!=size:raise ValueError(f'Unexpected {name} layout')
+    if 'sram' in csr['memories']:raise ValueError('Integrated SRAM must be absent')
     firmware=output/'firmware';firmware.mkdir(exist_ok=True)
     include=firmware/'include';generate_csr(csr,include)
-    isa='rv32im'+('af' if features.fpu else '')+'_zicsr_zifencei'
-    (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_SD_PROFILE "{a.sd_profile}"\n',encoding='utf-8')
+    (include/'boot_regs.h').write_text(''.join(f'#define {macro} 0x{csr["csr_registers"][name]["addr"]:08x}\n' for macro,name in
+        [('MINI_DDR_BOOT_STATUS','sdram_boot_status'),('MINI_UART_TXFULL','uart_txfull'),('MINI_UART_RXTX','uart_rxtx')]),encoding='utf-8')
+    capabilities=cpu_capabilities(a.cpu_verilog) if a.cpu_verilog else {'mmu':False,'fpu':False,'dcache':False,'compressed':False,'bitmanip':[]}
+    isa=cpu_isa(features,capabilities)
+    (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_CPU_COMPRESSED {int(capabilities["compressed"])}\n#define MINI_CPU_BITMANIP {int(bool(capabilities["bitmanip"]))}\n#define MINI_SD_PROFILE "{a.sd_profile}"\n',encoding='utf-8')
     abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
     loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
     usb=ROOT/'firmware/vendor/tinyusb/src'
@@ -161,8 +167,7 @@ def main():
         '-fno-builtin','-ffunction-sections','-fdata-sections','-nostdlib','-nostartfiles','-msmall-data-limit=0',
         '-I',firmware,'-I',include,'-I',output/'software/include','-I',drivers,'-I',loader,'-I',vendor,'-I',hal/'include','-I',usb,
         '-include',include/'features.h']
-    common=[ROOT/'firmware/boot/start.S',drivers/'uart.c',drivers/'time.c',
-            drivers/('flash.c' if features.flash else 'flash_disabled.c')]
+    common=[ROOT/'firmware/boot/start.S',drivers/'uart.c',drivers/'time.c']
     app_sources=[drivers/'string.c',*[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c','disabled.c')]]
     if features.spi_lcd or (features.sd and a.sd_backend=='spi'):app_sources.append(drivers/'spi.c')
     if features.spi_lcd:app_sources.append(drivers/'lcd.c')
@@ -176,14 +181,15 @@ def main():
         app_sources.append(hal/'src/hcd_ultra.c' if a.usb_backend=='ultra' else usb/'portable/ohci/ohci.c')
     firmware_sizes={}
     for name,main,sources,linker in [
-        ('boot',loader/'main.c',[ROOT/'firmware/boot/ddr.c'],loader/'boot.ld'),
+        ('boot',loader/'main.c',[],loader/'boot.ld'),
         ('app',a.app.resolve(),app_sources,loader/'app.ld')]:
         elf=firmware/f'{name}.elf'
+        flash_source=loader/'flash.c' if name=='boot' and features.flash else drivers/('flash.c' if features.flash else 'flash_disabled.c')
         # Whole-program optimization keeps the ROM loader compact; app stays
         # separately linked and carries SD/display drivers only in DDR.
-        compact=['-flto'] if name=='boot' else []
+        compact=['-flto','-DMINI_BOOTLOADER=1'] if name=='boot' else ['-DMINI_BOOTLOADER=0']
         if name=='app' and main==ROOT/'firmware/app/main.c':sources=[*sources,ROOT/'firmware/app/tests.c']
-        checked([gcc,*flags,*compact,*common,main,*sources,'-T',linker,'-Wl,--gc-sections',f'-Wl,-Map,{firmware/f"{name}.map"}','-lgcc','-o',elf])
+        checked([gcc,*flags,*compact,*common,flash_source,main,*sources,'-T',linker,'-Wl,--gc-sections',f'-Wl,-Map,{firmware/f"{name}.map"}','-lgcc','-o',elf])
         checked([toolbin/'riscv-none-elf-objcopy.exe','-O','binary',elf,firmware/f'{name}.bin'])
         sizes=subprocess.check_output([str(toolbin/'riscv-none-elf-size.exe'),str(elf)],text=True)
         print(sizes,flush=True)
@@ -191,7 +197,7 @@ def main():
         firmware_sizes[name]={kind:int(value) for kind,value in zip(('text','data','bss'),values[:3])}
         firmware_sizes[name]['binary_bytes']=(firmware/f'{name}.bin').stat().st_size
     binary=firmware/'boot.bin';size=binary.stat().st_size
-    if size>8192:raise RuntimeError('Boot ROM overflow')
+    if size>4096:raise RuntimeError('Boot ROM overflow')
     image=pack_image((firmware/'app.bin').read_bytes(),abi);(firmware/'app.img').write_bytes(image)
     command=[sys.executable,__file__,'--generate-only','--output-dir',output,'--rom',binary,*config_args]
     if a.synthesize:command+=['--synthesize']
@@ -206,10 +212,11 @@ def main():
     if len(rom_files)!=1:raise RuntimeError(f'Expected one boot ROM initialization file: {rom_files}')
     actual=rom_files[0].read_text().lower().split()
     if actual!=expected:raise RuntimeError('ROM content mismatch')
-    report={'profile':a.profile,'boot_sources':['flash','uart'] if features.flash else ['uart'],'rom_size_bytes':8192,'sram_size_bytes':8192,
+    report={'profile':a.profile,'boot_sources':['flash','uart'] if features.flash else ['uart'],'rom_size_bytes':4096,'sram_size_bytes':0,
+        'ddr_initialization':'hardware','boot_ram_address':0x407fe000,'boot_ram_size_bytes':8192,
         'firmware_bytes':size,'firmware_sha256':hashlib.sha256(raw).hexdigest(),'firmware_sizes':firmware_sizes,
         'cpu_variant':a.cpu_variant,'cpu_verilog':str(a.cpu_verilog.resolve()) if a.cpu_verilog else None,'isa':isa,'abi':'ilp32',
-        'cpu_capabilities':{'mmu':features.mmu,'fpu':features.fpu,'dcache':cpu_dcache},
+        'cpu_capabilities':capabilities,'l2_size_bytes':a.l2_size,'l2_policy':'write-through/write-invalidate' if a.l2_size else 'none',
         'sd_profile':a.sd_profile,'audio_clock':a.audio_clock,
         'expected_plls':expected_plls,'audio_reference_hz':60000000,
         'audio_sample_rate':(46875 if a.audio_clock=='legacy' else 48000) if features.audio else 0,

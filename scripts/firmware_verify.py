@@ -51,7 +51,7 @@ def main():
                     'expected':marker.decode(),'matched':marker in text,'output':text.decode(errors='replace')})
                 if marker not in text:raise RuntimeError(name+': '+text.decode(errors='replace'))
                 print(name+' OK',flush=True)
-            cases=[('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
+            cases=[('isa',True),('l2',bool(validation.get('l2_size_bytes'))),('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
                 ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('lcd',enabled('video')),
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
                 ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),
@@ -62,7 +62,7 @@ def main():
             elif validation.get('cpu_variant')=='linux' and validation.get('cpu_verilog'):
                 cases=[('fpu',True),('mmu',True),*cases]
             for name,available in cases:
-                command('test '+name,None if available else 'UNSUPPORTED: feature disabled')
+                command('test '+name,None if available else 'UNSUPPORTED: L2 disabled' if name=='l2' else 'UNSUPPORTED: feature disabled')
             if enabled('usb'):
                 command('test usb','TEST usb FAIL')
                 for _ in range(3):command('test usb restart')

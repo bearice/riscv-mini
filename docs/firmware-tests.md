@@ -2,10 +2,12 @@
 
 所有板上检查都从 DDR monitor 的 `test ...` 命令进入；上电不自动执行。
 输入 `test` 或 `help` 显示清单。代码在 `firmware/app/tests.c`，
-boot ROM 仍只有 DDR 初始化和 Flash/UART 装载，不链接这些测试。
+boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测试。
 
 | 命令 | 自动检查 | 影响与验收边界 |
 | --- | --- | --- |
+| `test isa` | C 压缩指令与已启用 Zba/Zbb/Zbs 指令的数值检查 | 按构建能力条件编译；不是完整 ISA compliance |
+| `test l2` | L1 清空后的重复读、字节写及 L2 命中，比较 enable=0/1 的 ticks | L2 未启用时报告 UNSUPPORTED；暂时屏蔽 IRQ，使用 `0x40d00000` 的 256 字节 |
 | `test uart` | 命令确实经 UART IRQ 接收，检查 RX drop 计数 | 不测物理波特率裕量；串口回显可直接观察 |
 | `test irq` | ECALL 保存/恢复、DDR 栈上计算、timer IRQ、deadline 回绕 | 只处理测试主动触发的 ECALL；其他异常仍报告 FAULT |
 | `test ddr` | 专用 8 KiB DDR scratch 的全零/全一/交替位/地址及反地址模式 | 不覆盖完整 128 MiB，不改程序、帧缓冲或 PCM ring |
