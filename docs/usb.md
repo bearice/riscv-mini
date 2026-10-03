@@ -17,7 +17,7 @@ read/configured over ULPI and then operates in six-pin serial mode, retaining
 its 60 MHz clock. A fourth PLL regenerates the ULPI 60 MHz clock to meet
 FPGA output setup/hold (247.5-degree configured phase); its lock is part of the initialization reset. All four
 PLLs are allocated. The current PHY configuration is full speed, 12 Mbit/s;
-high-speed USB, hubs, mass storage and arbitrary report-format keyboard
+high-speed USB, mass storage and arbitrary report-format keyboard
 decoding are outside the supported feature set. Generic HID reports remain available raw.
 
 Register initialization reads Vendor/Product ID `0424:0006`, writes Function
@@ -62,7 +62,12 @@ the PLL; the domain's enable/reset/lock logic still holds the FSM in reset.
 The regression uses the real `test usb stop/restart` firmware commands;
 PHY FSM simulation alone cannot reproduce a stopped physical PLL.
 
-Current on-board commands are `test usb`, `test usb stop/restart`,
+Hub enumeration is shared by both software backends. The default PIO path
+has been tested with Hub `05E3:0606` and receiver `046D:C52B` on downstream
+port 2; see [limits and topology](usb-light.md). The OHCI fallback has not
+been requalified with a Hub.
+
+Current on-board commands are `test usb`, `test usb tree`, `test usb stop/restart`,
 `test usb input`, `test usb leds ...` and `test phys`. Batch execution uses
 `scripts/firmware_verify.py`; physical input and LED acceptance require manual action.
 See [firmware commands](firmware-tests.md).

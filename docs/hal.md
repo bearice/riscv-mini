@@ -19,7 +19,7 @@
 | audio | PT8211 PCM16 stereo，48,000 Hz；PIO FIFO / DDR ring DMA、start/pause/stop/mute、进度及欠载统计；见 [音频](audio.md) |
 | mic | 标准 I2S PCM24，每路 48,000 samples/s；单麦克风时隙选择或双麦克风同步 512 对快照、读取及溢出统计；见 [麦克风](microphone.md) |
 | ethernet | RTL8201F MDIO、100M full-duplex link、LiteEth原始帧、packet slots、IRQ/错误统计、Flash UID派生MAC；见 [Ethernet](ethernet.md) |
-| usb | Ultraembedded PIO Host + TinyUSB（默认）/ OHCI 回退、FS HID 枚举；Boot 键盘 usage/修饰键按下释放、Boot 鼠标相对运动、raw HID reports、异步键盘 LED；见 [USB](usb.md) |
+| usb | Ultraembedded PIO Host + TinyUSB（默认）/ OHCI 回退、FS Hub/下游 HID 枚举、`hal_usb_device_info` 拓扑查询；Boot 键盘 usage/修饰键按下释放、Boot 鼠标相对运动、raw HID reports、异步键盘 LED；见 [USB](usb.md) |
 
 `hal_init()` 在应用启动时调用一次。当前是裸机单主循环：IRQ 只做 RX 搬运、计数和按键事件确认，SD/FatFs、SPI、显示和 Flash 传输在主循环执行。`hal_poll()` 每250 ms有界轮询Ethernet PHY链路，并处理 TinyUSB 枚举及 HID 回调；应用需频繁调用。它不消费网络包，应用需要调用 `hal_eth_receive()` 及时取走帧，并取走 USB raw/键盘/鼠标事件以免队列溢出。SPI/文件系统及 USB API 不支持多个调用者或 ISR 并发操作。
 

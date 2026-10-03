@@ -3,9 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 #include "host/hcd.h"
+#include "host/usbh.h"
 #include <hal/usb_ultra.h>
 #include <hal/hal.h>
 static uint32_t regs[9],now;
+static tusb_speed_t speed=TUSB_SPEED_FULL;
+bool tuh_bus_info_get(uint8_t device,tuh_bus_info_t *bus) {(void)device;memset(bus,0,sizeof(*bus));bus->speed=speed;return true;}
 static uint8_t rx[64],tx[64];
 static unsigned rxpos,txlen,events;
 static hcd_event_t last;
@@ -64,9 +67,26 @@ int main(void) {
     // Packet > requested capacity is rejected.
     assert(hcd_edpt_xfer(0,1,0x81,buffer,2));launch();response(0xc3,data,8,0);
     assert(last.xfer_complete.result==XFER_RESULT_FAILED);
+    // A Hub and child may reuse an endpoint number; address ownership differs.
+    assert(hcd_edpt_open(0,5,&ep));
+    assert(hcd_edpt_xfer(0,5,0x81,buffer,8));launch();
+    assert(((regs[6]>>9)&127)==5);response(0xc3,data,8,0);
+    assert(last.dev_addr==5 && last.xfer_complete.result==XFER_RESULT_SUCCESS);
+    hcd_device_close(0,5);
+    assert(hcd_edpt_xfer(0,1,0x81,buffer,8));launch();response(0xc3,data,8,0);
+    assert(last.dev_addr==1 && last.xfer_complete.result==XFER_RESULT_SUCCESS);
+    // Reject unsupported speeds before any packet can be scheduled.
+    speed=TUSB_SPEED_LOW;assert(!hcd_edpt_open(0,2,&ep));speed=TUSB_SPEED_FULL;
+    // A failed EP0 pair reservation must leave the last free slot available.
+    hcd_device_close(0,0);hcd_device_close(0,1);
+    unsigned slots=2*(CFG_TUH_DEVICE_MAX+CFG_TUH_HUB+1)+2*CFG_TUH_HID+CFG_TUH_HUB;
+    for(unsigned i=0;i<slots-1;++i)assert(hcd_edpt_open(0,i+1,&ep));
+    tusb_desc_endpoint_t control=ep;control.bEndpointAddress=0;control.bmAttributes.xfer=TUSB_XFER_CONTROL;
+    assert(!hcd_edpt_open(0,100,&control));assert(hcd_edpt_open(0,100,&ep));
+    assert(!hcd_edpt_open(0,101,&ep));
     regs[1]=0;for(unsigned i=0;i<25;++i)tick();assert(last.event_id==HCD_EVENT_DEVICE_REMOVE);
     assert(!(regs[0]&1));
     regs[1]=1;for(unsigned i=0;i<25;++i)tick();
     assert(last.event_id==HCD_EVENT_DEVICE_ATTACH && (regs[0]&1));
-    puts("PASS USB PIO HCD: setup, ACK, NAK, short packet, duplicate toggle, ZLP, STALL, CRC, bounds, removal, reattach");
+    puts("PASS USB PIO HCD: setup, ACK, NAK, short packet, duplicate toggle, ZLP, STALL, CRC, bounds, Hub address isolation, speed rejection, pool exhaustion, removal, reattach");
 }

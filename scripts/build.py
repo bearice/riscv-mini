@@ -181,7 +181,7 @@ def main():
     for feature,source in [('audio','audio.c'),('mic','microphone.c'),('eth','ethernet.c'),('usb','usb.c')]:
         if getattr(features,feature):app_sources.append(hal/'src'/source)
     if features.usb:
-        app_sources += [usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','class/hid/hid_host.c')]
+        app_sources += [usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','host/hub.c','class/hid/hid_host.c')]
         app_sources.append(hal/'src/hcd_ultra.c' if a.usb_backend=='ultra' else usb/'portable/ohci/ohci.c')
     firmware_sizes={}
     for name,main,sources,linker in [

@@ -92,7 +92,7 @@ CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼�
 ## 已知边界
 
 - Flash 启动后的 USB 枚举失败仍未解决（见 [轻量 USB](usb-light.md)）。
-- RTOS、HDMI、USB 高速与 Hub/MSC 支持未实现。PT8211 是输出 DAC，板上没有 ADC；外接 I2S 麦克风提供快照输入，连续录音 DMA 尚未实现。
+- RTOS、HDMI、USB 高速与 MSC 支持未实现；全速 Hub 和其后的全速 HID 已支持，容量与限制见 [轻量 USB](usb-light.md)。PT8211 是输出 DAC，板上没有 ADC；外接 I2S 麦克风提供快照输入，连续录音 DMA 尚未实现。
 - PRIMARY 与 LW 时钟资源均为 8/8，扩展前需重新评估时钟布线。
 
 ## 当前 full 资源与构建身份

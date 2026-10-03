@@ -55,7 +55,7 @@ def main():
                 ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('lcd',enabled('video')),
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
                 ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),
-                ('eth',enabled('eth')),('eth parser',enabled('eth')),('usb',enabled('usb')),('usb stop',enabled('usb'))]
+                ('eth',enabled('eth')),('eth parser',enabled('eth')),('usb',enabled('usb')),('usb tree',enabled('usb')),('usb stop',enabled('usb'))]
             capabilities = validation.get('cpu_capabilities')
             if capabilities is not None:
                 cases=[('fpu',capabilities['fpu']),('mmu',capabilities['mmu']),*cases]
@@ -73,7 +73,7 @@ def main():
                 if enabled('audio' if name.startswith('audio') else 'eth'):command('test '+name)
             invalids=['unknown']
             if all(enabled(n) for n in ('filesystem','video','usb','audio')):invalids+=['soak 0','soak 301']
-            if enabled('usb'):invalids+=['usb leds 1 4 0','usb leds 1']
+            if enabled('usb'):invalids+=['usb leds 1 8 0','usb leds 1']
             for invalid in invalids:
                 command('test '+invalid,'ERR test command/argument')
             if args.mic:

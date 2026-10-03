@@ -4,6 +4,7 @@
 #include <generated/mem.h>
 #include <generated/soc.h>
 #include "host/hcd.h"
+#include "host/usbh.h"
 #include <string.h>
 
 enum {CTRL=0,STATUS=4,IRQ_ACK=8,IRQ_STS=12,IRQ_MASK=16,
@@ -24,7 +25,9 @@ typedef struct {
     uint8_t *buffer;
     uint32_t next,deadline;
 } endpoint_t;
-static endpoint_t endpoints[16];
+/* Control pairs (including address zero), HID IN/OUT and Hub status IN. */
+enum {ENDPOINT_COUNT=2*(CFG_TUH_DEVICE_MAX+CFG_TUH_HUB+1)+2*CFG_TUH_HID+CFG_TUH_HUB};
+static endpoint_t endpoints[ENDPOINT_COUNT];
 static uint8_t setup_data[8];
 static int active=-1;
 static unsigned cursor,packet_length,initialized,attached,resetting;
@@ -32,7 +35,7 @@ static uint32_t detect_since,disconnect_since,launched;
 static volatile uint32_t frames;
 static unsigned due(uint32_t now,uint32_t deadline) {return (int32_t)(now-deadline)>=0;}
 static endpoint_t *find(uint8_t dev,uint8_t ep) {
-    for(unsigned i=0;i<16;++i)if(endpoints[i].used && endpoints[i].dev==dev && endpoints[i].ep==ep)return &endpoints[i];
+    for(unsigned i=0;i<ENDPOINT_COUNT;++i)if(endpoints[i].used && endpoints[i].dev==dev && endpoints[i].ep==ep)return &endpoints[i];
     return 0;
 }
 static void finish(endpoint_t *e,xfer_result_t result) {
@@ -69,20 +72,25 @@ void hcd_port_reset(uint8_t port) {(void)port;resetting=1;active=-1;wr(CTRL,RESE
 void hcd_port_reset_end(uint8_t port) {(void)port;wr(CTRL,FS_CTRL|256);resetting=0;}
 bool hcd_edpt_open(uint8_t port,uint8_t dev,tusb_desc_endpoint_t const *desc) {
     (void)port;
+    tuh_bus_info_t bus;tuh_bus_info_get(dev,&bus);
+    /* This serial PHY has no low-speed/PRE or high-speed packet mode. */
+    if(bus.speed!=TUSB_SPEED_FULL)return false;
     unsigned mps=tu_edpt_packet_size(desc);
     if(!mps || mps>64 || desc->bmAttributes.xfer==TUSB_XFER_ISOCHRONOUS)return false;
     endpoint_t *e=find(dev,desc->bEndpointAddress);
-    if(!e)for(unsigned i=0;i<16;++i)if(!endpoints[i].used) {e=&endpoints[i];break;}
+    if(!e)for(unsigned i=0;i<ENDPOINT_COUNT;++i)if(!endpoints[i].used) {e=&endpoints[i];break;}
     if(!e || e->pending)return false;
+    /* Reserve both control directions before changing either slot. */
+    endpoint_t *other=0;
+    if(!(desc->bEndpointAddress&15)) {
+        other=find(dev,0x80);
+        if(!other)for(unsigned i=0;i<ENDPOINT_COUNT;++i)
+            if(!endpoints[i].used && &endpoints[i]!=e) {other=&endpoints[i];break;}
+        if(!other || other->pending)return false;
+    }
     *e=(endpoint_t){.used=1,.dev=dev,.ep=desc->bEndpointAddress,.mps=mps,
                    .type=desc->bmAttributes.xfer,.interval=desc->bInterval?desc->bInterval:1};
-    /* TinyUSB opens control endpoint 0 once, for both directions. */
-    if(!(desc->bEndpointAddress&15)) {
-        endpoint_t *other=find(dev,0x80);
-        if(!other)for(unsigned i=0;i<16;++i)if(!endpoints[i].used) {other=&endpoints[i];break;}
-        if(!other)return false;
-        *other=*e;other->ep=0x80;
-    }
+    if(other) {*other=*e;other->ep=0x80;}
     return true;
 }
 bool hcd_edpt_close(uint8_t port,uint8_t dev,uint8_t ep) {
@@ -93,7 +101,7 @@ bool hcd_edpt_close(uint8_t port,uint8_t dev,uint8_t ep) {
 }
 void hcd_device_close(uint8_t port,uint8_t dev) {
     (void)port;
-    for(unsigned i=0;i<16;++i)if(endpoints[i].used && endpoints[i].dev==dev) {
+    for(unsigned i=0;i<ENDPOINT_COUNT;++i)if(endpoints[i].used && endpoints[i].dev==dev) {
         if(active==(int)i)active=-1;
         memset(&endpoints[i],0,sizeof(endpoints[i]));
     }
@@ -168,12 +176,12 @@ void hcd_ultra_poll(void) {
         }
         active=-1;e->next=now;
     }
-    for(unsigned n=0;n<16;++n) {
-        unsigned index=(cursor+n)%16;endpoint_t *e=&endpoints[index];
+    for(unsigned n=0;n<ENDPOINT_COUNT;++n) {
+        unsigned index=(cursor+n)%ENDPOINT_COUNT;endpoint_t *e=&endpoints[index];
         if(!e->used || !e->pending || !due(now,e->next))continue;
         if(e->type!=TUSB_XFER_INTERRUPT && due(now,e->deadline)) {finish(e,XFER_RESULT_FAILED);continue;}
         if(!(rd(RX_STAT)&(1u<<28)))return;
-        active=index;cursor=(index+1)%16;
+        active=index;cursor=(index+1)%ENDPOINT_COUNT;
         packet_length=e->length-e->done;if(packet_length>e->mps)packet_length=e->mps;
         wr(IRQ_ACK,IRQ_DONE|IRQ_ERR);wr(CTRL,FS_CTRL|256);
         unsigned pid=e->setup?PID_SETUP:((e->ep&128)?PID_IN:PID_OUT);
@@ -186,13 +194,13 @@ void hcd_ultra_poll(void) {
 }
 unsigned hcd_ultra_validate(unsigned hid_interfaces) {
     unsigned interrupt_eps=0;
-    for(unsigned i=0;i<16;++i) {
+    for(unsigned i=0;i<ENDPOINT_COUNT;++i) {
         endpoint_t *e=&endpoints[i];if(!e->used)continue;
         if(!e->mps || e->mps>64 || e->done>e->length || (e->pending && e->length && !e->buffer))return 0;
         if(e->type==TUSB_XFER_INTERRUPT && (e->ep&128))++interrupt_eps;
-        for(unsigned j=i+1;j<16;++j)if(endpoints[j].used && endpoints[j].dev==e->dev && endpoints[j].ep==e->ep)return 0;
+        for(unsigned j=i+1;j<ENDPOINT_COUNT;++j)if(endpoints[j].used && endpoints[j].dev==e->dev && endpoints[j].ep==e->ep)return 0;
     }
-    return initialized && interrupt_eps>=hid_interfaces && active<16;
+    return initialized && interrupt_eps>=hid_interfaces && active<ENDPOINT_COUNT;
 }
 uint32_t hcd_ultra_control(void) {return rd(CTRL);}
 uint32_t hcd_ultra_status(void) {return rd(STATUS)&7;}

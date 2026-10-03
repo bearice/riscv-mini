@@ -103,3 +103,5 @@ RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version�
 [端到端验证工具](../scripts/bios_verify.py) 调用相同固件命令，覆盖网络重试/重复块/零长度结束、坏 CRC、SD 重复启动、缺失文件、设置往返和非法参数。运行示例：`scripts/bios_verify.py --host-ip 169.254.25.153 --sd-file BIOSDEM.RPB`；需要 SD 上不存在这个目标文件，会显式保存 `BIOS.CFG`。Python 格式测试位于 [bios_image_test.py](../tests/bios_image_test.py)，板端格式/ECALL 测试为 `test bios`。
 
 默认 full BIOS 已在实际板卡验证 SD/TFTP 执行与返回，并确认 LCD TTY/USB 键盘输入。minimal 仅构建检查，不代表被裁剪的硬件已上板验收。BIOS 不包含 OS 引导、动态装载重定位、DHCP 或图形窗口系统；SDK 示例演示 `.data`/`.bss`、IO、服务调用、RGB565 换帧和返回 BIOS。
+
+USB 键盘/鼠标可直连，也可通过全速 Hub 接入；`test usb tree` 显示配置成功的 Hub、下游端口及设备。当前容量为 2 个 Hub、4 个普通设备、总计 8 个 HID 接口；默认 PIO 后端只支持全速传输，低速设备和超过 7 个下游端口的 Hub 不在支持范围内。详见 [USB Host](usb-light.md)。

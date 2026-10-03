@@ -60,6 +60,9 @@ hal_result_t hal_usb_init(void); /* bounded PHY/controller setup; enumeration ru
 void hal_usb_stop(void);
 void hal_usb_poll(void);
 void hal_usb_get_info(hal_usb_info_t *info);
+typedef struct {uint16_t vid,pid;uint8_t device,hub,port,speed,is_hub,hid_interfaces;} hal_usb_device_t;
+/* Address scan: HAL_INVALID marks the end; HAL_NO_MEDIA is an unused slot. */
+hal_result_t hal_usb_device_info(uint8_t device,hal_usb_device_t *info);
 hal_result_t hal_usb_key_take(hal_usb_key_t *key); /* USB keyboard usages, including E0..E7 modifiers */
 hal_result_t hal_usb_report_take(hal_usb_report_t *report); /* raw HID, single main-loop owner */
 hal_result_t hal_usb_mouse_take(hal_usb_mouse_t *mouse); /* Boot mouse relative motion/buttons */

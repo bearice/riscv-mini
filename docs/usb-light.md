@@ -41,7 +41,7 @@ ABI includes the backend, so an OHCI image cannot silently run against PIO RTL.
 
 TinyUSB still owns enumeration, HID interfaces, Boot keyboard/mouse decoding
 and asynchronous keyboard LED requests. `hcd_ultra.c` implements a bounded
-16-entry endpoint table in application DDR, one in-flight hardware packet and
+32-entry endpoint table in application DDR, one in-flight hardware packet and
 64-byte PIO packet buffers. Endpoints are scheduled fairly by `hal_poll()`.
 NAK waits for the next poll; duplicate DATA packets do not advance the buffer
 or toggle. CRC/timeout retries are bounded, oversized packets fail safely,
@@ -64,17 +64,28 @@ The device-detect IRQ is not used; its upstream latch is level-triggered while
 connected. Attach/detach is debounced in the main loop. Bus reset suppresses
 detach detection. `hal_usb_get_info().hcca` is zero for PIO; `frame` is the SOF
 counter. `test usb` checks frame progress and endpoint ownership instead of
-an OHCI ED/TD chain. Existing `test usb stop/restart`, `test phys`,
+an OHCI ED/TD chain. `test usb tree` prints each configured address, parent Hub, port, speed,
+VID/PID and HID count (speed 0 = full, 1 = low, 2 = high).
+Existing `test usb stop/restart`, `test phys`,
 `test usb input`, and `test soak 300` remain the hardware acceptance commands.
 
-This backend supports full-speed direct devices with packets up to 64 bytes.
-Low-speed 1.5 Mbit/s devices, high-speed, hubs, isochronous endpoints and bulk
-throughput qualification are outside its current scope. A full-speed wireless
+This backend supports full-speed direct devices and full-speed devices behind
+USB Hubs, with packets up to 64 bytes. The BIOS links TinyUSB's Hub driver;
+Hub power, port reset and downstream enumeration run from `hal_poll()`.
+Capacity is two Hubs, four non-Hub devices and eight HID interfaces total.
+TinyUSB 0.20.0's Hub status polling reads one bitmap byte, so Hubs with more
+than seven downstream ports are outside the supported scope. HID indexes
+are global TinyUSB slots, not per-device ordinals. Low-speed devices
+(including behind a Hub), high-speed packet mode, isochronous endpoints and
+bulk throughput qualification remain unsupported. The HCD rejects non-full-speed
+endpoint opens rather than scheduling them at 12 Mbit/s. A full-speed wireless
 receiver can carry keyboard/mouse reports without requiring low-speed PHY.
 
 Host tests: `tests/usb_ultra_hcd_test.c` exercises the actual adapter through
 mocked registers, covering setup, ACK, NAK retry, short packet, duplicate
-toggle, zero-length status, STALL, CRC failure, bounds and removal. PHY tests
+toggle, zero-length status, STALL, CRC failure, bounds and removal. It also
+checks Hub/child address isolation, speed rejection and atomic EP0 allocation
+when the endpoint pool is exhausted. PHY tests
 are in `tests/usb_fs_phy_tb.v`. `sim/generate_usb_pio_bus.py` and
 `tests/usb_pio_bus_tb.v` exercise the actual registered bridge and upstream
 Host registers, including request cancellation by reset and recovery.

@@ -44,6 +44,9 @@ void hal_usb_poll(void) {}
 void hal_usb_get_info(hal_usb_info_t *info) {if(info)memset(info,0,sizeof(*info));}
 #endif
 #if !MINI_FEATURE_USB
+hal_result_t hal_usb_device_info(uint8_t device,hal_usb_device_t *info) {(void)device;if(info)memset(info,0,sizeof(*info));return HAL_UNSUPPORTED;}
+#endif
+#if !MINI_FEATURE_USB
 hal_result_t hal_usb_key_take(hal_usb_key_t *key) {(void)key;return HAL_UNSUPPORTED;}
 #endif
 #if !MINI_FEATURE_USB

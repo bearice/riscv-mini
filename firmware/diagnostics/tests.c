@@ -574,7 +574,7 @@ void tests_help(void) {
     hal_uart_puts("test eth|eth parser|eth start|eth stop\r\n");
 #endif
 #if MINI_FEATURE_USB
-    hal_uart_puts("test usb|usb stop|usb restart\r\n");
+    hal_uart_puts("test usb|usb tree|usb stop|usb restart\r\n");
     hal_uart_puts("test usb input|usb input stop|usb leds DEVICE INTERFACE MASK (decimal)\r\n");
 #endif
 #if MINI_FEATURE_ETH || MINI_FEATURE_USB
@@ -754,6 +754,18 @@ int tests_command(const char *command) {
     else if(!strcmp(name,"eth stop")) {network=pending_reply=0;hal_eth_info_t e;hal_eth_get_info(&e);hal_spi_lcd_network(e.mac,0);ok=1;}
 #endif
 #if MINI_FEATURE_USB
+    else if(!strcmp(name,"usb tree")) {
+        unsigned count=0;
+        for(unsigned d=1;d<128;++d) {
+            hal_usb_device_t u;hal_result_t r=hal_usb_device_info(d,&u);
+            if(r==HAL_INVALID)break;
+            if(r!=HAL_OK)continue;
+            hal_uart_puts(u.is_hub?"USB HUB":"USB DEVICE");value(" address=",u.device);
+            value(" parent=",u.hub);value(" port=",u.port);value(" speed=",u.speed);
+            value(" VID=",u.vid);value(" PID=",u.pid);value(" HID=",u.hid_interfaces);hal_uart_puts("\r\n");++count;
+        }
+        ok=count>0;
+    }
     else if(!strcmp(name,"usb"))ok=usb_check();
 #endif
 #if MINI_FEATURE_USB
@@ -777,7 +789,7 @@ int tests_command(const char *command) {
 #if MINI_FEATURE_USB
     else if(!strncmp(name,"usb leds ",9)) {
         const char *p=name+9;unsigned device,itf,leds;
-        if(number(&p,&device) && *p++==' ' && number(&p,&itf) && *p++==' ' && number(&p,&leds) && !*p && device<=255 && itf<4 && leds<32) {
+        if(number(&p,&device) && *p++==' ' && number(&p,&itf) && *p++==' ' && number(&p,&leds) && !*p && device<=255 && itf<8 && leds<32) {
             ok=hal_usb_keyboard_leds(device,itf,leds)==HAL_OK;
             if(ok) {hal_uart_puts("TEST usb leds QUEUED (physical LED completion not verified)\r\n");return 1;}
         } else known=0;

@@ -17,7 +17,7 @@ static volatile unsigned irqs,controller_errors;
 static hal_usb_key_t keys[32];static unsigned key_head,key_tail;
 static hal_usb_report_t reports[8];static unsigned report_head,report_tail;
 static hal_usb_mouse_t mice[32];static unsigned mouse_head,mouse_tail;
-static struct {uint8_t previous[8],device,leds,led_pending;unsigned keyboard,mouse;} interfaces[4];
+static struct {uint8_t previous[8],device,leds,led_pending;unsigned keyboard,mouse;} interfaces[CFG_TUH_HID];
 uint32_t tusb_time_millis_api(void) {return hal_time_ms();}
 bool hcd_dcache_clean(void const *p,uint32_t n) {(void)p;(void)n;__asm__ volatile("fence rw,rw":::"memory");return true;}
 bool hcd_dcache_invalidate(void const *p,uint32_t n) {(void)p;(void)n;__asm__ volatile("fence rw,rw":::"memory");return true;}
@@ -84,6 +84,15 @@ void hal_usb_get_info(hal_usb_info_t *out) {
     }
     unsigned state=hal_irq_save();*out=info;out->irqs=irqs;out->errors+=controller_errors;hal_irq_restore(state);
 }
+hal_result_t hal_usb_device_info(uint8_t device,hal_usb_device_t *out) {
+    if(!out || !device || device>CFG_TUH_DEVICE_MAX+CFG_TUH_HUB)return HAL_INVALID;
+    if(!running || !tuh_mounted(device))return HAL_NO_MEDIA;
+    tuh_bus_info_t bus;tuh_bus_info_get(device,&bus);
+    *out=(hal_usb_device_t){.device=device,.hub=bus.hub_addr,.port=bus.hub_port,
+        .speed=bus.speed,.is_hub=device>CFG_TUH_DEVICE_MAX,
+        .hid_interfaces=tuh_hid_itf_get_count(device)};
+    tuh_vid_pid_get(device,&out->vid,&out->pid);return HAL_OK;
+}
 hal_result_t hal_usb_key_take(hal_usb_key_t *out) {
     if(!out)return HAL_INVALID;
     if(key_head==key_tail)return HAL_BUSY;
@@ -100,7 +109,7 @@ hal_result_t hal_usb_mouse_take(hal_usb_mouse_t *out) {
     *out=mice[(mouse_tail++)&31];return HAL_OK;
 }
 hal_result_t hal_usb_keyboard_leds(uint8_t device,uint8_t itf,uint8_t leds) {
-    if(itf>=4 || leds>31)return HAL_INVALID;
+    if(itf>=CFG_TUH_HID || leds>31)return HAL_INVALID;
     if(!running || interfaces[itf].device!=device)return HAL_NO_MEDIA;
     if(!interfaces[itf].keyboard)return HAL_UNSUPPORTED;
     if(interfaces[itf].led_pending)return HAL_BUSY;
@@ -118,10 +127,15 @@ void tuh_mount_cb(uint8_t device) {
     info.connected=1;info.device=device;tuh_vid_pid_get(device,&info.vid,&info.pid);++info.mounts;
     tuh_bus_info_t bus;tuh_bus_info_get(device,&bus);info.speed=bus.speed;
 }
-void tuh_umount_cb(uint8_t device) {(void)device;info.connected=0;++info.unmounts;}
+void tuh_umount_cb(uint8_t device) {info.connected=0;info.device=0;info.vid=info.pid=0;++info.unmounts;
+    for(uint8_t d=1;d<=CFG_TUH_DEVICE_MAX;++d)if(d!=device && tuh_mounted(d)) {
+        info.connected=1;info.device=d;tuh_vid_pid_get(d,&info.vid,&info.pid);
+        tuh_bus_info_t bus;tuh_bus_info_get(d,&bus);info.speed=bus.speed;break;
+    }
+}
 void tuh_hid_mount_cb(uint8_t device,uint8_t itf,uint8_t const *desc,uint16_t length) {
     (void)desc;(void)length;
-    if(itf>=4) {++info.errors;return;}
+    if(itf>=CFG_TUH_HID) {++info.errors;return;}
     interfaces[itf].keyboard=tuh_hid_interface_protocol(device,itf)==HID_ITF_PROTOCOL_KEYBOARD;
     interfaces[itf].mouse=tuh_hid_interface_protocol(device,itf)==HID_ITF_PROTOCOL_MOUSE;
     interfaces[itf].device=device;
@@ -129,7 +143,7 @@ void tuh_hid_mount_cb(uint8_t device,uint8_t itf,uint8_t const *desc,uint16_t le
     if(!tuh_hid_receive_report(device,itf))++info.errors;
 }
 void tuh_hid_umount_cb(uint8_t device,uint8_t itf) {
-    if(itf<4) {
+    if(itf<CFG_TUH_HID) {
         uint8_t *old=interfaces[itf].previous;
         for(unsigned i=2;i<8;++i)if(old[i]>3)key_event(device,itf,old[i],0,0);
         for(unsigned i=0;i<8;++i)if(old[0]&(1u<<i))key_event(device,itf,0xe0+i,0,0);
@@ -145,7 +159,7 @@ void tuh_hid_report_received_cb(uint8_t device,uint8_t itf,uint8_t const *data,u
     ++info.reports;
     if(length>64 || report_head-report_tail==8)++info.report_drops;
     else {hal_usb_report_t *r=&reports[(report_head++)&7];r->device=device;r->interface=itf;r->length=length;memcpy(r->data,data,length);}
-    if(itf<4 && interfaces[itf].keyboard && tuh_hid_get_protocol(device,itf)==HID_PROTOCOL_BOOT && length==8) {
+    if(itf<CFG_TUH_HID && interfaces[itf].keyboard && tuh_hid_get_protocol(device,itf)==HID_PROTOCOL_BOOT && length==8) {
         uint8_t *old=interfaces[itf].previous;unsigned rollover=0;
         for(unsigned i=2;i<8;++i)if(data[i]>=1 && data[i]<=3)rollover=1;
         if(rollover)++info.rollovers;
@@ -156,7 +170,7 @@ void tuh_hid_report_received_cb(uint8_t device,uint8_t itf,uint8_t const *data,u
             memcpy(old,data,8);
         }
     }
-    if(itf<4 && interfaces[itf].mouse && tuh_hid_get_protocol(device,itf)==HID_PROTOCOL_BOOT && length>=3) {
+    if(itf<CFG_TUH_HID && interfaces[itf].mouse && tuh_hid_get_protocol(device,itf)==HID_PROTOCOL_BOOT && length>=3) {
         if(mouse_head-mouse_tail==32)++info.mouse_drops;
         else {mice[(mouse_head++)&31]=(hal_usb_mouse_t){hal_time_ms(),device,itf,data[0],(int8_t)data[1],(int8_t)data[2],length>3?(int8_t)data[3]:0};++info.mouse_events;}
     }
@@ -164,6 +178,6 @@ void tuh_hid_report_received_cb(uint8_t device,uint8_t itf,uint8_t const *data,u
 }
 void tuh_hid_set_report_complete_cb(uint8_t device,uint8_t itf,uint8_t id,uint8_t type,uint16_t length) {
     (void)id;(void)type;
-    if(itf<4 && interfaces[itf].device==device)interfaces[itf].led_pending=0;
+    if(itf<CFG_TUH_HID && interfaces[itf].device==device)interfaces[itf].led_pending=0;
     if(length!=1)++info.errors;
 }
