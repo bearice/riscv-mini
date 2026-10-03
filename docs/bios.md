@@ -80,8 +80,17 @@ TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大
 | 13 | FLASH_READ | a0=Flash 地址，a1=输出，a2=长度 ≤4096 |
 | 14 | RGB | a0=0xRRGGBB |
 | 15 | MOUSE | a0=bios_mouse 输出；0 成功，-1 暂无事件 |
+| 16 | AUDIO_BEGIN | a0=四字节对齐的程序区 uint32_t 环形缓冲区，a1=容量 1..65535 帧；0 成功 |
+| 17 | AUDIO_WRITE | a0=四字节对齐的 L16/R16 PCM，a1=帧数 ≤1024；返回实际接受帧数，0 表示暂时满 |
+| 18 | AUDIO_CONTROL | a0=0 停止 / 1 播放 / 2 暂停 / 3 静音 / 4 取消静音；0 成功 |
+| 19 | AUDIO_INFO | a0=bios_audio 输出；采样率、FIFO 水位、播放/读取帧数、欠载/溢出/错误；0 成功 |
 
-IO/存储服务 0 成功、-1 失败；未启用设备使用 HAL 的 unsupported 路径。info.features 位 0..3 依次表示 SD、视频、USB、Ethernet。指针服务只接受程序区域内的完整缓冲区。RAW SD 写会绕过 FatFs，程序自行协调文件系统与扇区访问。Flash 服务只读，编程仍走 ROM 恢复入口。
+IO/存储服务 0 成功、-1 失败；未启用设备使用 HAL 的 unsupported 路径。info.features 位 0..4 依次表示 SD、视频、USB、Ethernet、音频。音频服务追加于 ABI=1，旧的 0..15 服务和 info 结构布局保持不变；新程序检查音频 feature 位再使用。指针服务只接受程序区域内的完整缓冲区。RAW SD 写会绕过 FatFs，程序自行协调文件系统与扇区访问。Flash 服务只读，编程仍走 ROM 恢复入口。
+
+音频使用打包的 16 位双声道 PCM，采样率由 AUDIO_INFO 查询；默认 DDS 配置为 48000 Hz。
+BEGIN 停止旧播放并设置程序拥有的环形缓冲区，WRITE 部分接受时由调用者保留未写入的尾部。
+先预填数据，再 PLAY 和 UNMUTE；PAUSE 保留队列，STOP 清空 DMA 状态。程序返回时 BIOS
+停止并静音音频，再恢复 TTY。实际示例见 [Nyan Cat](nyancat-demo.md)。
 
 RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version、load、file_bytes、memory_bytes、entry、数据 CRC32、头前 28 B 的 CRC32。load 必须为 `0x41000000`，entry 四字节对齐且在文件范围内，memory_bytes 包含 BSS 且保留顶端 64 KiB 栈。文件总长度必须精确匹配头和载荷；两个 CRC、版本和范围均检查后才执行。它与 ROM 使用的 CSR ABI app.img 格式分离，不是 ELF 或 PC BIOS 兼容格式。
 

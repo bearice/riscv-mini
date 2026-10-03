@@ -23,4 +23,4 @@
 & $MiniPython scripts/bios_payload.py --source firmware/examples/bios_demo.c
 ```
 
-前三种生成由 ROM 直接装载的 DDR 固件。`bios_demo.c` 使用独立裸机 SDK，生成由 BIOS 装载的 RPB1 程序，不能作为 `build.py --app` 入口。ABI、内存所有权和命令见 [BIOS](../docs/bios.md)，硬件检查见 [固件测试命令](../docs/firmware-tests.md)。生产固件和诊断不引用 examples 内的实现。
+前三种生成由 ROM 直接装载的 DDR 固件。`bios_demo.c` 和 `nyancat_demo.c` 使用独立裸机 SDK，生成由 BIOS 装载的 RPB1 程序，不能作为 `build.py --app` 入口。[Nyan Cat 示例](../docs/nyancat-demo.md) 包含 GIF 帧转换、动态背景和循环 BGM。ABI、内存所有权和命令见 [BIOS](../docs/bios.md)，硬件检查见 [固件测试命令](../docs/firmware-tests.md)。生产固件和诊断不引用 examples 内的实现。

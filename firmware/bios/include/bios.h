@@ -10,7 +10,16 @@
 enum bios_function {BIOS_INFO=0,BIOS_WRITE,BIOS_GETC,BIOS_TIME,BIOS_POLL,
     BIOS_VIDEO_MODE,BIOS_VIDEO_PRESENT,BIOS_SD_READ,BIOS_SD_WRITE,
     BIOS_FILE_READ,BIOS_IO_READ,BIOS_LEDS,BIOS_REBOOT,
-    BIOS_FLASH_READ,BIOS_RGB,BIOS_MOUSE};
+    BIOS_FLASH_READ,BIOS_RGB,BIOS_MOUSE,
+    BIOS_AUDIO_BEGIN,BIOS_AUDIO_WRITE,BIOS_AUDIO_CONTROL,BIOS_AUDIO_INFO};
+
+enum bios_audio_command {BIOS_AUDIO_STOP=0,BIOS_AUDIO_PLAY,BIOS_AUDIO_PAUSE,
+    BIOS_AUDIO_MUTE,BIOS_AUDIO_UNMUTE};
+/* AUDIO_BEGIN: payload-owned aligned uint32_t ring, 1..65535 stereo frames.
+ * AUDIO_WRITE: packed L16/R16 PCM, at most 1024 frames; returns accepted count.
+ * CONTROL: bios_audio_command. INFO: writable struct bios_audio pointer.
+ * Services are append-only ABI v1 additions; features bit 4 advertises audio. */
+struct bios_audio {uint32_t sample_rate,level,played,fetched,underruns,overruns,errors;};
 enum {BIOS_TEXT=0,BIOS_GRAPHICS=1};
 struct bios_info {uint32_t version,size,ram_base,ram_bytes,payload_base,payload_limit,
     framebuffer[2],width,height,stride,format,features,clock_hz;};

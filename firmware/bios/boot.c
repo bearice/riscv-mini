@@ -5,7 +5,7 @@
 #define STAGING ((uint8_t *)0x47000000u)
 static const struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),0x40000000,128u*1024*1024,
     BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0x47e00000,0x47e40000},480,272,960,565,
-    MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3),60000000};
+    MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4),60000000};
 int bios_file_read(const char *path,unsigned offset,void *data,unsigned capacity) {
 #if MINI_FEATURE_FILESYSTEM
     FIL f;UINT count;
@@ -29,7 +29,11 @@ int bios_self_test(void) {
     v.data[0]^=1;if(bios_payload_check(&v,sizeof(v)))return 0;v.data[0]^=1;
     v.h.load=0x40800000;v.h.header_crc=bios_crc(&v.h,sizeof(v.h)-4);
     if(bios_payload_check(&v,sizeof(v)))return 0;
-    return bios_call(BIOS_INFO,0x40800000,0,0,0)==-1 && bios_call(999,0,0,0,0)==-1;
+    return bios_call(BIOS_INFO,0x40800000,0,0,0)==-1 && bios_call(999,0,0,0,0)==-1 &&
+        bios_call(BIOS_AUDIO_BEGIN,0x40800000,1024,0,0)==-1 &&
+        bios_call(BIOS_AUDIO_BEGIN,BIOS_PAYLOAD_BASE+1,1024,0,0)==-1 &&
+        bios_call(BIOS_AUDIO_WRITE,BIOS_PAYLOAD_BASE,1025,0,0)==-1 &&
+        bios_call(BIOS_AUDIO_CONTROL,99,0,0,0)==-1;
 }
 int bios_payload_run(const void *image,unsigned length) {
     if(!bios_payload_check(image,length)) {bios_puts("BOOT rejected: format/range/version/CRC\r\n");return -1;}
@@ -46,6 +50,8 @@ int bios_payload_run(const void *image,unsigned length) {
     __asm__ volatile("fence.i":::"memory");
     bios_puts("BOOT payload entry=");bios_hex(h.entry);bios_puts("\r\n");
     bios_enter(h.entry,&info,BIOS_PAYLOAD_LIMIT);
+    /* A returning payload must not leave DMA reading its old storage. */
+    hal_audio_stop();hal_audio_mute(1);
     bios_video_mode(BIOS_TEXT);bios_puts("PAYLOAD RETURNED\r\n");return 0;
 }
 int bios_sd_boot(const char *path) {
@@ -119,6 +125,30 @@ int bios_exception_hook(hal_trap_frame_t *f) {
         break;
     case BIOS_RGB:result=hal_ws2812_set(a[0]>>16,a[0]>>8,a[0])==HAL_OK?0:-1;break;
     case BIOS_MOUSE:if(pointer_ok(a[0],sizeof(struct bios_mouse)))result=bios_mouse_take((void *)a[0]);break;
+    case BIOS_AUDIO_BEGIN:
+        if(MINI_FEATURE_AUDIO && !(a[0]&3u) && a[1] && a[1]<=65535 && pointer_ok(a[0],a[1]*4))
+            result=hal_audio_ring_begin((void *)a[0],a[1])==HAL_OK?0:-1;
+        break;
+    case BIOS_AUDIO_WRITE:
+        if(MINI_FEATURE_AUDIO && !(a[0]&3u) && a[1]<=1024 && pointer_ok(a[0],a[1]*4)) {
+            unsigned written=0;hal_result_t r=hal_audio_ring_write((void *)a[0],a[1],&written);
+            if(r==HAL_OK || r==HAL_BUSY)result=written;
+        }break;
+    case BIOS_AUDIO_CONTROL:
+        if(!MINI_FEATURE_AUDIO)break;
+        switch(a[0]) {
+        case BIOS_AUDIO_STOP:result=hal_audio_stop()==HAL_OK?0:-1;break;
+        case BIOS_AUDIO_PLAY:result=hal_audio_start()==HAL_OK?0:-1;break;
+        case BIOS_AUDIO_PAUSE:hal_audio_pause();result=0;break;
+        case BIOS_AUDIO_MUTE:hal_audio_mute(1);result=0;break;
+        case BIOS_AUDIO_UNMUTE:hal_audio_mute(0);result=0;break;
+        }break;
+    case BIOS_AUDIO_INFO:
+        if(MINI_FEATURE_AUDIO && pointer_ok(a[0],sizeof(struct bios_audio))) {
+            hal_audio_info_t v;hal_audio_get_info(&v);
+            struct bios_audio out={v.sample_rate,v.level,v.played,v.fetched,v.underruns,v.overruns,v.errors};
+            memcpy((void *)a[0],&out,sizeof(out));result=0;
+        }break;
     case BIOS_REBOOT:hal_reboot();
     }
     f->gpr[10]=result;f->pc+=4;return 1;
