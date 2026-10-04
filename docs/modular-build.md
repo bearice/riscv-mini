@@ -3,7 +3,10 @@
 默认 full 构建启用全部现有功能、MMU+FPU 和 SD lite，并生成实际的 Verilog 模块层级。CPU（VexRiscv）、DDR、UART、4 KiB boot ROM、计时器/IRQ 和系统控制器
 构成固定内核：当前启动协议要求把应用装入 DDR，硬件完成 DDR 初始化/训练，因此这些不作为可关闭外设，也没有集成 SRAM。
 CPU/sys 60 MHz、DDR 120 MHz 不变。
-默认 Gowin `place_option=4`、`route_option=2`、`netlist_hierarchy=0`，可用
+`--l2-mode baseline/burst/burst-refill/prefetch/writeback` 选择缓存路径，
+默认为 burst-refill，额外 native 事务间隔复位值为 0；容量由 `--l2-size` 独立选择。原理、软件维护和验收边界见
+[L2 缓存](l2-cache.md)。
+默认 Gowin `place_option=3`、`route_option=2`、`netlist_hierarchy=0`，可用
 `--place-option` / `--route-option` 覆盖。当前配置和资源见 [系统设计](system-design.md)。
 
 ## 功能开关

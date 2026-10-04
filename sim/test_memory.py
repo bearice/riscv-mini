@@ -7,7 +7,10 @@ from litedram.common import LiteDRAMNativePort
 from gateware.memory import SharedNativePort
 
 native=LiteDRAMNativePort('both',24,128)
-dut=SharedNativePort(native)
+dut=SharedNativePort(native,spacing_csr=len(sys.argv)>1)
+if len(sys.argv)>1:
+    spacing=int(sys.argv[1]);assert spacing in (0,2,4,8)
+    dut._spacing.storage.reset=spacing
 counts={'cpu':0,'video':0,'reads':0,'writes':0}
 def value(addr): return addr*0x10203040506070809
 def master(port,name,base):

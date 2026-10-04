@@ -25,7 +25,7 @@ DMA ring 容量为 1..65,535 帧、四字节对齐，必须完全位于 `[0x4000
 
 producer 是已提交帧的 32 位累计计数，fetched 是已复制到 FIFO 的累计计数，二者相减得到 ring 中未取数据。`hal_audio_ring_write()` 只复制到空闲槽，执行 `fence rw,rw` 后更新 producer；DMA ACK 后更新 fetched，CPU 才可重用该槽。FIFO 中数据仍受硬件保护，不需要等到播放后才释放 ring 槽。计数按无符号回绕，差值不得超过容量；硬件拒绝错误的 producer。
 
-默认构建启用 4 KiB 共享读缓存（只缓存读、写直达 DDR）；音频 DMA 是独立 Wishbone master，不经过 L2。模型是单裸机主循环，不能在 ISR 或多个任务中同时提交 PCM。`hal_poll()` 不自动合成或补充 PCM：应用要按返回的 written 推进自身位置、及时 refill。示例用 32,768 帧 / 128 KiB ring（约 683 ms）覆盖 SD 读取和 CPU 写视频期间的供数间隔；这不是基础应用常驻缓冲。
+默认构建启用 4 KiB 共享读缓存（只缓存读、写直达 DDR）；音频 DMA 是独立 Wishbone master，与 CPU、SD DMA 共用 main-RAM 的 L2/DDR 路径。模型是单裸机主循环，不能在 ISR 或多个任务中同时提交 PCM。`hal_poll()` 不自动合成或补充 PCM：应用要按返回的 written 推进自身位置、及时 refill。示例用 32,768 帧 / 128 KiB ring（约 683 ms）覆盖 SD 读取和 CPU 写视频期间的供数间隔；这不是基础应用常驻缓冲。
 
 ## 生命周期与 HAL
 

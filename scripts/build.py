@@ -27,14 +27,14 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=4,route_option=2,l2_size=0):
+def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2,l2_size=0,l2_mode='burst-refill'):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
         raw=binary.read_bytes();raw+=bytes((-len(raw))%4)
         data=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size)
+    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size,l2_mode=l2_mode)
     soc.platform.toolchain.options.update(place_option=place_option,route_option=route_option)
     if hierarchical:
         from gateware.rtl import split_verilog
@@ -117,7 +117,8 @@ def main():
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
     p.add_argument('--l2-size',type=int,choices=(0,4096,8192),default=4096,help='Shared write-through read cache in bytes; 0 disables it. Default profile includes 4 KiB.')
-    p.add_argument('--place-option',type=int,choices=range(5),default=4)
+    p.add_argument('--l2-mode',choices=('baseline','burst','burst-refill','prefetch','writeback'),default='burst-refill',help='L2 path (default: registered burst with early refill)')
+    p.add_argument('--place-option',type=int,choices=range(5),default=3)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--app',type=Path,default=ROOT/'firmware/bios/main.c',help='DDR firmware source (default: resident BIOS); bootloader is unchanged')
@@ -139,6 +140,7 @@ def main():
     config_args=['--cpu-variant',a.cpu_variant]+(['--cpu-verilog',str(a.cpu_verilog.resolve())] if a.cpu_verilog else [])+['--usb-backend',a.usb_backend,'--sd-profile',a.sd_profile,'--audio-clock',a.audio_clock]+features.arguments()+(['--flat-verilog'] if a.flat_verilog else [])+(['--deep-verilog'] if a.deep_verilog else [])
     config_args+=['--place-option',str(a.place_option),'--route-option',str(a.route_option)]
     config_args+=['--l2-size',str(a.l2_size)]
+    config_args+=['--l2-mode',a.l2_mode]
     requirements={'microphone_demo.c':('mic','video'),
                   'microphone_stereo_demo.c':('mic','mic_stereo','video'),
                   'usb_input_demo.c':('usb','video'),'ethernet_demo.c':('eth',),
@@ -146,7 +148,7 @@ def main():
     if a.app.resolve().parent==ROOT/'firmware/examples':
         missing=[name for name in requirements.get(a.app.name,()) if not getattr(features,name)]
         if missing:p.error(f'{a.app.name} requires enabled modules: {", ".join(missing)}')
-    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size);return
+    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size,a.l2_mode);return
     output.mkdir(parents=True,exist_ok=True)
     tools=json.loads((ROOT/'.tools.local.json').read_text());gcc=Path(tools['gcc']);toolbin=gcc.parent
     os.environ['PATH']=os.pathsep.join([str(toolbin),str(Path(tools['gowin']).parent),os.environ['PATH']])
@@ -223,7 +225,9 @@ def main():
         'ddr_initialization':'hardware','boot_ram_address':0x407fe000,'boot_ram_size_bytes':8192,
         'firmware_bytes':size,'firmware_sha256':hashlib.sha256(raw).hexdigest(),'firmware_sizes':firmware_sizes,
         'cpu_variant':a.cpu_variant,'cpu_verilog':str(a.cpu_verilog.resolve()) if a.cpu_verilog else None,'isa':isa,'abi':'ilp32',
-        'cpu_capabilities':capabilities,'l2_size_bytes':a.l2_size,'l2_policy':'write-through/write-invalidate' if a.l2_size else 'none',
+        'cpu_capabilities':capabilities,'l2_size_bytes':a.l2_size,'l2_mode':a.l2_mode,
+        'memory_port_spacing_reset':0 if a.l2_mode!='baseline' else 8,
+        'l2_policy':('write-back' if a.l2_mode=='writeback' else 'write-through/write-invalidate') if a.l2_size else 'none',
         'sd_profile':a.sd_profile,'audio_clock':a.audio_clock,
         'expected_plls':expected_plls,'audio_reference_hz':60000000,
         'audio_sample_rate':(46875 if a.audio_clock=='legacy' else 48000) if features.audio else 0,

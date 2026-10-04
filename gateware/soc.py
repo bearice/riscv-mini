@@ -87,6 +87,7 @@ class MiniSoC(SoCCore):
         sd_profile=None,
         audio_clock='dds',
         l2_size=0,
+        l2_mode='burst-refill',
     ):
         # Validate feature selections and select matching CPU RTL.
         features = features or Features()
@@ -118,7 +119,7 @@ class MiniSoC(SoCCore):
         platform=Platform(dock='standard',toolchain='gowin')
         self.crg=ClockResetGenerator(platform,features,usb_backend)
         # SUG1220: prioritize timing over compilation speed at high utilization.
-        platform.toolchain.options.update(timing_driven=1,place_option=4,route_option=2)
+        platform.toolchain.options.update(timing_driven=1,place_option=3,route_option=2)
         SoCCore.__init__(
             self, platform, clk_freq=60e6, ident='riscv-mini',
             cpu_type='vexriscv', cpu_variant=cpu_variant,
@@ -144,7 +145,7 @@ class MiniSoC(SoCCore):
         self.ddrphy.settings.rtt_wr='disabled'
         self.comb += [self.crg.stop.eq(self.ddrphy.init.stop),self.crg.reset.eq(self.ddrphy.init.reset)]
         self.sdram=HardwareDDRCore(self.ddrphy,H5TQ1G63EFR(60e6,'1:2'),self.sys_clk_freq)
-        self.memory_port=SharedNativePort(self.sdram.crossbar.get_port(),enabled=self.sdram.boot.ready)
+        self.memory_port=SharedNativePort(self.sdram.crossbar.get_port(),enabled=self.sdram.boot.ready,spacing_csr=l2_mode!='baseline')
         if not features.video:
             self.comb += [self.memory_port.video.cmd.valid.eq(0),self.memory_port.video.rdata.ready.eq(1)]
         wb_ram=wishbone.Interface(data_width=32,address_width=32,addressing='word')
@@ -153,11 +154,19 @@ class MiniSoC(SoCCore):
             region=SoCRegion(origin=0x40000000, size=128*1024*1024),
         )
         ram_request=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-        self.ram_pipeline=WishbonePipeline(wb_ram,ram_request)
+        if l2_mode in ('baseline','burst','burst-refill','prefetch','writeback'):
+            self.ram_pipeline=WishbonePipeline(wb_ram,ram_request,burst_read=l2_mode in ('burst','burst-refill'))
+        else:
+            self.comb += wb_ram.connect(ram_request)
         wb_native=wishbone.Interface(data_width=128,address_width=32,addressing='word')
         self.add_constant('CONFIG_L2_SIZE',l2_size)
+        self.add_constant('CONFIG_L2_MODE',{'baseline':0,'burst':1,'writeback':2,'prefetch':3,'burst-refill':4}[l2_mode])
         if l2_size:
-            self.l2=ReadL2(ram_request,wb_native,size=l2_size)
+            if l2_mode=='writeback':
+                from gateware.l2_writeback import WritebackL2
+                self.l2=WritebackL2(ram_request,wb_native,size=l2_size)
+            else:
+                self.l2=ReadL2(ram_request,wb_native,size=l2_size,bursting=l2_mode in ('burst','burst-refill'),prefetch=l2_mode=='prefetch',refill_bypass=l2_mode=='burst-refill')
         else:
             self.submodules += wishbone.Converter(ram_request,wb_native)
         self.wishbone_bridge=LiteDRAMWishbone2Native(wb_native,self.memory_port.cpu,base_address=0x40000000)

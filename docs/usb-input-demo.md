@@ -4,7 +4,7 @@ Source: [`firmware/examples/usb_input_demo.c`](../firmware/examples/usb_input_de
 This standalone DDR application uses the existing RGB LCD scanner and USB HAL.
 It uses the selected USB HAL backend; the default is the lightweight PIO host.
 No gateware or bootloader change is needed; the application ABI must match the
-FPGA build currently running on the board (ABI is generated per build; current full is `43623d5e`).
+FPGA build currently running on the board (ABI is generated per build; current full is `1a87971c`).
 
 The 480×272 RGB565 screen contains a 36-column, eight-row text area, a mouse
 arrow and three lines of input/device status. Typing wraps at the right edge;

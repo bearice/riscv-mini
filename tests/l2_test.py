@@ -10,7 +10,7 @@ from gateware.l2 import ReadL2
 def main():
     master=wishbone.Interface(data_width=32,address_width=32,addressing='word')
     slave=wishbone.Interface(data_width=128,address_width=32,addressing='word')
-    dut=ResetInserter()(ReadL2(master,slave,size=256,bypass_base=0x1000))
+    dut=ResetInserter()(ReadL2(master,slave,size=256,bypass_base=0x1000,prefetch='--prefetch' in sys.argv,refill_bypass='--refill-bypass' in sys.argv))
     memory={i:sum(((i*4+j)^0xabc00000)<<(32*j) for j in range(4)) for i in range(300)}
     transactions=[]
     error_address=299

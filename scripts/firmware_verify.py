@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--sd-write',action='store_true')
     parser.add_argument('--soak-seconds',type=int,default=0)
     parser.add_argument('--mic',action='store_true',help='Also test the externally connected microphone(s)')
+    parser.add_argument('--ddr-gap',type=int,choices=(0,2,4,8),help='Experimental native transaction spacing during all tests; restore default 0 on success')
     args=parser.parse_args()
     if not 0<=args.soak_seconds<=300:parser.error('Use 0..300 seconds')
     if args.program and args.reset:parser.error('Use --program or --reset')
@@ -35,7 +36,7 @@ def main():
     image=(args.image or output/'firmware/app.img').read_bytes()
     unpack_image(image,validation['boot_image']['abi_tag'])
     report={'passed':False,'bitstream_sha256':validation['bitstream_sha256'],
-        'image_sha256':hashlib.sha256(image).hexdigest(),'checks':{},'sd_write_requested':args.sd_write,
+        'image_sha256':hashlib.sha256(image).hexdigest(),'checks':{},'sd_write_requested':args.sd_write,'ddr_gap':args.ddr_gap,
         'excluded':'physical keyboard/mouse/LEDs, screen observation, audible output, external Ethernet packets; RTL/PnR remain host checks'}
     try:
         with serial.Serial(args.port,115200,timeout=.05) as port,(output/'firmware-verification-uart.log').open('wb') as log:
@@ -51,6 +52,8 @@ def main():
                     'expected':marker.decode(),'matched':marker in text,'output':text.decode(errors='replace')})
                 if marker not in text:raise RuntimeError(name+': '+text.decode(errors='replace'))
                 print(name+' OK',flush=True)
+            if args.ddr_gap is not None:
+                command('bench gap '+str(args.ddr_gap),'DDR transaction gap='+str(args.ddr_gap))
             cases=[('isa',True),('l2',bool(validation.get('l2_size_bytes'))),('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
                 ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('lcd',enabled('video')),
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
@@ -80,11 +83,11 @@ def main():
                 command('test mic')
                 if enabled('mic_stereo'):command('test mic stereo')
             if args.sd_write:command('test sd write')
-            if args.soak_seconds:
-                command(f'test soak {args.soak_seconds}',timeout=args.soak_seconds+90)
+            if args.soak_seconds:command(f'test soak {args.soak_seconds}',timeout=args.soak_seconds+90)
             for name,feature in [('lcd clear','video'),('audio stop','audio'),('eth stop','eth')]:
                 if enabled(feature):command('test '+name)
             command('status','CPU/sys=60 MHz DDR=120 MHz')
+            if args.ddr_gap is not None:command('bench gap 0','DDR transaction gap=0')
             report['passed']=True
     finally:
         (output/'firmware-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')

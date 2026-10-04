@@ -30,6 +30,9 @@ static void libc_check(void) {
 }
 static void cache_sync(void) {
     __asm__ volatile("fence rw,rw":::"memory");
+#ifdef CSR_L2_FLUSH_ADDR
+    l2_flush_write(1);while(l2_busy_read()) {}
+#endif
 #if MINI_CPU_DCACHE
     __asm__ volatile(".word 0x0000500f":::"memory");
 #endif
@@ -106,6 +109,62 @@ static void memory(void) {
     unsigned ok=1;for(unsigned i=0;i<MAX_BYTES/4;++i)if(DEST[i]!=0xa5a5a5a5u)ok=0;
     result("mem.libc-set",MAX_BYTES,1,ticks,DEST[0],ok);
 }
+/* Two 32-byte lines: +32 fits L1, +2048 conflicts only in L1,
+ * +4096 conflicts in both direct-mapped caches. Keep the timed loop in
+ * registers, unroll eight dependent loads/stores, and exclude IRQ handlers. */
+#if MINI_CPU_DCACHE && defined(CSR_L2_ENABLE_ADDR)
+static __attribute__((noinline)) uintptr_t cache_load(uintptr_t at,unsigned count) {
+    __asm__ volatile("1: lw %0,0(%0)\nlw %0,0(%0)\nlw %0,0(%0)\nlw %0,0(%0)\n"
+                     "lw %0,0(%0)\nlw %0,0(%0)\nlw %0,0(%0)\nlw %0,0(%0)\n"
+                     "addi %1,%1,-8\nbnez %1,1b":"+&r"(at),"+&r"(count)::"memory");
+    return at;
+}
+static __attribute__((noinline)) void cache_store(volatile uint32_t *a,volatile uint32_t *b,unsigned count) {
+    unsigned value=0x5a13579bu;
+    __asm__ volatile("1: sw %3,0(%1)\nsw %3,0(%2)\nsw %3,0(%1)\nsw %3,0(%2)\n"
+                     "sw %3,0(%1)\nsw %3,0(%2)\nsw %3,0(%1)\nsw %3,0(%2)\n"
+                     "addi %0,%0,-8\nbnez %0,1b":"+&r"(count):"r"(a),"r"(b),"r"(value):"memory");
+    __asm__ volatile("fence rw,rw":::"memory");
+}
+static void cache_stats(unsigned before,unsigned after) {
+    bios_puts("CACHE l2_hits=");bios_decimal((uint16_t)(after-before));
+    bios_puts(" l2_misses=");bios_decimal((uint16_t)((after>>16)-(before>>16)));bios_puts("\r\n");
+}
+#endif
+static void cache_benchmark(void) {
+#if MINI_CPU_DCACHE && defined(CSR_L2_ENABLE_ADDR)
+    if(CONFIG_L2_SIZE!=4096) {bios_puts("CACHE requires 2 KiB L1 / 4 KiB L2 configuration\r\n");++failures;return;}
+    const unsigned offsets[]={32,2048,4096,2048};
+    const char *reads[]={"cache.read-l1","cache.read-l2","cache.read-conflict","cache.read-l2-off"};
+    const char *writes[]={"cache.write-l1-hot","cache.write-l1-conflict","cache.write-l2-conflict","cache.write-l2-off"};
+    unsigned saved=l2_enable_read(),count=4096,write_count=262144;
+    bios_puts("CACHE dependent loads / repeated stores; IRQ off only during kernels, scanout on\r\n");
+#ifdef CSR_L2_FLUSH_ADDR
+    bios_puts("CACHE writeback: store timing includes fence, excludes explicit L2 clean\r\n");
+#endif
+    for(unsigned k=0;k<4;++k) {
+        volatile uint32_t *a=SOURCE,*b=SOURCE+offsets[k]/4;
+        unsigned irq=hal_irq_save();l2_enable_write(k!=3);
+        *a=(uintptr_t)b;*b=(uintptr_t)a;cache_sync();
+        uintptr_t warm=cache_load((uintptr_t)a,64);
+        unsigned before=l2_stats_read(),start=hal_ticks();
+        uintptr_t end=cache_load((uintptr_t)a,count);
+        unsigned ticks=hal_ticks()-start,after=l2_stats_read();
+        hal_irq_restore(irq);
+        result(reads[k],4,count,ticks,(unsigned)end,warm==(uintptr_t)a && end==(uintptr_t)a);cache_stats(before,after);
+        /* Re-prime both data lines after result/poll may have evicted them. */
+        irq=hal_irq_save();*a=(uintptr_t)b;*b=(uintptr_t)a;cache_sync();
+        warm=cache_load((uintptr_t)a,64);cache_store(a,b,16);
+        before=l2_stats_read();start=hal_ticks();cache_store(a,b,write_count);
+        ticks=hal_ticks()-start;after=l2_stats_read();
+        unsigned ok=warm==(uintptr_t)a && *a==0x5a13579bu && *b==0x5a13579bu;
+        hal_irq_restore(irq);result(writes[k],4,write_count,ticks,*a,ok);cache_stats(before,after);
+    }
+    l2_enable_write(saved);cache_sync();
+#else
+    bios_puts("CACHE benchmark requires cached CPU and L2\r\n");++failures;
+#endif
+}
 static void sd_benchmark(unsigned hz) {
 #if MINI_FEATURE_SD
     if(hal_sd_init()!=HAL_OK) {result("io.sd-read",0,0,0,0,0);return;}
@@ -172,14 +231,26 @@ int bios_benchmark_command(const char *s) {
     if(strcmp(s,"bench") && strncmp(s,"bench ",6))return 0;
     const char *which=s[5]?s+6:"all";
     unsigned hz=0;
+#ifdef CSR_MEMORY_PORT_SPACING_ADDR
+    if(!strncmp(which,"gap ",4)) {
+        unsigned gap=16;
+        if(!strcmp(which+4,"0"))gap=0;
+        else if(!strcmp(which+4,"2"))gap=2;
+        else if(!strcmp(which+4,"4"))gap=4;
+        else if(!strcmp(which+4,"8"))gap=8;
+        if(gap==16) {bios_puts("bench gap 0/2/4/8\r\n");return 1;}
+        __asm__ volatile("fence rw,rw":::"memory");memory_port_spacing_write(gap);
+        bios_puts("DDR transaction gap=");bios_decimal(gap);bios_puts(" sys cycles\r\n");return 1;
+    }
+#endif
     if(!strncmp(which,"sd ",3)) {
         if(!strcmp(which+3,"7500000"))hz=7500000;
         else if(!strcmp(which+3,"10000000"))hz=10000000;
         else if(!strcmp(which+3,"15000000"))hz=15000000;
         else if(!strcmp(which+3,"30000000"))hz=30000000;
     }
-    if(strcmp(which,"all") && strcmp(which,"cpu") && strcmp(which,"mem") && strcmp(which,"libc") && strcmp(which,"io") && strncmp(which,"net ",4) && !hz) {
-        bios_puts("bench [all|cpu|mem|libc|io|net FILE|sd 7500000/10000000/15000000/30000000]\r\n");return 1;
+    if(strcmp(which,"all") && strcmp(which,"cpu") && strcmp(which,"mem") && strcmp(which,"cache") && strcmp(which,"libc") && strcmp(which,"io") && strncmp(which,"net ",4) && !hz) {
+        bios_puts("bench [all|cpu|mem|cache|libc|io|net FILE|sd 7500000/10000000/15000000/30000000|gap 0/2/4/8]\r\n");return 1;
     }
     failures=0;bios_puts("BENCH BEGIN clock_hz=");bios_decimal(CONFIG_CLOCK_FREQUENCY);
     bios_puts(" interrupts=on scanout=on compiler=Os\r\n");
@@ -187,6 +258,7 @@ int bios_benchmark_command(const char *s) {
     if(!strcmp(which,"all") || !strcmp(which,"mem") || !strcmp(which,"libc"))libc_check();
     if(!strcmp(which,"all") || !strcmp(which,"cpu"))cpu();
     if(!strcmp(which,"all") || !strcmp(which,"mem"))memory();
+    if(!strcmp(which,"cache"))cache_benchmark();
     if(!strcmp(which,"all") || !strcmp(which,"io"))io();
     if(hz)sd_benchmark(hz);
     if(!strncmp(which,"net ",4)) {

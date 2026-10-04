@@ -20,11 +20,13 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--port',default='COM4')
     p.add_argument('--rounds',type=int,default=3)
-    p.add_argument('--suite',choices=('all','cpu','mem','io'),default='all')
+    p.add_argument('--suite',choices=('all','cpu','mem','cache','io','net'),default='all')
+    p.add_argument('--gap',type=int,choices=(0,2,4,8),help='Experimental native transaction spacing; restored to default 0 after successful run')
     p.add_argument('--host-ip',help='enable 1 MiB real TFTP receive benchmark')
     p.add_argument('--output-dir',type=Path,default=Path('build/benchmark/results'))
     a=p.parse_args()
     if not 1<=a.rounds<=10:p.error('--rounds must be 1..10')
+    if a.suite=='net' and not a.host_ip:p.error('--suite net requires --host-ip')
     a.output_dir.mkdir(parents=True,exist_ok=True)
     rows=[]
     with (a.output_dir/'uart.log').open('wb') as log, serial.Serial(a.port,115200,timeout=.1) as port:
@@ -35,12 +37,15 @@ def main():
             print(data.decode(errors='replace'),flush=True)
             return data
         port.reset_input_buffer();command('status')
+        if a.gap is not None:
+            changed=command('bench gap '+str(a.gap))
+            if ('DDR transaction gap='+str(a.gap)).encode() not in changed:raise RuntimeError('Gap CSR unavailable')
         # Prime the console so setup/redrawing stays outside the timed kernels.
         time.sleep(1)
         for round_ in range(a.rounds):
             print(f'Round {round_+1}/{a.rounds}',flush=True)
-            data=command('bench '+a.suite)
-            if b'BENCH DONE PASS' not in data:raise RuntimeError('Benchmark failed')
+            data=b'' if a.suite=='net' else command('bench '+a.suite)
+            if a.suite!='net' and b'BENCH DONE PASS' not in data:raise RuntimeError('Benchmark failed')
             expected=0
             if a.host_ip:
                 data_bytes=bytes(range(256))*4096
@@ -51,10 +56,14 @@ def main():
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                         future=pool.submit(server.serve_once)
                         net=command('bench net BENCH.BIN',60)
+                        if b'BENCH DONE PASS' not in net:
+                            command('test eth')
+                            raise RuntimeError('TFTP firmware transfer failed')
                         if not future.result(timeout=5) or b'BENCH DONE PASS' not in net:raise RuntimeError('TFTP failed')
                         data+=net
+                finally:
                     log.write(('TFTP '+repr(server.events)+'\n').encode())
-                finally:server.close()
+                    server.close()
             for match in ROW.finditer(data):
                 name,size,count,ticks,check,passed=match.groups()
                 row=dict(round=round_+1,name=name.decode(),size=int(size),count=int(count),ticks=int(ticks),check=check.decode(),passed=passed==b'PASS')
@@ -65,9 +74,25 @@ def main():
                     row['cycles_per_iteration']=row['ticks']/row['count']
                 elif name==b'mem.chase32':row['ns_per_load']=row['seconds']*1e9/row['count']
                 else:row['MiB_per_second']=row['size']*row['count']/row['seconds']/1048576
+                if name.startswith(b'cache.'):
+                    row['cycles_per_access']=row['ticks']/row['count']
+                    row['ns_per_access']=row['seconds']*1e9/row['count']
+                    stats=re.match(rb'\s+CACHE l2_hits=(\d+) l2_misses=(\d+)',data[match.end():])
+                    if not stats:raise RuntimeError('Missing cache counters')
+                    row['l2_hits'],row['l2_misses']=map(int,stats.groups())
+                    # Each L1 refill issues eight 32-bit reads; a 16-byte L2
+                    # line misses once, then supplies its next three words.
+                    expected_counts={b'cache.read-l1':(0,0),b'cache.read-l2':(8*row['count'],0),
+                                     b'cache.read-conflict':(6*row['count'],2*row['count']),
+                                     b'cache.read-l2-off':(0,8*row['count'])}
+                    if name in expected_counts:
+                        h,m=expected_counts[name]
+                        if abs(row['l2_hits']-h)>64 or abs(row['l2_misses']-m)>64:
+                            raise RuntimeError(f'Cache residency not confirmed: {row}')
                 if name==b'io.tftp-rx' and (row['size']!=1048576 or int(check,16)!=expected):raise RuntimeError('Network payload CRC mismatch')
                 rows.append(row)
-            (a.output_dir/'results.json').write_text(json.dumps({'clock_hz':60000000,'rows':rows},indent=2)+'\n')
+            (a.output_dir/'results.json').write_text(json.dumps({'clock_hz':60000000,'gap':a.gap,'rows':rows},indent=2)+'\n')
+        if a.gap is not None:command('bench gap 0')
         if b'BIOS TEST PASS' not in command('test bios'):raise RuntimeError('BIOS regression test failed')
         command('status')
     for name,size in sorted({(r['name'],r['size']) for r in rows}):

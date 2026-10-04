@@ -6,6 +6,8 @@
 bench                 # 与 bench all 相同
 bench cpu
 bench mem
+bench cache           # L1/L2 命中、冲突及 L2 关闭对照
+bench gap 0/2/4/8      # 实验用 native 请求额外间隔；复位恢复 8，不保存设置
 bench libc            # 对齐、尾部和越界哨兵检查，不计吞吐
 bench io
 bench sd 15000000     # 与 7.5 MHz 参考数据比较，支持 7500000/10000000/15000000/30000000
@@ -44,6 +46,10 @@ USB HID、音频、麦克风是事件或固定采样率接口，本命令不测�
 
 ## 主机重复运行
 
+`bench cache` 针对默认 2 KiB 直接映射 L1 D-cache / 4 KiB 直接映射 L2。两条 32 B 数据行交替访问：间距 32 B 时均可驻留 L1；间距 2048 B 时冲突于 L1 而驻留不同 L2 行；间距 4096 B 时冲突于两级缓存。另对 2048 B 间距关闭 L2 作对照。数据先预热，汇编循环展开八次，每组执行 4096 次依赖指针加载或 262144 次交替写入，统计有效 4 B 数据吞吐及 L2 命中/未命中计数差值。延长写测试覆盖多个 LCD 刷新周期，减少视频仲裁相位影响。计数器为 16 位模计数，包含计时边界可能产生的指令或栈访问；不统计写次数。
+
+缓存测试仅在短计时内关闭 CPU 中断，LCD 扫描继续；它与普通 `bench mem` 的中断开启结果不直接等价。L1 与 L2 都是写穿透，L2 写入还会失效对应行，因此写测试的“hot/conflict”指预热地址布局，不代表写入只在缓存完成。测试结束恢复 L2 原启用状态和中断。无 L2 或不同 L2 容量配置明确报告不支持。
+
 [benchmark.py](../scripts/benchmark.py) 驱动相同 BIOS 命令，默认三轮，保存 UART 原始输出与 JSON，并计算中位数。
 
 ```powershell
@@ -54,6 +60,8 @@ USB HID、音频、麦克风是事件或固定采样率接口，本命令不测�
 
 网络测试由主机生成已知的 1 MiB 数据，校验接收长度与 CRC。主机不改变网卡、路由或防火墙。`--host-ip` 会设置 BIOS 的当前 server 地址，不执行 settings save。脚本最后运行 `test bios` 和 `status`，检查 BIOS 回归并保留设备状态。
 
-`--suite cpu/mem/io` 可单独重复某组测试。`bench libc` 在实板覆盖 304 个对齐、短长度、首个差异和哨兵检查；主机 [libc_memory_test.c](../tests/libc_memory_test.c) 还用标准 libc 参考值、保护页及 sanitizer 检查更大的长度。只对完整对齐字使用 `may_alias` 字类型，非同余对齐的 memcpy 和短尾部保留字节路径；字符串函数保持逐字节读取，避免越过 NUL 所在对象。
+`--suite cpu/mem/cache/io/net` 可单独重复某组测试。`bench libc` 在实板覆盖 304 个对齐、短长度、首个差异和哨兵检查；主机 [libc_memory_test.c](../tests/libc_memory_test.c) 还用标准 libc 参考值、保护页及 sanitizer 检查更大的长度。只对完整对齐字使用 `may_alias` 字类型，非同余对齐的 memcpy 和短尾部保留字节路径；字符串函数保持逐字节读取，避免越过 NUL 所在对象。
 
 [sd_clock_verify.py](../scripts/sd_clock_verify.py) 默认扫描四档读频率，每档三次；`--clocks 15000000 --soak-seconds 300` 进行五分钟只读测试。每轮先在 7.5 MHz 获取参考 CRC，再测试请求频率的单块/八块读取，失败候选明确记录。30 MHz 是实验候选，需要 CMD6 协商且尚未通过实板读取，不能作为默认。结束时检查低速恢复、BIOS 自检和设备状态，不写卡。重新 mount/init 会恢复驱动默认频率。
+
+非 baseline L2 模式下，主机可用 `--gap 0/2/4/8` 在同一 FPGA 配置上扫描额外的 DDR 请求间隔，成功完成后恢复默认值 0。显式选择 baseline 的构建不暴露该 CSR。`--suite net --host-ip ADDRESS` 仅运行现有 `bench net BENCH.BIN` 命令；失败时保留 TFTP 服务事件和 `test eth` 状态，不能把失败的传输计入吞吐。
