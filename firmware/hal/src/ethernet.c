@@ -1,11 +1,32 @@
 /* RTL8201F clause-22 MDIO + LiteEth packet slots. All packet work is deferred. */
 #include <hal/hal.h>
+#include <hal/dma.h>
 #include <generated/csr.h>
 #include <generated/soc.h>
 #include <generated/mem.h>
 static hal_eth_info_t info;
 static volatile unsigned tx_busy;
 static unsigned tx_slot,next_poll;
+#ifdef CSR_ETH_DMA_CONTROL_ADDR
+static hal_result_t packet_dma(void *memory,uintptr_t slot,unsigned length,unsigned receive) {
+    eth_dma_control_write(0);
+    eth_dma_memory_write((uintptr_t)memory);eth_dma_slot_write(slot);eth_dma_length_write(length);
+    __asm__ volatile("fence rw,rw":::"memory");
+    eth_dma_control_write(1|(receive<<1));
+    uint32_t start=hal_time_ms();
+    while(!eth_dma_done_read()) {
+        if((uint32_t)(hal_time_ms()-start)>=100) {eth_dma_control_write(0);return HAL_TIMEOUT;}
+    }
+    unsigned error=eth_dma_error_read();eth_dma_control_write(0);
+    if(error)return HAL_IO;
+    if(receive) {hal_dma_invalidate();++info.dma_rx;} else ++info.dma_tx;
+    return HAL_OK;
+}
+static unsigned dma_pointer(const void *p,unsigned length) {
+    uintptr_t address=(uintptr_t)p;
+    return !(address&15u) && address>=0x40000000u && address<0x47fff000u && address<=0x48000000u-length;
+}
+#endif
 static void half_cycle(void) {
     unsigned start=hal_ticks();while((unsigned)(hal_ticks()-start)<CONFIG_CLOCK_FREQUENCY/1000000u) {}
 }
@@ -123,10 +144,18 @@ hal_result_t hal_eth_send(const void *frame,unsigned length) {
     if(!info.initialized || !info.link)return HAL_NO_MEDIA;
     if(tx_busy || !ethmac_sram_reader_ready_read())return HAL_BUSY;
     volatile uint32_t *slot=(volatile uint32_t *)(ETHMAC_TX_BASE+tx_slot*ETHMAC_SLOT_SIZE);
+#ifdef CSR_ETH_DMA_CONTROL_ADDR
+    if(length>=64 && dma_pointer(frame,length)) {
+        hal_result_t result=packet_dma((void *)frame,(uintptr_t)slot,length,0);
+        if(result!=HAL_OK)return result;
+    } else
+#endif
+    {
     const uint8_t *bytes=frame;
     for(unsigned offset=0;offset<length;offset+=4) {
         unsigned word=0;for(unsigned b=0;b<4 && offset+b<length;++b)word|=(unsigned)bytes[offset+b]<<(8*b);
         slot[offset/4]=word;
+    }
     }
     unsigned state=hal_irq_save();tx_busy=1;
     ethmac_sram_reader_slot_write(tx_slot);ethmac_sram_reader_length_write(length);
@@ -141,11 +170,19 @@ hal_result_t hal_eth_receive(void *frame,unsigned capacity,unsigned *length) {
     hal_result_t result=HAL_INVALID;
     if(size<=capacity && size>=14 && size<=HAL_ETH_MAX_FRAME && index<ETHMAC_RX_SLOTS) {
         volatile const uint32_t *slot=(volatile const uint32_t *)(ETHMAC_RX_BASE+index*ETHMAC_SLOT_SIZE);
+#ifdef CSR_ETH_DMA_CONTROL_ADDR
+        if(size>=64 && dma_pointer(frame,size)) {
+            result=packet_dma(frame,(uintptr_t)slot,size,1);
+            if(result==HAL_OK) {*length=size;++info.rx_frames;}
+        } else
+#endif
+        {
         uint8_t *bytes=frame;
         for(unsigned offset=0;offset<size;offset+=4) {
             unsigned word=slot[offset/4];for(unsigned b=0;b<4 && offset+b<size;++b)bytes[offset+b]=word>>(8*b);
         }
         *length=size;++info.rx_frames;result=HAL_OK;
+        }
     }
     ethmac_sram_writer_ev_pending_write(1);ethmac_sram_writer_ev_enable_write(1);return result;
 }

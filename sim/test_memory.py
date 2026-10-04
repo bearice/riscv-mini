@@ -5,18 +5,21 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen.sim import run_simulation, passive
 from litedram.common import LiteDRAMNativePort
 from gateware.memory import SharedNativePort
+from gateware.dma_scheduler import DMAMemoryScheduler
 
 native=LiteDRAMNativePort('both',24,128)
-dut=SharedNativePort(native,spacing_csr=len(sys.argv)>1)
-if len(sys.argv)>1:
+shared_dma='--dma-shared' in sys.argv
+dut=DMAMemoryScheduler(native) if shared_dma else SharedNativePort(native,spacing_csr=len(sys.argv)>1)
+if len(sys.argv)>1 and not shared_dma:
     spacing=int(sys.argv[1]);assert spacing in (0,2,4,8)
     dut._spacing.storage.reset=spacing
 counts={'cpu':0,'video':0,'reads':0,'writes':0}
+if shared_dma: counts['dma']=0
 def value(addr): return addr*0x10203040506070809
 def master(port,name,base):
     for i in range(30):
         addr=base+i
-        write=name=='cpu' and i%3==0
+        write=name!='video' and i%3==0
         yield port.cmd.addr.eq(addr)
         yield port.cmd.we.eq(write)
         yield port.cmd.valid.eq(1)
@@ -72,10 +75,14 @@ def controller():
 
 def deadline():
     for _ in range(3000):
-        if counts['cpu']==counts['video']==30: return
+        if counts['cpu']==counts['video']==30 and (not shared_dma or counts['dma']==30): return
         yield
     raise AssertionError(('Arbitration stalled',counts))
 
-run_simulation(dut,[master(dut.cpu,'cpu',100),master(dut.video,'video',1000),controller(),deadline()])
-assert counts=={'cpu':30,'video':30,'reads':50,'writes':10},counts
+processes=[master(dut.cpu,'cpu',100),master(dut.video,'video',1000),controller(),deadline()]
+if shared_dma: processes.append(master(dut.dma,'dma',2000))
+run_simulation(dut,processes)
+expected={'cpu':30,'video':30,'reads':50,'writes':10}
+if shared_dma: expected.update(dma=30,reads=70,writes=20)
+assert counts==expected,counts
 print('Shared native port PASS:',counts)

@@ -21,6 +21,8 @@ def main():
     parser.add_argument('--java', required=True, type=Path)
     parser.add_argument('--sbt-launch', required=True, type=Path)
     parser.add_argument('--output-dir', required=True, type=Path)
+    parser.add_argument('--external-fence', action=argparse.BooleanOptionalAction, default=True,
+                        help='Export conservative fence/atomic request and completion handshake')
     parser.add_argument('--relaxed-pc-calculation', action='store_true',
                         help='Add VexRiscv fetch address calculation stage')
     args = parser.parse_args()
@@ -39,6 +41,9 @@ def main():
     tm_anchor='if(utimeAccess != CsrAccess.NONE)    rw(csrId, 1 -> TM)'
     if csr_text.count(tm_anchor)!=1:raise ValueError('Unsupported counter permission mapping')
     csr_source.write_text(csr_text.replace(tm_anchor,'rw(csrId, 1 -> TM) // Also governs firmware-emulated time'))
+    if args.external_fence:
+        from cpu_fence import patch_cached_core
+        patch_cached_core(vex_local/'src/main/scala/vexriscv/plugin/DBusCachedPlugin.scala')
     build = (base/'build.sbt').read_text()
     build = build.replace('file("ext/VexRiscv")',
                           'file('+json.dumps(vex_local.as_posix())+')')
@@ -98,7 +103,8 @@ def main():
     for csr, fpu, name in variants:
         path = output/(name+'.v')
         report['cpu_rtls'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
-                                  'mmu':csr=='linux','fpu':fpu=='true','dcache':True}
+                                  'mmu':csr=='linux','fpu':fpu=='true','dcache':True,
+                                  'external_fence':args.external_fence}
     (output/'generator.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

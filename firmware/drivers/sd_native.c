@@ -5,6 +5,7 @@
 #include "ff.h"
 #include "diskio.h"
 #include <hal/hal.h>
+#include <hal/dma.h>
 #include <generated/csr.h>
 #include <string.h>
 
@@ -16,11 +17,12 @@ static unsigned initialized,high_capacity,rca,width,clock_hz=400000;
 #define SD_WRITE_CLOCK_HZ 7500000u
 static unsigned read_clock_hz=SD_READ_CLOCK_HZ,high_speed,switch_supported;
 static uint32_t sectors,read_blocks,written_blocks,errors;
-static _Alignas(4) uint8_t bounce[4096];
+static _Alignas(16) uint8_t bounce[4096];
+static void stop_dma(void);
 static unsigned present(void) {return !(sdcard_phy_card_detect_read()&1u);}
 static uint32_t response(unsigned word) {return sdcard_core_cmd_response_read_word(3-word);}
 static void reset_controller(void) {
-    sdcard_block2mem_dma_enable_write(0);sdcard_mem2block_dma_enable_write(0);
+    stop_dma();
     sd_control_reset_write(1);io_delay_ms(1);sd_control_reset_write(0);io_delay_ms(1);
     sdcard_ev_enable_write(0);sdcard_ev_pending_write(15);
     sdcard_phy_clocker_divider_write(150);sdcard_phy_settings_write(0);
@@ -60,9 +62,7 @@ static int wait_dma(unsigned write) {
         if(write?sdcard_mem2block_dma_error_read():sdcard_block2mem_dma_error_read())return 0;
         if(write?sdcard_mem2block_dma_done_read():sdcard_block2mem_dma_done_read()) {
             __asm__ volatile("fence rw,rw":::"memory");
-#if MINI_CPU_DCACHE
-            if(!write)__asm__ volatile(".word 0x0000500f":::"memory");
-#endif
+            if(!write)hal_dma_invalidate();
             return 1;
         }
         if(!present())return 0;
@@ -79,7 +79,15 @@ static void start_dma(unsigned write,unsigned bytes) {
         sdcard_block2mem_dma_length_write(bytes);sdcard_block2mem_dma_enable_write(1);
     }
 }
-static void stop_dma(void) {sdcard_block2mem_dma_enable_write(0);sdcard_mem2block_dma_enable_write(0);}
+static void stop_dma(void) {
+    sdcard_block2mem_dma_enable_write(0);sdcard_mem2block_dma_enable_write(0);
+#ifdef CSR_SDCARD_BLOCK2MEM_DMA_BUSY_ADDR
+    /* Drain an accepted DDR beat before the SD-local reset or buffer reuse. */
+    uint32_t start=io_ticks();
+    while(sdcard_block2mem_dma_busy_read() || sdcard_mem2block_dma_busy_read())
+        if((uint32_t)(io_ticks()-start)>=CONFIG_CLOCK_FREQUENCY/10u)break;
+#endif
+}
 static int switch_function(uint32_t argument) {
     sdcard_core_block_length_write(64);sdcard_core_block_count_write(1);start_dma(0,64);
     int ok=checked_command(6,argument,RESP_SHORT|RESP_CRC|DATA_READ) && wait_event(1) && wait_dma(0);
@@ -153,6 +161,15 @@ DSTATUS disk_initialize(BYTE drive) {
     puts_uart(" SDHC=");io_hex(high_capacity);puts_uart(" hz=");io_hex(clock_hz);puts_uart("\r\n");
     return 0;
 fail:
+    puts_uart("SD init FAIL command=");io_hex(sdcard_core_cmd_command_read());
+    puts_uart(" cmd_event=");io_hex(sdcard_core_cmd_event_read());
+    puts_uart(" data_event=");io_hex(sdcard_core_data_event_read());
+    puts_uart(" dma_error=");io_hex(sdcard_block2mem_dma_error_read());
+    puts_uart(" dma_done=");io_hex(sdcard_block2mem_dma_done_read());
+    puts_uart(" dma_offset=");io_hex(sdcard_block2mem_dma_offset_read());
+    puts_uart(" response=");io_hex(response(0));
+    puts_uart(" argument=");io_hex(sdcard_core_cmd_argument_read());
+    puts_uart(" divider=");io_hex(sdcard_phy_clocker_divider_read());puts_uart("\r\n");
     ++errors;initialized=0;reset_controller();
     puts_uart("SD unavailable: native timeout/protocol/no-media; UART remains available\r\n");
     return present()?STA_NOINIT:STA_NOINIT|STA_NODISK;

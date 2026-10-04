@@ -54,11 +54,12 @@ def main():
                 print(name+' OK',flush=True)
             if args.ddr_gap is not None:
                 command('bench gap '+str(args.ddr_gap),'DDR transaction gap='+str(args.ddr_gap))
-            cases=[('isa',True),('l2',bool(validation.get('l2_size_bytes'))),('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
+            cases=[('isa',True),('l2',bool(validation.get('l2_size_bytes'))),('fence',True),('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
                 ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('lcd',enabled('video')),
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
                 ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),
                 ('eth',enabled('eth')),('eth parser',enabled('eth')),('usb',enabled('usb')),('usb tree',enabled('usb')),('usb stop',enabled('usb'))]
+            cases += [('dma',validation.get('dma_backend')=='native')]
             capabilities = validation.get('cpu_capabilities')
             if capabilities is not None:
                 cases=[('fpu',capabilities['fpu']),('mmu',capabilities['mmu']),*cases]

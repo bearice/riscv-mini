@@ -54,6 +54,17 @@ def main():
                 return (time.monotonic()-start)*1000
             initial=command('status')
             identity=re.search(r'MAC=([0-9A-F:]{17})',initial)
+            expected_mac=identity[1].lower() if identity else None
+            if a.host_ip and expected_mac is None:
+                # BIOS status omits MAC; derive the same board identity as HAL,
+                # from the firmware's read-only factory UID test.
+                uid=re.search(r'UID=([0-9A-F]+)',command('test flash'))
+                if not uid or len(uid[1])%2:raise RuntimeError('Flash UID missing')
+                hash_=14695981039346656037
+                for byte in bytes.fromhex(uid[1]):hash_=((hash_^byte)*1099511628211)&((1<<64)-1)
+                mac_=bytearray(hash_.to_bytes(8,'little')[:6]);mac_[0]=(mac_[0]&0xfe)|2
+                expected_mac=mac_.hex(':')
+            report['expected_mac']=expected_mac
             try:
                 if a.audio:
                     command('test audio start');wav=output/'audio-line-in.wav'
@@ -68,6 +79,12 @@ def main():
                 if a.host_ip:
                     report.update(host_ip=a.host_ip,interface_index=a.interface_index)
                     command('test eth start')
+                    deadline=time.monotonic()+5
+                    while True:
+                        eth=command('test eth')
+                        if 'link=00000001' in eth:break
+                        if time.monotonic()>=deadline:raise RuntimeError('Ethernet link did not become ready')
+                        time.sleep(.25)
                     send_arp=ctypes.windll.iphlpapi.SendARP
                     send_arp.argtypes=[ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32)]
                     send_arp.restype=ctypes.c_uint32
@@ -76,7 +93,7 @@ def main():
                                   struct.unpack('<I',socket.inet_aton(a.host_ip))[0],mac,ctypes.byref(length))
                     if code:raise RuntimeError(f'ARP failed: Windows error {code}')
                     report['arp_mac']=bytes(mac[:length.value]).hex(':')
-                    if not identity or report['arp_mac']!=identity[1].lower():raise RuntimeError('ARP MAC mismatch')
+                    if report['arp_mac']!=expected_mac:raise RuntimeError('ARP MAC mismatch')
                     ping=subprocess.run(['ping','-S',a.host_ip,'-n','4','-w','2000','169.254.20.20'],capture_output=True)
                     report['ping']=ping.stdout.decode(errors='replace')
                     if ping.returncode:raise RuntimeError('ICMP ping failed')
@@ -96,6 +113,11 @@ def main():
                         report['network']={'udp_packets':count,'payload_bytes':total,'udp_timeouts':0,
                             'max_rtt_ms':max(latencies),'seconds':time.monotonic()-started,'rounds':rounds,'sizes':sizes}
                     print('External Ethernet/concurrency PASS '+json.dumps(report['network']),flush=True)
+                    if validation.get('dma_backend')=='native':
+                        copied=re.search(r'ETH DMA rx=([0-9a-fA-F]+) tx=([0-9a-fA-F]+)',command('test eth'))
+                        if not copied or not all(int(x,16)>0 for x in copied.groups()):
+                            raise RuntimeError('Native Ethernet RX/TX DMA did not complete')
+                        report['network']['dma_copies']={'rx':int(copied[1],16),'tx':int(copied[2],16)}
                 final=command('status')
                 audio=re.search(r'AUDIO [^\r\n]+',final)
                 if audio and ('underruns=00000000' not in audio[0] or 'errors=00000000' not in audio[0]):

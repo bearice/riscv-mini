@@ -4,20 +4,23 @@
 
 ## 系统概览
 
-Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 4 KiB boot ROM 启动，等待硬件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 DDR monitor 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
+Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 4 KiB boot ROM 启动，等待硬件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
-- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享读缓存 L2（burst-refill，额外事务间隔 0）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件。
+- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享读缓存 L2（burst-refill，native + crossbar + fast，写合并关闭）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-fence/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
 - 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，片上 ROM 保持 Flash/UART 装载职责。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
 
 MMU 配置另有 60 MHz 的独立 64 位机器定时器，接 MTIP；S-mode 外设 mask/pending CSR 为 `0x9c0` / `0xdc0`。OpenSBI 的 OSB1 一次性交接与保护边界见 [OpenSBI](opensbi-port.md)。
 
+默认 SD/音频仍使用共享 Wishbone 内存路径，Ethernet 使用 CPU 访问 packet SRAM。
+可选的 SD/音频 native DMA 与网络 copy DMA 实验见 [native DMA](native-dma.md)。
+
 ## 地址映射
 
 | 区域 | 地址 | 说明 |
 | --- | --- | --- |
-| DDR | `0x40000000` | 128 MiB，单一原生端口，CPU/视频/DMA 共享调度 |
+| DDR | `0x40000000` | 128 MiB，CPU/L2 与视频各用一个 native crossbar 端口；SD/音频经 Wishbone |
 | bootloader 栈 / data / BSS | `0x407fe000` | 8 KiB 保留区，bootloader 使用 |
 | DDR 应用 | `0x40800000` | linker 固定入口，4 MiB 上限 |
 | RGB 帧缓冲槽 | `0x47e00000` / `0x47e40000` | 双槽，每帧 261,120 B，槽间距 262,144 B，共保留 2 MiB |
@@ -99,19 +102,19 @@ CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼�
 
 ## 当前 full 资源与构建身份
 
-配置：MMU+FPU、无 C/B、L2 4 KiB、SD lite、USB ultra、DDS、全部外设。CSR 镜像 ABI 为 `1a87971c`；不同功能组合必须重新生成匹配固件，不能把该 ABI 当作所有 profile 的固定值。
+配置：MMU+FPU、无 C/B、L2 4 KiB native burst-refill + crossbar + fast、CPU fence 握手、SD lite、USB ultra、DDS、全部外设。CSR 镜像 ABI 为 `43623d5e`；不同功能组合必须重新生成匹配固件，不能把该 ABI 当作所有 profile 的固定值。
 
 | PnR 资源 | 使用 / 可用 |
 | --- | ---: |
-| Logic | 19,150 / 20,736 |
-| Register | 11,075 / 16,173 |
-| CLS | 10,148 / 10,368 |
+| Logic | 19,415 / 20,736 |
+| Register | 10,950 / 16,173 |
+| CLS | 10,228 / 10,368 |
 | BSRAM | 43 / 46 |
 | PLL | 3 / 4 |
 | PRIMARY / LW | 各 8 / 8 |
 | IO / IOLOGIC | 139 / 207；62 / 207 |
 
-Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。本页记录同一 burst-refill 控制器候选的布局布线资源快照（将间隔复位值改为 0 后须重新布局布线核验），不表示可以提高运行频率。ROM 配置容量 4096 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
+Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。本页记录已通过五分钟并发、外部网络及 fence 自检的 full 配置资源，不表示其他裁剪组合或更高频率已通过上板验收。ROM 配置容量 4096 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
 
 Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/main.c`](../firmware/bootloader/main.c) 与 [`scripts/boot_upload.py`](../scripts/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
 

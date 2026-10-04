@@ -18,7 +18,7 @@ static uint32_t ring[RING_FRAMES],pcm[256];
 static unsigned streaming,producer,audible_until;
 #endif
 #if MINI_FEATURE_ETH
-static uint8_t packet[HAL_ETH_MAX_FRAME];
+static _Alignas(16) uint8_t packet[HAL_ETH_MAX_FRAME];
 static unsigned network,pending_reply,network_replies,network_ignored;
 #endif
 #if MINI_FEATURE_VIDEO
@@ -233,6 +233,33 @@ static unsigned l2_check(void) {
     hal_uart_puts("UNSUPPORTED: L2 disabled in this build\r\n");return 1;
 #endif
 }
+static unsigned fence_check(void) {
+    volatile uint32_t *words=work;
+    uint32_t state=hal_irq_save();unsigned ok=1;
+    for(unsigned i=0;i<64;++i)words[i]=0x12340000u+i;
+    ((volatile uint8_t *)words)[1]=0xabu;
+    __asm__ volatile("fence rw,rw":::"memory");
+#if MINI_CPU_DCACHE
+    __asm__ volatile(".word 0x0000500f":::"memory");
+#endif
+    for(unsigned i=0;i<64;++i)if(words[i]!=(i?0x12340000u+i:0x1234ab00u))ok=0;
+#if defined(__riscv_atomic)
+    uint32_t old,increment=7;
+    __asm__ volatile("amoadd.w.aqrl %0,%2,(%1)":"=&r"(old):"r"(words),"r"(increment):"memory");
+    __asm__ volatile("fence rw,rw":::"memory");
+    ok=ok && old==0x1234ab00u && words[0]==0x1234ab07u;
+#endif
+    /* Execute, modify and execute the same instruction-cache address. */
+    volatile uint32_t *code=&work[128];
+    code[0]=0x00700513u;code[1]=0x00008067u;
+    __asm__ volatile("fence.i":::"memory");
+    unsigned (*run)(void)=(unsigned (*)(void))(uintptr_t)code;
+    ok=ok && run()==7;
+    code[0]=0x00900513u;
+    __asm__ volatile("fence.i":::"memory");
+    ok=ok && run()==9;
+    hal_irq_restore(state);return ok;
+}
 static unsigned ddr_check(void) {
     value("DDR hardware status=",sdram_boot_status_read());
     value(" lane0=",sdram_boot_lane0_read());value(" lane1=",sdram_boot_lane1_read());hal_uart_puts("\r\n");
@@ -445,6 +472,7 @@ static void eth_status(void) {
     value(" tx_pending=",ethmac_sram_reader_ev_pending_read());value(" tx_enable=",ethmac_sram_reader_ev_enable_read());
     value(" tx_busy=",e.tx_busy);
     value(" replies=",network_replies);value(" ignored=",network_ignored);hal_uart_puts("\r\n");
+    value("ETH DMA rx=",e.dma_rx);value(" tx=",e.dma_tx);hal_uart_puts("\r\n");
 }
 #endif
 #if MINI_FEATURE_ETH
@@ -541,6 +569,29 @@ static unsigned soak(unsigned seconds) {
     return audio_stop() && ok;
 }
 #endif
+static unsigned dma_check(void) {
+#if CONFIG_DMA_NATIVE
+    unsigned ok=1;
+#if MINI_FEATURE_SD
+    ok=sd_blocks();
+#endif
+#if MINI_FEATURE_AUDIO
+    if(ok)ok=audio_check();
+#endif
+#ifdef CSR_ETH_DMA_CONTROL_ADDR
+    /* Invalid alignment must fail without acquiring SRAM or DDR ownership. */
+    eth_dma_control_write(0);eth_dma_memory_write(0x40000001);
+    eth_dma_slot_write(0xb0001000);eth_dma_length_write(64);eth_dma_control_write(1);
+    uint32_t started=hal_time_ms();
+    while(!eth_dma_done_read())if((uint32_t)(hal_time_ms()-started)>100) {ok=0;break;}
+    ok=ok && eth_dma_error_read() && !eth_dma_busy_read();eth_dma_control_write(0);
+    hal_uart_puts("DMA network payload requires external echo; test eth reports completed RX/TX copies\r\n");
+#endif
+    return ok;
+#else
+    hal_uart_puts("DMA native transport disabled\r\n");return 0;
+#endif
+}
 void tests_help(void) {
 #if MINI_BIOS
     hal_uart_puts("test bios\r\n");
@@ -551,7 +602,7 @@ void tests_help(void) {
 #if MINI_FEATURE_MMU
     hal_uart_puts("test mmu\r\n");
 #endif
-    hal_uart_puts("test isa|l2|ddr|uart|irq\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
+    hal_uart_puts("test isa|l2|fence|ddr|uart|irq|dma\r\nFEATURES " MINI_FEATURES_TEXT "\r\n");
 #if MINI_FEATURE_FLASH
     hal_uart_puts("test flash\r\n");
 #endif
@@ -680,6 +731,7 @@ int tests_command(const char *command) {
        (!MINI_FEATURE_VIDEO && !strncmp(name,"lcd",3)) ||
        (!MINI_FEATURE_SPI_LCD && !strncmp(name,"spi-lcd",7)) ||
        (!MINI_FEATURE_AUDIO && !strncmp(name,"audio",5)) ||
+       (!CONFIG_DMA_NATIVE && !strcmp(name,"dma")) ||
        (!MINI_FEATURE_MIC && !strncmp(name,"mic",3)) ||
        (!MINI_FEATURE_MIC_STEREO && !strcmp(name,"mic stereo")) ||
        (!MINI_FEATURE_ETH && !strncmp(name,"eth",3)) ||
@@ -698,7 +750,9 @@ int tests_command(const char *command) {
     else
 #endif
     if(!strcmp(name,"isa"))ok=isa_check();
+    else if(!strcmp(name,"fence"))ok=fence_check();
     else if(!strcmp(name,"l2"))ok=l2_check();
+    else if(!strcmp(name,"dma"))ok=dma_check();
     else if(!strcmp(name,"ddr"))ok=ddr_check();
 #if MINI_FEATURE_FLASH
     else if(!strcmp(name,"flash"))ok=flash_check();

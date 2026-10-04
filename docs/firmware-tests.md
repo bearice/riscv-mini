@@ -8,6 +8,7 @@ boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测
 | --- | --- | --- |
 | `test isa` | C 压缩指令与已启用 Zba/Zbb/Zbs 指令的数值检查 | 按构建能力条件编译；不是完整 ISA compliance |
 | `test l2` | L1 清空后的重复读、字节写及 L2 命中，比较 enable=0/1 的 ticks | L2 未启用时报告 UNSUPPORTED；暂时屏蔽 IRQ，使用 `0x40d00000` 的 256 字节 |
+| `test fence` | 连续 store、字节写、fence 后清空 L1 再读回；有 A 扩展时检查 AMO；修改同一地址的代码后通过 fence.i 执行 | 使用测试 scratch，短时屏蔽 IRQ；不是完整内存模型 compliance |
 | `test uart` | 命令确实经 UART IRQ 接收，检查 RX drop 计数 | 不测物理波特率裕量；串口回显可直接观察 |
 | `test irq` | ECALL 保存/恢复、DDR 栈上计算、timer IRQ、deadline 回绕 | 只处理测试主动触发的 ECALL；其他异常仍报告 FAULT |
 | `test ddr` | 专用 8 KiB DDR scratch 的全零/全一/交替位/地址及反地址模式 | 不覆盖完整 128 MiB，不改程序、帧缓冲或 PCM ring |
@@ -20,6 +21,7 @@ boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测
 | `test spi-lcd` | 执行 SPI LCD 初始化与状态页传输 | 颜色、字体、方向仍需人观察；屏幕无读回通道 |
 | `test io` | 逐一设置六个 LED 并读回、WS2812 busy 完成、读取按键/DIP | 寄存器检查不能替代灯光/按键实物观察；灯光短时改变，最后单色 LED 恢复、RGB 灯灭 |
 | `test audio` | 静音 PIO 256 帧与预期 underrun；DDR DMA、pause/resume、进度和错误 | 测试结束停止 DMA，恢复静音；不代表左右声道已听音通过 |
+| `test dma` | native 后端的 SD block、静音音频、网络 DMA 非法配置拒绝 | Wishbone 后端报告 UNSUPPORTED；网络载荷需外部回显及 `test eth` DMA RX/TX 计数确认 |
 | `test mic` | 启动左声道、等待 200 ms、采集并读取 512 个有符号 PCM24 样本，检查非恒定数据/无溢出，输出 min/max | 启动 BCLK/WS，结束后停止；不代替对声音响应和 LCD 波形的人工确认 |
 | `test mic stereo` | 两只麦克风共享 CK/WS，LR 分别为 0/1；读取 512 对 PCM24，检查两路非恒定、独立数值及无溢出 | 需要两只麦克风，输出各路 min/max；不代替声道归属和声音响应的人工确认 |
 | `test audio pio` | 只运行 PIO/预期 underrun 检查 | 预期产生的 underrun 会在 stop 时清零 |

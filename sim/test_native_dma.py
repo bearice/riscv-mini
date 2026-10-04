@@ -1,0 +1,167 @@
+"""Byte-accurate DMA checks with independent command/data backpressure."""
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from migen import Module
+from migen.sim import run_simulation, passive
+from litex.soc.interconnect import wishbone
+from litedram.common import LiteDRAMNativePort
+from gateware.native_dma import NativeSDTransfer, EthernetCopyDMA, NativeDMAArbiter, NativeAudioReader
+
+def backend(port, memory, counts):
+    @passive
+    def serve():
+        yield port.cmd.ready.eq(1)
+        while True:
+            while not (yield port.cmd.valid):yield
+            address=(yield port.cmd.addr)*16;write=(yield port.cmd.we)
+            yield port.cmd.ready.eq(0)
+            for _ in range(address%7+3):yield
+            counts.append((address,write))
+            if write:
+                yield port.wdata.ready.eq(1);yield
+                while not (yield port.wdata.valid):yield
+                data=(yield port.wdata.data);mask=(yield port.wdata.we)
+                for i in range(16):
+                    if mask>>i&1:memory[address+i]=data>>(i*8)&255
+                yield port.wdata.ready.eq(0)
+            else:
+                yield port.rdata.data.eq(sum(memory.get(address+i,0)<<(8*i) for i in range(16)))
+                yield port.rdata.valid.eq(1);yield
+                while not (yield port.rdata.ready):yield
+                yield port.rdata.valid.eq(0)
+            yield port.cmd.ready.eq(1);yield
+    return serve()
+
+def sd(write,length,abort=False):
+    p=LiteDRAMNativePort('both',23,128);dut=NativeSDTransfer(p,write)
+    data=bytes((i*37+11)&255 for i in range(length));memory={0x1000+i:v for i,v in enumerate(data)} if not write else {}
+    counts=[]
+    def check():
+        yield dut._base.storage.eq(0x40001000);yield dut._length.storage.eq(length);yield dut._enable.storage.eq(1);yield
+        if abort:
+            if write:
+                for i in range(4):
+                    yield dut.sink.data.eq(i);yield dut.sink.valid.eq(1);yield
+                    while not (yield dut.sink.ready):yield
+                    yield dut.sink.valid.eq(0);yield
+            while not counts:yield
+            yield dut._enable.storage.eq(0)
+            for _ in range(80):yield
+            assert not (yield dut._busy.status)
+            return
+        for offset in range(0,length,4):
+            word=int.from_bytes(data[offset:offset+4],'big')
+            if write:
+                yield dut.sink.data.eq(word);yield dut.sink.valid.eq(1);yield
+                while not (yield dut.sink.ready):yield
+                yield dut.sink.valid.eq(0);yield
+            else:
+                while not (yield dut.source.valid):yield
+                assert (yield dut.source.data)==word,(write,length,offset,hex((yield dut.source.data)),hex(word))
+                yield dut.source.ready.eq(1);yield
+                yield dut.source.ready.eq(0)
+                for _ in range(offset%3+1):yield
+        while not (yield dut._done.status):yield
+        assert not (yield dut._error.status)
+        assert len(counts)==(length+15)//16,(length,counts)
+        assert bytes(memory.get(0x1000+i,0) for i in range(length))==data
+        if write:assert 0x1000+length not in memory,'partial final beat wrote outside buffer'
+    def timeout():
+        for _ in range(100000):
+            if (yield dut._done.status) or (abort and counts and not (yield dut._busy.status)):return
+            yield
+        raise AssertionError('SD stalled')
+    run_simulation(dut,[check(),backend(p,memory,counts),timeout()])
+
+def packet(receive,length):
+    p=LiteDRAMNativePort('both',23,128);bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
+    dut=EthernetCopyDMA(bus,p);data=bytes((i*13+length)&255 for i in range(length))
+    memory={0x1000+i:v for i,v in enumerate(data)} if not receive else {}
+    slot=0xb0000000 if receive else 0xb0001000
+    sram={slot+i:v for i,v in enumerate(data)} if receive else {};counts=[]
+    @passive
+    def sram_bus():
+        while True:
+            while not (yield bus.cyc):yield
+            address=(yield bus.adr)*4;write=(yield bus.we)
+            for _ in range(3):yield
+            if write:
+                word=(yield bus.dat_w)
+                for i in range(4):sram[address+i]=word>>(8*i)&255
+            else:yield bus.dat_r.eq(sum(sram.get(address+i,0)<<(8*i) for i in range(4)))
+            yield bus.ack.eq(1);yield
+            yield bus.ack.eq(0);yield
+    def check():
+        yield dut._memory.storage.eq(0x40001000);yield dut._slot.storage.eq(slot);yield dut._length.storage.eq(length)
+        yield dut._control.storage.eq(1|(receive<<1));yield
+        for _ in range(100000):
+            if (yield dut._done.status):break
+            yield
+        else:raise AssertionError('Packet DMA stalled')
+        assert not (yield dut._error.status)
+        target=memory if receive else sram;base=0x1000 if receive else slot
+        assert bytes(target.get(base+i,0) for i in range(length))==data,(receive,length)
+        if receive:assert base+length not in target,'RX overwrote tail guard'
+        assert len(counts)==(length+3)//4,(receive,length,len(counts))
+    run_simulation(dut,[check(),backend(p,memory,counts),sram_bus()])
+
+def arbitration():
+    p=LiteDRAMNativePort('both',23,128);dut=NativeDMAArbiter(p,3);memory={i:i&255 for i in range(4096)};counts=[];done=[]
+    def client(i):
+        c=dut.ports[i]
+        for n in range(12):
+            address=i*64+n
+            write=i==2 and n%2==0
+            yield c.cmd.we.eq(write);yield c.cmd.addr.eq(address);yield c.cmd.valid.eq(1);yield
+            while not (yield c.cmd.ready):yield
+            yield c.cmd.valid.eq(0)
+            if write:
+                for _ in range(4):yield
+                yield c.wdata.data.eq(address);yield c.wdata.we.eq(0xffff);yield c.wdata.valid.eq(1);yield
+                while not (yield c.wdata.ready):yield
+                yield c.wdata.valid.eq(0);yield
+                continue
+            while not (yield c.rdata.valid):yield
+            expected=sum(((address*16+b)&255)<<(8*b) for b in range(16))
+            assert (yield c.rdata.data)==expected
+            for _ in range(i*3+1):yield
+            assert (yield c.rdata.data)==expected,'response changed under backpressure'
+            yield c.rdata.ready.eq(1);yield
+            yield c.rdata.ready.eq(0);yield
+        done.append(i)
+    def timeout():
+        for _ in range(5000):
+            if len(done)==3:return
+            yield
+        raise AssertionError('DMA arbitration starvation')
+    run_simulation(dut,[client(0),client(1),client(2),backend(p,memory,counts),timeout()])
+    assert len(counts)==36
+    for n in range(0,12,2):
+        address=128+n
+        assert sum(memory.get(address*16+b,0)<<(8*b) for b in range(16))==address
+
+def audio_visibility():
+    p=LiteDRAMNativePort('both',23,128);bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
+    dut=NativeAudioReader(bus,p);memory={};counts=[]
+    def check():
+        for lane in range(4):
+            word=0x12340000+lane
+            # The producer publishes one more sample in an already read line.
+            for byte in range(4):memory[0x1000+lane*4+byte]=word>>(byte*8)&255
+            yield bus.adr.eq((0x40001000>>2)+lane);yield bus.cyc.eq(1);yield bus.stb.eq(1);yield
+            while not (yield bus.ack):yield
+            assert (yield bus.dat_r)==word,'audio reused uncommitted samples'
+            yield bus.cyc.eq(0);yield bus.stb.eq(0);yield
+        assert len(counts)==4
+    run_simulation(dut,[check(),backend(p,memory,counts)])
+
+if __name__=='__main__':
+    for write in (False,True):
+        for length in (4,8,12,16,64,512,4096):sd(write,length)
+        sd(write,64,True)
+    for receive in (False,True):
+        for length in (14,31,64,511,512,1518):packet(receive,length)
+    arbitration()
+    audio_visibility()
+    print('Native DMA PASS: SD packed/partial/stop, packet tail masks, delayed SRAM/DDR, ownership/fairness')

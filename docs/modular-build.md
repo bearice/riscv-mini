@@ -6,6 +6,8 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 `--l2-mode baseline/burst/burst-refill/prefetch/writeback` 选择缓存路径，
 默认为 burst-refill，额外 native 事务间隔复位值为 0；容量由 `--l2-size` 独立选择。原理、软件维护和验收边界见
 [L2 缓存](l2-cache.md)。
+`--dma-backend native` 和 `--dma-shared` 提供可选 DMA 实验路径；默认仍为
+Wishbone。适用范围、缓存维护和验收边界见 [native DMA](native-dma.md)。
 默认 Gowin `place_option=3`、`route_option=2`、`netlist_hierarchy=0`，可用
 `--place-option` / `--route-option` 覆盖。当前配置和资源见 [系统设计](system-design.md)。
 
@@ -68,7 +70,7 @@ MMU/FPU 默认开启；minimal 默认关闭，两者仍可分别覆盖。音频�
 ## Verilog 文件
 
 默认使用 LiteX 的 hierarchical converter，保留 SoC 各功能块的模块实例和显式端口。
-块内的 FSM、FIFO、CSR 实现内联在所属模块中；当前 full 配置输出 34 个模块，
+块内的 FSM、FIFO、CSR 实现内联在所属模块中；当前 full 配置输出 32 个模块，
 外部 CPU 和 USB 核另列入源文件列表。`--deep-verilog` 可用于诊断完整内部层级，
 但完整层级的布线结果不能替代默认配置的验收。文件
 布局为：

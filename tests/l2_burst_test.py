@@ -7,20 +7,35 @@ from migen import Module
 from litex.soc.interconnect import wishbone
 from gateware.l2 import ReadL2
 from gateware.bus import WishbonePipeline
+from litedram.common import LiteDRAMNativePort
 
 def main():
     m=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-    s=wishbone.Interface(data_width=128,address_width=32,addressing='word')
+    native='--native' in sys.argv
+    s=LiteDRAMNativePort('both',23,128) if native else wishbone.Interface(data_width=128,address_width=32,addressing='word')
+    fast='--fast' in sys.argv
+    options=dict(size=256,bursting=True,refill_bypass='--refill-bypass' in sys.argv,native=native,base_address=0,prefetch=fast,fast_write=fast)
     if '--pipeline' in sys.argv:
         internal=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-        dut=Module();dut.submodules.cache=ReadL2(internal,s,size=256,bursting=True,refill_bypass='--refill-bypass' in sys.argv)
-        dut.submodules.pipeline=WishbonePipeline(m,internal,burst_read=True)
-    else:dut=ReadL2(m,s,size=256,bursting=True,refill_bypass='--refill-bypass' in sys.argv)
+        dut=Module();dut.submodules.cache=ReadL2(internal,s,**options)
+        dut.submodules.pipeline=WishbonePipeline(m,internal,burst_read=True,early_launch=fast)
+    else:dut=ReadL2(m,s,**options)
     transactions=[]
     @passive
     def memory():
         while True:
             yield
+            if native:
+                if not (yield s.cmd.valid):continue
+                a=(yield s.cmd.addr);transactions.append(a)
+                for _ in range(3):yield
+                yield s.cmd.ready.eq(1);yield;yield s.cmd.ready.eq(0)
+                for _ in range(3):yield
+                yield s.rdata.data.eq(sum((0x12340000+a*4+i)<<(32*i) for i in range(4)))
+                yield s.rdata.valid.eq(1);yield
+                while not (yield s.rdata.ready):yield
+                yield s.rdata.valid.eq(0)
+                continue
             if not ((yield s.cyc) and (yield s.stb)):continue
             a=(yield s.adr);transactions.append(a)
             for _ in range(3):yield

@@ -41,7 +41,7 @@ unsigned hal_ws2812_busy(void);
 #define HAL_ETH_MAX_FRAME 1514u
 typedef struct {uint32_t initialized,phy_address,phy_id,link,speed_mbps,full_duplex,
     bmcr,bmsr,partner,rmii,ref_clock_hz,rx_frames,tx_frames,rx_drops,crc_errors,
-    preamble_errors,irqs,mdio_errors,link_changes,tx_busy,uid_length;uint8_t mac[6],flash_uid[16];} hal_eth_info_t;
+    preamble_errors,irqs,mdio_errors,link_changes,tx_busy,uid_length,dma_rx,dma_tx;uint8_t mac[6],flash_uid[16];} hal_eth_info_t;
 hal_result_t hal_eth_init(void); /* bounded setup; link may still be negotiating */
 void hal_eth_stop(void);
 void hal_eth_poll(void); /* also called by hal_poll; does not consume frames */

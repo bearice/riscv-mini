@@ -1,6 +1,6 @@
 # Verilog 模块边界与转换语义
 
-默认按 SoC 直接子模块输出独立 Verilog 文件，模块内部 FSM/FIFO/CSR 内联。CPU 与 USB 等外部核仍使用独立源文件；默认 full 当前生成 34 个 SoC 文件模块。`--deep-verilog` 保留内部完整层级，`--flat-verilog` 输出整体对照。文件映射见构建的 `gateware/rtl-manifest.json`。
+默认按 SoC 直接子模块输出独立 Verilog 文件，模块内部 FSM/FIFO/CSR 内联。CPU 与 USB 等外部核仍使用独立源文件；默认 full 当前生成 32 个 SoC 文件模块。`--deep-verilog` 保留内部完整层级，`--flat-verilog` 输出整体对照。文件映射见构建的 `gateware/rtl-manifest.json`。
 
 `gateware/rtl.py` 在层级转换期间维护三个语义约束：
 
@@ -10,4 +10,4 @@
 
 `tests/rtl_defaults_test.py` 检查常量驱动、复位优先级与共享 IRQ；深层路径也必须保留这些语义。静态无未驱动线不等于功能正确，常量初始化可能掩盖缺失逻辑。
 
-Gowin 设置 `netlist_hierarchy=0`，保留源文件边界，同时允许综合跨模块优化。默认 `timing_driven=1`、place=4、route=2。Retiming 仅在明确传入并检查工具实际设置后才可认为启用；默认不开启。资源与时序见 [系统设计](system-design.md)。
+Gowin 设置 `netlist_hierarchy=0`，保留源文件边界，同时允许综合跨模块优化。默认 `timing_driven=1`、place=3、route=2。Retiming 仅在明确传入并检查工具实际设置后才可认为启用；默认不开启。资源与时序见 [系统设计](system-design.md)。

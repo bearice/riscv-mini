@@ -1,4 +1,4 @@
-"""Serialize CPU/video native transactions and hold read replies until consumed.
+"""Shared CPU/video scheduler and independent LiteDRAM crossbar ports.
 
 Video has priority while its bounded DMA FIFO can accept another word. CPU
 requests proceed when the FIFO applies backpressure or the frame ends. Eight
@@ -54,3 +54,24 @@ class SharedNativePort(LiteXModule):
                 *pause))
         fsm.act('QUIET',
             If(quiet==0,NextState('CMD')).Else(NextValue(quiet,quiet-1)))
+
+
+class CrossbarPorts(LiteXModule):
+    """Independent native clients; only gate commands until DDR boot is ready.
+
+    No arbitration, response register or transaction spacing lives here.
+    LiteDRAM's crossbar owns bank arbitration and response timing.
+    """
+    def __init__(self, crossbar, enabled=1):
+        for name, mode in (('cpu','both'),('video','read')):
+            backend=crossbar.get_port(mode=mode)
+            frontend=LiteDRAMNativePort(mode,backend.address_width,backend.data_width)
+            setattr(self,name,frontend)
+            self.comb += [
+                frontend.cmd.connect(backend.cmd,omit={'valid','ready'}),
+                backend.cmd.valid.eq(frontend.cmd.valid & enabled),
+                frontend.cmd.ready.eq(backend.cmd.ready & enabled),
+                frontend.wdata.connect(backend.wdata),
+                backend.rdata.connect(frontend.rdata),
+                backend.flush.eq(frontend.flush),
+            ]

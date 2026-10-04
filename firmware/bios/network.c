@@ -3,7 +3,8 @@
 /* Minimal on-link IPv4/UDP/TFTP octet client, RFC 768/1350, fixed 512 B blocks.
  * No gateway, DHCP, fragmentation or option negotiation. One transfer owner. */
 #if MINI_FEATURE_ETH
-static uint8_t mac[6],peer[6],server_ip[4],rx[1514],tx[600];
+static uint8_t mac[6],peer[6],server_ip[4];
+static _Alignas(16) uint8_t rx[1520],tx[608];
 static unsigned peer_ready,local_port,remote_port;
 static unsigned get16(const uint8_t *p) {return (p[0]<<8)|p[1];}
 static void set16(uint8_t *p,unsigned n) {p[0]=n>>8;p[1]=n;}

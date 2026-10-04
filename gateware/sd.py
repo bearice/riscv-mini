@@ -12,7 +12,7 @@ from gateware.vendor.sdcore import SDCore
 
 @ResetInserter()
 class NativeSD(LiteXModule):
-    def __init__(self,soc,profile='lite'):
+    def __init__(self,soc,profile='lite',native_ports=None,burst_write=False):
         if profile not in ('lite','full'):raise ValueError('Native SD profile must be lite/full')
         pads=soc.platform.request('sdcard')
         card_detect=Signal()
@@ -27,13 +27,14 @@ class NativeSD(LiteXModule):
             datar=SimpleNamespace(sink=self.read_requests.sink,source=self.phy.datar.source))
         self.core=SDCore(core_phy,bounded=profile=='lite')
         self.comb += self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE'))
-        reader=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
-        writer=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='w')
-        self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness,bounded=profile=='lite')
+        reader=native_ports[0] if native_ports else wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
+        writer=native_ports[1] if native_ports else wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='w')
+        self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness,bounded=profile=='lite',burst_write=burst_write)
         self.mem2block=SDMem2BlockDMA(reader,soc.cpu.endianness,bounded=profile=='lite')
         self.comb += [self.core.source.connect(self.block2mem.sink),self.mem2block.source.connect(self.core.sink)]
-        soc.bus.add_master(name='sdcard_block2mem',master=writer)
-        soc.bus.add_master(name='sdcard_mem2block',master=reader)
+        if not native_ports:
+            soc.bus.add_master(name='sdcard_block2mem',master=writer)
+            soc.bus.add_master(name='sdcard_mem2block',master=reader)
         self.ev=EventManager()
         self.ev.block2mem=EventSourcePulse();self.ev.mem2block=EventSourcePulse()
         self.ev.card_detect=EventSourcePulse();self.ev.command=EventSourcePulse()

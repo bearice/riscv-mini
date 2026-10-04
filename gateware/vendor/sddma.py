@@ -12,6 +12,8 @@ from litex.soc.interconnect.csr import *
 from litex.soc.interconnect import stream
 
 from gateware.sd_dma import SDReader, SDWriter
+from gateware.native_dma import NativeSDTransfer
+from litedram.common import LiteDRAMNativePort
 from litex.soc.cores.dma import WishboneDMAReader, WishboneDMAWriter
 
 # SD Block2Mem DMA ---------------------------------------------------------------------------------
@@ -21,7 +23,7 @@ class SDBlock2MemDMA(LiteXModule):
 
     Receive a stream of blocks and write it to memory through DMA.
     """
-    def __init__(self, bus, endianness, fifo_depth=512, bounded=True):
+    def __init__(self, bus, endianness, fifo_depth=512, bounded=True, burst_write=False):
         self.bus  = bus
         self.sink = stream.Endpoint([("data", 8)])
         self.irq  = Signal()
@@ -30,9 +32,9 @@ class SDBlock2MemDMA(LiteXModule):
 
         # Submodules
         fifo      = stream.SyncFIFO([("data", 8)], fifo_depth, buffered=True)
-        converter = stream.Converter(8, bus.data_width, reverse=True)
+        converter = stream.Converter(8, 32 if isinstance(bus,LiteDRAMNativePort) else bus.data_width, reverse=True)
         self.submodules += fifo, converter
-        self.dma = (SDWriter if bounded else WishboneDMAWriter)(bus, with_csr=True, endianness=endianness)
+        self.dma = NativeSDTransfer(bus,True,endianness) if isinstance(bus,LiteDRAMNativePort) else (SDWriter if bounded else WishboneDMAWriter)(bus, with_csr=True, endianness=endianness, **({'burst_write':burst_write} if bounded else {}))
 
         # Flow
         start   = Signal()
@@ -75,8 +77,8 @@ class SDMem2BlockDMA(LiteXModule):
         # # #
 
         # Submodules
-        self.dma = (SDReader if bounded else WishboneDMAReader)(bus, with_csr=True, endianness=endianness)
-        converter = stream.Converter(bus.data_width, 8, reverse=True)
+        self.dma = NativeSDTransfer(bus,False,endianness) if isinstance(bus,LiteDRAMNativePort) else (SDReader if bounded else WishboneDMAReader)(bus, with_csr=True, endianness=endianness)
+        converter = stream.Converter(32 if isinstance(bus,LiteDRAMNativePort) else bus.data_width, 8, reverse=True)
         fifo      = stream.SyncFIFO([("data", 8)], fifo_depth, buffered=True)
         self.submodules += converter, fifo
 

@@ -34,7 +34,7 @@ MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/r
 
 硬件 DDR 启动、ROM 缩减和函数大小见 [硬件启动](docs/hardware-ddr-boot.md)。
 默认包含 4 KiB 共享读缓存（`--l2-size 4096`）：只缓存读、写直达 DDR，帧缓冲区绕过，
-`--l2-size 0` 关闭。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
+默认使用 native L2 + crossbar + fast，写合并保持关闭；`--l2-size 0` 关闭。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 
 RGB LCD 默认显示 BIOS 的 80×34 字符终端；图形模式提供 RGB565 双帧槽。独立基础 monitor
@@ -106,7 +106,7 @@ boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 
 （`Filename too long` → `invalid index-pack output`）；若全局 uv 缓存不可用
 （`Failed to initialize cache ... sdists-v9\.git`），把 `UV_CACHE_DIR` 指到短路径，例如
 `$env:UV_CACHE_DIR='C:\uv-cache-mini'`。默认 full profile（MMU+FPU）还需要先生成 CPU RTL
-`build/cpu-features/VexRiscv_MmuFpu.v`，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)；
+`build/cpu-fence/VexRiscv_MmuFpu.v`，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)；
 未生成时 `build.py` 会直接报 `Missing CPU RTL`。构建把编译器临时目录重定向到 `build/.tmp`，
 `%TEMP%` 不可写时也不会失败。
 
