@@ -23,7 +23,7 @@ class SDBlock2MemDMA(LiteXModule):
 
     Receive a stream of blocks and write it to memory through DMA.
     """
-    def __init__(self, bus, endianness, fifo_depth=512, bounded=True, burst_write=False):
+    def __init__(self, bus, endianness, fifo_depth=512, bounded=True):
         self.bus  = bus
         self.sink = stream.Endpoint([("data", 8)])
         self.irq  = Signal()
@@ -34,7 +34,7 @@ class SDBlock2MemDMA(LiteXModule):
         fifo      = stream.SyncFIFO([("data", 8)], fifo_depth, buffered=True)
         converter = stream.Converter(8, 32 if isinstance(bus,LiteDRAMNativePort) else bus.data_width, reverse=True)
         self.submodules += fifo, converter
-        self.dma = NativeSDTransfer(bus,True,endianness) if isinstance(bus,LiteDRAMNativePort) else (SDWriter if bounded else WishboneDMAWriter)(bus, with_csr=True, endianness=endianness, **({'burst_write':burst_write} if bounded else {}))
+        self.dma = NativeSDTransfer(bus,True,endianness) if isinstance(bus,LiteDRAMNativePort) else (SDWriter if bounded else WishboneDMAWriter)(bus, with_csr=True, endianness=endianness)
 
         # Flow
         start   = Signal()

@@ -161,7 +161,7 @@ class GW2DDRPHY(Module, AutoCSR):
         cwl_sys_latency = get_sys_latency(nphases, cwl)
 
         # Registers --------------------------------------------------------------------------------
-        # Owned exclusively by the autonomous DDR boot sequencer.
+        # Owned by the ROM DDR command/tuning interface during initialization.
         self.dly_sel = Signal(databits//8)
         self.rdly_dq_rst = Signal()
         self.rdly_dq_inc = Signal()

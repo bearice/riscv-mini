@@ -17,6 +17,7 @@ class USBPHYInit(LiteXModule):
     def __init__(self,pads):
         self.di=di=Signal(8);self.do=do=Signal(8);self.oe=oe=Signal(8)
         output=Signal(8);stp=Signal(reset=1)
+        self.init_output=output
         self.comb += pads.stp.eq(stp)
         self.ready=ready=Signal(name_override='usb_ulpi_ready');self.error=error=Signal(name_override='usb_ulpi_error')
         self.phy_id=phy_id=Signal(32,name_override='usb_ulpi_id');self.lines=lines=Signal(3,name_override='usb_serial_lines')
@@ -126,14 +127,14 @@ class USBHost(LiteXModule):
         target.write_text(rtl)
         soc.platform.add_source(str(target))
 
-def add_usb(soc,backend='ultra'):
+def add_usb(soc,backend='ultra',compact_serial_outputs=False):
     soc.platform.add_extension([('usb_ulpi',0,Subsignal('data',Pins('G11 H12 J12 H13 T14 R13 P13 R12')),
         Subsignal('clk',Pins('T15')),Subsignal('stp',Pins('K11')),Subsignal('dir',Pins('K12')),
         Subsignal('nxt',Pins('K13')),IOStandard('LVCMOS33'))])
     pads=soc.platform.request('usb_ulpi')
     if backend=='ultra':
         from gateware.usb_ultra import USBHostUltra
-        soc.usb_host=USBHostUltra(soc,pads)
+        soc.usb_host=USBHostUltra(soc,pads,compact_serial_outputs=compact_serial_outputs)
         soc.bus.add_slave(name='usb_pio',slave=soc.usb_host.wb_ctrl,
             region=SoCRegion(origin=0xb1000000,size=4096,cached=False))
         soc.add_constant('CONFIG_USB_ULTRA',1)

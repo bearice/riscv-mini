@@ -25,7 +25,7 @@ sys 为 60 MHz。初始化 divider=150 得到 400 kHz；默认读取 divider=4�
 
 初始化发送初始时钟、CMD0/CMD8、CMD55/ACMD41、CID/RCA/CSD、选择卡、读取 SCR 和协商四位。SDHC 使用块地址，SDSC 使用字节地址并设置 512 字节块；容量来自 CSD，超过当前 32 位 LBA 能力的卡拒绝初始化。实卡验收使用 SDHC，SDSC 分支尚无对应实卡验证。
 
-DMA 通过现有 sys Wishbone 仲裁和 DDR 桥访问内存，DDR 物理端口和视频优先调度保持原设计。传输经 **4 KiB、四字节对齐的 DDR bounce buffer**，因此上层缓冲不必对齐。每次最多八块；大请求分段，单块用 CMD17/24、多块用 CMD18/25，随后 CMD12 停止。读操作只有在数据 CRC 和 DMA 完成都成功后才复制到调用者；写操作先复制到 DMA 缓冲。默认构建启用 4 KiB 共享读缓存，只缓存读、写直达 DDR，所有权切换仍使用 `fence rw,rw`。
+默认 lite DMA 通过 128-bit coherent streaming 入口访问共享 L2；full 保留通用 32-bit Wishbone DMA。传输经 **4 KiB、16 字节对齐的 DDR bounce buffer**，因此上层缓冲不必对齐。每次最多八块；大请求分段，单块用 CMD17/24、多块用 CMD18/25，随后 CMD12 停止。读操作只有在数据 CRC 和 DMA 完成都成功后才复制到调用者；写操作先复制到 DMA 缓冲。默认构建启用 4 KiB 共享 writeback L2，SD lite 读写能观察与更新 dirty 行，所有权切换仍使用 `fence rw,rw`。
 
 命令与数据使用硬件 CRC7/CRC16；软件检查 R1/R6 和 event 错误。锁定版 SDCore 未把命令 CRC 错误传给 CSR，本地 `gateware/vendor/sdcore.py` 只修正该状态连接，保留原版权。仿真能复现原版坏 CRC 返回成功，本地返回 done/error/crc。上游功能依据见 [LiteSDCard](https://github.com/enjoy-digital/litesdcard)。
 

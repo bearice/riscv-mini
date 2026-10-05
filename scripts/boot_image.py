@@ -22,7 +22,11 @@ def abi_tag(csr):
     extensions={name:csr.get('constants',{}).get('config_cpu_'+name,0) for name in ('compressed','bitmanip')}
     if any(extensions.values()):interface['cpu_extensions']=extensions
     l2_size=csr.get('constants',{}).get('config_l2_size',0)
-    if l2_size:interface['l2']={'size':l2_size,'policy':'write-through/write-invalidate'}
+    if l2_size:
+        constants=csr.get('constants',{})
+        interface['l2']={'size':l2_size,
+            'policy':'write-back' if constants.get('config_l2_mode')==2 else 'write-through/write-invalidate',
+            'io_coherent':bool(constants.get('config_shared_l2'))}
     return zlib.crc32(json.dumps(interface,sort_keys=True,separators=(',',':')).encode())
 
 def pack_image(payload,abi):

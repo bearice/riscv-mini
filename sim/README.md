@@ -21,19 +21,14 @@ and invalid transfer length handling. Loopback CSRs were removed from the
 base SoC; actual Flash, SD and SPI LCD transactions are verified on hardware.
 
 DDR training, CPU DDR access, SD file CRC, and LCD display are checked on the
-board; see docs/hardware-ddr-boot.md and docs/system-design.md. SPI
+board; see docs/ddr-boot.md and docs/system-design.md. SPI
 simulation does not verify electrical timing.
 
 `sim/test_video.py` checks full 480x272 LCD scan periods, sync pulse widths,
 pixel order and last-marked frame recovery after an injected pixel underrun.
 This covers the scanner, not real DDR arbitration or connector electrical timing.
 
-`sim/test_memory.py` runs the actual shared native-port scheduler with two
-callers, delayed single-cycle replies, changing data after the reply, and
-consumer backpressure. It verifies CPU/video response ownership, write data
-and byte enables, and transaction serialization. It does not model the DDR
-PHY or prove electrical timing. Current board acceptance for shared-port
-coexistence is recorded in docs/system-design.md.
+`tests/shared_l2_test.py --writeback` checks shared CPU/video/SD ownership, dirty visibility, byte writes, maintenance, cancellation and round-robin fairness against delayed memory. `tests/shared_l2_verilog_test.py` and `tests/native_sd_verilog_test.py` execute generated Verilog in Icarus to check CPU byte lanes and SD packed write masks. These do not model the DDR PHY or prove electrical timing; full board acceptance is described in docs/system-design.md.
 
 `sim/test_boot_image.py` verifies the host image header, CRC, truncation,
 entry/load boundaries and UART packet framing. `scripts/boot_verify.py` also
@@ -98,7 +93,7 @@ It uses captured resource rows and temporary reports; it does not run synthesis.
 Run all local checks from the repository root (no board or programming required):
 
 `tests/ddr_boot_test.py` additionally covers hardware training against a fake
-PHY. `tests/l2_test.py` checks the write-through shared cache against delayed
+PHY. `tests/shared_l2_test.py --writeback` checks the shared writeback cache against delayed
 wide memory, including byte writes, bypass, abort and reset. These do not
 substitute for Gowin RAM mapping, PnR or board acceptance.
 
@@ -108,3 +103,5 @@ Get-ChildItem sim/test_*.py | ForEach-Object {
     if ($LASTEXITCODE -ne 0) { throw "Failed: $($_.Name)" }
 }
 ```
+
+`tests/boot_ram_test.py` checks real shared L2 boot isolation and dirty-stack preservation across DDR handover, including byte writes, pre-DDR atomic accesses and reset. `tests/ddr_boot_test.py` checks the software-owned DDR command/capture interface. These simulate neither physical PHY timing nor the ROM's C training algorithm; `scripts/boot_repeat_verify.py` performs actual repeated training and BIOS loading on hardware.

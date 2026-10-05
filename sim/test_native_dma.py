@@ -6,7 +6,7 @@ from migen import Module
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
-from gateware.native_dma import NativeSDTransfer, EthernetCopyDMA, NativeDMAArbiter, NativeAudioReader
+from gateware.native_dma import NativeSDTransfer, NativeDMAArbiter
 
 def backend(port, memory, counts):
     @passive
@@ -74,38 +74,6 @@ def sd(write,length,abort=False):
         raise AssertionError('SD stalled')
     run_simulation(dut,[check(),backend(p,memory,counts),timeout()])
 
-def packet(receive,length):
-    p=LiteDRAMNativePort('both',23,128);bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-    dut=EthernetCopyDMA(bus,p);data=bytes((i*13+length)&255 for i in range(length))
-    memory={0x1000+i:v for i,v in enumerate(data)} if not receive else {}
-    slot=0xb0000000 if receive else 0xb0001000
-    sram={slot+i:v for i,v in enumerate(data)} if receive else {};counts=[]
-    @passive
-    def sram_bus():
-        while True:
-            while not (yield bus.cyc):yield
-            address=(yield bus.adr)*4;write=(yield bus.we)
-            for _ in range(3):yield
-            if write:
-                word=(yield bus.dat_w)
-                for i in range(4):sram[address+i]=word>>(8*i)&255
-            else:yield bus.dat_r.eq(sum(sram.get(address+i,0)<<(8*i) for i in range(4)))
-            yield bus.ack.eq(1);yield
-            yield bus.ack.eq(0);yield
-    def check():
-        yield dut._memory.storage.eq(0x40001000);yield dut._slot.storage.eq(slot);yield dut._length.storage.eq(length)
-        yield dut._control.storage.eq(1|(receive<<1));yield
-        for _ in range(100000):
-            if (yield dut._done.status):break
-            yield
-        else:raise AssertionError('Packet DMA stalled')
-        assert not (yield dut._error.status)
-        target=memory if receive else sram;base=0x1000 if receive else slot
-        assert bytes(target.get(base+i,0) for i in range(length))==data,(receive,length)
-        if receive:assert base+length not in target,'RX overwrote tail guard'
-        assert len(counts)==(length+3)//4,(receive,length,len(counts))
-    run_simulation(dut,[check(),backend(p,memory,counts),sram_bus()])
-
 def arbitration():
     p=LiteDRAMNativePort('both',23,128);dut=NativeDMAArbiter(p,3);memory={i:i&255 for i in range(4096)};counts=[];done=[]
     def client(i):
@@ -141,27 +109,9 @@ def arbitration():
         address=128+n
         assert sum(memory.get(address*16+b,0)<<(8*b) for b in range(16))==address
 
-def audio_visibility():
-    p=LiteDRAMNativePort('both',23,128);bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-    dut=NativeAudioReader(bus,p);memory={};counts=[]
-    def check():
-        for lane in range(4):
-            word=0x12340000+lane
-            # The producer publishes one more sample in an already read line.
-            for byte in range(4):memory[0x1000+lane*4+byte]=word>>(byte*8)&255
-            yield bus.adr.eq((0x40001000>>2)+lane);yield bus.cyc.eq(1);yield bus.stb.eq(1);yield
-            while not (yield bus.ack):yield
-            assert (yield bus.dat_r)==word,'audio reused uncommitted samples'
-            yield bus.cyc.eq(0);yield bus.stb.eq(0);yield
-        assert len(counts)==4
-    run_simulation(dut,[check(),backend(p,memory,counts)])
-
 if __name__=='__main__':
     for write in (False,True):
         for length in (4,8,12,16,64,512,4096):sd(write,length)
         sd(write,64,True)
-    for receive in (False,True):
-        for length in (14,31,64,511,512,1518):packet(receive,length)
     arbitration()
-    audio_visibility()
-    print('Native DMA PASS: SD packed/partial/stop, packet tail masks, delayed SRAM/DDR, ownership/fairness')
+    print('Native DMA PASS: SD packed/partial/stop, delayed DDR, ownership/fairness')

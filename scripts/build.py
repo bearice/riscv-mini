@@ -27,14 +27,14 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2,l2_size=0,l2_mode='burst-refill',dma_backend='wishbone',dma_shared=False,l2_backend='wishbone',memory_scheduler='shared',l2_fast=False,l2_combine=False,l2_posted=False):
+def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=3,route_option=2,l2_size=4096):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
         raw=binary.read_bytes();raw+=bytes((-len(raw))%4)
         data=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size,l2_mode=l2_mode,dma_backend=dma_backend,dma_shared=dma_shared,l2_backend=l2_backend,memory_scheduler=memory_scheduler,l2_fast=l2_fast,l2_combine=l2_combine,l2_posted=l2_posted)
+    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size)
     soc.platform.toolchain.options.update(place_option=place_option,route_option=route_option)
     if hierarchical:
         from gateware.rtl import split_verilog
@@ -116,15 +116,7 @@ def main():
         group.add_argument('--with-'+flag,dest=name,action='store_true',default=None)
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
-    p.add_argument('--l2-size',type=int,choices=(0,4096,8192),default=4096,help='Shared write-through read cache in bytes; 0 disables it. Default profile includes 4 KiB.')
-    p.add_argument('--dma-shared',action='store_true',help='Share the existing CPU/video native port with DMA')
-    p.add_argument('--dma-backend',choices=('wishbone','native'),default='wishbone',help='DDR DMA transport; native is experimental')
-    p.add_argument('--memory-scheduler',choices=('shared','crossbar'),default='crossbar',help='CPU/LCD DDR arbitration; default uses independent native ports')
-    p.add_argument('--l2-backend',choices=('wishbone','native'),default=None,help='L2 memory interface; default native, or wishbone when L2 is disabled/writeback')
-    p.add_argument('--l2-fast',action=argparse.BooleanOptionalAction,default=None,help='Native L2 early launch, prefetched lookup and direct store invalidation; enabled by default for native burst-refill')
-    p.add_argument('--l2-posted',action='store_true',help='Combine independent stores with an external-fence CPU')
-    p.add_argument('--l2-combine',action='store_true',help='Combine writes within CTI=2 bursts; final beat waits for native submission')
-    p.add_argument('--l2-mode',choices=('baseline','burst','burst-refill','prefetch','writeback'),default='burst-refill',help='L2 path (default: registered burst with early refill)')
+    p.add_argument('--l2-size',type=int,choices=(4096,8192),default=4096,help='Shared writeback cache bytes; >=4 KiB required for boot RAM')
     p.add_argument('--place-option',type=int,choices=range(5),default=3)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
@@ -132,14 +124,7 @@ def main():
     p.add_argument('--generate-only',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--rom',type=Path,help=argparse.SUPPRESS)
     a=p.parse_args();a.audio_clock='dds' if a.audio_clock=='sys' else a.audio_clock;output=a.output_dir.resolve()
-    if a.l2_backend is None:a.l2_backend='native' if a.l2_size and a.l2_mode!='writeback' else 'wishbone'
-    if a.l2_fast is None:a.l2_fast=bool(a.l2_size and a.l2_backend=='native' and a.l2_mode=='burst-refill')
     if a.flat_verilog and a.deep_verilog:p.error('Use flat or deep Verilog, not both')
-    if a.dma_shared and a.dma_backend!='native':p.error('--dma-shared requires --dma-backend native')
-    if a.memory_scheduler=='crossbar' and a.dma_shared:p.error('--memory-scheduler crossbar replaces --dma-shared')
-    if a.l2_backend=='native' and (not a.l2_size or a.l2_mode=='writeback'):
-        p.error('--l2-backend native requires an enabled write-through L2')
-    if (a.l2_fast or a.l2_combine or a.l2_posted) and (a.l2_backend!='native' or a.l2_mode!='burst-refill' or not a.l2_size):p.error('--l2-fast/--l2-combine/--l2-posted require native burst-refill L2')
     overrides={name:getattr(a,name) for name in Features.names()}
     try:
         features=Features.resolve(a.profile,overrides)
@@ -151,13 +136,9 @@ def main():
         features,a.cpu_variant,cpu_dcache=cpu_configuration(features,overrides,a.cpu_verilog,a.cpu_variant)
         expected_plls=pll_count(features,a.usb_backend,a.audio_clock)
     except ValueError as error:p.error(str(error))
-    if a.l2_posted and (a.cpu_verilog is None or not cpu_capabilities(a.cpu_verilog).get('external_fence') or a.dma_backend!='wishbone' or a.sd_profile=='full'):p.error('--l2-posted requires fence CPU, Wishbone DMA, and SD none/spi/lite')
     config_args=['--cpu-variant',a.cpu_variant]+(['--cpu-verilog',str(a.cpu_verilog.resolve())] if a.cpu_verilog else [])+['--usb-backend',a.usb_backend,'--sd-profile',a.sd_profile,'--audio-clock',a.audio_clock]+features.arguments()+(['--flat-verilog'] if a.flat_verilog else [])+(['--deep-verilog'] if a.deep_verilog else [])
     config_args+=['--place-option',str(a.place_option),'--route-option',str(a.route_option)]
     config_args+=['--l2-size',str(a.l2_size)]
-    config_args+=['--l2-backend',a.l2_backend,'--memory-scheduler',a.memory_scheduler]
-    config_args+=(['--l2-fast'] if a.l2_fast else ['--no-l2-fast'])+(['--l2-combine'] if a.l2_combine else [])+(['--l2-posted'] if a.l2_posted else [])
-    config_args+=['--l2-mode',a.l2_mode,'--dma-backend',a.dma_backend]+(['--dma-shared'] if a.dma_shared else [])
     requirements={'microphone_demo.c':('mic','video'),
                   'microphone_stereo_demo.c':('mic','mic_stereo','video'),
                   'usb_input_demo.c':('usb','video'),'ethernet_demo.c':('eth',),
@@ -165,7 +146,7 @@ def main():
     if a.app.resolve().parent==ROOT/'firmware/examples':
         missing=[name for name in requirements.get(a.app.name,()) if not getattr(features,name)]
         if missing:p.error(f'{a.app.name} requires enabled modules: {", ".join(missing)}')
-    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size,a.l2_mode,a.dma_backend,a.dma_shared,a.l2_backend,a.memory_scheduler,a.l2_fast,a.l2_combine,a.l2_posted);return
+    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size);return
     output.mkdir(parents=True,exist_ok=True)
     tools=json.loads((ROOT/'.tools.local.json').read_text());gcc=Path(tools['gcc']);toolbin=gcc.parent
     os.environ['PATH']=os.pathsep.join([str(toolbin),str(Path(tools['gowin']).parent),os.environ['PATH']])
@@ -173,13 +154,11 @@ def main():
     checked([sys.executable,__file__,'--generate-only','--output-dir',output,*config_args],output/'generate.log')
     csr=json.loads((output/'csr.json').read_text())
     if csr['constants']['config_sd_native']!=int(a.sd_backend=='native'):raise ValueError('SD hardware/backend mismatch')
-    for name,base,size in [('rom',0,4096),('main_ram',0x40000000,128*1024*1024)]:
+    for name,base,size in [('rom',0,8192),('main_ram',0x40000000,128*1024*1024)]:
         if csr['memories'][name]['base']!=base or csr['memories'][name]['size']!=size:raise ValueError(f'Unexpected {name} layout')
     if 'sram' in csr['memories']:raise ValueError('Integrated SRAM must be absent')
     firmware=output/'firmware';firmware.mkdir(exist_ok=True)
     include=firmware/'include';generate_csr(csr,include)
-    (include/'boot_regs.h').write_text(''.join(f'#define {macro} 0x{csr["csr_registers"][name]["addr"]:08x}\n' for macro,name in
-        [('MINI_DDR_BOOT_STATUS','sdram_boot_status'),('MINI_UART_TXFULL','uart_txfull'),('MINI_UART_RXTX','uart_rxtx')]),encoding='utf-8')
     capabilities=cpu_capabilities(a.cpu_verilog) if a.cpu_verilog else {'mmu':False,'fpu':False,'dcache':False,'compressed':False,'bitmanip':[]}
     isa=cpu_isa(features,capabilities)
     (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_CPU_COMPRESSED {int(capabilities["compressed"])}\n#define MINI_CPU_BITMANIP {int(bool(capabilities["bitmanip"]))}\n#define MINI_SD_PROFILE "{a.sd_profile}"\n',encoding='utf-8')
@@ -204,13 +183,13 @@ def main():
         app_sources.append(hal/'src/hcd_ultra.c' if a.usb_backend=='ultra' else usb/'portable/ohci/ohci.c')
     firmware_sizes={}
     for name,main,sources,linker in [
-        ('boot',loader/'main.c',[],loader/'boot.ld'),
+        ('boot',loader/'main.c',[loader/'ddr.c'],loader/'boot.ld'),
         ('app',a.app.resolve(),app_sources,loader/'app.ld')]:
         elf=firmware/f'{name}.elf'
         flash_source=loader/'flash.c' if name=='boot' and features.flash else drivers/('flash.c' if features.flash else 'flash_disabled.c')
         # Whole-program optimization keeps the ROM loader compact; app stays
         # separately linked and carries SD/display drivers only in DDR.
-        compact=['-flto','-DMINI_BOOTLOADER=1'] if name=='boot' else ['-DMINI_BOOTLOADER=0']
+        compact=['-flto','-fstack-usage','-DMINI_BOOTLOADER=1'] if name=='boot' else ['-DMINI_BOOTLOADER=0']
         if name=='app' and main==ROOT/'firmware/examples/monitor.c':sources=[*sources,ROOT/'firmware/diagnostics/tests.c']
         if name=='app' and main==ROOT/'firmware/bios/main.c':
             sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','settings.c','boot.c','network.c','benchmark.c','enter.S')]]
@@ -223,7 +202,7 @@ def main():
         firmware_sizes[name]={kind:int(value) for kind,value in zip(('text','data','bss'),values[:3])}
         firmware_sizes[name]['binary_bytes']=(firmware/f'{name}.bin').stat().st_size
     binary=firmware/'boot.bin';size=binary.stat().st_size
-    if size>4096:raise RuntimeError('Boot ROM overflow')
+    if size>8192:raise RuntimeError('Boot ROM overflow')
     image=pack_image((firmware/'app.bin').read_bytes(),abi);(firmware/'app.img').write_bytes(image)
     command=[sys.executable,__file__,'--generate-only','--output-dir',output,'--rom',binary,*config_args]
     if a.synthesize:command+=['--synthesize']
@@ -238,13 +217,15 @@ def main():
     if len(rom_files)!=1:raise RuntimeError(f'Expected one boot ROM initialization file: {rom_files}')
     actual=rom_files[0].read_text().lower().split()
     if actual!=expected:raise RuntimeError('ROM content mismatch')
-    report={'profile':a.profile,'boot_sources':['flash','uart'] if features.flash else ['uart'],'rom_size_bytes':4096,'sram_size_bytes':0,
-        'ddr_initialization':'hardware','boot_ram_address':0x407fe000,'boot_ram_size_bytes':8192,
+    report={'profile':a.profile,'boot_sources':['flash','uart'] if features.flash else ['uart'],'rom_size_bytes':8192,'sram_size_bytes':0,
+        'ddr_initialization':'software','boot_ram_address':0x407ff000,'boot_ram_size_bytes':4096,'boot_ram_backend':'pinned-l2',
         'firmware_bytes':size,'firmware_sha256':hashlib.sha256(raw).hexdigest(),'firmware_sizes':firmware_sizes,
         'cpu_variant':a.cpu_variant,'cpu_verilog':str(a.cpu_verilog.resolve()) if a.cpu_verilog else None,'isa':isa,'abi':'ilp32',
-        'cpu_capabilities':capabilities,'l2_size_bytes':a.l2_size,'l2_mode':a.l2_mode,'l2_backend':a.l2_backend,'memory_scheduler':a.memory_scheduler,'l2_fast':a.l2_fast,'l2_combine':a.l2_combine,'l2_posted':a.l2_posted,'dma_backend':a.dma_backend,'dma_shared':a.dma_shared,
-        'memory_port_spacing_reset':None if a.memory_scheduler=='crossbar' else 0 if a.l2_mode!='baseline' else 8,
-        'l2_policy':('write-back' if a.l2_mode=='writeback' else 'write-through/write-invalidate') if a.l2_size else 'none',
+         'cpu_capabilities':capabilities,'l2_size_bytes':a.l2_size,
+        'memory_system':'shared-writeback',
+        'dma_backend':'native' if features.sd and a.sd_profile=='lite' else 'wishbone',
+        'native_dma_clients':['sd'] if features.sd and a.sd_profile=='lite' else [],
+        'l2_policy':'write-back',
         'sd_profile':a.sd_profile,'audio_clock':a.audio_clock,
         'expected_plls':expected_plls,'audio_reference_hz':60000000,
         'audio_sample_rate':(46875 if a.audio_clock=='legacy' else 48000) if features.audio else 0,

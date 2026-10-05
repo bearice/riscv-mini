@@ -31,6 +31,8 @@ base={'csr_registers':{},'memories':{},'constants':{}}
 small={**base,'constants':{'config_l2_size':4096}}
 large={**base,'constants':{'config_l2_size':8192}}
 assert len({abi_tag(base),abi_tag(small),abi_tag(large)})==3
+coherent={**base,'constants':{'config_l2_size':4096,'config_l2_mode':2,'config_shared_l2':1}}
+assert abi_tag(coherent)!=abi_tag(small),'Memory coherence policy must change the image ABI'
 with tempfile.TemporaryDirectory() as directory:
     cpu=Path(directory)/'TestCPU.v';cpu.write_text('MmuPlugin FpuPlugin module DataCache')
     record={'sha256':hashlib.sha256(cpu.read_bytes()).hexdigest(),'compressed':True,'bitmanip':['Zba','Zbb','Zbs']}

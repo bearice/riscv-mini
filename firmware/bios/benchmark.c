@@ -231,18 +231,7 @@ int bios_benchmark_command(const char *s) {
     if(strcmp(s,"bench") && strncmp(s,"bench ",6))return 0;
     const char *which=s[5]?s+6:"all";
     unsigned hz=0;
-#ifdef CSR_MEMORY_PORT_SPACING_ADDR
-    if(!strncmp(which,"gap ",4)) {
-        unsigned gap=16;
-        if(!strcmp(which+4,"0"))gap=0;
-        else if(!strcmp(which+4,"2"))gap=2;
-        else if(!strcmp(which+4,"4"))gap=4;
-        else if(!strcmp(which+4,"8"))gap=8;
-        if(gap==16) {bios_puts("bench gap 0/2/4/8\r\n");return 1;}
-        __asm__ volatile("fence rw,rw":::"memory");memory_port_spacing_write(gap);
-        bios_puts("DDR transaction gap=");bios_decimal(gap);bios_puts(" sys cycles\r\n");return 1;
-    }
-#endif
+
     if(!strncmp(which,"sd ",3)) {
         if(!strcmp(which+3,"7500000"))hz=7500000;
         else if(!strcmp(which+3,"10000000"))hz=10000000;
@@ -250,7 +239,7 @@ int bios_benchmark_command(const char *s) {
         else if(!strcmp(which+3,"30000000"))hz=30000000;
     }
     if(strcmp(which,"all") && strcmp(which,"cpu") && strcmp(which,"mem") && strcmp(which,"cache") && strcmp(which,"libc") && strcmp(which,"io") && strncmp(which,"net ",4) && !hz) {
-        bios_puts("bench [all|cpu|mem|cache|libc|io|net FILE|sd 7500000/10000000/15000000/30000000|gap 0/2/4/8]\r\n");return 1;
+        bios_puts("bench [all|cpu|mem|cache|libc|io|net FILE|sd 7500000/10000000/15000000/30000000]\r\n");return 1;
     }
     failures=0;bios_puts("BENCH BEGIN clock_hz=");bios_decimal(CONFIG_CLOCK_FREQUENCY);
     bios_puts(" interrupts=on scanout=on compiler=Os\r\n");

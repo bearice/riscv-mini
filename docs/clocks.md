@@ -16,7 +16,7 @@ Dock RTL8201F 25 MHz 晶振
   └─ PHY REF_CLK / FPGA RMII RX、TX、参考计数：50 MHz
 Dock USB3317 26 MHz 晶振
   └─ PHY ULPI CLKOUT：60 MHz（独立于 sys 60 MHz）
-       └─ ULPI rPLL：60 MHz / 247.5°（只用于 PHY 初始化与状态）
+       └─ ULPI rPLL：60 MHz / 225°（默认 Ultra，只用于 PHY 初始化与状态）
 ```
 
 默认 USB 只有初始化用的一颗 PLL，加上主时钟和显示 PLL，共三颗。
@@ -24,7 +24,7 @@ PIO Host、串行收发器、寄存桥接和 IRQ 均在 sys 60 MHz 域，无 USB
 每个全速位使用五个 sys 周期。串行 DP/DM/RCV 的第一级输入采样异步，
 后续接收流水线保持正常时序约束；ULPI PHY 状态同步到 sys。ULPI 初始化
 采样采用 60 MHz 的原生下降沿触发器，数据和 STP 输出为寄存器。
-247.5° 相位与 FPGA 内部时钟布线延迟共同决定实际采样/发射位置；不能单看
+默认 Ultra 使用 225°，可选 OHCI 保留 247.5°。相位与 FPGA 内部时钟布线延迟共同决定实际采样/发射位置；不能单看
 PLL 相位推断接口边沿。ULPI 输出约束以 PHY 外部时钟为参考保留 setup 和
 hold 检查，初始化输出仅增加一个 setup 周期，没有用对应 hold 例外放宽。
 

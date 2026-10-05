@@ -1,7 +1,7 @@
 # riscv-mini
 
-Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 4 KiB boot ROM 启动，
-由硬件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。
+Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 KiB boot ROM 启动，使用 L2 RAM 作为启动栈，
+由软件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。
 默认 DDR 固件为常驻 BIOS，提供 POST、LCD/UART 文字终端、USB 键盘、图形与 IO 服务，
 支持从 SD/TFTP 引导自定义裸机程序；OSB1 可一次性交接给 OpenSBI，进入 S-mode，见 [OpenSBI](docs/opensbi-port.md)。接口与用法见 [BIOS](docs/bios.md)。
 验收统一为 BIOS/DDR monitor 的 `test ...` 命令。系统整体结构、地址映射、中断映射与文档索引见
@@ -11,12 +11,12 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 4 K
 
 | 项目 | 配置 |
 | --- | --- |
-| CPU / 总线 | full 默认 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I/D-cache、Sv32、4 KiB 共享读缓存（L2）；可独立关闭 MMU/FPU |
-| 片上存储 | 4 KiB boot ROM、无工作 SRAM；硬件初始化 DDR，bootloader 栈/data/BSS 使用保留 DDR；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
+| CPU / 总线 | full 默认 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I/D-cache、Sv32、4 KiB 共享 writeback L2；可独立关闭 MMU/FPU |
+| 片上存储 | 8 KiB boot ROM、无独立工作 SRAM；软件初始化 DDR，bootloader 栈/data/BSS 复用 4 KiB L2 RAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
-| SD | 原生四位 SDR + Wishbone DMA，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
+| SD | 原生四位 SD lite + 128-bit coherent DMA，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
 | SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 | 音频 | PT8211 PCM16 stereo，48,000 Hz 共用 DDS；512 帧 FIFO、DDR ring DMA；默认静音 |
@@ -32,9 +32,9 @@ MMU/FPU 独立开关、SD none/spi/lite/full 四种 profile 及 48 kHz 共用 DD
 [功能配置](docs/configuration-profiles.md)。full 默认 MMU+FPU、SD lite；minimal 默认关闭
 MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/rtl-defaults.md)。
 
-硬件 DDR 启动、ROM 缩减和函数大小见 [硬件启动](docs/hardware-ddr-boot.md)。
-默认包含 4 KiB 共享读缓存（`--l2-size 4096`）：只缓存读、写直达 DDR，帧缓冲区绕过，
-默认使用 native L2 + crossbar + fast，写合并保持关闭；`--l2-size 0` 关闭。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
+软件 DDR 启动、L2 启动 RAM和函数大小见 [DDR 启动](docs/ddr-boot.md)。
+默认包含 4 KiB 共享 writeback L2（`--l2-size 4096`）：CPU/音频 32-bit，LCD/SD lite 128-bit coherent，帧缓冲不分配缓存行，
+后端直接连接 LiteDRAM native crossbar；启动 RAM 要求 L2 至少 4 KiB。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 
 RGB LCD 默认显示 BIOS 的 80×34 字符终端；图形模式提供 RGB565 双帧槽。独立基础 monitor
@@ -117,7 +117,7 @@ boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 
 
 ## 启动和固件更新
 
-bootloader 等待硬件 DDR ready，然后从 Flash 自动装载应用。等待期间按 `b` 进入恢复菜单，
+bootloader 使用 L2 启动栈进行软件 DDR 初始化，然后从 Flash 自动装载应用。等待期间按 `b` 进入恢复菜单，
 或按 `u` 走 UART。无有效 Flash 镜像时也进入恢复菜单。CRC、地址或 ABI 不匹配的镜像不会执行。
 
 ```powershell
@@ -151,7 +151,7 @@ Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 
 | 路径 | 内容 |
 | --- | --- |
 | `gateware/` | SoC、可选 SD backend、DDR 端口调度、视频扫描、时序约束和板级配置 |
-| `firmware/boot/` | 共用启动汇编；ROM 无栈等待硬件 DDR ready |
+| `firmware/boot/` | 共用启动汇编；ROM 使用 L2 启动 RAM 建立栈 |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
 | `firmware/bios/` | 默认常驻 BIOS：POST、TTY、设置、系统服务与 SD/TFTP 引导 |
 | `firmware/diagnostics/` | BIOS 与 monitor 共用的板级自检命令 |

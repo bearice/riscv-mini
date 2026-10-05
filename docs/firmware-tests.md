@@ -2,7 +2,7 @@
 
 板上详细检查从 BIOS/DDR monitor 的 `test ...` 命令进入；BIOS 上电执行有界 POST，详细测试显式调用。
 输入 `test` 显示清单。BIOS 增加 `test bios` 检查引导镜像和服务接口，见 [BIOS](bios.md)。代码在 `firmware/diagnostics/tests.c`，
-boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测试。
+boot ROM 只负责 DDR 软件初始化和 Flash/UART 装载，不链接这些测试。
 
 | 命令 | 自动检查 | 影响与验收边界 |
 | --- | --- | --- |
@@ -16,12 +16,13 @@ boot ROM 只有硬件 DDR ready 等待和 Flash/UART 装载，不链接这些测
 | `test sd` | 挂载、读取 `RVTEST00.BIN`，检查 4,096 字节与 CRC32 `08040e1e` | 固定验收文件必须存在；无卡/坏文件返回 FAIL |
 | `test sd blocks` | 比较 16 次单块与一次 16 块读取的 CRC；故意使用非对齐缓冲 | 只读前 16 扇区；覆盖超过 8 扇区 bounce chunk 的请求 |
 | `test sd write` | 新建 64 KiB 文件、写模式数据、sync、关闭并逐字节读回 | 只用 CREATE_NEW，最多尝试 100 个名字，不覆盖原文件；文件保留 |
-| `test lcd` | DDR 生成色条/白框/灰阶/角标、整帧读回 CRC、换帧、扫描进度和欠载 | 显示测试画面；颜色、方向、边界、闪烁仍需人观察 |
+| `test lcd` | 绘制计时器、帧编号和填充速率，独立参考图与整帧读回 CRC、换帧、扫描进度和欠载 | 单帧自检；屏幕稳定性仍需人观察 |
+| `test lcd start` / `test lcd stop` | 开始/停止连续计时器与速率显示 | 每帧完成后间隔至少 100 ms；不改变 LCD 扫描频率，返回 TTY 时自动停止 |
 | `test lcd clear` | 重新清空两帧并检查扫描进度 | 恢复基础黑色画布 |
 | `test spi-lcd` | 执行 SPI LCD 初始化与状态页传输 | 颜色、字体、方向仍需人观察；屏幕无读回通道 |
 | `test io` | 逐一设置六个 LED 并读回、WS2812 busy 完成、读取按键/DIP | 寄存器检查不能替代灯光/按键实物观察；灯光短时改变，最后单色 LED 恢复、RGB 灯灭 |
 | `test audio` | 静音 PIO 256 帧与预期 underrun；DDR DMA、pause/resume、进度和错误 | 测试结束停止 DMA，恢复静音；不代表左右声道已听音通过 |
-| `test dma` | native 后端的 SD block、静音音频、网络 DMA 非法配置拒绝 | Wishbone 后端报告 UNSUPPORTED；网络载荷需外部回显及 `test eth` DMA RX/TX 计数确认 |
+| `test dma` | SD lite native block 和静音音频 | 非 native SD 配置报告 UNSUPPORTED；Ethernet 不使用 DDR DMA |
 | `test mic` | 启动左声道、等待 200 ms、采集并读取 512 个有符号 PCM24 样本，检查非恒定数据/无溢出，输出 min/max | 启动 BCLK/WS，结束后停止；不代替对声音响应和 LCD 波形的人工确认 |
 | `test mic stereo` | 两只麦克风共享 CK/WS，LR 分别为 0/1；读取 512 对 PCM24，检查两路非恒定、独立数值及无溢出 | 需要两只麦克风，输出各路 min/max；不代替声道归属和声音响应的人工确认 |
 | `test audio pio` | 只运行 PIO/预期 underrun 检查 | 预期产生的 underrun 会在 stop 时清零 |
@@ -80,7 +81,6 @@ bootloader，不在正常应用里复制另一套 loader。对应 `sim/` 检查�
 主机 IP 和接口序号必须按当前连接查询；示例数值不是固件配置。执行音频选项会
 播放两秒低幅度测试音，输出连接 Line In 时用于自动测量。
 
-非 baseline L2 配置可给 `firmware_verify.py` 增加 `--ddr-gap 0/2/4/8`，在相同
-FPGA 上执行所有固件自检与并发测试，成功后恢复默认值 0。真实网络流量由上面的
-`monitor_external_verify.py` 提供；固件自检不替代外部网络、物理屏幕、
-听音、键鼠操作或拔插验收。
+LCD 的 LAST FILL、FILL RATE、FILL SPEED 显示上一帧完整 261,120 B 参考图写入 VRAM 的耗时、有效 MiB/s 和等效填充 FPS。计时包含 fence 和协作式设备 poll，不含生成参考图、CRC 校验或等待换帧；等效填充 FPS 不是面板刷新率。
+
+外部并发脚本打开连续 LCD 计时器，并交替调用整帧 CRC、SD、USB 与网络检查。若 Windows ping 本地发送失败，脚本通过已安装 Npcap 发送四个 ICMP 请求，严格检查匹配的回复与 checksum 后才判通过；不会跳过 ICMP 或修改主机网卡。固件自检不替代物理屏幕、听音、键鼠或拔插验收。

@@ -37,7 +37,7 @@ class USBPIOBridge(LiteXModule):
 
 
 class USBHostUltra(LiteXModule):
-    def __init__(self,soc,pads):
+    def __init__(self,soc,pads,compact_serial_outputs=False):
         self._enable=CSRStorage(name='enable')
         self._reset=CSRStorage(reset=1,name='reset')
         self._ready=CSRStatus(name='ready');self._error=CSRStatus(name='error')
@@ -46,7 +46,7 @@ class USBHostUltra(LiteXModule):
         self.ulpi_pll=pll=GW2APLL(devicename=soc.platform.devicename,device=soc.platform.device)
         self.comb += pll.reset.eq(~soc.phy_reset.out.storage)
         pll.register_clkin(pads.clk,60e6)
-        pll.create_clkout(self.cd_ulpi,60e6,phase=247.5,margin=0,with_reset=False)
+        pll.create_clkout(self.cd_ulpi,60e6,phase=225,margin=0,with_reset=False)
         self.specials += AsyncResetSynchronizer(self.cd_ulpi,
             soc.crg.cd_sys.rst|~soc.phy_reset.out.storage|~self._enable.storage|~pll.locked)
         init_pads=Record([('dir',1),('nxt',1),('stp',1)])
@@ -71,9 +71,22 @@ class USBHostUltra(LiteXModule):
             **{('o_utmi_'+n+'_o'):getattr(utmi,n) for n in
                ('data_in','txready','rxvalid','rxactive','rxerror','linestate')})
         oe=Signal(8)
-        self.comb += [oe.eq(Mux(phy.ready,7,phy.oe & Replicate(~pads.dir,8))),
-            pads.stp.eq(init_pads.stp)]
-        self.specials += Tristate(pads.data,Mux(phy.ready,Cat(~oen,dp,~dp&~dn),phy.do),oe,raw)
+        serial_data=Cat(~oen,dp,~dp&~dn)
+        if compact_serial_outputs:
+            # SERIAL has oe=0b00000111: D[7:3] are PHY inputs. Their
+            # inactive output data does not need a ready-controlled mux.
+            # Preserve immediate raw DIR gating during ULPI initialization.
+            # The init FSM already releases D[7:3] in SERIAL. Avoid a
+            # redundant ready mux on these enables; DIR still acts directly.
+            self.comb += oe.eq(Cat(
+                Mux(phy.ready,7,phy.oe[:3] & Replicate(~pads.dir,3)),
+                phy.oe[3:] & Replicate(~pads.dir,5)))
+            drive=Cat(Mux(phy.ready,serial_data,phy.do[:3]),phy.init_output[3:])
+        else:
+            self.comb += oe.eq(Mux(phy.ready,7,phy.oe & Replicate(~pads.dir,8)))
+            drive=Mux(phy.ready,serial_data,phy.do)
+        self.comb += pads.stp.eq(init_pads.stp)
+        self.specials += Tristate(pads.data,drive,oe,raw)
         self.wb_ctrl=wishbone.Interface(data_width=32,address_width=32,addressing='word')
         axil=AXILiteInterface(data_width=32,address_width=32)
         self.bridge=ResetInserter()(USBPIOBridge(self.wb_ctrl,axil))

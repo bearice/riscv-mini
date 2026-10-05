@@ -1,7 +1,7 @@
 # CPU、SD 和音频配置
 
 CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--profile full` 选择全部外设、MMU+FPU、SD lite、音频 DDS。MMU 和 FPU 仍可独立关闭；`--profile minimal` 默认不启用 MMU/FPU。
-默认内存路径为 4 KiB native burst-refill L2 + LiteDRAM crossbar + fast，CPU 生成器默认导出 fence 握手；写合并和提前确认写缓冲默认关闭。
+默认内存路径为 4 KiB shared writeback L2，CPU/音频通过 32-bit Wishbone，LCD/SD lite 通过 128-bit coherent 入口，后端直连 LiteDRAM crossbar；CPU 生成器默认导出 fence 握手。
 默认输出 SoC 块模块层级，Gowin place=3 / route=2；完整当前实板验收见
 [系统设计](system-design.md)。当前资源见该页。
 
@@ -18,10 +18,10 @@ CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--pro
 | --- | --- | --- |
 | `none` | 无 SD | 同时移除 FatFs |
 | `spi` | SPI SD，工作 6 MHz | 软件 SPI 读写，可选 FatFs |
-| `lite` | 精简原生四位，读 15 MHz / 写 7.5 MHz | 最多 8 扇区/4 KiB 一次 DMA，可选 FatFs |
+| `lite` | 精简原生四位，读 15 MHz / 写 7.5 MHz | 最多 8 扇区/4 KiB 一次 128-bit native DMA，可选 FatFs |
 | `full` | 通用原生四位，读 15 MHz / 写 7.5 MHz | 保留更宽地址/长度和通用 DMA，可选 FatFs |
 
-full 的 HAL 当前仍以最多 8 扇区分块；更宽硬件不代表 HAL 已改成大块传输。显式 SD profile 会在 minimal 配置中启用 SD；`none` 与显式启用文件系统冲突时拒绝构建。旧 `--sd-backend native/spi` 仍作为兼容入口，不能与 `--sd-profile` 同时指定。bootloader 仍只含 Flash/UART，不含 SD 或显示驱动。
+full 的 HAL 当前仍以最多 8 扇区分块；更宽硬件不代表 HAL 已改成大块传输。显式 SD profile 会在 minimal 配置中启用 SD；`none` 与显式启用文件系统冲突时拒绝构建。旧 `--sd-backend native/spi` 仍作为兼容入口，不能与 `--sd-profile` 同时指定。bootloader 只含 DDR 初始化和 Flash/UART，不含 SD 或显示驱动。
 
 音频默认 `--audio-clock dds`，DAC 与两路麦克风共用一个相位累加器，平均采样率 48 kHz，不新增 PLL。步进根据构建时系统频率计算；改变频率后必须重新构建，不支持运行时动态调频。边沿量化与 legacy 对比见 [时钟树](clocks.md)。
 

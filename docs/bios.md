@@ -2,13 +2,13 @@
 
 性能测试命令与计时边界见 [BIOS benchmark](benchmark.md)。
 
-默认固件是 `firmware/bios/main.c`。片上 ROM 仍只负责等待硬件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--app firmware/examples/monitor.c` 单独构建。
+默认固件是 `firmware/bios/main.c`。片上 ROM 负责软件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--app firmware/examples/monitor.c` 单独构建。
 
 ## 启动与内存
 
 | 区域 | 地址 / 限制 | 所有者 |
 | --- | --- | --- |
-| ROM 的 DDR 工作区 | `0x407fe000..0x407fffff` | ROM |
+| ROM 的 L2/DDR 工作区 | `0x407ff000..0x407fffff` | ROM |
 | BIOS 代码、data、BSS、栈 | `0x40800000..0x40bfffff` | BIOS，沿用 ROM 应用窗口 |
 | 裸机程序入口 | `0x41000000` | 二级程序 |
 | 二级程序内存 | `0x41000000..0x47deffff` | 代码、data、BSS；文件载荷最多 4 MiB |

@@ -1,8 +1,8 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 MEMORY {
-    ROM (rx) : ORIGIN = 0x00000000, LENGTH = 4K
-    BOOT_RAM (rwx) : ORIGIN = 0x407fe000, LENGTH = 8K
+    ROM (rx) : ORIGIN = 0x00000000, LENGTH = 8K
+    BOOT_RAM (rwx) : ORIGIN = 0x407ff000, LENGTH = 4K
 }
 SECTIONS {
     .text : { KEEP(*(.text.start)) *(.text .text.*) } > ROM

@@ -2,20 +2,20 @@
 
 ## 架构与职责
 
-CPU 的复位地址为片上 ROM `0x00000000`。硬件完成 DDR JEDEC 初始化与读训练，ROM 用无栈汇编等待 ready/failure；成功后才启用保留 DDR 工作区，完成 UART/timer、SPI NOR 探测，通过 **Flash 或 UART 两条替代路径**把同一应用装入 `0x40800000`，校验后同步指令缓存并跳转。没有额外的第二级引导程序。
+CPU 的复位地址为片上 8 KiB ROM `0x00000000`。ROM 在 L2 固定的 4 KiB 启动 RAM 上建立栈，软件完成 DDR JEDEC 初始化与读训练，再从 Flash 或 UART 把应用装入 `0x40800000`，校验、同步指令缓存后跳转。没有独立工作 SRAM或额外的第二级装载器。
 
-bootloader 仅链接 `start.S`、`uart.c`、`time.c`、精简的 `bootloader/flash.c` 和 `bootloader/main.c`，使用 `-Os -flto` 和 section GC。没有 SD/FatFs、LCD 或软件 DDR 训练。硬件按 lane/bitslip/tap 寻找最大有效窗口并复验中点；旧软件数据位、地址别名和三个 4 KiB 区域检查已移除，不由硬件训练替代。应用 `test ddr` 检查 8 KiB scratch，详见 [硬件启动](hardware-ddr-boot.md)。
+bootloader 链接 `start.S`、`uart.c`、`time.c`、`bootloader/ddr.c`、精简 `bootloader/flash.c` 和 `bootloader/main.c`，使用 `-Os -flto` 与 section GC。没有 SD/FatFs、LCD、音频、网络或 USB 驱动。DDR 软件扫描两个 lane 的 bitslip/tap 窗口并复验；具体协议与验证边界见 [DDR 启动](ddr-boot.md)。
 
-SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。app 使用 DDR 的代码、数据、BSS 和栈；bootloader 工作区是保留的 8 KiB DDR，没有片上 SRAM。RGB LCD 初始化为黑色双缓冲，SPI LCD 显示基本状态。
+SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。应用代码、数据、BSS 与栈位于 DDR；启动工作区 `0x407ff000..0x407fffff` 在训练前由 L2 数据 RAM 提供，训练后通过 writeback 保留到 DDR。RGB LCD 初始化为黑色双缓冲，SPI LCD 显示基本状态。
 
 ## 固定硬件与内存
 
-CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 15 MHz 读 / 7.5 MHz 写（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享读缓存 L2；minimal 使用 lite 核，仅有 2 KiB I-cache。DDR CPU/Wishbone DMA 与视频端口共享单物理 native 端口、视频优先、事务间留八个 sys 周期；协议调度和真实数据路径仍受验证约束。
+CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 15 MHz 读 / 7.5 MHz 写（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享 writeback L2；minimal 使用 lite 核，仅有 2 KiB I-cache。CPU/音频使用 32-bit L2 入口，LCD/SD lite 使用 128-bit coherent 入口；L2 轮转仲裁并直接连接 LiteDRAM native 后端，不插入固定额外事务间隔。
 
 | 地址 | 用途 |
 | --- | --- |
-| `0x00000000`，4 KiB | boot ROM，随 FPGA 配置更新 |
-| `0x407fe000`，8 KiB | bootloader DDR 工作区，栈顶 `0x40800000` |
+| `0x00000000`，8 KiB | boot ROM，随 FPGA 配置更新 |
+| `0x407ff000`，4 KiB | bootloader L2/DDR 工作区，栈顶 `0x40800000` |
 | `0x40000000`，128 MiB | DDR 总范围 |
 | `0x40300000` | SPI LCD 的 DDR 工作帧 |
 | `0x40800000`–`0x40c00000` | 当前 DDR 应用 linker 区域；末尾留 64 KiB 栈 |
@@ -35,6 +35,8 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 当前 Gowin 配置二进制小于 2 MiB，配置下载地址固定为零；上传工具执行此长度检查。CPU 更新不用 chip erase，只对应用覆盖到的 4 KiB 扇区擦除，按 256 字节页边界编程。先写 payload，最后写镜像头；按用户要求不做 Flash 写后读回校验。更新中断时旧镜像可能失效，启动检查失败后回到 UART 恢复；本版没有 A/B 回滚。
 
 `--configure-flash` 是显式的 FPGA 持久配置更新。工具先执行 Gowin 普通 exFlash Erase/Program（operation 8），再执行 Reprogram 从 Flash 重新配置，最后通过 UART 安装应用。没有 Gowin Verify、独立配置读回或 CRC 比对步骤。不能把普通 `--mode install` 当作 FPGA 配置更新。修改 ROM/CSR/内存布局时需要构建并更新匹配的配置和镜像。
+
+`--program` 用于 SRAM 临时配置（operation 2），检查工具结果，不擦写 Flash。软件复位与重载的剩余边界见 [DDR 启动](ddr-boot.md)。
 
 ## 镜像与 UART 协议
 

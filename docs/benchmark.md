@@ -7,7 +7,6 @@ bench                 # 与 bench all 相同
 bench cpu
 bench mem
 bench cache           # L1/L2 命中、冲突及 L2 关闭对照
-bench gap 0/2/4/8      # 实验用 native 请求额外间隔；复位恢复 8，不保存设置
 bench libc            # 对齐、尾部和越界哨兵检查，不计吞吐
 bench io
 bench sd 15000000     # 与 7.5 MHz 参考数据比较，支持 7500000/10000000/15000000/30000000
@@ -38,7 +37,7 @@ CPU 和内存的内层循环不调用 USB/network poll；各阶段之间恢复 p
 
 CPU 采用默认 `-Os` 编译。整数/浮点核心使用明确的指令，整数结果与 C 参考循环比较，FPU 检查精确的 500000.0。
 当前 [CPU 生成器](../scripts/cpu_generate.py) 设置 `singleCycleMulDiv=false`、`singleCycleShift=false`；因此依赖乘法、移位测试包含多周期执行，不应把 CPU 时钟直接等同于运算吞吐。
-内存读取和复制前执行 D-cache invalidate/fence；小工作集随后重复访问，因此结果包含首轮冷访问和后续热访问。L2 仍启用，没有将 L2 冷/热单独分离。write32 为当前写穿透路径。
+内存读取和复制前执行 D-cache invalidate/fence；小工作集随后重复访问，因此结果包含首轮冷访问和后续热访问。L2 仍启用，没有将 L2 冷/热单独分离。write32 使用当前共享 writeback L2，计时末尾的 fence 保证顺序，不代表所有 dirty 数据已写回物理 DDR。
 
 临时内存窗口为 `0x46000000..0x460fffff` 和 `0x46200000..0x462fffff`，不重叠 BIOS、ROM 工作区、装载暂存区或 framebuffer。只在 BIOS setup 执行，窗口内旧的二级程序数据会被覆盖；后续启动仍按正常装载流程运行。
 
@@ -46,9 +45,9 @@ USB HID、音频、麦克风是事件或固定采样率接口，本命令不测�
 
 ## 主机重复运行
 
-`bench cache` 针对默认 2 KiB 直接映射 L1 D-cache / 4 KiB 直接映射 L2。两条 32 B 数据行交替访问：间距 32 B 时均可驻留 L1；间距 2048 B 时冲突于 L1 而驻留不同 L2 行；间距 4096 B 时冲突于两级缓存。另对 2048 B 间距关闭 L2 作对照。数据先预热，汇编循环展开八次，每组执行 4096 次依赖指针加载或 262144 次交替写入，统计有效 4 B 数据吞吐及 L2 命中/未命中计数差值。延长写测试覆盖多个 LCD 刷新周期，减少视频仲裁相位影响。计数器为 16 位模计数，包含计时边界可能产生的指令或栈访问；不统计写次数。
+`bench cache` 针对默认 2 KiB 直接映射 L1 D-cache / 4 KiB 直接映射 L2。两条 32 B 数据行交替访问：间距 32 B 时均可驻留 L1；间距 2048 B 时冲突于 L1 而驻留不同 L2 行；间距 4096 B 时冲突于两级缓存。另对 2048 B 间距关闭 L2 作对照。数据先预热，汇编循环展开八次，每组执行 4096 次依赖指针加载或 262144 次交替写入，统计有效 4 B 数据吞吐及 L2 命中/未命中计数差值。延长写测试覆盖多个 LCD 刷新周期，减少视频仲裁相位影响。计数器为 16 位模计数，包含计时边界可能产生的指令或栈访问；包括 CPU 和 coherent 客户端的读写命中/未命中，不单独区分读写。
 
-缓存测试仅在短计时内关闭 CPU 中断，LCD 扫描继续；它与普通 `bench mem` 的中断开启结果不直接等价。L1 与 L2 都是写穿透，L2 写入还会失效对应行，因此写测试的“hot/conflict”指预热地址布局，不代表写入只在缓存完成。测试结束恢复 L2 原启用状态和中断。无 L2 或不同 L2 容量配置明确报告不支持。
+缓存测试仅在短计时内关闭 CPU 中断，LCD 扫描继续；它与普通 `bench mem` 的中断开启结果不直接等价。L1 D-cache 是写穿透，L2 是 writeback；写命中在共享缓存完成，冲突替换包含 dirty 行写回。测试结束恢复 L2 原启用状态和中断。无 L2 或不同 L2 容量配置明确报告不支持。
 
 [benchmark.py](../scripts/benchmark.py) 驱动相同 BIOS 命令，默认三轮，保存 UART 原始输出与 JSON，并计算中位数。
 
@@ -64,4 +63,4 @@ USB HID、音频、麦克风是事件或固定采样率接口，本命令不测�
 
 [sd_clock_verify.py](../scripts/sd_clock_verify.py) 默认扫描四档读频率，每档三次；`--clocks 15000000 --soak-seconds 300` 进行五分钟只读测试。每轮先在 7.5 MHz 获取参考 CRC，再测试请求频率的单块/八块读取，失败候选明确记录。30 MHz 是实验候选，需要 CMD6 协商且尚未通过实板读取，不能作为默认。结束时检查低速恢复、BIOS 自检和设备状态，不写卡。重新 mount/init 会恢复驱动默认频率。
 
-非 baseline L2 模式下，主机可用 `--gap 0/2/4/8` 在同一 FPGA 配置上扫描额外的 DDR 请求间隔，成功完成后恢复默认值 0。显式选择 baseline 的构建不暴露该 CSR。`--suite net --host-ip ADDRESS` 仅运行现有 `bench net BENCH.BIN` 命令；失败时保留 TFTP 服务事件和 `test eth` 状态，不能把失败的传输计入吞吐。
+`--suite net --host-ip ADDRESS` 仅运行现有 `bench net BENCH.BIN` 命令；失败时保留 TFTP 服务事件和 `test eth` 状态，不能把失败的传输计入吞吐。

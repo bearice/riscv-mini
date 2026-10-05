@@ -5,6 +5,9 @@
 #include <generated/soc.h>
 #include "ff.h"
 #include <string.h>
+#if MINI_FEATURE_VIDEO
+#include "../common/rgb_canvas.h"
+#endif
 #if MINI_FEATURE_ETH
 #include "../common/packet_echo.h"
 #endif
@@ -23,6 +26,10 @@ static unsigned network,pending_reply,network_replies,network_ignored;
 #endif
 #if MINI_FEATURE_VIDEO
 static unsigned frame;
+static unsigned video_running,video_busy,video_epoch,video_next,video_frames,video_fill_ticks;
+static _Alignas(16) union {uint16_t pixels[PIXELS];uint32_t words[PIXELS/2];} video_buffer;
+#define video_image video_buffer.pixels
+static void video_poll(void);
 #endif
 #if MINI_FEATURE_USB
 static unsigned usb_input;
@@ -46,13 +53,17 @@ static uint32_t crc_update(uint32_t crc,const uint8_t *data,unsigned size) {
 }
 #endif
 #if MINI_FEATURE_VIDEO
-static uint32_t crc_pixel(uint32_t crc,unsigned pixel) {
-    /* Keep the two RGB565 bytes in registers instead of a DDR stack array. */
-    for(unsigned byte=0;byte<2;++byte) {
-        crc^=pixel&255u;pixel>>=8;
+static uint32_t video_crc_table[256];
+static void video_crc_init(void) {
+    for(unsigned i=0;i<256;++i) {
+        uint32_t crc=i;
         for(unsigned bit=0;bit<8;++bit)crc=(crc>>1)^((0u-(crc&1u))&0xedb88320u);
+        video_crc_table[i]=crc;
     }
-    return crc;
+}
+static uint32_t crc_pixel(uint32_t crc,unsigned pixel) {
+    crc=(crc>>8)^video_crc_table[(crc^pixel)&255u];
+    return (crc>>8)^video_crc_table[(crc^(pixel>>8))&255u];
 }
 #endif
 #if MINI_FEATURE_AUDIO
@@ -120,6 +131,9 @@ void tests_poll(void) {
     if(audible_until && hal_deadline_reached(hal_time_ms(),audible_until)) {
         hal_audio_mute(1);audible_until=0;
     }
+#endif
+#if MINI_FEATURE_VIDEO
+    video_poll();
 #endif
 }
 static void cooperate(void) {
@@ -261,7 +275,7 @@ static unsigned fence_check(void) {
     hal_irq_restore(state);return ok;
 }
 static unsigned ddr_check(void) {
-    value("DDR hardware status=",sdram_boot_status_read());
+    value("DDR software status=",sdram_boot_status_read());
     value(" lane0=",sdram_boot_lane0_read());value(" lane1=",sdram_boot_lane1_read());hal_uart_puts("\r\n");
     if((sdram_boot_status_read()&3u)!=1u)return 0;
     volatile uint32_t *words=work;
@@ -347,32 +361,77 @@ static unsigned sd_write(void) {
 }
 #endif
 #if MINI_FEATURE_VIDEO
-static unsigned video_check(void) {
-    frame=rgb_lcd_active_read()^1u;volatile uint16_t *pixels=hal_video_frame(frame);
-    uint32_t expected=~0u;
-    for(unsigned y=0;y<272;++y) {
-        for(unsigned x=0;x<480;++x) {
-            uint16_t color=x<160?0xf800:x<320?0x07e0:0x001f;
-            if(y>=224)color=((x/16)&31)*0x0841u;
-            if(!x || x==479 || !y || y==271)color=0xffff;
-            if((x<16 && y<16) || (x>=464 && y>=256))color=frame?0xffe0:0x07ff;
-            pixels[y*480+x]=color;
-            expected=crc_pixel(expected,color);
-            if(!(x&127))cooperate();
-        }
-        if(!(y&3))cooperate();
+static char *lcd_number(char *out,unsigned n,unsigned width) {
+    char reverse[10];unsigned used=0;
+    do {reverse[used++]='0'+n%10;n/=10;}while(n);
+    while(width>used) {*out++='0';--width;}
+    while(used)*out++=reverse[--used];
+    *out=0;return out;
+}
+static void lcd_measure(char *line,const char *label,unsigned tenths,const char *unit) {
+    size_t len=strlen(label);memcpy(line,label,len);char *p=line+len;p=lcd_number(p,tenths/10,1);*p++='.';
+    p=lcd_number(p,tenths%10,1);memcpy(p,unit,strlen(unit)+1);
+}
+static unsigned video_render(unsigned verify) {
+    /* The reference image is separate from scanout. Measure only its full
+       261120-byte transfer to VRAM, including fence and cooperative polling.
+       Composition, CRC readback and waiting for vblank are excluded. The
+       onscreen LAST FILL values describe the preceding completed transfer. */
+    video_busy=1;frame=rgb_lcd_active_read()^1u;
+    unsigned ms=hal_time_ms()-video_epoch;char line[64],*p=line;
+    for(unsigned i=0;i<PIXELS/2;i+=4) {
+        video_buffer.words[i]=video_buffer.words[i+1]=video_buffer.words[i+2]=video_buffer.words[i+3]=0x08410841u;
+        if(!(i&255))cooperate();
     }
-    __asm__ volatile("fence rw,rw":::"memory");
-    uint32_t actual=~0u;
-    for(unsigned i=0;i<PIXELS;++i) {
-        actual=crc_pixel(actual,pixels[i]);if(!(i&127))cooperate();
+    text(video_image,24,16,"LCD TIMER / FRAME FILL",2,0xffff,0x0841);
+    p=lcd_number(p,ms/3600000,2);*p++=':';p=lcd_number(p,(ms/60000)%60,2);
+    *p++=':';p=lcd_number(p,(ms/1000)%60,2);*p++='.';lcd_number(p,ms%1000,3);
+    text(video_image,24,52,line,4,0x07ff,0x0841);
+    memcpy(line,"FRAME ",6);lcd_number(line+6,video_frames+1,1);
+    text(video_image,24,100,line,2,0xffff,0x0841);
+    unsigned ticks=video_fill_ticks;
+    lcd_measure(line,"LAST FILL ",ticks/(CONFIG_CLOCK_FREQUENCY/10000u)," MS");
+    text(video_image,24,132,line,2,0xffe0,0x0841);
+    lcd_measure(line,"FILL RATE ",ticks?(unsigned)(((uint64_t)PIXELS*2*CONFIG_CLOCK_FREQUENCY*10)/((uint64_t)ticks*1048576)):0," MIB/S");
+    text(video_image,24,160,line,2,0xffe0,0x0841);
+    lcd_measure(line,"FILL SPEED ",ticks?CONFIG_CLOCK_FREQUENCY*10u/ticks:0," FPS");
+    text(video_image,24,188,line,2,0xffe0,0x0841);
+    text(video_image,24,220,"CRC CHECKS / SCANOUT 480X272",1,0xffff,0x0841);
+    fill(video_image,24,240,(video_frames%432)+1,12,0x07e0);
+    volatile uint16_t *pixels=hal_video_frame(frame);
+    volatile uint32_t *target=(volatile uint32_t *)pixels;
+    unsigned start=hal_ticks();
+    for(unsigned i=0;i<PIXELS/2;++i) {target[i]=video_buffer.words[i];if(!(i&255))cooperate();}
+    __asm__ volatile("fence rw,rw":::"memory");video_fill_ticks=hal_ticks()-start;
+    unsigned ok=1;
+    if(verify) {
+        video_crc_init();
+        uint32_t expected=~0u,actual=~0u;
+        for(unsigned i=0;i<PIXELS;++i) {
+            expected=crc_pixel(expected,video_image[i]);actual=crc_pixel(actual,pixels[i]);
+            if(!(i&127))cooperate();
+        }
+        value("LCD crc=",actual);value(" expected=",expected);
+        value(" fill_ticks=",video_fill_ticks);value(" fill_us=",video_fill_ticks/(CONFIG_CLOCK_FREQUENCY/1000000u));
+        hal_uart_puts("\r\n");ok=actual==expected;
     }
     unsigned before=rgb_lcd_completed_read();
-    unsigned ok=actual==expected && hal_video_present(frame)==HAL_OK;
-    wait_ms(40);hal_video_status();
-    return ok && rgb_lcd_completed_read()!=before && !rgb_lcd_underflows_read();
+    if(hal_video_present(frame)!=HAL_OK)ok=0;
+    if(verify) {wait_ms(40);hal_video_status();ok=ok && rgb_lcd_completed_read()!=before;}
+    ++video_frames;video_next=hal_time_ms()+100;video_busy=0;
+    return ok && !rgb_lcd_underflows_read();
 }
+static void video_poll(void) {
+    if(video_running && !video_busy && hal_deadline_reached(hal_time_ms(),video_next))
+        if(!video_render(0)) {video_running=0;result("lcd background",0);}
+}
+static unsigned video_check(void) {return video_render(1);}
 #endif
+void tests_video_stop(void) {
+#if MINI_FEATURE_VIDEO
+    video_running=0;
+#endif
+}
 #if MINI_FEATURE_USB
 static void usb_status(void) {
     hal_usb_info_t u;hal_usb_get_info(&u);
@@ -616,7 +675,7 @@ void tests_help(void) {
     hal_uart_puts("test sd|sd write\r\n");
 #endif
 #if MINI_FEATURE_VIDEO
-    hal_uart_puts("test lcd|lcd clear\r\n");
+    hal_uart_puts("test lcd|lcd start|lcd stop|lcd clear\r\n");
 #endif
 #if MINI_FEATURE_SPI_LCD
     hal_uart_puts("test spi-lcd\r\n");
@@ -772,10 +831,19 @@ int tests_command(const char *command) {
     else if(!strcmp(name,"sd write"))ok=sd_write();
 #endif
 #if MINI_FEATURE_VIDEO
-    else if(!strcmp(name,"lcd")) {ok=video_check();hal_uart_puts("LCD visual color/orientation check required\r\n");}
+    else if(!strcmp(name,"lcd"))ok=video_check();
+    else if(!strcmp(name,"lcd start")) {
+        if(!video_running) {video_epoch=hal_time_ms();video_frames=video_fill_ticks=0;}
+        video_running=1;ok=video_render(0);
+    }
+    else if(!strcmp(name,"lcd stop")) {
+        tests_video_stop();value("LCD rendered=",video_frames);
+        value(" elapsed_ms=",hal_time_ms()-video_epoch);value(" fill_ticks=",video_fill_ticks);
+        hal_uart_puts("\r\n");ok=1;
+    }
 #endif
 #if MINI_FEATURE_VIDEO
-    else if(!strcmp(name,"lcd clear"))ok=hal_video_init()==HAL_OK;
+    else if(!strcmp(name,"lcd clear")) {tests_video_stop();ok=hal_video_init()==HAL_OK;}
 #endif
 #if MINI_FEATURE_SPI_LCD
     else if(!strcmp(name,"spi-lcd")) {hal_sd_info_t s;hal_sd_get_info(&s);ok=hal_spi_lcd_show(s.initialized)==HAL_OK;hal_uart_puts("SPI LCD visual check required\r\n");}

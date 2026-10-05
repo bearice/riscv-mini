@@ -29,8 +29,7 @@ has a 150 ms PHY deadline and OHCI reset/ownership waits are bounded.
 
 OHCI registers occupy `0xB1000000..0xB1000FFF`. HCCA (256-byte aligned), ED/TD
 lists, enumeration buffers and HID buffers are in application DDR. No extra
-CPU SRAM ring is required. The default build includes a 4 KiB shared read cache
-(`--l2-size 4096`), and the cache never caches writes, so fences protect DMA handoffs. The
+CPU SRAM ring is required. The default build includes a 4 KiB shared writeback L2 (`--l2-size 4096`). OHCI DMA shares its 32-bit Wishbone entry; HAL fences and private L1 invalidation remain required at ownership changes. The default Ultra backend uses PIO instead. The
 USB Host IRQ number
 follows LiteX peripheral add order (UART0=0, timer0=1, timer1=2, board_io=3,
 sdcard=4, ethmac=5, usb_host=6; SPI SD backend has no `sdcard` so later

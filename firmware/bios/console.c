@@ -53,7 +53,7 @@ int bios_mouse_take(struct bios_mouse *event) {
 }
 int bios_video_mode(unsigned m) {
     if(m>1 || !video)return -1;
-    mode=m;if(!mode) {memset(drawn,0,sizeof(drawn));dirty=1;}return 0;
+    mode=m;if(!mode) {tests_video_stop();memset(drawn,0,sizeof(drawn));dirty=1;}return 0;
 }
 void bios_console_poll(void) {
     int c;while((c=hal_uart_getc())>=0)enqueue(c);

@@ -14,13 +14,10 @@ from litex.soc.cores.gpio import GPIOOut, GPIOIn
 from litex.soc.cores.timer import Timer
 from litex.soc.interconnect.csr import CSRStorage
 from litex_boards.platforms.sipeed_tang_primer_20k import Platform
-from litedram.frontend.wishbone import LiteDRAMWishbone2Native
 from gateware.vendor.gw2ddrphy import GW2DDRPHY
 from gateware.ddr import H5TQ1G63EFR
-from gateware.ddr_boot import HardwareDDRCore
+from gateware.ddr_boot import SoftwareDDRCore
 from gateware.constraints import add_ddr_init_exceptions
-from gateware.memory import SharedNativePort
-from gateware.l2 import ReadL2
 from gateware.video import RGBLCD
 from gateware.board_io import BoardIO, WS2812
 from gateware.sd import NativeSD
@@ -28,7 +25,6 @@ from gateware.audio import Audio
 from gateware.microphone import Microphone
 from gateware.ethernet import add_ethernet
 from gateware.usb import add_usb
-from gateware.bus import WishbonePipeline
 from gateware.features import Features
 from gateware.config import cpu_capabilities
 from gateware.audio_clock import AudioDDS
@@ -86,26 +82,9 @@ class MiniSoC(SoCCore):
         usb_backend='ultra',
         sd_profile=None,
         audio_clock='dds',
-        l2_size=0,
-        l2_mode='burst-refill',
-        dma_backend='wishbone',
-        dma_shared=False,
-        l2_backend='wishbone',
-        memory_scheduler='shared',
-        l2_fast=False,
-        l2_combine=False,
-        l2_posted=False,
+        l2_size=4096,
     ):
-        if memory_scheduler not in ('shared','crossbar'):raise ValueError('Unknown memory scheduler')
-        if memory_scheduler=='crossbar' and dma_shared:
-            raise ValueError('Crossbar replaces the shared DMA scheduler; omit --dma-shared')
-        if l2_backend not in ('wishbone','native'):raise ValueError('Unknown L2 backend')
-        if (l2_fast or l2_combine or l2_posted) and (l2_backend!='native' or l2_mode!='burst-refill' or not l2_size):
-            raise ValueError('Fast/combined L2 requires native burst-refill cache')
-        if l2_backend=='native' and (not l2_size or l2_mode=='writeback'):
-            raise ValueError('Native L2 backend requires a write-through L2')
-        if dma_backend not in ('wishbone','native'):raise ValueError('Unknown DMA backend')
-        if dma_backend=='native' and l2_mode=='writeback':raise ValueError('Native DMA requires write-through L2')
+        if l2_size not in (4096,8192):raise ValueError('Software DDR boot requires at least 4 KiB L2 boot RAM')
         # Validate feature selections and select matching CPU RTL.
         features = features or Features()
         if cpu_verilog is None and (features.mmu or features.fpu):
@@ -140,7 +119,7 @@ class MiniSoC(SoCCore):
         SoCCore.__init__(
             self, platform, clk_freq=60e6, ident='riscv-mini',
             cpu_type='vexriscv', cpu_variant=cpu_variant,
-            integrated_rom_size=4*1024, integrated_rom_init=rom_data or [],
+            integrated_rom_size=8*1024, integrated_rom_init=rom_data or [],
             integrated_sram_size=0, integrated_main_ram_size=0,
             uart_name='serial', uart_baudrate=115200,
             with_timer=True, with_ctrl=True,
@@ -151,23 +130,11 @@ class MiniSoC(SoCCore):
         if features.mmu:
             self.cpu.add_timer()
         capabilities=cpu_capabilities(cpu_verilog) if cpu_verilog else {}
-        if l2_posted and (not capabilities.get('external_fence') or dma_backend!='wishbone' or sd_profile=='full'):
-            raise ValueError('Posted L2 requires fence CPU, Wishbone DMA, and SD none/spi/lite')
         fence_request=Signal();fence_done=Signal();atomic=Signal()
         if capabilities.get('external_fence'):
             self.cpu.cpu_params.update(o_externalFenceRequest=fence_request,
                                        i_externalFenceDone=fence_done,o_externalAtomic=atomic)
         memory_idle=Signal()
-        mmio_drain=Signal()
-        if l2_posted:
-            from gateware.cpu_order import CPUOrderBridge
-            self.cpu_order=CPUOrderBridge(self.cpu.dbus,memory_idle)
-            raw=self.cpu_order.cpu
-            for name,field in [('ADR','adr'),('DAT_MOSI','dat_w'),('SEL','sel'),('CYC','cyc'),('STB','stb'),('WE','we'),('CTI','cti'),('BTE','bte')]:
-                self.cpu.cpu_params['o_dBusWishbone_'+name]=getattr(raw,field)
-            for name,field in [('DAT_MISO','dat_r'),('ACK','ack'),('ERR','err')]:
-                self.cpu.cpu_params['i_dBusWishbone_'+name]=getattr(raw,field)
-            self.comb += mmio_drain.eq(self.cpu_order.drain)
         self.add_constant('CONFIG_CPU_COMPRESSED',int(capabilities.get('compressed',False)))
         self.add_constant('CONFIG_CPU_BITMANIP',sum(1<<i for i,name in enumerate(('Zba','Zbb','Zbs'))
             if name in capabilities.get('bitmanip',[])))
@@ -178,55 +145,40 @@ class MiniSoC(SoCCore):
         self.ddrphy.settings.rtt_nom='disabled'
         self.ddrphy.settings.rtt_wr='disabled'
         self.comb += [self.crg.stop.eq(self.ddrphy.init.stop),self.crg.reset.eq(self.ddrphy.init.reset)]
-        self.sdram=HardwareDDRCore(self.ddrphy,H5TQ1G63EFR(60e6,'1:2'),self.sys_clk_freq)
-        if memory_scheduler=='crossbar':
-            from gateware.memory import CrossbarPorts
-            self.memory_port=CrossbarPorts(self.sdram.crossbar,enabled=self.sdram.boot.ready)
-        elif dma_backend=='native' and dma_shared:
-            from gateware.dma_scheduler import DMAMemoryScheduler
-            self.memory_port=DMAMemoryScheduler(self.sdram.crossbar.get_port(),enabled=self.sdram.boot.ready)
-        else:self.memory_port=SharedNativePort(self.sdram.crossbar.get_port(),enabled=self.sdram.boot.ready,spacing_csr=l2_mode!='baseline')
-        native_dma=dma_backend=='native'
-        self.add_constant('CONFIG_DMA_NATIVE',int(native_dma))
-        dma_sd=native_dma and features.sd and sd_profile=='lite'
-        dma_count=2*int(dma_sd)+int(native_dma and features.audio)+int(native_dma and features.eth)
-        dma_ports=iter(())
-        if dma_count:
+        self.sdram=SoftwareDDRCore(self.ddrphy,H5TQ1G63EFR(60e6,'1:2'),self.sys_clk_freq)
+        # A single shared writeback cache owns CPU, video and SD transactions.
+        from types import SimpleNamespace
+        from litedram.common import LiteDRAMNativePort
+        dma_sd=features.sd and sd_profile=='lite'
+        backend=self.sdram.crossbar.get_port()
+        self.memory_port=SimpleNamespace(cpu=backend,
+            video=LiteDRAMNativePort('read',backend.address_width,128),
+            dma=LiteDRAMNativePort('both',backend.address_width,128))
+        self.add_constant('CONFIG_DMA_NATIVE',int(dma_sd))
+        sd_ports=None
+        if dma_sd:
             from gateware.native_dma import NativeDMAArbiter
-            self.native_dma=NativeDMAArbiter(self.memory_port.dma if dma_shared else self.sdram.crossbar.get_port(),dma_count)
-            dma_ports=iter(self.native_dma.ports)
-        sd_ports=(next(dma_ports),next(dma_ports)) if dma_sd else None
-        audio_port=next(dma_ports) if native_dma and features.audio else None
-        eth_port=next(dma_ports) if native_dma and features.eth else None
+            dma_port=self.memory_port.dma
+            self.native_dma=NativeDMAArbiter(dma_port,2)
+            sd_ports=tuple(self.native_dma.ports)
+        else:
+            self.comb += [self.memory_port.dma.cmd.valid.eq(0),self.memory_port.dma.wdata.valid.eq(0),
+                          self.memory_port.dma.rdata.ready.eq(1)]
         if not features.video:
             self.comb += [self.memory_port.video.cmd.valid.eq(0),self.memory_port.video.rdata.ready.eq(1)]
         wb_ram=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-        self.bus.add_slave(
-            name='main_ram', slave=wb_ram,
-            region=SoCRegion(origin=0x40000000, size=128*1024*1024),
-        )
+        self.bus.add_slave(name='main_ram',slave=wb_ram,
+            region=SoCRegion(origin=0x40000000,size=128*1024*1024))
         ram_request=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-        if l2_mode in ('baseline','burst','burst-refill','prefetch','writeback'):
-            self.ram_pipeline=WishbonePipeline(wb_ram,ram_request,burst_read=l2_mode in ('burst','burst-refill'),burst_write=l2_combine,early_launch=l2_fast)
-        else:
-            self.comb += wb_ram.connect(ram_request)
-        wb_native=self.memory_port.cpu if l2_backend=='native' else wishbone.Interface(data_width=128,address_width=32,addressing='word')
         self.add_constant('CONFIG_L2_SIZE',l2_size)
-        self.add_constant('CONFIG_L2_MODE',{'baseline':0,'burst':1,'writeback':2,'prefetch':3,'burst-refill':4}[l2_mode])
-        if l2_size:
-            if l2_mode=='writeback':
-                from gateware.l2_writeback import WritebackL2
-                self.l2=WritebackL2(ram_request,wb_native,size=l2_size)
-            else:
-                self.l2=ReadL2(ram_request,wb_native,size=l2_size,bursting=l2_mode in ('burst','burst-refill'),prefetch=l2_fast or l2_mode=='prefetch',refill_bypass=l2_mode=='burst-refill',maintenance=native_dma,native=l2_backend=='native',fast_write=l2_fast,combine_writes=l2_combine,posted_writes=l2_posted,atomic=atomic)
-                self.comb += [self.l2.drain.eq(fence_request | mmio_drain),
-                              memory_idle.eq(self.l2.idle & self.ram_pipeline.fsm.ongoing('IDLE') & ~wb_ram.cyc)]
-        else:
-            self.submodules += wishbone.Converter(ram_request,wb_native)
-        if not l2_size or l2_mode=='writeback':self.comb += memory_idle.eq(1)
+        self.add_constant('CONFIG_L2_MODE',2)
+        from gateware.shared_l2 import SharedL2
+        self.comb += wb_ram.connect(ram_request)
+        self.l2=SharedL2(ram_request,self.memory_port.cpu,size=l2_size,writeback=True,
+            enabled=self.sdram.boot.ready,atomic=atomic,video=self.memory_port.video,dma=self.memory_port.dma,boot_ram=True)
+        self.comb += memory_idle.eq(self.l2.idle & ~wb_ram.cyc)
+        self.add_constant('CONFIG_SHARED_L2',1)
         self.comb += fence_done.eq(memory_idle & ~self.cpu.dbus.cyc)
-        if l2_backend=='wishbone':
-            self.wishbone_bridge=LiteDRAMWishbone2Native(wb_native,self.memory_port.cpu,base_address=0x40000000)
 
         # System timers and board IO.
         self.timer0.add_uptime()
@@ -255,7 +207,7 @@ class MiniSoC(SoCCore):
         self.add_constant('CONFIG_SD_PROFILE',('none','spi','lite','full').index(sd_profile))
         if features.sd:
             if sd_backend=='native':
-                self.sdcard=NativeSD(self,profile=sd_profile,native_ports=sd_ports,burst_write=(l2_combine or l2_posted) and sd_profile=='lite' and not native_dma)
+                self.sdcard=NativeSD(self,profile=sd_profile,native_ports=sd_ports)
                 self.irq.add("sdcard",use_loc_if_exists=True)
                 self.sd_control=SDControl(self.sdcard.reset)
             else:
@@ -303,10 +255,7 @@ class MiniSoC(SoCCore):
                 Subsignal('bck',Pins('N15')),Subsignal('din',Pins('P15')),
                 Subsignal('ws',Pins('P16')),Subsignal('pa_en',Pins('R16')),IOStandard('LVCMOS33'))])
             audio_bus=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
-            if audio_port is None:self.bus.add_master(name='audio_dma',master=audio_bus)
-            else:
-                from gateware.native_dma import NativeAudioReader
-                self.audio_dma=NativeAudioReader(audio_bus,audio_port)
+            self.bus.add_master(name='audio_dma',master=audio_bus)
             self.audio = Audio(
                 platform.request('audio_dac'), audio_bus,
                 half_period=20 if audio_clock=='legacy' else 1,
@@ -344,28 +293,8 @@ class MiniSoC(SoCCore):
             self.phy_reset=GPIOOut(platform.request('shared_phy_reset_n'),reset=0)
         if features.eth:
             add_ethernet(self)
-            if eth_port is not None:
-                from gateware.native_dma import EthernetCopyDMA
-                eth_bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-                # Keep packet copies local: no additional global bus master.
-                cpu_rx=wishbone.Interface(data_width=32,mode='r')
-                cpu_tx=wishbone.Interface(data_width=32,mode='w')
-                self.bus.slaves['ethmac_rx']=cpu_rx
-                self.bus.slaves['ethmac_tx']=cpu_tx
-                dma_rx=wishbone.Interface(data_width=32,mode='r')
-                dma_tx=wishbone.Interface(data_width=32,mode='w')
-                self.eth_rx_arb=wishbone.Arbiter([cpu_rx,dma_rx],self.ethmac.bus_rx)
-                self.eth_tx_arb=wishbone.Arbiter([cpu_tx,dma_tx],self.ethmac.bus_tx)
-                for target,write in ((dma_rx,0),(dma_tx,1)):
-                    self.comb += [target.adr.eq(eth_bus.adr),target.dat_w.eq(eth_bus.dat_w),
-                        target.sel.eq(eth_bus.sel),target.we.eq(write),
-                        target.cyc.eq(eth_bus.cyc & (eth_bus.we==write)),
-                        target.stb.eq(eth_bus.stb & (eth_bus.we==write))]
-                self.comb += [eth_bus.ack.eq(Mux(eth_bus.we,dma_tx.ack,dma_rx.ack)),
-                    eth_bus.err.eq(Mux(eth_bus.we,dma_tx.err,dma_rx.err)),eth_bus.dat_r.eq(dma_rx.dat_r)]
-                self.eth_dma=EthernetCopyDMA(eth_bus,eth_port)
         if features.usb:
-            add_usb(self,usb_backend)
+            add_usb(self,usb_backend,compact_serial_outputs=True)
 
         # Firmware feature constants.
         for name,value in features.as_dict().items():

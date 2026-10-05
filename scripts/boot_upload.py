@@ -32,9 +32,9 @@ class BootSession:
             chunk=self.port.read(1)
             if chunk:
                 data.extend(chunk)
-                if data.endswith(b'ERR DDR INIT/TIMEOUT; reset\r\n'):
+                if data.endswith(b'ERR DDR INIT/TIMEOUT; reset\r\n') or data.endswith(b'ERR DDR INIT; reset\r\n'):
                     self.note(data)
-                    raise RuntimeError('Hardware DDR initialization failed; reset required')
+                    raise RuntimeError('DDR initialization failed; reset required')
                 if data.endswith(marker):
                     self.note(data)
                     return bytes(data)

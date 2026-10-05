@@ -2,6 +2,7 @@
 #include "io.h"
 #include "flash.h"
 #include "image.h"
+int ddr_init(void);
 
 static int uart_byte(uint8_t *value, unsigned ms) {
     uint32_t start=io_ticks();
@@ -60,8 +61,11 @@ static int install(const struct image_header *h) {
     puts_uart("FLASH INSTALLED\r\n");return 1;
 }
 int main(void) {
-    puts_uart("\r\nriscv-mini BOOT\r\n");
     io_timer_init();
+    /* PHY DLL startup briefly stops/resets sys; wait before transmitting. */
+    io_delay_ms(2);
+    puts_uart("\r\nriscv-mini BOOT\r\n");
+    if(!ddr_init())for(;;) {}
 #if MINI_FEATURE_VIDEO
     rgb_lcd_enable_write(0);
 #endif
