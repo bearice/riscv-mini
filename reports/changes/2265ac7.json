@@ -1,0 +1,117 @@
+{
+  "created_at": "2026-10-06T07:22:58+00:00",
+  "title": "Stamp ROM and BIOS banners with build identity (v0.7.1)",
+  "changes": [
+    "ROM banner prints version, commit, config fingerprint and RTL id; BIOS banner and status print the same identity plus ROM id",
+    "build.py emits MINI_BUILD_* macros into features.h and records build_id/rtl_sha256/config_sha256 in validation.json",
+    "boot_verify.py accepts the versioned BIOS banner; release SOP and skill record the commit-then-build-then-tag order"
+  ],
+  "build": {
+    "id": "2265ac7-full-rv32imafc-rom4k-l24k-071-final-74e79113-c5852b4f",
+    "label": "071-final",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\opensbi\\soc-071f",
+    "purpose": "071-final",
+    "registered_at": "2026-10-06T07:18:52+00:00",
+    "source": {
+      "commit": "2265ac7b2c65d113cc1d375283f3d209299960e3",
+      "dirty": false,
+      "inputs_sha256": "d3ece9562dc993a527e2097e75f263eb693e681fc74cda669eab0bd27383142f",
+      "kind": "captured",
+      "created_at": "2026-10-06T07:15:33+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--app",
+        "firmware/bios/main.c",
+        "--purpose",
+        "071-final",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "build/releases/v0.7.0/full-rv32imafc-rom4k-l24k/inputs/cpu/VexRiscv_MmuFpu.v",
+        "--usb-backend",
+        "ultra",
+        "--sd-profile",
+        "lite",
+        "--audio-clock",
+        "dds",
+        "--with-mmu",
+        "--with-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--place-option",
+        "2",
+        "--route-option",
+        "2",
+        "--l2-size",
+        "4096",
+        "--rom-size",
+        "4096",
+        "--synthesize",
+        "--output-dir",
+        "build/opensbi/soc-071f"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\recipes\\soc-071f-c5852b4f"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "11270863d96f8d7af948ed7c7900bad969f784c1555aa03744774e2400f3076f",
+    "bitstream_sha256": "74e79113a40e091850c56ee47db04c2b2f55873a98e54439cfee88f48a06bc69",
+    "abi": "ba18270e",
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\opensbi\\soc-071f\\firmware-verification.json",
+        "sha256": "88b3b2143564ca4aa1578a0f866101b2ecacc675f5d1c0f21b308369ebbfd1c2"
+      }
+    ]
+  },
+  "performance_report": "build\\opensbi\\soc-071f\\reports\\performance\\comparison-071f.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 15,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "d3ece9562dc993a527e2097e75f263eb693e681fc74cda669eab0bd27383142f"
+  },
+  "mode": "historical commit documentation",
+  "base_revision": "54747aeed96466778e928e567e647c46b98f7b39",
+  "source_revision": "2265ac7b2c65d113cc1d375283f3d209299960e3"
+}
