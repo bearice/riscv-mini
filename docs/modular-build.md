@@ -1,5 +1,8 @@
 # 模块化构建
 
+默认构建生成唯一的 `build/runs/<时间>-<Git版本>-<配置>-<用途>`，不再覆盖固定目录。
+查询当前/基线/最新构建、最终产物归档和中间目录清理见 [构建目录说明](build-artifacts.md)；提交流程见 [SOP](pre-commit-sop.md)。
+
 默认 full 构建启用全部现有功能、MMU+FPU 和 SD lite，并生成实际的 Verilog 模块层级。CPU（VexRiscv）、DDR、UART、8 KiB boot ROM、计时器/IRQ 和系统控制器
 构成固定内核：当前启动协议要求把应用装入 DDR，ROM 在 L2 启动 RAM 上完成 DDR 初始化/训练，因此这些不作为可关闭外设，也没有集成 SRAM。
 CPU/sys 60 MHz、DDR 120 MHz 不变。

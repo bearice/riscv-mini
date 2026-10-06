@@ -7,6 +7,10 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 K
 验收统一为 BIOS/DDR monitor 的 `test ...` 命令。系统整体结构、地址映射、中断映射与文档索引见
 [系统设计](docs/system-design.md)；板级引脚与电气约束见 [板级参考](docs/board-reference.md)。
 
+当前代码发布为 **v0.7.0**（C/MMU/FPU、4 KiB ROM），版本依据见 [Git 里程碑追溯](docs/version-history.md)。
+提交前按 [SOP](docs/pre-commit-sop.md) 保存范围和适用报告；仅代码发布更新 [changelog](CHANGELOG.md)，文档/流程提交另存范围记录。代码提交后从 clean Git hash 重建最终二进制并归档。
+构建与历史产物入口见 [目录说明](docs/build-artifacts.md)，本地 `build/README.md` 列出当前实板版本、基线和最新候选。
+
 ## 当前配置
 
 | 项目 | 配置 |
@@ -97,9 +101,9 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 `bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。smoke 构建使用
 `--profile minimal` 写入 `build/bootstrap-smoke`，只依赖 `pythondata-cpu-vexriscv` 自带的 lite
 CPU RTL，因此全新 checkout 无需先生成 CPU RTL。`build.py` 不加
-`--synthesize` 时只生成 RTL/CSR 并编译软件；两种方式都不自动下载。默认产物位于 `build/base/`：
+`--synthesize` 时只生成 RTL/CSR 并编译软件；两种方式都不自动下载。默认产物位于 `build/runs/<时间>-<Git版本>-<配置>-<用途>/`：
 boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。
-`build/` 仅用于本地构建输入、输出和临时文件，不归档历史测试结果。当前设计由已跟踪的源码和文档描述。
+正式发布的二进制、报告和参数保存在 `build/releases/v<版本>/<配置>/`，普通代码提交快照保存在 `build/archives/v<版本>-<Git hash>/<配置>/`；可清理的中间 run 与保留的复现 recipe 分开。`build/README.md` 和 `scripts/builds.py list` 提供当前验收版本、基线和最近构建入口。代码发布变化跟踪在 [CHANGELOG.md](CHANGELOG.md)，改动说明、验证和性能依据保存在 `reports/`；完整范围直接查 Git。
 
 全新 checkout 在 Windows 上的两个环境前提：先执行 `git config --global core.longpaths true`，
 否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败

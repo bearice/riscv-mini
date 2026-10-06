@@ -1,0 +1,4 @@
+interface:
+  display_name: "riscv-mini 性能测试与对比"
+  short_description: "选择明确基线，采集三轮性能数据并生成可追溯对比报告"
+  default_prompt: "使用 $riscv-mini-benchmark 完成本次性能测试与对比，保存适用结果与可追溯证据。"

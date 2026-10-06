@@ -1,0 +1,73 @@
+{
+  "created_at": "2026-10-06T03:17:22+00:00",
+  "title": "以代码发布版本跟踪产物，限制 changelog 为产品发布",
+  "changes": [
+    "依据完整 Git 功能里程碑确立当前 0.7.0；历史阶段仅作追溯映射，正式 VERSION 和 Git tag 绑定最终代码发布。",
+    "CHANGELOG 仅保存产品发布变化，文档/流程提交保存独立范围记录；显式 release-version 才能写入 changelog。",
+    "正式包采用 releases/v版本/配置，非发布代码快照采用 archives/v版本-Git hash/配置；VERSION 纳入输入指纹和 recipe，保存版本、tag 与完整 Git hash。",
+    "补充版本合法性、普通提交 changelog 禁止写入、VERSION 复现和构建别名清理保护；13 项主机回归通过。"
+  ],
+  "build": {
+    "id": "6880dee-full-rv32imafc-rom4k-l24k-qualified-c-rom4k-fcb9ccc9",
+    "label": "当前C全功能实板配置",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\c-fit\\ddr-depth1-p2",
+    "purpose": "qualified-c-rom4k",
+    "registered_at": "2026-10-06T02:57:11+00:00",
+    "source": {
+      "kind": "historical-association",
+      "commit": "6880dee8c0f0689bb2cb5a732ebf1f5af3415a93"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "72a3d70580420c63f5e59864e44549ad6a820a215453b0f274ca1692e394684a",
+    "bitstream_sha256": "fcb9ccc9c6abc3c0ff0df8c1121e1d0fd9816de49c8f1703d4b4ee05bb0517a4",
+    "abi": "ba18270e",
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\c-fit\\ddr-depth1-p2\\boot-verification.json",
+        "sha256": "e9f9e2996f17d93c27dc4914d73d145c6695e9e04fbacdbe6a8a07f81d4a6601"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\6880dee-vs-f0892da.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 13,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "d7ad14da827dafa45ec475f9399bb9667d6365c68966147fa9570ddb9403201f"
+  },
+  "mode": "staged review",
+  "base_revision": "9f1554f44df1a67bf14c2afa1335ea9523114ddf",
+  "source_revision": null
+}

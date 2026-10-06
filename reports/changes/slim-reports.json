@@ -1,0 +1,122 @@
+{
+  "created_at": "2026-10-06T03:25:29+00:00",
+  "title": "报告仅保留改动和验证依据，完善中间构建清理",
+  "changes": [
+    "从所有已整理的报告及生成器删除精确范围章节、文件清单和 diffstat；完整范围由 Git 保存，暂存指纹仅用于本地提交前验证。",
+    "跟踪记录只保留人工改动说明、验证/性能依据及必要版本引用；不新增产品发布、不修改 0.7.0 版本号。",
+    "修复 Gowin 只读中间文件的清理，允许验证 recipe 后重试中断清理，保护固定版本及其别名；15 项主机回归和实际中间目录清理通过。",
+    "正式 0.7.0 包已完成 PnR、实板/音频/DMA/60 秒 soak 及三轮 all/cache；本次流程修订提交后另存同版本加 Git hash 的最终快照。"
+  ],
+  "build": {
+    "id": "v0.7.0-full-rv32imafc-rom4k-l24k-code-release-be7355bf-350d0d5c",
+    "label": "正式代码发布",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.0\\full-rv32imafc-rom4k-l24k",
+    "purpose": "code-release",
+    "registered_at": "2026-10-06T03:23:17+00:00",
+    "source": {
+      "commit": "fe4a30c91d7da184763e9b5a862094077d2065a6",
+      "dirty": false,
+      "inputs_sha256": "d7ad14da827dafa45ec475f9399bb9667d6365c68966147fa9570ddb9403201f",
+      "kind": "captured",
+      "created_at": "2026-10-06T03:17:43+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "final-build",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.0\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "2",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--with-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\v0.7.0-fe4a30c91d7d-full-rv32imafc-rom4k-l24k-final-build"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.0\\full-rv32imafc-rom4k-l24k\\replay",
+      "version": "0.7.0"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "72a3d70580420c63f5e59864e44549ad6a820a215453b0f274ca1692e394684a",
+    "bitstream_sha256": "be7355bf68b1ab2412c0def449ff8e2f493578d97a9030c2a57883f0bce36f65",
+    "abi": "ba18270e",
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.0\\full-rv32imafc-rom4k-l24k\\reports\\firmware-verification.json",
+        "sha256": "eda3f4987ccd5b09d198593429da06e624476477aa5ceb1be59ce1298582a882"
+      }
+    ]
+  },
+  "performance_report": "build\\releases\\v0.7.0\\full-rv32imafc-rom4k-l24k\\reports\\performance\\comparison.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 15,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "fb5c5fd018afb91e43475935f29861eeab9fd5f5fd5af2ac9cf288c57fd7a44e"
+  },
+  "mode": "staged review",
+  "base_revision": "fe4a30c91d7da184763e9b5a862094077d2065a6",
+  "source_revision": null
+}

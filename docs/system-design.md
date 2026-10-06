@@ -70,7 +70,7 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 & $MiniPython .\scripts\build.py --synthesize
 ```
 
-`build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件，两种方式都不自动下载板卡。默认产物在 `build/base/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。`validation.json` 的 `firmware_sizes` 记录两级固件的 text/data/BSS 与二进制大小；综合构建记录实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 与全部时钟资源，缺失必要资源或 setup/hold 报告会使构建失败。`board_test` 字段只表示构建脚本未做上板测试。构建把编译器临时目录重定向到 `build/.tmp`，因此 `%TEMP%` 不可写也不会影响构建。
+`build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件，两种方式都不自动下载板卡。默认产物在 `build/runs/<时间>-<Git版本>-<配置>-<用途>/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。`validation.json` 的 `firmware_sizes` 记录两级固件的 text/data/BSS 与二进制大小；综合构建记录实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 与全部时钟资源，缺失必要资源或 setup/hold 报告会使构建失败。`board_test` 字段只表示构建脚本未做上板测试。构建把编译器临时目录重定向到 `build/.tmp`，因此 `%TEMP%` 不可写也不会影响构建。
 
 CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼容的 VexRiscv 源码 checkout、Java 8、sbt-launch 1.9.7）。`bootstrap.ps1` 的 smoke 构建使用 `--profile minimal` 写入 `build/bootstrap-smoke`，只依赖 `pythondata-cpu-vexriscv` 自带的 lite CPU RTL，全新 checkout 无需先生成 CPU RTL。
 

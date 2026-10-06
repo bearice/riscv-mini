@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-10-06T03:41:16+00:00",
+  "title": "将常用操作整理为独立 skills",
+  "changes": [
+    "构建、测试、benchmark、提交、发布归档、清理和复现分别提供独立 skill，按操作加载相关命令、完成条件及现有 SOP。",
+    "仓库 AGENTS.md 提供七个操作入口；这是纯文档与 skill 元数据提交，未改动硬件或固件，不增加发布版本或 changelog 条目，不触发 FPGA 重建。"
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 15,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow-skills.json"
+    ],
+    "source_inputs_sha256": "fb5c5fd018afb91e43475935f29861eeab9fd5f5fd5af2ac9cf288c57fd7a44e"
+  },
+  "mode": "staged review",
+  "base_revision": "ffa86a91505c18177a848151efb9668d78dedab8",
+  "source_revision": null
+}

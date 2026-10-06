@@ -1,0 +1,4 @@
+interface:
+  display_name: "riscv-mini 测试与实板验收"
+  short_description: "选择主机与 RTL 回归，完成镜像匹配的 FPGA 实板验收"
+  default_prompt: "使用 $riscv-mini-test 完成本次测试与实板验收，保存适用结果与可追溯证据。"

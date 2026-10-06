@@ -1,0 +1,74 @@
+{
+  "created_at": "2026-10-06T03:05:02+00:00",
+  "title": "保存可复现的提交后最终构建，统一构建目录与提交验收流程",
+  "changes": [
+    "建立提交前 SOP：从最终暂存范围生成 changelog 和范围指纹，校验检查记录及显式性能基线；补记 6880dee 的实际改动和正确基线报告。",
+    "默认构建采用时间、Git hash、配置、用途命名，catalog 与 current/baseline 引用提供明确导航；历史构建只登记，不修改旧依赖路径。",
+    "中间 run 保存源码 patch、未跟踪代码输入、CPU RTL 和构建参数，清理时验证 recipe 完整并保护固定版本；实际最小构建清理后在独立 checkout 重建，app image hash 一致。",
+    "代码提交后从干净版本重建最终二进制，归档 bin/img/ELF/map、bitstream、PnR/实板/性能报告、参数、工具身份和完整 Git hash，逐文件 SHA256 验证后更新 current。",
+    "benchmark 保存构建身份，避免覆盖测量；对照报告拒绝无效、不同工作量或身份不符的数据，并增加测后音频恢复检查。主机回归 10/10 和实际最小构建/复现通过，本提交不改变硬件功能。"
+  ],
+  "build": {
+    "id": "6880dee-full-rv32imafc-rom4k-l24k-qualified-c-rom4k-fcb9ccc9",
+    "label": "当前C全功能实板配置",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\c-fit\\ddr-depth1-p2",
+    "purpose": "qualified-c-rom4k",
+    "registered_at": "2026-10-06T02:57:11+00:00",
+    "source": {
+      "kind": "historical-association",
+      "commit": "6880dee8c0f0689bb2cb5a732ebf1f5af3415a93"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "72a3d70580420c63f5e59864e44549ad6a820a215453b0f274ca1692e394684a",
+    "bitstream_sha256": "fcb9ccc9c6abc3c0ff0df8c1121e1d0fd9816de49c8f1703d4b4ee05bb0517a4",
+    "abi": "ba18270e",
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\c-fit\\ddr-depth1-p2\\boot-verification.json",
+        "sha256": "e9f9e2996f17d93c27dc4914d73d145c6695e9e04fbacdbe6a8a07f81d4a6601"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\6880dee-vs-f0892da.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 10,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "37aaa1f203c062965a245c168e63d3d0884b11cf3b0043f8cfa829e71ad2cdff"
+  },
+  "mode": "staged review",
+  "base_revision": "6880dee8c0f0689bb2cb5a732ebf1f5af3415a93",
+  "source_revision": null
+}

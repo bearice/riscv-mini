@@ -1,0 +1,4 @@
+interface:
+  display_name: "riscv-mini 复现构建"
+  short_description: "恢复源码、参数和 CPU 输入，在独立目录复现指定历史构建"
+  default_prompt: "使用 $riscv-mini-reproduce 完成本次复现构建，保存适用结果与可追溯证据。"

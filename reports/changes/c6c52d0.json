@@ -1,0 +1,61 @@
+{
+  "created_at": "2026-10-06T03:06:15+00:00",
+  "title": "保存可复现的提交后最终构建，统一构建目录与提交验收流程",
+  "changes": [
+    "引入提交前 SOP、构建身份导航、可清理及复现的中间 run、提交后最终归档、构建参数和文件哈希清单。",
+    "生成正确无 C/8K ROM 基线的性能报告，并补记 6880dee 实际范围；主机流程回归和最小构建清理后复现通过。"
+  ],
+  "build": {
+    "id": "6880dee-full-rv32imafc-rom4k-l24k-qualified-c-rom4k-fcb9ccc9",
+    "label": "当前C全功能实板配置",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\c-fit\\ddr-depth1-p2",
+    "purpose": "qualified-c-rom4k",
+    "registered_at": "2026-10-06T02:57:11+00:00",
+    "source": {
+      "kind": "historical-association",
+      "commit": "6880dee8c0f0689bb2cb5a732ebf1f5af3415a93"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "72a3d70580420c63f5e59864e44549ad6a820a215453b0f274ca1692e394684a",
+    "bitstream_sha256": "fcb9ccc9c6abc3c0ff0df8c1121e1d0fd9816de49c8f1703d4b4ee05bb0517a4",
+    "abi": "ba18270e",
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\c-fit\\ddr-depth1-p2\\boot-verification.json",
+        "sha256": "e9f9e2996f17d93c27dc4914d73d145c6695e9e04fbacdbe6a8a07f81d4a6601"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\6880dee-vs-f0892da.md",
+  "checks": null,
+  "mode": "historical commit documentation",
+  "base_revision": "6880dee8c0f0689bb2cb5a732ebf1f5af3415a93",
+  "source_revision": "c6c52d015b53944916e41eb8dee5bade16545d79"
+}

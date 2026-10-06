@@ -13,6 +13,7 @@ from pathlib import Path
 import serial
 from boot_upload import BootSession
 from bios_tftp import PayloadServer
+from boot_upload import verified_output
 
 ROW = re.compile(rb'BENCH ([\w.-]+) size=(\d+) count=(\d+) ticks=(\d+) check=([0-9a-f]{8}) (PASS|FAIL)')
 
@@ -23,10 +24,19 @@ def main():
     p.add_argument('--suite',choices=('all','cpu','mem','cache','io','net'),default='all')
     p.add_argument('--host-ip',help='enable 1 MiB real TFTP receive benchmark')
     p.add_argument('--output-dir',type=Path,default=Path('build/benchmark/results'))
+    p.add_argument('--build-dir',type=Path,help='Associate this session with an explicitly loaded, validated build')
     a=p.parse_args()
     if not 1<=a.rounds<=10:p.error('--rounds must be 1..10')
     if a.suite=='net' and not a.host_ip:p.error('--suite net requires --host-ip')
     a.output_dir.mkdir(parents=True,exist_ok=True)
+    if (a.output_dir/'results.json').exists():p.error('Existing results.json: choose a fresh measurement directory')
+    identity=None
+    if a.build_dir:
+        validation,_=verified_output(a.build_dir)
+        if validation['clock_hz']!=60000000:p.error('This benchmark rate calculation requires a 60 MHz build')
+        identity=dict(path=str(a.build_dir.resolve()),bitstream_sha256=validation['bitstream_sha256'],
+                      image_sha256=validation['boot_image']['sha256'],
+                      association='operator-selected loaded build; no device bitstream readback')
     rows=[]
     with (a.output_dir/'uart.log').open('wb') as log, serial.Serial(a.port,115200,timeout=.1) as port:
         session=BootSession(port,log)
@@ -79,8 +89,11 @@ def main():
                     # Their counts cannot validate CPU-only refill totals.
                 if name==b'io.tftp-rx' and (row['size']!=1048576 or int(check,16)!=expected):raise RuntimeError('Network payload CRC mismatch')
                 rows.append(row)
-            (a.output_dir/'results.json').write_text(json.dumps({'clock_hz':60000000,'rows':rows},indent=2)+'\n')
+            (a.output_dir/'results.json').write_text(json.dumps({'clock_hz':60000000,'build_identity':identity,'rows':rows},indent=2)+'\n')
         if b'BIOS TEST PASS' not in command('test bios'):raise RuntimeError('BIOS regression test failed')
+        if a.build_dir and validation['features'].get('audio'):
+            if b'TEST audio PASS' not in command('test audio'):raise RuntimeError('Post-benchmark audio test failed')
+            if b'TEST audio stop PASS' not in command('test audio stop'):raise RuntimeError('Post-benchmark audio stop failed')
         command('status')
     for name,size in sorted({(r['name'],r['size']) for r in rows}):
         group=[r for r in rows if (r['name'],r['size'])==(name,size)]

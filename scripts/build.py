@@ -14,6 +14,8 @@ sys.path.insert(0,str(ROOT))
 from scripts.boot_image import LOAD, FLASH_OFFSET, abi_tag, pack_image
 from gateware.features import Features
 from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, cpu_filename, pll_count, cpu_capabilities, cpu_isa
+from scripts.build_records import now, register, run_path, source_identity, write_json
+from scripts.build_recipe import create_recipe
 
 def checked(command,log=None):
     command=[str(part) for part in command]
@@ -120,11 +122,12 @@ def main():
     p.add_argument('--rom-size',type=int,choices=(4096,8192),default=8192,help='Boot ROM address window in bytes; linker rejects overflow')
     p.add_argument('--place-option',type=int,choices=range(5),default=2)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
-    p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
+    p.add_argument('--output-dir',type=Path,help='Explicit legacy/matrix path; default is a unique build/runs identity')
+    p.add_argument('--purpose',default='candidate',help='Purpose included in managed run name and catalog')
     p.add_argument('--app',type=Path,default=ROOT/'firmware/bios/main.c',help='DDR firmware source (default: resident BIOS); bootloader is unchanged')
     p.add_argument('--generate-only',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--rom',type=Path,help=argparse.SUPPRESS)
-    a=p.parse_args();a.audio_clock='dds' if a.audio_clock=='sys' else a.audio_clock;output=a.output_dir.resolve()
+    a=p.parse_args();a.audio_clock='dds' if a.audio_clock=='sys' else a.audio_clock
     if a.flat_verilog and a.deep_verilog:p.error('Use flat or deep Verilog, not both')
     overrides={name:getattr(a,name) for name in Features.names()}
     try:
@@ -137,6 +140,14 @@ def main():
         features,a.cpu_variant,cpu_dcache=cpu_configuration(features,overrides,a.cpu_verilog,a.cpu_variant)
         expected_plls=pll_count(features,a.usb_backend,a.audio_clock)
     except ValueError as error:p.error(str(error))
+    capabilities=cpu_capabilities(a.cpu_verilog) if a.cpu_verilog else {'mmu':False,'fpu':False,'dcache':False,'compressed':False,'bitmanip':[]}
+    isa=cpu_isa(features,capabilities)
+    if a.generate_only and a.output_dir is None:p.error('--generate-only requires --output-dir')
+    if a.output_dir is None:
+        output,source=run_path(a.profile,isa,a.rom_size,a.l2_size,a.purpose)
+    else:
+        output=a.output_dir.resolve()
+        source=None if a.generate_only else source_identity()
     config_args=['--cpu-variant',a.cpu_variant]+(['--cpu-verilog',str(a.cpu_verilog.resolve())] if a.cpu_verilog else [])+['--usb-backend',a.usb_backend,'--sd-profile',a.sd_profile,'--audio-clock',a.audio_clock]+features.arguments()+(['--flat-verilog'] if a.flat_verilog else [])+(['--deep-verilog'] if a.deep_verilog else [])
     config_args+=['--place-option',str(a.place_option),'--route-option',str(a.route_option)]
     config_args+=['--l2-size',str(a.l2_size)]
@@ -150,6 +161,12 @@ def main():
         if missing:p.error(f'{a.app.name} requires enabled modules: {", ".join(missing)}')
     if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size,a.rom_size);return
     output.mkdir(parents=True,exist_ok=True)
+    source.update(kind='captured',created_at=now(),arguments=sys.argv[1:],
+                  cpu_rtl_sha256=hashlib.sha256(a.cpu_verilog.read_bytes()).hexdigest() if a.cpu_verilog else None)
+    recipe_args=['--profile',a.profile,'--app',str(a.app.resolve()),'--purpose',a.purpose,*config_args]+(['--synthesize'] if a.synthesize else [])
+    source['recipe']=str(create_recipe(output,source,recipe_args,a.cpu_verilog))
+    write_json(output/'build-info.json',dict(status='building',source=source,purpose=a.purpose))
+    print('Build directory:',output,flush=True)
     tools=json.loads((ROOT/'.tools.local.json').read_text());gcc=Path(tools['gcc']);toolbin=gcc.parent
     os.environ['PATH']=os.pathsep.join([str(toolbin),str(Path(tools['gowin']).parent),os.environ['PATH']])
     os.environ['PYTHONUTF8']='1'
@@ -178,8 +195,8 @@ def main():
     if features.sd:app_sources.append(drivers/('sd_native.c' if a.sd_backend=='native' else 'sd.c'))
     if features.filesystem:app_sources += [drivers/'filesystem.c',vendor/'ff.c',vendor/'ffunicode.c']
     if features.video:app_sources.append(drivers/'video.c')
-    for feature,source in [('audio','audio.c'),('mic','microphone.c'),('eth','ethernet.c'),('usb','usb.c')]:
-        if getattr(features,feature):app_sources.append(hal/'src'/source)
+    for feature,driver_source in [('audio','audio.c'),('mic','microphone.c'),('eth','ethernet.c'),('usb','usb.c')]:
+        if getattr(features,feature):app_sources.append(hal/'src'/driver_source)
     if features.usb:
         app_sources += [usb/n for n in ('tusb.c','common/tusb_fifo.c','host/usbh.c','host/hub.c','class/hid/hid_host.c')]
         app_sources.append(hal/'src/hcd_ultra.c' if a.usb_backend=='ultra' else usb/'portable/ohci/ohci.c')
@@ -239,6 +256,7 @@ def main():
         'rtl_hierarchy':'flat' if a.flat_verilog else 'deep' if a.deep_verilog else 'blocks',
         'place_option':a.place_option,'route_option':a.route_option,
         'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
+        'application_source':str(a.app.resolve()),
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,
                       'image_bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}}
     if not a.flat_verilog:
@@ -250,7 +268,11 @@ def main():
         counts,resources=pnr_report(output)
         report.update(bitstream=str(fs),bitstream_sha256=hashlib.sha256(fs.read_bytes()).hexdigest(),
                       timing_violated_endpoints=counts,resources=resources)
+    if source_identity()['inputs_sha256'] != source['inputs_sha256']:
+        raise RuntimeError('Build source inputs changed while building; rerun with stable inputs')
     (output/'validation.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    record=register(output,a.purpose,source)
+    write_json(output/'build-info.json',dict(status=record['status'],source=source,id=record['id'],purpose=a.purpose))
     if a.synthesize and any(counts.values()):raise RuntimeError(f'Timing violations: {counts}')
     print(f'Base build verified: boot={size} bytes, app image={len(image)} bytes, ABI={abi:08x}',flush=True)
 

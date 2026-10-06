@@ -1,0 +1,4 @@
+interface:
+  display_name: "riscv-mini 构建与 PnR"
+  short_description: "构建、CPU 输入与 Gowin PnR 的参数选择及产物核验"
+  default_prompt: "使用 $riscv-mini-build 完成本次构建与 PnR，保存适用结果与可追溯证据。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "riscv-mini 整理与提交"
+  short_description: "审阅改动、保存检查记录、验证暂存指纹并完成 Git 提交"
+  default_prompt: "使用 $riscv-mini-commit 完成本次整理与提交，保存适用结果与可追溯证据。"
