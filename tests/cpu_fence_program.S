@@ -1,6 +1,15 @@
 .section .text
 .globl _start
 _start:
+#ifdef TEST_COMPRESSED
+    csrr t0, misa
+    andi t0, t0, 4
+    beqz t0, fail
+    li a0, 0
+    jal ra, compressed_fetch
+    li t0, 9
+    bne a0, t0, fail
+#endif
     li s0, 0x40000000
     li s1, 0x80000000
     li t0, 0x11223344
@@ -52,6 +61,22 @@ _start:
     sw t2, 0(s1)
 1:  j 1b
 fail:
+    li s1, 0x80000000
     li t2, 255
     sw t2, 0(s1)
     j fail
+
+#ifdef TEST_COMPRESSED
+    /* A 32-bit instruction starting in the last halfword of a cache line. */
+    .balign 32
+compressed_fetch:
+    .rept 15
+    c.nop
+    .endr
+    .option push
+    .option norvc
+    addi a0, a0, 7
+    .option pop
+    c.addi a0, 2
+    c.jr ra
+#endif

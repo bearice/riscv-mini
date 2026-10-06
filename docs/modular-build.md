@@ -3,8 +3,9 @@
 默认 full 构建启用全部现有功能、MMU+FPU 和 SD lite，并生成实际的 Verilog 模块层级。CPU（VexRiscv）、DDR、UART、8 KiB boot ROM、计时器/IRQ 和系统控制器
 构成固定内核：当前启动协议要求把应用装入 DDR，ROM 在 L2 启动 RAM 上完成 DDR 初始化/训练，因此这些不作为可关闭外设，也没有集成 SRAM。
 CPU/sys 60 MHz、DDR 120 MHz 不变。
+`--rom-size 4096/8192` 选择 ROM 地址窗口，默认仍为 8192。链接器、硬件映射和构建报告使用相同容量，并拒绝固件超出窗口；压缩指令通过 CPU 生成器的 `--compressed` 及能力元数据选择，见 [CPU](cpu-mmu-fpu.md)。启动栈仍使用固定 4 KiB L2 窗口，不随 ROM 容量变化。
 默认使用 4 KiB shared writeback L2；`--l2-size 4096/8192` 控制容量。CPU/音频使用 32-bit Wishbone，LCD/SD lite 使用 128-bit coherent 入口。构建不再提供旧的缓存策略、写合并、posted write 或 scheduler 实验开关。原理与维护见 [L2 缓存](l2-cache.md)，客户端路径见 [DMA](native-dma.md)。
-默认 Gowin `place_option=3`、`route_option=2`、`netlist_hierarchy=0`，可用
+默认 Gowin `place_option=2`、`route_option=2`、`netlist_hierarchy=0`，可用
 `--place-option` / `--route-option` 覆盖。当前配置和资源见 [系统设计](system-design.md)。
 
 ## 功能开关

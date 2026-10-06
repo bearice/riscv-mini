@@ -14,7 +14,7 @@ LiteDRAM crossbar 保留控制器的 bank 仲裁与响应路由职责；L2 内�
 
 ## fence 与维护
 
-32-bit 写 ACK 表示修改已进入共享缓存或提交 DDR，128-bit 入口随后能观察修改。普通设备访问不要求将整个 L2 写回物理 DDR。CPU 外部 fence 握手仍等待当前事务排空；AMO 路径先清理并失效匹配缓存行，再执行后端访问。
+32-bit 写 ACK 表示修改已进入共享缓存或提交 DDR，128-bit 入口随后能观察修改。普通设备访问不要求将整个 L2 写回物理 DDR。CPU 使用原生 VexRiscv cache/fence 实现，不再导出外部 fence/atomic 信号；L2 按普通读写事务处理 CPU 请求，没有独立的 atomic bypass 或 fence drain 路径。这不增加 CPU 与 DMA 并发访问下的原子性保证。
 
 L2 CSR 提供 enable、stats、flush、invalidate、busy。flush 写回 dirty 行并保留 valid；invalidate 先写回再失效；禁用缓存先写回并失效。软件请求维护后要等待 busy 完成。stats 的低/高 16-bit 分别为命中/未命中，按模计数。
 

@@ -21,10 +21,12 @@ def main():
     parser.add_argument('--java', required=True, type=Path)
     parser.add_argument('--sbt-launch', required=True, type=Path)
     parser.add_argument('--output-dir', required=True, type=Path)
-    parser.add_argument('--external-fence', action=argparse.BooleanOptionalAction, default=True,
-                        help='Export conservative fence/atomic request and completion handshake')
     parser.add_argument('--relaxed-pc-calculation', action='store_true',
                         help='Add VexRiscv fetch address calculation stage')
+    parser.add_argument('--compressed', action='store_true',
+                        help='Enable the RISC-V C compressed instruction extension')
+    parser.add_argument('--pipelined-fetch', action='store_true',
+                        help='Use a two-cycle I-cache and an instruction injector register')
     args = parser.parse_args()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -41,9 +43,6 @@ def main():
     tm_anchor='if(utimeAccess != CsrAccess.NONE)    rw(csrId, 1 -> TM)'
     if csr_text.count(tm_anchor)!=1:raise ValueError('Unsupported counter permission mapping')
     csr_source.write_text(csr_text.replace(tm_anchor,'rw(csrId, 1 -> TM) // Also governs firmware-emulated time'))
-    if args.external_fence:
-        from cpu_fence import patch_cached_core
-        patch_cached_core(vex_local/'src/main/scala/vexriscv/plugin/DBusCachedPlugin.scala')
     build = (base/'build.sbt').read_text()
     build = build.replace('file("ext/VexRiscv")',
                           'file('+json.dumps(vex_local.as_posix())+')')
@@ -57,7 +56,8 @@ def main():
             '      opt[Boolean]("fpu") action { (v,c) => c.copy(fpu=v) }',
         'CsrPluginConfig.linuxFull(mtVecInit = argConfig.machineTrapVector).copy(ebreakGen = false)':
             'CsrPluginConfig.linuxFull(mtVecInit = argConfig.machineTrapVector).copy(ebreakGen = false, '
-            'misaExtensionsInit = 0x141101 | (if(argConfig.fpu) 0x20 else 0))',
+            'misaExtensionsInit = 0x141101 | (if(argConfig.fpu) 0x20 else 0) | '
+            '(if(argConfig.compressedGen) 0x4 else 0))',
         '// CPU configuration':
             'if(argConfig.fpu) plugins += new FpuPlugin(externalFpu=false,\n'
             '        p=vexriscv.ip.fpu.FpuParameter(withDouble=false,\n'
@@ -68,6 +68,15 @@ def main():
         if source.count(anchor) != 1:
             raise ValueError('Unsupported upstream generator: '+anchor)
         source = source.replace(anchor, replacement)
+    if args.pipelined_fetch:
+        for anchor, replacement in (
+            ('twoCycleCache = !argConfig.compressedGen', 'twoCycleCache = true'),
+            ('relaxedPcCalculation = argConfig.relaxedPcCalculation,',
+             'relaxedPcCalculation = argConfig.relaxedPcCalculation,\n            injectorStage = true,'),
+        ):
+            if source.count(anchor) != 1:
+                raise ValueError('Unsupported upstream fetch pipeline: '+anchor)
+            source = source.replace(anchor, replacement)
     target.write_text(source)
     repositories = output/'repositories'
     repositories.write_text('[repositories]\nlocal\nmaven-central: https://repo.maven.apache.org/maven2/\n')
@@ -77,7 +86,7 @@ def main():
     commands = [
         f'runMain vexriscv.GenCoreDefault --csrPluginConfig {csr} --iCacheSize 2048 '
         '--dCacheSize 2048 --singleCycleMulDiv false --singleCycleShift false '
-        f'--fpu {fpu}{pipeline} --outputFile {name}'
+        f'--fpu {fpu} --compressedGen {str(args.compressed).lower()}{pipeline} --outputFile {name}'
         for csr, fpu, name in variants
     ]
     java_tmp = output/'java-tmp'
@@ -100,11 +109,13 @@ def main():
               'vexriscv_source': str(args.vexriscv_source.resolve()),
               'upstream_generator_sha256': hashlib.sha256(
                   (base/'src/main/scala/vexriscv/GenCoreDefault.scala').read_bytes()).hexdigest()}
+    report['pipeline'].update(two_cycle_icache=args.pipelined_fetch or not args.compressed,
+                              injector_register=args.pipelined_fetch)
     for csr, fpu, name in variants:
         path = output/(name+'.v')
         report['cpu_rtls'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                                   'mmu':csr=='linux','fpu':fpu=='true','dcache':True,
-                                  'external_fence':args.external_fence}
+                                  'compressed':args.compressed,'bitmanip':[]}
     (output/'generator.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

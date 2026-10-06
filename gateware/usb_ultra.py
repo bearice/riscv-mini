@@ -46,7 +46,7 @@ class USBHostUltra(LiteXModule):
         self.ulpi_pll=pll=GW2APLL(devicename=soc.platform.devicename,device=soc.platform.device)
         self.comb += pll.reset.eq(~soc.phy_reset.out.storage)
         pll.register_clkin(pads.clk,60e6)
-        pll.create_clkout(self.cd_ulpi,60e6,phase=225,margin=0,with_reset=False)
+        pll.create_clkout(self.cd_ulpi,60e6,phase=247.5,margin=0,with_reset=False)
         self.specials += AsyncResetSynchronizer(self.cd_ulpi,
             soc.crg.cd_sys.rst|~soc.phy_reset.out.storage|~self._enable.storage|~pll.locked)
         init_pads=Record([('dir',1),('nxt',1),('stp',1)])

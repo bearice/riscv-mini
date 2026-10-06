@@ -10,4 +10,4 @@
 
 `tests/rtl_defaults_test.py` 检查常量驱动、复位优先级与共享 IRQ；深层路径也必须保留这些语义。静态无未驱动线不等于功能正确，常量初始化可能掩盖缺失逻辑。
 
-Gowin 设置 `netlist_hierarchy=0`，保留源文件边界，同时允许综合跨模块优化。默认 `timing_driven=1`、place=3、route=2。Retiming 仅在明确传入并检查工具实际设置后才可认为启用；默认不开启。资源与时序见 [系统设计](system-design.md)。
+Gowin 设置 `netlist_hierarchy=0`，保留源文件边界，同时允许综合跨模块优化。默认 `timing_driven=1`、place=2、route=2。Retiming 仅在明确传入并检查工具实际设置后才可认为启用；默认不开启。资源与时序见 [系统设计](system-design.md)。

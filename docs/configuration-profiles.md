@@ -1,8 +1,8 @@
 # CPU、SD 和音频配置
 
 CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--profile full` 选择全部外设、MMU+FPU、SD lite、音频 DDS。MMU 和 FPU 仍可独立关闭；`--profile minimal` 默认不启用 MMU/FPU。
-默认内存路径为 4 KiB shared writeback L2，CPU/音频通过 32-bit Wishbone，LCD/SD lite 通过 128-bit coherent 入口，后端直连 LiteDRAM crossbar；CPU 生成器默认导出 fence 握手。
-默认输出 SoC 块模块层级，Gowin place=3 / route=2；完整当前实板验收见
+默认内存路径为 4 KiB shared writeback L2，CPU/音频通过 32-bit Wishbone，LCD/SD lite 通过 128-bit coherent 入口，后端直连 LiteDRAM crossbar；CPU 使用原生 cache/fence 实现，不导出额外 fence/atomic 信号。
+默认输出 SoC 块模块层级，Gowin place=2 / route=2，DDR bank command queue 深度为 1；完整当前实板验收见
 [系统设计](system-design.md)。当前资源见该页。
 
 | CPU 参数 | 能力 | 外部 RTL |
@@ -28,7 +28,7 @@ full 的 HAL 当前仍以最多 8 扇区分块；更宽硬件不代表 HAL 已�
 首次使用 MMU/FPU 先生成四种 RTL（需要 Java 8、sbt-launch 1.9.7 与兼容的 VexRiscv checkout，固定版本为 `b6118e5cc2a33323425df6455697139021d50c72`）：
 
 ```powershell
-.venv/Scripts/python.exe scripts/cpu_generate.py --vexriscv-source <VexRiscv 源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir build/cpu-fence --external-fence
+.venv/Scripts/python.exe scripts/cpu_generate.py --vexriscv-source <VexRiscv 源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir build/cpu-features
 .venv/Scripts/python.exe scripts/build.py --with-mmu --with-fpu --sd-profile lite --audio-clock dds --synthesize --output-dir build/config-profiles/mmu-fpu-lite-dds
 .venv/Scripts/python.exe scripts/build_matrix.py --configuration-only --jobs 2 --output-dir build/config-matrix
 ```

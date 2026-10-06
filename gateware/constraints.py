@@ -35,6 +35,7 @@ def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
         result = original(vns)
         rtl=Path(f'{platform.toolchain._build_name}.v').read_text()
         hierarchical = bool(re.search(r'^module\s+\w+__usb_host\b', rtl, re.M))
+        usb_host_path = 'usb_host' if hierarchical else ''
         usb_phy_path = 'usb_host/usb_fs_phy' if hierarchical else 'usb_fs_phy'
         aliases={'ddr_init_pause'}
         for _ in range(8):
@@ -44,11 +45,24 @@ def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
         stages=[dest for dest,source in re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl) if source in aliases]
         if len(stages)!=1:
             raise ValueError(f'Cannot identify DDR pause first synchronizer: {stages}')
+        dly_aliases={'ddr_dly_sel'}
+        for _ in range(8):
+            found={dest for dest,source in re.findall(r'assign\s+(\w+)\s*=\s*(\w+)\s*;',rtl) if source in dly_aliases}
+            if found<=dly_aliases: break
+            dly_aliases|=found
+        dly_stages=[dest for dest,source in re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl) if source in dly_aliases]
         with Path(result[0]).open('a', encoding='utf-8') as stream:
             stream.write('\n# GW2DDRPHY init reset is released with sys2x stopped.\n')
             stream.write('set_false_path -from [get_pins {ddr_init_reset_s0/Q}]\n')
             stream.write('set_false_path -from [get_pins {ddr_init_stop_s0/Q}] -to [get_pins {DHCEN/CE}]\n')
             stream.write(f'set_false_path -from [get_pins {{ddr_init_pause_s0/Q}}] -to [get_pins {{{stages[0]}_s1/D}}]\n')
+            if dly_stages:
+                declarations={name:int(msb)+1 for msb,name in re.findall(r'reg\s+\[(\d+):0\]\s+(\w+)',rtl)}
+                width=declarations.get(dly_stages[0],1)
+                targets=[f'{dly_stages[0]}_{i}_s1/D' for i in range(width)] if width>1 else [f'{dly_stages[0]}_s1/D']
+                for target in targets:
+                    stream.write(f'set_false_path -to [get_pins {{{target}}}]\n')
+            stream.write('set_false_path -to [get_pins {ddrphy/DQS/HOLD ddrphy/DQS_1/HOLD *DQS*/HOLD}]\n')
             if with_video:
                 pairs=re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl)
                 stages=[dest for dest,src in pairs if src=='lcd_video_enable' or
@@ -143,8 +157,11 @@ def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
                 # Regenerated phase clock wraps into the following external
                 # cycle. Inputs sample the falling edge and outputs target
                 # the next PHY rising edge; keep the intervening hold check.
-                init_sources = ('usb_host*_s*/Q usbhost_state*_s*/Q usb_ulpi_ready_s1/Q'
-                    if hierarchical else 'usbphyinit_*_s*/Q add_usb_phy_output*_s*/Q add_usb_phy_stp_s0/Q usb_ulpi_ready_s1/Q')
+                prefix = f'{usb_host_path}/' if hierarchical else ''
+                init_sources = (f'{prefix}usbphyinit_*_s*/Q {prefix}add_usb_phy_output*_s*/Q '
+                                f'{prefix}add_usb_phy_stp*_s0/Q {prefix}usb_ulpi_ready*_s*/Q '
+                                f'*usbphyinit_*_s*/Q *add_usb_phy_output*_s*/Q '
+                                f'*add_usb_phy_stp*_s0/Q *usb_ulpi_ready*_s*/Q')
                 stream.write(f'set_multicycle_path 2 -setup -from [get_pins {{{init_sources}}}] -to [get_ports {{usb_ulpi_stp usb_ulpi_data[*]}}]\n')
                 stream.write('# Serial RX pad paths terminate at first-stage capture only.\n')
                 rx_pins = ' '.join(f'{usb_phy_path}/{name}_s0/D' for name in ('rx_dp_ms','rx_dn_ms','rxd_ms'))

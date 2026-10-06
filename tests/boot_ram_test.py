@@ -10,9 +10,9 @@ from gateware.shared_l2 import SharedL2
 
 
 def exercise(size):
-    dut=Module();ready=Signal();atomic=Signal();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
+    dut=Module();ready=Signal();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
     port=LiteDRAMNativePort('both',23,128)
-    dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=size,enabled=ready,atomic=atomic,boot_ram=True))
+    dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=size,enabled=ready,boot_ram=True))
     ram={};traffic=[]
     @passive
     def memory():
@@ -50,14 +50,12 @@ def exercise(size):
             yield cache.dma.cmd.valid.eq(1);yield cache.dma.cmd.addr.eq(0)
             for i in range(64):
                 a=0x407ff000+i*64
-                yield atomic.eq(i%2)
                 assert (yield from cpu(a))==0
                 yield from cpu(a,0x87654321+i)
                 yield from cpu(a,0x0000aa00,2)
                 assert (yield from cpu(a))==((0x87654321+i)&~0xff00)|0xaa00
                 assert not (yield cache.video.cmd.ready) and not (yield cache.dma.cmd.ready)
             assert not traffic
-            yield atomic.eq(0)
             yield cache.video.cmd.valid.eq(0);yield cache.dma.cmd.valid.eq(0)
             # Out-of-window requests stall instead of allocating/refilling.
             yield wb.adr.eq(0x40800000>>2);yield wb.cyc.eq(1);yield wb.stb.eq(1)

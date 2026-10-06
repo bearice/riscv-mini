@@ -3,9 +3,11 @@ from migen import Signal, Constant, Array, Cat, Mux, If, ResetInserter
 from litex.gen import LiteXModule
 from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 from litedram.phy.dfi import Interface
-from litedram.core.controller import LiteDRAMController
+from litedram.core.controller import LiteDRAMController, ControllerSettings
 from litedram.core.crossbar import LiteDRAMCrossbar
 from migen.genlib.record import DIR_M_TO_S
+
+DDR_CMD_BUFFER_DEPTH = 1
 
 
 def training_patterns(seed):
@@ -64,7 +66,12 @@ class SoftwareDDRCore(LiteXModule):
     def __init__(self, phy, module, clk_freq):
         self.boot=DDRBoot(phy)
         self.controller=ResetInserter()(LiteDRAMController(
-            phy.settings,module.geom_settings,module.timing_settings,clk_freq))
+            phy.settings,module.geom_settings,module.timing_settings,clk_freq,
+            # The crossbar gates each bank's valid with the other banks' locks.
+            # Depth 0 makes lookahead.valid combinational and feeds req.valid
+            # back into req.lock. Keep one registered entry to break that loop.
+            controller_settings=ControllerSettings(
+                cmd_buffer_depth=DDR_CMD_BUFFER_DEPTH,with_auto_precharge=False)))
         self.crossbar=ResetInserter()(LiteDRAMCrossbar(self.controller.interface))
         self.comb += [self.controller.reset.eq(~self.boot.handover),self.crossbar.reset.eq(~self.boot.handover)]
         for physical,training,controller in zip(phy.dfi.phases,self.boot.dfi.phases,self.controller.dfi.phases):

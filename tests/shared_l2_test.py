@@ -4,7 +4,7 @@ import random
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from migen import Module, Signal, ResetInserter
+from migen import Module, ResetInserter
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
@@ -12,8 +12,8 @@ from gateware.shared_l2 import SharedL2
 
 parser=argparse.ArgumentParser();parser.add_argument('--writeback',action='store_true');args=parser.parse_args()
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-port=LiteDRAMNativePort('both',23,128);atomic=Signal()
-dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback,atomic=atomic)
+port=LiteDRAMNativePort('both',23,128)
+dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback)
 ram={};counts={'reads':0,'writes':0};events=[]
 def initial(a):return sum(((a*17+i*11)&255)<<(i*8) for i in range(16))
 def value(a):return ram.get(a,initial(a))
@@ -126,10 +126,8 @@ def test():
     yield from dma(1280,0xdd<<8,2,data_delay=19)
     assert (yield from dma(1280))==(prev & ~65535)|0xddcc
     yield from cpu(32,0x12345678)
-    yield atomic.eq(1)
     assert (yield from cpu(32))==0x12345678
-    yield atomic.eq(0)
-    assert value(2)&0xffffffff==0x12345678,'atomic bypass must resolve dirty alias'
+    assert (yield from dma(32))&0xffffffff==0x12345678,'ACKed CPU write must be visible through L2'
     # Every CPU byte lane and a halfword must preserve unrelated bytes.
     expected=value(4)
     for lane in range(4):
@@ -167,8 +165,8 @@ def test():
 run_simulation(dut,[test(),memory()])
 
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-port=LiteDRAMNativePort('both',23,128);atomic=Signal()
-dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback,atomic=atomic)
+port=LiteDRAMNativePort('both',23,128)
+dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback)
 completed=[0,0,0]
 def contend(client):
     for n in range(20):
@@ -183,8 +181,8 @@ print('Shared arbitration PASS CPU/video/DMA=',completed)
 # A system reset must sweep valid/dirty tags before serving the next owner.
 # Clean first: preserving dirty lines across a whole-system reset is not promised.
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-port=LiteDRAMNativePort('both',23,128);atomic=Signal()
-dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=256,writeback=args.writeback,atomic=atomic))
+port=LiteDRAMNativePort('both',23,128)
+dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=256,writeback=args.writeback))
 def reset_check():
     for _ in range(30):yield
     yield from cpu(0,0x87654321)
@@ -199,8 +197,8 @@ print('Shared reset PASS')
 # Exercise frequent direct-map conflicts with an independent byte-level
 # reference image, mixing CPU writes and native DMA writes/readers.
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-port=LiteDRAMNativePort('both',23,128);atomic=Signal()
-dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback,atomic=atomic)
+port=LiteDRAMNativePort('both',23,128)
+dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback)
 def mixed_check():
     rng=random.Random(0x20);expected={}
     for _ in range(30):yield

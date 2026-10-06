@@ -6,7 +6,7 @@
 
 Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 8 KiB boot ROM 启动，在 L2 启动 RAM 上运行软件 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
-- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD/SD lite 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-fence/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件。
+- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD/SD lite 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
 - 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，片上 ROM 负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
@@ -101,7 +101,15 @@ CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼�
 - RTOS、HDMI、USB 高速与 MSC 支持未实现；全速 Hub 和其后的全速 HID 已支持，容量与限制见 [轻量 USB](usb-light.md)。PT8211 是输出 DAC，板上没有 ADC；外接 I2S 麦克风提供快照输入，连续录音 DMA 尚未实现。
 - PRIMARY 与 LW 时钟资源均为 8/8，扩展前需重新评估时钟布线。
 
-## 当前 full 资源与构建身份
+## 当前已验收 C 配置
+
+2026-10-06 的 `build/c-fit/ddr-depth1-p2` 使用原生 C+MMU+FPU CPU（2 KiB I/D cache、两周期 I-cache 和 injector 寄存器）、4 KiB ROM/L2、全部外设，保持 sys 60 MHz / DDR 120 MHz。DDR bank command queue 深度 1，关闭 auto precharge；默认 Gowin place 2/route 2。CPU 不导出外部 fence/atomic 信号。
+
+资源为 Logic 19797/20736（16473 LUT）、Register 11251/16173、CLS 10295/10368、BSRAM 42/46、PLL 3/4；setup/hold 违例 0/0。音频 13 次、DMA、41 轮约 61 秒综合压力测试及启动边界检查通过。当前默认 CPU 生成仍关闭 C、ROM 默认 8 KiB，此处身份仅对应明确选择 C 核及 4 KiB ROM 的产物。
+
+ABI `ba18270e`；bitstream SHA256 `fcb9ccc9c6abc3c0ff0df8c1121e1d0fd9816de49c8f1703d4b4ee05bb0517a4`，app.img SHA256 `72a3d70580420c63f5e59864e44549ad6a820a215453b0f274ca1692e394684a`。本轮只下载 SRAM/UART，没有更新 Flash。旧 bitstream 的布局敏感错误尚未唯一定位，慢 ACK 模型的 FENCE.I 边界仍未关闭；完整对照、复现命令和声学/视觉/网络验收范围见 [调试与验收纪要](debug-c-pnr-handoff.md)。
+
+## 历史无 C full 基线资源与构建身份
 
 配置：MMU+FPU、无 C/B、共享 writeback L2 4 KiB、LCD/SD 128-bit coherent、CPU fence 握手、SD lite、USB ultra、DDS、全部外设。CSR 镜像 ABI 为 `88bc82d4`；不同功能组合必须重新生成匹配固件，不能把该 ABI 当作所有 profile 的固定值。
 
@@ -115,7 +123,7 @@ CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼�
 | PRIMARY / LW | 各 8 / 8 |
 | IO / IOLOGIC | 139 / 207；62 / 207 |
 
-Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。本页记录当前 full 配置资源及 setup/hold 结果；实板验收包含固件自检、连续 LCD 计时器、SD、静音音频和外部网络并发，不表示其他裁剪组合或更高频率已通过上板验收。ROM 配置容量 8192 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
+Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。上述基线使用移除补丁前的 CPU fence 握手；当前源码已删除它及 L2 atomic bypass，不能继承上述资源、时序和实板验收。最新 C 候选见 [PnR 交接](debug-c-pnr-handoff.md)。基线实板验收包含固件自检、连续 LCD 计时器、SD、静音音频和外部网络并发，不表示其他裁剪组合或更高频率已通过上板验收。ROM 配置容量 8192 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
 
 Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/main.c`](../firmware/bootloader/main.c) 与 [`scripts/boot_upload.py`](../scripts/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
 

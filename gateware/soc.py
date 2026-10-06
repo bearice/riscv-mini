@@ -83,8 +83,10 @@ class MiniSoC(SoCCore):
         sd_profile=None,
         audio_clock='dds',
         l2_size=4096,
+        rom_size=8192,
     ):
         if l2_size not in (4096,8192):raise ValueError('Software DDR boot requires at least 4 KiB L2 boot RAM')
+        if rom_size not in (4096,8192):raise ValueError('Boot ROM size must be 4 or 8 KiB')
         # Validate feature selections and select matching CPU RTL.
         features = features or Features()
         if cpu_verilog is None and (features.mmu or features.fpu):
@@ -115,11 +117,11 @@ class MiniSoC(SoCCore):
         platform=Platform(dock='standard',toolchain='gowin')
         self.crg=ClockResetGenerator(platform,features,usb_backend)
         # SUG1220: prioritize timing over compilation speed at high utilization.
-        platform.toolchain.options.update(timing_driven=1,place_option=3,route_option=2)
+        platform.toolchain.options.update(timing_driven=1,place_option=2,route_option=2)
         SoCCore.__init__(
             self, platform, clk_freq=60e6, ident='riscv-mini',
             cpu_type='vexriscv', cpu_variant=cpu_variant,
-            integrated_rom_size=8*1024, integrated_rom_init=rom_data or [],
+            integrated_rom_size=rom_size, integrated_rom_init=rom_data or [],
             integrated_sram_size=0, integrated_main_ram_size=0,
             uart_name='serial', uart_baudrate=115200,
             with_timer=True, with_ctrl=True,
@@ -130,11 +132,6 @@ class MiniSoC(SoCCore):
         if features.mmu:
             self.cpu.add_timer()
         capabilities=cpu_capabilities(cpu_verilog) if cpu_verilog else {}
-        fence_request=Signal();fence_done=Signal();atomic=Signal()
-        if capabilities.get('external_fence'):
-            self.cpu.cpu_params.update(o_externalFenceRequest=fence_request,
-                                       i_externalFenceDone=fence_done,o_externalAtomic=atomic)
-        memory_idle=Signal()
         self.add_constant('CONFIG_CPU_COMPRESSED',int(capabilities.get('compressed',False)))
         self.add_constant('CONFIG_CPU_BITMANIP',sum(1<<i for i,name in enumerate(('Zba','Zbb','Zbs'))
             if name in capabilities.get('bitmanip',[])))
@@ -175,10 +172,8 @@ class MiniSoC(SoCCore):
         from gateware.shared_l2 import SharedL2
         self.comb += wb_ram.connect(ram_request)
         self.l2=SharedL2(ram_request,self.memory_port.cpu,size=l2_size,writeback=True,
-            enabled=self.sdram.boot.ready,atomic=atomic,video=self.memory_port.video,dma=self.memory_port.dma,boot_ram=True)
-        self.comb += memory_idle.eq(self.l2.idle & ~wb_ram.cyc)
+            enabled=self.sdram.boot.ready,video=self.memory_port.video,dma=self.memory_port.dma,boot_ram=True)
         self.add_constant('CONFIG_SHARED_L2',1)
-        self.comb += fence_done.eq(memory_idle & ~self.cpu.dbus.cyc)
 
         # System timers and board IO.
         self.timer0.add_uptime()
