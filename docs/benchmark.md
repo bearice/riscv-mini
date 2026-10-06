@@ -53,7 +53,7 @@ USB HID、音频、麦克风是事件或固定采样率接口，本命令不测�
 
 ```powershell
 & $MiniPython scripts/benchmark.py --rounds 3
-# 需要该 Python 的 UDP 入站已允许，地址为接 Dock 网口的本机 IPv4。
+# 需要该 Python 的 UDP 入站已允许，地址为接 Dock 网口的本机 IPv4；本机已确认的网卡与地址见 [本机测试环境](lab-environment.md)。
 & $MiniPython scripts/benchmark.py --rounds 3 --host-ip 169.254.25.153
 ```
 

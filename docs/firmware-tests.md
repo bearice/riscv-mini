@@ -78,7 +78,7 @@ bootloader，不在正常应用里复制另一套 loader。对应 `sim/` 检查�
 & $MiniPython scripts/monitor_external_verify.py --output-dir build/base --audio --host-ip 169.254.25.153 --interface-index 80 --seconds 30
 ```
 
-主机 IP 和接口序号必须按当前连接查询；示例数值不是固件配置。执行音频选项会
+主机 IP 和接口序号必须按当前连接查询，本机已确认的网卡、IP、麦克风与 SD 卡状态见 [本机测试环境](lab-environment.md)；示例数值不是固件配置。执行音频选项会
 播放两秒低幅度测试音，输出连接 Line In 时用于自动测量。
 
 LCD 的 LAST FILL、FILL RATE、FILL SPEED 显示上一帧完整 261,120 B 参考图写入 VRAM 的耗时、有效 MiB/s 和等效填充 FPS。计时包含 fence 和协作式设备 poll，不含生成参考图、CRC 校验或等待换帧；等效填充 FPS 不是面板刷新率。

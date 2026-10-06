@@ -1,6 +1,6 @@
 # 提交与代码发布 SOP
 
-每次提交保存真实范围和适用检查。只有产品代码发布更新 CHANGELOG.md 和发布版本；文档、报告、构建/提交管理设施保留 reports/changes/ 记录，不创建 changelog 条目。代码变更先提交，再生成最终产物。发布包按版本号组织，提交快照按版本号加 Git hash 组织。
+每次提交保存真实范围和适用检查。只有产品代码发布更新 CHANGELOG.md 和发布版本；范围记录 `reports/changes/` 只在代码变更时生成，文档、报告与构建/提交管理设施的改动不生成范围记录，也不创建 changelog 条目。代码变更先提交，再生成最终产物。发布包按版本号组织，提交快照按版本号加 Git hash 组织。
 
 ## 1. 确认范围与是否发布
 
@@ -26,7 +26,9 @@
 
 all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测量避免覆盖。performance_report.py 显式指定双方结果；不同工作量/时钟、失败或零字节不计算降幅。旧无身份测量仅在有下载/UART 证据时显式 --allow-legacy-results。保存 Markdown/JSON、原始数据 hash、样本/范围/中位数、LCD/音频状态和限制；结束后 BIOS/音频恢复检查。
 
-## 4. 保存提交范围；仅代码发布写 changelog
+## 4. 保存提交范围；仅代码变更生成范围记录
+
+纯文档、报告整理与流程变更不生成 `reports/changes/` 记录，直接按第 1、3 节确认范围并完成适用检查。代码变更生成范围记录：
 
 ```powershell
 .venv/Scripts/python.exe tests/workflow_test.py --report build/reports/checks/workflow.json
@@ -42,7 +44,7 @@ all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测
 ## 5. 复核并提交；发布创建版本 tag
 
 ```powershell
-git add <明确文件和范围记录>
+git add <明确文件；代码变更同时加入范围记录>
 git diff --cached --check
 .venv/Scripts/python.exe scripts/prepare_commit.py --title verified --change verified `
   --output reports/changes/pending.md --verify
@@ -63,7 +65,7 @@ git tag -a v0.7.0 -m 'riscv-mini 0.7.0'  # 仅本次代码发布；使用实际 
 .venv/Scripts/python.exe scripts/release.py --verify build/releases/v0.7.0/<配置>
 ```
 
-正式发布必须 VERSION、tag、HEAD 一致，输出 build/releases/v<版本>/<配置>/。涉及代码变更但不发布新产品版本，执行同一命令加 --snapshot，输出 build/archives/v<版本>-<Git hash>/<配置>/；不增加 changelog，不覆盖正式包。纯文档只保存范围记录并说明构建不适用。
+正式发布必须 VERSION、tag、HEAD 一致，输出 `build/releases/v<版本>/<配置>/`。涉及代码变更但不发布新产品版本，执行同一命令加 `--snapshot`，输出 `build/archives/v<版本>-<Git hash>/<配置>/`；不增加 changelog，不覆盖正式包。纯文档提交不生成范围记录，构建产物也不适用。
 
 最终包从提交后的干净源码重建，包含 boot/app bin/img/ELF/map、FS、PnR/板测/性能报告、构建参数、CPU 输入/生成信息、工具身份、VERSION、完整 Git hash 和文件 SHA256。失败状态为 failed；只有完成并 verify 通过才标 complete，匹配板测通过才更新 current。
 
