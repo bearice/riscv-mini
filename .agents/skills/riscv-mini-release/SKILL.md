@@ -34,7 +34,7 @@ git worktree add --detach build/worktrees/<tag> <tag>
 - worktree 必须在仓库内用 `git worktree add` 创建；`git worktree move` 带进来的安全描述符缺少沙箱写权限，手工补 ACE 也不能修复。
 - 构建用该提交自己的 `scripts/build.py --synthesize`。HEAD 的 build.py 不能表达集成 SRAM、硬编码 ROM、`--l2-mode` 等旧配置。
 - 子进程只能写仓库内：`TMP`/`TEMP` 指到 `<worktree>/build/.tmp`，sbt 的 Coursier 缓存放进 `build/java-cache/coursier`；CPU RTL 用该提交的 `scripts/cpu_generate.py` 生成（Java 8、sbt-launch 1.9.7、VexRiscv 固定 hash），旧版本还会把 sbt 临时目录写进 `--vexriscv-source`，需要把该源码目录也放进 worktree。
-- 打包与登记用仓库外的临时 helper 复用 HEAD 的 `scripts/build_records.py`，输出 `build/releases/<tag>/<配置>/`：`release.json` 标记 `release_kind: "code-release"`、不哈希自身、保存逐文件 SHA256；`validation.json` 补写的字段列进 `annotated_fields`；`profile` 含空格或斜杠时用 `--profile-slug` 与 `--config` 生成可作目录名的配置名，catalog 记录 id 同样必须文件系统安全。
+- 打包与登记用的 helper 不入库，按下列契约现写，复用 HEAD 的 `scripts/build_records.py`，输出 `build/releases/<tag>/<配置>/`：`release.json` 标记 `release_kind: "code-release"`、不哈希自身、保存逐文件 SHA256；`validation.json` 补写的字段列进 `annotated_fields`；`profile` 含空格或斜杠时用 `--profile-slug` 与 `--config` 生成可作目录名的配置名，catalog 记录 id 同样必须文件系统安全。
 - 每个包都要 `scripts/release.py --verify` 通过。
 
 ## 实板与基准
@@ -57,7 +57,7 @@ foreach($tag in <本次 tag 列表>){
 }
 ```
 
-- zip 以 `<tag>/<配置>/` 为顶层目录，内容是已 verify 的整个包，命名 `riscv-mini-<tag>-<配置>.zip`，放在 `build/release-archives/`。
+- zip 与说明文本由现写的 helper 生成，同样不入库。zip 以 `<tag>/<配置>/` 为顶层目录，内容是已 verify 的整个包，命名 `riscv-mini-<tag>-<配置>.zip`，放在 `build/release-archives/`。
 - 说明文本从各包 `release.json` 与 `validation.json` 生成，不手写数字：阶段能力、tag 指向的完整 commit、构建方式与工具链、PnR 0/0 与 Logic/BSRAM、实板检查数、基准结果与失败项，并指向 `docs/version-history.md` 与 `docs/lab-environment.md`。
 - 历史阶段的包写明它不是正式发布、只有当前 VERSION 是；不使用回填或 backfill 这类标记。
 
