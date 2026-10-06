@@ -36,7 +36,9 @@
 - 板侧 BIOS 设置默认 `IP=169.254.20.20`、`server=169.254.25.153`；`set ip` / `set server` 只改内存值，不做 `settings save`。
 - 主机侧用 USB 网卡：`Realtek USB GbE Family Controller #2`，接口名 `Ethernet 8`，ifIndex 80，MAC `00-E0-4C-09-07-44`。它必须持有 `169.254.25.153`（link-local /16，与板子的 `169.254.20.20` 同链路），`--host-ip 169.254.25.153` 才可用。
 - 不要误用其它接口：`Ethernet 5`（Intel X550-T2 #2，ifIndex 5，`192.168.10.128/24`，走 DHCP）和 `vEthernet (Default Switch)`（`172.30.224.1`）都不是板卡链路。
+- 该接口属 Public 网络配置文件，Windows 防火墙入站只放行已登记的解释器路径（如 `C:\Users\bearice\AppData\Local\Programs\Python\Python313\python.exe`）。仓库 `.venv\Scripts\python.exe` 不在放行列表内：用它监听 UDP/69 时收不到板端 RRQ，BIOS 侧表现为 `LOAD TFTP (dot=64 KiB) failed 0 bytes`。跑 `scripts/bios_tftp.py`（纯标准库）要用已放行的解释器，串口侧脚本继续用 `.venv`；不改防火墙、网卡或路由。
 - 2026-10-06 实测：该 USB 网卡没有分配 IPv4，`MediaConnectionState=Unknown`、`LinkSpeed 0 bps`，所以 `--suite net` / `--host-ip` 的 TFTP 基准当时不可用；历史版本的基准只跑 `--suite all`。运行前用下面的命令确认。
+- 2026-10-06 同日 OpenSBI 复测时同一接口已恢复：`Status=Up`、`MediaConnectionState=Connected`、`LinkSpeed 100 Mbps`、`IPv4=169.254.25.153`（PrefixOrigin=WellKnown），TFTP 引导可用（1,051,856 B 用时 5.4 s）。
 
 ```powershell
 Get-NetAdapter | Select-Object Name,ifIndex,Status,MacAddress,InterfaceDescription

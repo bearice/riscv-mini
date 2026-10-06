@@ -13,6 +13,15 @@ description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码�
 
 核对干净 HEAD 与 VERSION；正式发布还需同版本 tag 指向 HEAD，版本不可覆盖。尚未提交时先完成同级 `riscv-mini-commit/SKILL.md`。涉及代码变更：先提交干净源码，再生成最终包。
 
+顺序不可颠倒：
+
+1. bump `VERSION` 并在 `CHANGELOG.md` 写本版条目，与功能代码同一个提交。
+2. 提交，得到 git hash。
+3. 从该提交运行构建（干净工作树，产物身份不带 `.dirty`），并在实板完成测试。
+4. 归档 report/change 记录（`reports/changes/<commit7>.md` 与同名 `.json`），打 tag，然后运行 `release.py` 生成最终包。
+
+被测试与被发布的 binary 必须来自已提交树；dirty 树的构建只能作为候选验证，不能作为发布验收。
+
 ```powershell
 .venv/Scripts/python.exe scripts/release.py --version <VERSION> --build <配置模板ID> `
   --app firmware/bios/main.c --board-check --baseline <基线ID> `

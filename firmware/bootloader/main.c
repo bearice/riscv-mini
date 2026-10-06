@@ -64,7 +64,7 @@ int main(void) {
     io_timer_init();
     /* PHY DLL startup briefly stops/resets sys; wait before transmitting. */
     io_delay_ms(2);
-    puts_uart("\r\nriscv-mini BOOT\r\n");
+    puts_uart("\r\nriscv-mini ROM " MINI_BUILD_ID " " MINI_BUILD_RTL_ID "\r\n");
     if(!ddr_init())for(;;) {}
 #if MINI_FEATURE_VIDEO
     rgb_lcd_enable_write(0);

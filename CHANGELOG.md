@@ -1,6 +1,14 @@
 # Changelog
 
-版本与功能阶段的对应关系见 [docs/version-history.md](docs/version-history.md)。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/lab-environment.md](docs/lab-environment.md)。v0.7.0 仍是唯一的正式发布。
+版本与功能阶段的对应关系见 [docs/version-history.md](docs/version-history.md)。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/lab-environment.md](docs/lab-environment.md)。v0.7.1 是当前正式发布，v0.7.0 是同一功能阶段的上一次发布。
+
+## v0.7.1 — 构建身份显示
+
+- ROM、BIOS 与 BIOS `status` 现在打印可追踪的构建身份：`<semver>+<commit7>.<config8>[.dirty]`，其中 `config8` 是构建输入指纹（gateware/firmware 源码、`requirements.lock`、`VERSION` 的 SHA256 前 8 位），同一 `config8` 唯一对应一份构建配置；工作树未提交时带 `.dirty`。
+- 三段版本分开：ROM 横幅打印 RTL 版本 `rtl<rtl8>`（`gateware/riscv_mini.v`、`gateware/rtl-manifest.json` 与 CPU RTL 输入的 SHA256 前 8 位），BIOS 横幅打印 ROM 版本 `rom<rom8>`（`firmware/boot.bin` 的 SHA256 前 8 位），BIOS 自身哈希记录在 `validation.json` 的 `boot_image.sha256`。ROM 不打印自身哈希，因为打印会改变被哈希的内容。
+- `validation.json` 新增 `build_id`、`rtl_sha256`、`config_sha256`，主机侧检查与实板串口日志因此可互相印证。
+- 实板验收：`scripts/firmware_verify.py --program --soak-seconds 60 --mic` 全部通过，ROM/BIOS/`status` 三处身份一致；OpenSBI 复测（SBI Base、time CSR、AMO+LRSC、S timer、S external、U ECALL、Sv32 与 SBI warm reset 后 BIOS 恢复）全部通过，warm reset 后 ROM 再次打印同一身份。
+- 功能代码与 VERSION 0.7.1 bump 随本 changelog 条目同提交（`reports/changes/<commit7>.md/.json` 记录构建与实板证据）；tag `v0.7.1` 指向其后的变更记录提交，发布包由该 tag 的干净工作树生成，产物身份不带 `.dirty`。
 
 ## v0.7.0 — C 扩展 full 系统与原生 fence
 

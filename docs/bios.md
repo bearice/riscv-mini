@@ -20,6 +20,8 @@
 
 BIOS 装载完成后先初始化 HAL、显示和设置，执行有界 POST，然后进入 setup。默认 `boot=none`；配置为 SD/net 时，倒计时内任意 UART/USB 键盘输入可取消自动引导。引导失败返回 setup。程序入口为 `int payload_main(const struct bios_info *info)`；可以正常返回 BIOS，`info` 指向 BIOS 只读信息，程序可以用 `BIOS_INFO` 获取自己的副本。
 
+BIOS 横幅 `RISCV MINI BIOS <semver>+<commit7>.<config8>[.dirty] rom<rom8>` 与 `status` 的 `BUILD` 行（`BUILD <id> rtl<rtl8> rom<rom8>`）使用同一套 `MINI_BUILD_*` 宏，与 ROM 首行一起构成日志到构建的追踪线索：RTL 版本 = `rtl<rtl8>`，ROM 版本 = `rom<rom8>`（`boot.bin` 的 SHA256 前 8 位，完整值见 `validation.json` 的 `firmware_sha256`），BIOS 版本 = `<semver>+<commit7>.<config8>` 加上 `validation.json` 中 `boot_image.sha256` 的 `app.img` 哈希。ROM 与 BIOS 分开链接，因此 BIOS 能打印 ROM 版本，ROM 只打印 RTL 版本。构建身份同时保存在构建目录的 `build-info.json` 与 catalog 记录中。
+
 交接时 BIOS 停止音频 DMA、静音并停止麦克风，复制程序、清零 BSS，维护 D/I-cache 后跳转。常驻驱动和中断保持运行。SDK 建立程序自己的 `gp`；trap 切换到 BIOS 的 `gp` 并恢复调用者寄存器，程序返回时恢复 BIOS 栈及 callee-saved 寄存器。代码见 [装载和服务](../firmware/bios/boot.c)、[交接](../firmware/bios/enter.S)、[trap](../firmware/hal/src/trap.S)。
 
 这版 ABI 面向可信的 M-mode 裸机程序，要求保留 BIOS 的 `mtvec`、中断运行和未启用分页的环境。程序定期调用 `BIOS_POLL` 服务 USB 和终端。它没有进程隔离；地址参数检查防止常见误传，不能限制 M-mode 代码直接访问硬件。OSB1 镜像使用独立的一次性交接，停止 BIOS 驱动并由 OpenSBI 接管 M-mode、进入 S-mode；此时 BIOS ECALL 服务不再有效。详见 [OpenSBI](opensbi-port.md)。

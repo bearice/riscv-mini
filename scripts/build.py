@@ -180,7 +180,19 @@ def main():
     include=firmware/'include';generate_csr(csr,include)
     capabilities=cpu_capabilities(a.cpu_verilog) if a.cpu_verilog else {'mmu':False,'fpu':False,'dcache':False,'compressed':False,'bitmanip':[]}
     isa=cpu_isa(features,capabilities)
-    (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_CPU_COMPRESSED {int(capabilities["compressed"])}\n#define MINI_CPU_BITMANIP {int(bool(capabilities["bitmanip"]))}\n#define MINI_SD_PROFILE "{a.sd_profile}"\n',encoding='utf-8')
+    version=(ROOT/'VERSION').read_text().strip()
+    rtl_digest=hashlib.sha256()
+    for rel in ('gateware/riscv_mini.v','gateware/rtl-manifest.json'):
+        path=output/rel
+        rtl_digest.update(path.read_bytes() if path.is_file() else b'<missing>')
+    if a.cpu_verilog:rtl_digest.update(a.cpu_verilog.read_bytes())
+    (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_CPU_COMPRESSED {int(capabilities["compressed"])}\n#define MINI_CPU_BITMANIP {int(bool(capabilities["bitmanip"]))}\n#define MINI_SD_PROFILE "{a.sd_profile}"\n'
+        +f'#define MINI_BUILD_VERSION "{version}"\n#define MINI_BUILD_COMMIT "{source["commit"][:7]}"\n'
+        +f'#define MINI_BUILD_DIRTY {int(bool(source["dirty"]))}\n#define MINI_BUILD_CONFIG "{source["inputs_sha256"][:8]}"\n'
+        +f'#define MINI_BUILD_RTL "{rtl_digest.hexdigest()[:8]}"\n'
+        '#if MINI_BUILD_DIRTY\n#define MINI_BUILD_SUFFIX ".dirty"\n#else\n#define MINI_BUILD_SUFFIX ""\n#endif\n'
+        '#define MINI_BUILD_ID MINI_BUILD_VERSION "+" MINI_BUILD_COMMIT "." MINI_BUILD_CONFIG MINI_BUILD_SUFFIX\n'
+        '#define MINI_BUILD_RTL_ID "rtl" MINI_BUILD_RTL\n',encoding='utf-8')
     abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
     loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
     usb=ROOT/'firmware/vendor/tinyusb/src'
@@ -221,6 +233,11 @@ def main():
         values=sizes.splitlines()[1].split()
         firmware_sizes[name]={kind:int(value) for kind,value in zip(('text','data','bss'),values[:3])}
         firmware_sizes[name]['binary_bytes']=(firmware/f'{name}.bin').stat().st_size
+        if name=='boot':
+            # ROM is linked before the app, so its digest can be stamped into the BIOS build.
+            rom_sha=hashlib.sha256((firmware/'boot.bin').read_bytes()).hexdigest()
+            with (include/'features.h').open('a',encoding='utf-8') as stream:
+                stream.write(f'#define MINI_BUILD_ROM "{rom_sha[:8]}"\n#define MINI_BUILD_ROM_ID "rom" MINI_BUILD_ROM\n')
     binary=firmware/'boot.bin';size=binary.stat().st_size
     if size>a.rom_size:raise RuntimeError('Boot ROM overflow')
     image=pack_image((firmware/'app.bin').read_bytes(),abi);(firmware/'app.img').write_bytes(image)
@@ -257,6 +274,8 @@ def main():
         'place_option':a.place_option,'route_option':a.route_option,
         'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'application_source':str(a.app.resolve()),
+        'build_id':f'{version}+{source["commit"][:7]}.{source["inputs_sha256"][:8]}' + ('.dirty' if source['dirty'] else ''),
+        'rtl_sha256':rtl_digest.hexdigest(),'config_sha256':source['inputs_sha256'],
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,
                       'image_bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}}
     if not a.flat_verilog:

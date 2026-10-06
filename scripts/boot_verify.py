@@ -75,7 +75,7 @@ def main():
             ready=b'SYSTEM READY sd=00000001 spi_lcd=00000001 rgb_lcd=00000001'
             audio_idle=f'AUDIO hz={validation["audio_sample_rate"]:08x} control=00000004 level=00000000 underruns=00000000 errors=00000000 amp=00000000'.encode()
             def healthy(text):
-                if b'RISCV MINI BIOS 1' in text:
+                if b'RISCV MINI BIOS' in text:
                     if any(marker not in text for marker in (b'SYSTEM READY - BIOS',b'POST SD PASS',b'POST RGB LCD PASS')):return False
                     port.write(b'status\r');status=s.until(b'> ',30);record('bios_idle_status',status)
                     return b'underflows=00000000' in status and audio_idle in status

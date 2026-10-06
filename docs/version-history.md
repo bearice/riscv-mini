@@ -1,6 +1,6 @@
 # 发布版本追溯
 
-仓库此前没有发布 tag 或版本文件。以下是 2026-10-06 从完整 Git log 建立的功能阶段映射，并已为每个阶段补建 annotated tag。VERSION 保存 0.7.0，带实板验收的正式代码发布仍然只有 v0.7.0；每个包额外保存完整 Git hash。
+仓库此前没有发布 tag 或版本文件。以下是 2026-10-06 从完整 Git log 建立的功能阶段映射，并已为每个阶段补建 annotated tag。VERSION 保存 0.7.1；v0.7.1 与 v0.7.0 都是带实板验收的正式代码发布，v0.7.1 是当前版本；每个包额外保存完整 Git hash。
 
 | 追溯版本 | 功能阶段末提交 | 代码能力依据 |
 | --- | --- | --- |
@@ -11,6 +11,7 @@
 | 0.5.0 | ff84bfb | 原生 crossbar、快速 L2 refill/burst、CPU fence handshake，write-through 阶段 |
 | 0.6.0 | f0892da | CPU/DMA 共享一致性 writeback，L2 RAM boot stack；无 C、8 KiB ROM，当前性能基线 |
 | 0.7.0 | 6880dee | C 扩展、4 KiB ROM、原生 fence、移除外部 fence/write-combine、DDR 深度 1 与注册路径 |
+| 0.7.1 | 功能提交（代码+VERSION bump+changelog 同提交）；v0.7.1 tag 指向其后的变更记录提交 | ROM/BIOS/`status` 打印构建身份（semver+commit+config 指纹、RTL 与 ROM 版本），`validation.json` 记录 `build_id`/`rtl_sha256`/`config_sha256` |
 
 ## 各版本的 tag 与构建包
 
@@ -48,7 +49,7 @@
 
 0.5.0 的 `bench mem` 在 1 MiB 尺寸上自检失败，两次运行都可复现：`mem.read32 size=1048576 ... check=007e0000 FAIL` 与 `mem.copy32 size=1048576 ... check=0003ffff FAIL`，而同一次运行里 `mem.write32` 与 64 KiB 及以下尺寸全部 PASS，`test l2`、`test ddr`、`test soak` 也都通过。同一份 `firmware/bios/benchmark.c` 的 `memory()` 在 0.4.0 与 0.6.0 上通过，两处的 `mem.read32 size=1048576` 都是 `check=fffe0000 PASS`；差异只在 0.5.0 的 L2 配置（`CONFIG_L2_MODE 4` 的 burst refill 加 `--memory-scheduler crossbar`、`--l2-fast`）。所以该包只保存 cpu/cache/io 三组数据，mem 组没有数据；这条差异记在这里，不作为已定位的根因。
 
-0.5.0 第一次上板时 boot ROM 报 `Hardware DDR initialization failed; reset required`，同一构建重试即通过，属于现场状态。0.7.0 的 `build/releases/v0.7.0/full-rv32imafc-rom4k-l24k/` 仍是唯一的正式发布；0.6.0 的性能基线仍指向原来的 `f0892da-full-rv32imaf-rom8k-l24k-baseline-noc-rom8k-86b26cda` 测量，这些包不替换基线。
+0.5.0 第一次上板时 boot ROM 报 `Hardware DDR initialization failed; reset required`，同一构建重试即通过，属于现场状态。0.6.0 的性能基线仍指向原来的 `f0892da-full-rv32imaf-rom8k-l24k-baseline-noc-rom8k-86b26cda` 测量，这些包不替换基线。
 
 c6c52d0、0b35dbd、9f1554f 是构建/提交管理设施，不构成新的产品代码发布；文档和测试报告整理也不递增版本。正式发布把该功能阶段的最终源码、工具/配置和验证结果绑定到一个 vMAJOR.MINOR.PATCH tag；历史阶段可以补建 tag 与构建包，但必须写明未做实板验收，不能当作历史上的发布验收。
 

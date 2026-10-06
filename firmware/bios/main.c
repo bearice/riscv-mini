@@ -56,7 +56,7 @@ static void command(char *s) {
     if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\n");return;}
     if(!strcmp(s,"status")) {
         bios_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=");bios_decimal(MINI_FEATURE_MMU);
-        bios_puts(" FPU=");bios_decimal(MINI_FEATURE_FPU);bios_puts("\r\n");settings_show();hal_video_status();
+        bios_puts(" FPU=");bios_decimal(MINI_FEATURE_FPU);bios_puts("\r\n");bios_puts("BUILD " MINI_BUILD_ID " " MINI_BUILD_RTL_ID " " MINI_BUILD_ROM_ID "\r\n");settings_show();hal_video_status();
         uint32_t id;unsigned bytes;
         if(hal_flash_probe(&id,&bytes)==HAL_OK) {bios_puts("FLASH JEDEC=");bios_hex(id);bios_puts(" bytes=");bios_hex(bytes);bios_puts("\r\n");}
         hal_audio_info_t audio;hal_audio_get_info(&audio);
@@ -97,7 +97,7 @@ static void command(char *s) {
 }
 int main(void) {
     hal_init();unsigned video_ok=hal_video_init()==HAL_OK;
-    bios_console_init(video_ok);bios_puts("\r\nRISCV MINI BIOS 1\r\n");
+    bios_console_init(video_ok);bios_puts("\r\nRISCV MINI BIOS " MINI_BUILD_ID " " MINI_BUILD_ROM_ID "\r\n");
     report("RGB LCD",video_ok);
     bios_settings_default();bios_settings_load();
     unsigned sd_ok=hal_sd_mount()==HAL_OK;hal_spi_lcd_show(sd_ok);
