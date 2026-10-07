@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from build_records import ROOT, artifact_identity, configuration_name, get_record, git, now, pin, register, source_identity, write_json
+from versions import bundle_versions, read_versions
 
 
 def release_version(value):
@@ -51,12 +52,13 @@ def package(run, destination, source):
             target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,target)
     for name in ('firmware-verification.json','firmware-verification-uart.log'):
         if (run/name).exists():shutil.copy2(run/name,destination/'reports'/name)
-    for name in ('CHANGELOG.md','requirements.lock','VERSION'):
+    for name in ('CHANGELOG.md','requirements.lock','VERSIONS.yaml','RELEASES.yaml'):
         if (ROOT/name).exists():shutil.copy2(ROOT/name,destination/name)
     if (ROOT/'reports').exists():shutil.copytree(ROOT/'reports',destination/'reports/commit-records')
     v['bitstream']=str(destination/'gateware/riscv_mini.fs')
     v['final_git_commit']=source['commit']
     v['release_version']=source['version']
+    v['components']=source.get('components')
     write_json(destination/'validation.json',v)
     recipe=json.loads((destination/'replay/recipe.json').read_text(encoding='utf-8'))
     write_json(destination/'build-parameters.json',dict(arguments=recipe['arguments'],
@@ -73,7 +75,7 @@ def package(run, destination, source):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--build', help='Explicit catalog template (configuration/input CPU RTL), e.g. current')
-    p.add_argument('--version',help='Release version; must match the committed VERSION file and v<version> Git tag')
+    p.add_argument('--version',help='System bundle version to release; must be pinned in RELEASES.yaml and tagged system/v<version>')
     p.add_argument('--snapshot',action='store_true',help='Archive a code commit without creating a new code release; retain version plus Git hash')
     p.add_argument('--app',type=Path,help='Explicit application for legacy templates without application_source')
     p.add_argument('--board-check',action='store_true',help='SRAM/UART only; run firmware checks and 60 s soak')
@@ -87,15 +89,19 @@ def main():
     if not a.build:p.error('--build required')
     if a.baseline and (not a.board_check or not a.baseline_results):p.error('Performance requires --board-check and explicit baseline results')
     if git('status','--porcelain'):p.error('Commit code first; final artifacts require a clean checkout')
-    version=release_version((ROOT/'VERSION').read_text(encoding='utf-8'))
-    if a.version and release_version(a.version)!=version:p.error('--version differs from committed VERSION')
-    tag='v'+version
-    if not a.snapshot:
+    if not a.version:p.error('--version required: the system bundle version to release; pin it in RELEASES.yaml first')
+    version=release_version(a.version)
+    if a.snapshot:
+        # A commit snapshot is a whole-tree archive, not a qualified bundle: it
+        # keeps the legacy v<version> label and needs no RELEASES.yaml entry.
+        components=None;tag='v'+version
+    else:
+        components=bundle_versions(version);tag='system/v'+version
         try:tag_commit=git('rev-parse',tag+'^{commit}').decode().strip()
         except subprocess.CalledProcessError:p.error('Create the local release tag '+tag+' after committing code first')
         if tag_commit!=git('rev-parse','HEAD').decode().strip():p.error('Release tag must point to the clean checkout being built')
     template=get_record(a.build);v=artifact_identity(template['path'])
-    source=source_identity();source.update(kind='captured',created_at=now(),version=version)
+    source=source_identity();source.update(kind='captured',created_at=now(),version=version,components=components)
     config=configuration_name(v['profile'],v['isa'],v['rom_size_bytes'],v['l2_size_bytes'])
     final=(ROOT/'build/archives'/f"{tag}-{source['commit'][:12]}" if a.snapshot else ROOT/'build/releases'/tag)/config
     receipt=dict(version=version,tag=None if a.snapshot else tag,release_kind='commit-snapshot' if a.snapshot else 'code-release')
@@ -129,6 +135,7 @@ def main():
         execute('build',['scripts/build.py',*args])
         info=json.loads((run/'build-info.json').read_text(encoding='utf-8'));source=info['source']
         source['version']=version
+        source['components']=components
         if source['dirty'] or source['commit']!=git('rev-parse','HEAD').decode().strip():raise ValueError('Committed source changed during final build')
         if a.board_check:execute('board',['scripts/firmware_verify.py','--program','--output-dir',str(run),'--soak-seconds','60','--mic'])
         if a.baseline:

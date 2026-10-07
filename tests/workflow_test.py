@@ -18,6 +18,7 @@ from builds import clean_build
 from performance_report import compare, load_measurements
 from prepare_commit import scope
 from release import release_version, verify_bundle
+from versions import COMPONENTS, bundle_versions, read_versions
 
 
 def sha(data):return hashlib.sha256(data).hexdigest()
@@ -153,17 +154,36 @@ class WorkflowTests(unittest.TestCase):
     def test_version_input_is_preserved_when_replaying(self):
         self.init_git()
         before=source_identity(self.root)['inputs_sha256']
-        (self.root/'VERSION').write_text('0.7.0\n')
+        (self.root/'VERSIONS.yaml').write_text('rtl: 0.7.0\nbootloader: 0.7.0\nhal: 0.7.0\nbios: 0.7.0\nopensbi: 0.7.0\nuboot: 0.1.0\n')
         self.assertNotEqual(before,source_identity(self.root)['inputs_sha256'])
         recipe=create_recipe(self.root/'build/runs/version',source_identity(self.root),[],root=self.root)
         replay=reproduce(recipe,sys.executable,self.root/'result',root=self.root)
-        self.assertEqual((replay/'VERSION').read_text(),'0.7.0\n')
+        self.assertEqual((replay/'VERSIONS.yaml').read_text(),(self.root/'VERSIONS.yaml').read_text())
 
     def test_other_commits_cannot_implicitly_write_changelog(self):
         result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare_commit.py'),'--title','fixture',
             '--change','fixture','--write-changelog','--output',str(self.root/'scope.md')],capture_output=True)
         self.assertEqual(result.returncode,2)
-        self.assertIn(b'requires an explicit --release-version',result.stderr)
+        self.assertIn(b'requires --component and an explicit --release-version',result.stderr)
+
+    def test_changelog_component_version_must_match_manifest(self):
+        result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare_commit.py'),'--title','fixture',
+            '--change','fixture','--write-changelog','--component','bios','--release-version','9.9.9',
+            '--output',str(self.root/'scope.md')],capture_output=True)
+        self.assertEqual(result.returncode,2)
+        self.assertIn(b'does not match VERSIONS.yaml',result.stderr)
+
+    def test_component_versions_are_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'VERSIONS.yaml'
+            path.write_text('rtl: 0.7.1\nbootloader: 0.7.1\nhal: 0.7.1\nbios: 0.7.2\nopensbi: 0.7.1\nuboot: 0.1.0\n')
+            self.assertEqual(read_versions(path)['bios'],'0.7.2')
+            path.write_text('rtl: 0.7\nbios: 0.7.0\n')
+            with self.assertRaises(ValueError):read_versions(path)
+            rel=Path(tmp)/'RELEASES.yaml'
+            rel.write_text('0.7.2:\n  '+'\n  '.join(f'{c}: 0.7.1' for c in COMPONENTS)+'\n')
+            self.assertEqual(set(bundle_versions('0.7.2',rel)),set(COMPONENTS))
+            with self.assertRaises(ValueError):bundle_versions('9.9.9',rel)
 
 
 if __name__=='__main__':

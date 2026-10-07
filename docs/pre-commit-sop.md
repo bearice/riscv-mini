@@ -6,7 +6,7 @@
 
 读取 git status、diff 和新增文件，明确本次行为变化。暂存实现、必要测试和文档。git diff --cached --check 必须通过；每个暂存文件都需审阅。
 
-产品代码发布阅读 [版本追溯](version-history.md)，维护 VERSION，选择未使用的 vMAJOR.MINOR.PATCH。新功能/架构变化递增 MINOR，产品修复递增 PATCH；文档/流程提交不递增。CHANGELOG 只描述该发布的功能、修复和验收结果，不收录提交流水、文档整理或流程脚本变化。
+产品代码发布阅读 [版本追溯](version-history.md)。版本按组件独立递增：只改 `VERSIONS.yaml` 里真正改动的那个组件（`rtl`/`bootloader`/`hal`/`bios`/`opensbi`/`uboot`），未改的组件不动。新功能/架构变化递增该组件的 MINOR，产品修复递增 PATCH；文档/流程提交不递增。CHANGELOG.md 用 `## <组件> v<版本>` 分节，只描述该组件该版的功能、修复和验收结果，不收录提流水、文档整理或流程脚本变化。
 
 ## 2. 选择候选与性能基线
 
@@ -41,7 +41,7 @@ all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测
 
 报告只保存人工审阅的改动说明、验证结果、性能依据和必要版本引用，不重复 Git 的文件清单或 diffstat。最终 Git index 的 patch 指纹只保存在本地 build/reports/commit-checks，--verify 用它检测暂存内容是否变化；本地记录缺失时重新 prepare。CHANGELOG 和 reports/changes 自身排除以免自引用。检查输入指纹必须匹配。RTL（gateware）提交额外使用新 captured/board-qualified 构建及性能报告；纯软件（firmware/bootloader/BIOS/驱动）提交在 RTL 不变时跳过这些硬件验收，只保留主机回归与功能实板检查。
 
-仅产品代码发布额外传 --release-version <VERSION> --write-changelog，change 只写发布变化；普通提交不传这两个选项。历史功能版本补记可使用 --revision <产品代码提交>，明确是事后记录，不伪造当时的检查。完整提交范围直接查 Git，不再复制到报告或 changelog。
+仅产品代码发布额外传 --component <组件> --release-version <版本> --write-changelog，change 只写该组件该版的发布变化；普通提交不传这些选项。`<组件>` 是六个组件之一或 `system`（系统包）。脚本会校验版本与 `VERSIONS.yaml`（组件）或 `RELEASES.yaml`（system）一致。历史功能版本补记可使用 --revision <产品代码提交>，明确是事后记录，不伪造当时的检查。完整提交范围直接查 Git，不再复制到报告或 changelog。
 
 ## 5. 复核并提交；发布创建版本 tag
 
@@ -53,22 +53,22 @@ git diff --cached --check
 git diff --cached --stat
 git commit
 git status --short
-git tag -a v0.7.0 -m 'riscv-mini 0.7.0'  # 仅本次代码发布；使用实际 VERSION
+git tag -a bios/v0.7.2 -m 'riscv-mini bios 0.7.2'  # 组件发布；system 包用 system/v<版本>
 ```
 
-普通提交不创建发布 tag。发布顺序：bump `VERSION` 并在 `CHANGELOG.md` 写本版条目，与功能代码同一个提交；提交得到 git hash 后，从该提交运行构建（干净工作树，产物身份不带 `.dirty`）并完成实板测试；再归档范围记录（`reports/changes/<commit7>.md` 与同名 `.json`）、打发布 tag，tag 指向最终干净提交，然后进入第 6 节生成最终包。不可覆盖已发布版本。实现或普通报告改动后重新验证并生成范围。此流程不自动推送。
+普通提交不创建发布 tag。组件发布顺序：bump `VERSIONS.yaml` 里那个组件并在 `CHANGELOG.md` 写 `## <组件> v<版本>` 条目，与功能代码同一个提交；提交得到 git hash 后，从该提交运行构建（干净工作树，产物身份不带 `.dirty`）并完成实板测试；再归档范围记录（`reports/changes/<commit7>.md` 与同名 `.json`）、打 `<组件>/v<版本>` tag，tag 指向最终干净提交。系统包发布另在 `RELEASES.yaml` 钉住组件组合，打 `system/v<版本>` tag，然后进入第 6 节生成整 SoC 最终包。不可覆盖已发布版本。实现或普通报告改动后重新验证并生成范围。此流程不自动推送。
 
 ## 6. 提交后生成并校验最终产物
 
 ```powershell
-.venv/Scripts/python.exe scripts/release.py --version 0.7.0 --build current `
+.venv/Scripts/python.exe scripts/release.py --version 0.7.2 --build current `
   --app firmware/bios/main.c --board-check --baseline baseline `
   --baseline-results <基线all> --baseline-results <基线cache>
-.venv/Scripts/python.exe scripts/release.py --verify build/releases/v0.7.0/<配置>
+.venv/Scripts/python.exe scripts/release.py --verify build/releases/system/v0.7.2/<配置>
 ```
 
-正式发布必须 VERSION、tag、HEAD 一致，输出 `build/releases/v<版本>/<配置>/`。涉及代码变更但不发布新产品版本，执行同一命令加 `--snapshot`，输出 `build/archives/v<版本>-<Git hash>/<配置>/`；不增加 changelog，不覆盖正式包。纯文档提交不生成范围记录，构建产物也不适用。
+系统包发布必须 `RELEASES.yaml` 的包版本、`system/v<版本>` tag、HEAD 一致，输出 `build/releases/system/v<版本>/<配置>/`。涉及代码变更但不发布新系统包，执行同一命令加 `--snapshot`，输出 `build/archives/v<版本>-<Git hash>/<配置>/`；不增加 changelog，不覆盖正式包。纯文档提交不生成范围记录，构建产物也不适用。
 
-最终包从提交后的干净源码重建，包含 boot/app bin/img/ELF/map、FS、PnR/板测/性能报告、构建参数、CPU 输入/生成信息、工具身份、VERSION、完整 Git hash 和文件 SHA256。失败状态为 failed；只有完成并 verify 通过才标 complete，匹配板测通过才更新 current。
+最终包从提交后的干净源码重建，包含 boot/app bin/img/ELF/map、FS、PnR/板测/性能报告、构建参数、CPU 输入/生成信息、工具身份、VERSIONS.yaml、RELEASES.yaml、完整 Git hash 和文件 SHA256。失败状态为 failed；只有完成并 verify 通过才标 complete，匹配板测通过才更新 current。
 
 完成条件：正式版本或提交快照已生成且验证通过。中间 run 可清理，但 recipe、源码/参数/CPU 输入和 catalog 保留；正式发布、提交快照和固定版本受到清理保护。复现需要相同工具/依赖版本。

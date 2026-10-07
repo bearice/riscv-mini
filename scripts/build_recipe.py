@@ -14,7 +14,7 @@ def create_recipe(output, source, arguments, cpu=None, root=ROOT):
     if recipe.exists():
         recipe = recipe.with_name(key+'-'+uuid.uuid4().hex[:8])
     recipe.mkdir(parents=True)
-    selectors = [*INPUT_DIRS, 'requirements.lock', 'requirements.txt', 'VERSION']
+    selectors = [*INPUT_DIRS, 'requirements.lock', 'requirements.txt', 'VERSIONS.yaml']
     (recipe/'source.patch').write_bytes(git('diff', '--binary', 'HEAD', '--', *selectors, root=root))
     untracked = []
     for name in git('ls-files', '--others', '--exclude-standard', '-z', root=root).decode().split('\0'):

@@ -1,0 +1,13 @@
+# Per-component release versions.
+#
+# Compatibility between components is enforced by content hashes — the CSR
+# abi_tag embedded in every image and rtl_sha256 in validation.json — not by
+# these numbers. They are human-facing labels, and each component bumps them
+# independently: an unchanged RTL keeps its version while BIOS or U-Boot moves.
+# New components start at 0.1.0; existing ones inherit the last combined release.
+rtl: 0.7.1
+bootloader: 0.7.1
+hal: 0.7.1
+bios: 0.7.1
+opensbi: 0.7.1
+uboot: 0.1.0

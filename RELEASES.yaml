@@ -1,0 +1,15 @@
+# System bundles: board-qualified combinations of component versions.
+#
+# A bundle is what gets tested on hardware and packaged as a release, not any
+# single component. Each entry pins the exact version of every component that
+# was qualified together. Component versions live in VERSIONS.yaml; a bundle
+# only records which of those versions were verified as one system.
+#
+# Example:
+#   0.7.2:
+#     rtl: 0.7.1
+#     bootloader: 0.7.1
+#     hal: 0.7.1
+#     bios: 0.7.2
+#     opensbi: 0.7.1
+#     uboot: 0.1.0

@@ -17,7 +17,7 @@ build/
   refs/baseline.json   明确选择的性能基线
   reports/             本地完整检查/性能数据
   recipes/<run身份>/   参数、Git patch、未跟踪源码、CPU RTL输入
-  releases/v<版本>/<配置>/
+  releases/system/v<版本>/<配置>/
     release.json       complete/failed、版本、tag、完整Git hash、归档文件哈希
     build-parameters.json
     toolchain.json     编译器/工具hash、Python依赖版本
@@ -71,7 +71,7 @@ $Baseline = & .venv/Scripts/python.exe scripts/builds.py path baseline
 
 ## 最终归档与中间目录清理
 
-代码变更先提交。正式代码发布的 VERSION、v<版本> tag 和 HEAD 必须一致，release.py 输出 releases/v<版本>/<配置>/。不发布新产品版本的代码提交使用 --snapshot，输出 archives/v<版本>-<Git hash>/<配置>/；文档提交只保存范围记录。两种最终产物均保留二进制、报告、参数和复现输入，不可覆盖；每个文件有 SHA256，release.json 只有完整生成后才标 complete。版本分配见 [版本追溯](version-history.md)。
+代码变更先提交。系统包发布的 RELEASES.yaml 条目、system/v<版本> tag 和 HEAD 必须一致，release.py 输出 releases/system/v<版本>/<配置>/。不发布新系统包的代码提交使用 --snapshot，输出 archives/v<版本>-<Git hash>/<配置>/；文档提交只保存范围记录。两种最终产物均保留二进制、报告、参数和复现输入，不可覆盖；每个文件有 SHA256，release.json 只有完整生成后才标 complete。组件版本与系统包见 [版本追溯](version-history.md)。
 
 ```powershell
 .venv/Scripts/python.exe scripts/builds.py clean <中间构建ID>          # 先列出清理目标
@@ -79,6 +79,6 @@ $Baseline = & .venv/Scripts/python.exe scripts/builds.py path baseline
 .venv/Scripts/python.exe scripts/builds.py reproduce <中间构建ID> --output-dir build/runs/<新的复现目录>
 ```
 
-clean 只删除已登记、未被 refs 固定、位于 build/runs 的中间目录，保留 recipes 和 catalog。recipes 保存 Git hash、VERSION、dirty patch、未跟踪代码、参数及 CPU RTL/元数据，复现命令会在独立 detached checkout 中恢复源码后重新构建。旧未知实验、工具链、正式发布、提交快照和固定版本不在自动清理范围。复现需相同工具/依赖版本；工具路径由当前机器 .tools.local.json 配置。
+clean 只删除已登记、未被 refs 固定、位于 build/runs 的中间目录，保留 recipes 和 catalog。recipes 保存 Git hash、VERSIONS.yaml、dirty patch、未跟踪代码、参数及 CPU RTL/元数据，复现命令会在独立 detached checkout 中恢复源码后重新构建。旧未知实验、工具链、正式发布、提交快照和固定版本不在自动清理范围。复现需相同工具/依赖版本；工具路径由当前机器 .tools.local.json 配置。
 
 脚本不会推断正确基线，不会把空传输/失败用例算成吞吐，也不会将登记构建自动升级为板测 PASS。工具链/历史实验的物理迁移属于另一次可复现性工作：先盘点绝对路径、更新调用方、验证迁移后生成和编程，再清理原路径。

@@ -32,7 +32,7 @@ def source_identity(root=ROOT):
     names.update(git('ls-files', '--others', '--exclude-standard', '-z', root=root).decode().split('\0'))
     digest = hashlib.sha256()
     for name in sorted(names):
-        if not (name.startswith(tuple(p+'/' for p in INPUT_DIRS)) or name in ('requirements.lock', 'requirements.txt', 'VERSION')):
+        if not (name.startswith(tuple(p+'/' for p in INPUT_DIRS)) or name in ('requirements.lock', 'requirements.txt', 'VERSIONS.yaml')):
             continue
         path = root / name
         digest.update(name.encode() + b'\0')
@@ -94,6 +94,7 @@ def register(output, purpose, source=None, root=ROOT, label=None):
                    'clock_hz', 'ddr_clock_hz', 'place_option', 'route_option', 'features')},
                   image_sha256=v['boot_image']['sha256'], bitstream_sha256=v.get('bitstream_sha256'),
                   abi=f"{v['boot_image']['abi_tag']:08x}",
+                  component_versions=v.get('component_versions'),
                   status='pnr-pass' if pnr_passed(v) else 'pnr-fail' if v.get('synthesis_requested') else 'generated',
                   evidence=old.get('evidence', []))
     if old.get('status') == 'board-qualified':

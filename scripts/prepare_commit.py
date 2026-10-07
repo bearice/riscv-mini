@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 from build_records import ROOT, get_record, git, now, source_identity, write_json
+from versions import COMPONENTS
 
 BOOKKEEPING = ('CHANGELOG.md', 'reports/changes/')
 
@@ -37,8 +38,8 @@ def scope(revision=None, root=ROOT):
                 files=[dict(status=n.split('\t')[0], path=n.split('\t')[1]) for n in names])
 
 
-def changelog_entry(title, changes, record, performance, checks):
-    identity = 'v'+record['release_version']
+def changelog_entry(component, title, changes, record, performance, checks):
+    identity = f'{component} v{record["release_version"]}'
     lines = [f"## {identity} — {title}", '']
     lines += ['- '+text for text in changes]
     if performance:
@@ -87,10 +88,21 @@ def main():
     p.add_argument('--checks', type=Path)
     p.add_argument('--output', type=Path, required=True, help='Tracked change-record Markdown; JSON beside it')
     p.add_argument('--write-changelog', action='store_true')
+    p.add_argument('--component', choices=(*COMPONENTS, 'system'),
+                   help='Which version stream this release belongs to; required with --write-changelog')
     p.add_argument('--release-version',help='Only code releases enter CHANGELOG; documentation/workflow commits omit this and --write-changelog')
     p.add_argument('--verify', action='store_true', help='Compare current scope with existing change record')
     a = p.parse_args()
-    if a.write_changelog and not a.release_version:p.error('--write-changelog requires an explicit --release-version; other commits use scope records only')
+    if a.write_changelog and not (a.component and a.release_version):
+        p.error('--write-changelog requires --component and an explicit --release-version; other commits use scope records only')
+    if a.component and a.release_version:
+        from release import release_version
+        version = release_version(a.release_version)
+        from versions import bundle_versions, component_version
+        if a.component == 'system':
+            bundle_versions(version)
+        elif component_version(a.component) != version:
+            p.error(f'{a.component} version {version} does not match VERSIONS.yaml ({component_version(a.component)}); bump VERSIONS.yaml in this commit')
     if a.verify:
         saved = json.loads(review_receipt(a.output).read_text(encoding='utf-8'))
         if saved != scope_identity(scope(a.revision)):
@@ -117,14 +129,14 @@ def main():
     if a.write_changelog:
         path = ROOT / 'CHANGELOG.md'
         old = path.read_text(encoding='utf-8') if path.exists() else '# Changelog\n\n'
-        heading = '## v'+record['release_version']+' — '
+        heading = f'## {a.component} v{record["release_version"]} — '
         # Replace only the entry for this target; keep all other version records.
         start = old.find(heading)
         if start >= 0:
             end = old.find('\n## ', start+len(heading))
             old = old[:start] + (old[end+1:] if end >= 0 else '')
         header, body = old.split('\n', 1)
-        entry = changelog_entry(a.title, a.change, record, a.performance_report, record['checks'])
+        entry = changelog_entry(a.component, a.title, a.change, record, a.performance_report, record['checks'])
         path.write_text((header+'\n\n'+entry+'\n'+body.lstrip()).rstrip()+'\n', encoding='utf-8')
     print(a.output)
 

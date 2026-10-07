@@ -1,6 +1,18 @@
 # 发布版本追溯
 
-仓库此前没有发布 tag 或版本文件。以下是 2026-10-06 从完整 Git log 建立的功能阶段映射，并已为每个阶段补建 annotated tag。VERSION 保存 0.7.1；v0.7.1 与 v0.7.0 都是带实板验收的正式代码发布，v0.7.1 是当前版本；每个包额外保存完整 Git hash。
+## 组件版本与系统包
+
+版本是给人看的标签；组件之间的真实兼容性由内容哈希保证——每个镜像内嵌 CSR `abi_tag`，RTL 身份是 `validation.json` 的 `rtl_sha256`。所以"旧 RTL 跑新 BIOS"在机制上本来就成立，不需要版本号相等。版本号只用于沟通"这是哪一版"。
+
+因此版本按组件独立递增，记录在 `VERSIONS.yaml`（六个组件：`rtl`、`bootloader`、`hal`、`bios`、`opensbi`、`uboot`）。只有真正改动的组件才递增自己的版本，未改的组件保持原版本。`hal` 是静态链接进 BIOS 的源码库，它的版本是溯源标签（BIOS 构建记录"built against hal vX"），兼容性仍走 `abi_tag`。新组件从 `0.1.0` 起；既有组件继承最后一次合并发布的版本（0.7.1）。
+
+真正上板验收、打包发布的是**系统包**：一组被验证过能一起工作的组件版本，记录在 `RELEASES.yaml`。`scripts/release.py --version <包版本>` 按 `RELEASES.yaml` 里钉住的组件组合构建整 SoC 包，打 `system/v<包版本>` tag。组件单独发布打 `<组件>/v<版本>` tag（如 `bios/v0.7.2`、`uboot/v0.1.0`）。只有 `rtl` 版本变化才重跑 PnR 与性能（见 [提交前 SOP](pre-commit-sop.md)）。
+
+读取入口是 `scripts/versions.py`：`read_versions()`、`component_version()`、`read_releases()`、`bundle_versions()`。`build.py` 把各组件版本写进 `features.h`（`MINI_VERSION_*`）和 `validation.json` 的 `component_versions`，构建身份 `build_id` 用被构建应用组件的版本。
+
+## 合并版本时代（0.1.0–0.7.1）
+
+0.7.1 及之前所有组件共享一个版本号。以下是 2026-10-06 从完整 Git log 建立的功能阶段映射，并已为每个阶段补建 annotated tag。v0.7.1 与 v0.7.0 都是带实板验收的正式代码发布，v0.7.1 是合并版本时代的最后一版；每个包额外保存完整 Git hash。
 
 | 追溯版本 | 功能阶段末提交 | 代码能力依据 |
 | --- | --- | --- |

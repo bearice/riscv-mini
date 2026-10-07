@@ -16,6 +16,7 @@ from gateware.features import Features
 from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, cpu_filename, pll_count, cpu_capabilities, cpu_isa
 from scripts.build_records import now, register, run_path, source_identity, write_json
 from scripts.build_recipe import create_recipe
+from scripts.versions import COMPONENTS, read_versions
 
 def checked(command,log=None):
     command=[str(part) for part in command]
@@ -180,13 +181,18 @@ def main():
     include=firmware/'include';generate_csr(csr,include)
     capabilities=cpu_capabilities(a.cpu_verilog) if a.cpu_verilog else {'mmu':False,'fpu':False,'dcache':False,'compressed':False,'bitmanip':[]}
     isa=cpu_isa(features,capabilities)
-    version=(ROOT/'VERSION').read_text().strip()
+    component_versions=read_versions()
+    # The released artifact is the DDR application; identify it by its component.
+    app_component='bios' if a.app.resolve()==ROOT/'firmware/bios/main.c' else None
+    version=component_versions[app_component] if app_component else '0.0.0-dev'
+    version_defines=''.join(f'#define MINI_VERSION_{name.upper()} "{component_versions[name]}"\n' for name in COMPONENTS)
     rtl_digest=hashlib.sha256()
     for rel in ('gateware/riscv_mini.v','gateware/rtl-manifest.json'):
         path=output/rel
         rtl_digest.update(path.read_bytes() if path.is_file() else b'<missing>')
     if a.cpu_verilog:rtl_digest.update(a.cpu_verilog.read_bytes())
     (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_CPU_COMPRESSED {int(capabilities["compressed"])}\n#define MINI_CPU_BITMANIP {int(bool(capabilities["bitmanip"]))}\n#define MINI_SD_PROFILE "{a.sd_profile}"\n'
+        +version_defines
         +f'#define MINI_BUILD_VERSION "{version}"\n#define MINI_BUILD_COMMIT "{source["commit"][:7]}"\n'
         +f'#define MINI_BUILD_DIRTY {int(bool(source["dirty"]))}\n#define MINI_BUILD_CONFIG "{source["inputs_sha256"][:8]}"\n'
         +f'#define MINI_BUILD_RTL "{rtl_digest.hexdigest()[:8]}"\n'
@@ -274,7 +280,8 @@ def main():
         'place_option':a.place_option,'route_option':a.route_option,
         'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'application_source':str(a.app.resolve()),
-        'build_id':f'{version}+{source["commit"][:7]}.{source["inputs_sha256"][:8]}' + ('.dirty' if source['dirty'] else ''),
+        'build_id':f'{app_component or "app"}-{version}+{source["commit"][:7]}.{source["inputs_sha256"][:8]}' + ('.dirty' if source['dirty'] else ''),
+        'component_versions':component_versions,'app_component':app_component,
         'rtl_sha256':rtl_digest.hexdigest(),'config_sha256':source['inputs_sha256'],
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,
                       'image_bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}}
