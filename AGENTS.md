@@ -5,3 +5,5 @@ Read the operation-specific skill when performing that operation: [构建与 PnR
 Before preparing or creating a Git commit, read [the pre-commit SOP](docs/pre-commit-sop.md). Complete its reviewed change record, local staged fingerprint check and applicable verification/performance report. Do not duplicate Git file inventories in reports. Update CHANGELOG only for a code release; documentation/workflow commits retain change records without a changelog entry. Read [version history](docs/version-history.md) when assigning a release version.
 
 For build discovery, performance comparisons or board programming, read [build artifact organization](docs/build-artifacts.md). Select an explicit build identity and baseline; use the catalog's `current` reference for the qualified board version.
+
+For iterative board testing, load firmware into DDR over UART (`boot_upload.py --mode uart`) and download gateware to FPGA SRAM (`--program`). Never write board Flash unless explicitly requested; Flash installation is reserved for the final accepted image.

@@ -1,4 +1,4 @@
-param([string]$SocDir="build/opensbi/soc", [string]$OutputDir="build/opensbi/firmware", [string]$Source="build/opensbi-research")
+param([string]$SocDir="build/opensbi/soc", [string]$OutputDir="build/opensbi/firmware", [string]$Source="build/vendor/opensbi")
 $ErrorActionPreference="Stop"
 $MiniRoot=Split-Path -Parent $PSScriptRoot
 Push-Location $MiniRoot

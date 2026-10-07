@@ -146,6 +146,51 @@ bitstream hash。普通应用更新只擦写 Flash `[2,4)` MiB，前 2 MiB FPGA 
 Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 使用普通 exFlash Erase/Program，不执行 Verify。
 配置更新会替换 FPGA bitstream，应与匹配的 `app.img` 一起更新。
 
+### BIOS 迭代：RAM 装载与 Flash 刷写
+
+临时测试优先 RAM 装载（UART → DDR 执行，不写 Flash）；验收通过后再刷 Flash 应用分区：
+
+```powershell
+# 仅重建固件（gateware 未变，不加 --synthesize）。参数必须与板端 bitstream 一致，
+# 从当前 run 的 validation.json 抄取 cpu-variant/cpu-verilog/sd-profile/usb-backend/rom-size/l2-size。
+& $MiniPython .\scripts\build.py --profile full --app firmware\bios\main.c --cpu-variant linux `
+    --cpu-verilog build\releases\v0.7.1\full-rv32imafc-rom4k-l24k\inputs\cpu\VexRiscv_MmuFpu.v `
+    --usb-backend ultra --sd-profile lite --audio-clock dds --rom-size 4096 --l2-size 4096 --purpose bios-iter
+
+# RAM 装载运行：'!' 软件复位 → 恢复菜单 → UART 传输 → DDR 执行，不触碰 Flash。
+& $MiniPython .\scripts\boot_upload.py --reset --mode uart --image <run>\firmware\app.img
+
+# 验收后刷入 Flash 应用分区，并从 Flash 启动。
+& $MiniPython .\scripts\boot_upload.py --reset --mode install --image <run>\firmware\app.img
+& $MiniPython .\scripts\boot_upload.py --mode flash
+```
+
+`--mode install` 要求目标 run 目录有通过 PnR/时序验证且 bitstream hash 未变的 `validation.json`；
+镜像 ABI 由 CSR 派生，仅改固件时不变，可直接刷入现役 bitstream 的板子。
+
+### FPGA 重启与卡死恢复
+
+| 状态 | 恢复方法 |
+| --- | --- |
+| BIOS/monitor 正常运行 | BIOS `reboot` 命令或 setup 菜单 `!`（软件复位，重入 ROM 装载器） |
+| 固件卡死（如 U-Boot `### ERROR ### Please RESET the board`） | 断电重启；ROM 装载器只在 FPGA 上电/复位时运行，卡死后串口无菜单 |
+| 免断电重跑 gateware | `boot_upload.py --program`（调试器把 bitstream 写入 SRAM，FPGA 立即运行新配置） |
+| 重新加载 Flash 中的配置 | 调试器 `--operation_index 1`（Flash reload），`--configure-flash` 写入后自动执行 |
+| 更新持久 gateware | `boot_upload.py --configure-flash --mode install`（bitstream 写 FPGA Flash + reload + 安装匹配 `app.img`） |
+
+### TFTP 引导服务器
+
+`boot net` 需要主机侧 TFTP 服务器；UDP69 防火墙规则绑定的是 Python313 解释器，`.venv` 的 python 被防火墙阻断：
+
+```powershell
+& C:\Users\bearice\AppData\Local\Programs\Python\Python313\python.exe .\scripts\bios_tftp.py `
+    --bind 169.254.25.153 --file build\uboot\firmware\UBOOT.OSB --name UBOOT.OSB
+```
+
+板端 `boot net <file>` 的文件名必须与 `--name` 一致；payload 校验只接受 load=0x41000000 的 OS 载荷
+（OSB1/OSB2，如 `UBOOT.OSB`），BIOS 自身的 `app.img`（load=0x40800000）会被拒绝。
+ARP 解析每 250 ms 重试一次，最长 10 秒；link 位由 HAL 每 250 ms 轮询刷新，首包 `HAL_NO_MEDIA` 属正常。
+
 详细启动流程、镜像格式、分区、恢复命令和验证范围见 [bootloader](docs/bootloader.md)。
 当前默认 full 配置的结构、时钟和资源见
 [系统设计](docs/system-design.md)。
