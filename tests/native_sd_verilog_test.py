@@ -6,9 +6,11 @@ import subprocess
 import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from migen import Module
 from migen.fhdl import verilog
 from litedram.common import LiteDRAMNativePort
 from gateware.native_dma import NativeSDTransfer
+from gateware.memory import MemoryPort, PortBuffer
 
 TB = r'''
 module tb;
@@ -46,10 +48,12 @@ def main():
     parser.add_argument('--iverilog',required=True)
     args=parser.parse_args();compiler=Path(args.iverilog).resolve()
     runner=compiler.with_name('vvp.exe' if compiler.suffix=='.exe' else 'vvp')
-    port=LiteDRAMNativePort('both',23,128);dut=NativeSDTransfer(port,True)
-    ports={'base':dut._base.storage,'length':dut._length.storage,'enable':dut._enable.storage,
-           'done':dut._done.status,'error':dut._error.status,'valid':dut.sink.valid,
-           'ready':dut.sink.ready,'data':dut.sink.data,'cmd_valid':port.cmd.valid,
+    port=LiteDRAMNativePort('both',23,128);client=MemoryPort('write')
+    dut=Module();dut.submodules.transfer=transfer=NativeSDTransfer(client,True)
+    dut.submodules.buffer=PortBuffer(client,port)
+    ports={'base':transfer._base.storage,'length':transfer._length.storage,'enable':transfer._enable.storage,
+           'done':transfer._done.status,'error':transfer._error.status,'valid':transfer.sink.valid,
+           'ready':transfer.sink.ready,'data':transfer.sink.data,'cmd_valid':port.cmd.valid,
            'cmd_ready':port.cmd.ready,'wvalid':port.wdata.valid,'wready':port.wdata.ready,
            'wdata':port.wdata.data,'mask':port.wdata.we}
     for name,signal in ports.items():signal.name_override=name

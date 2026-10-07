@@ -1,0 +1,792 @@
+{
+  "created_at": "2026-10-07T05:57:08+00:00",
+  "candidate": {
+    "id": "da9a3d8-full-rv32imafc-rom4k-l24k-buffered-memory-ports-57060960-709ddac8",
+    "label": "buffered-memory-ports",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\buffered-ports-final",
+    "purpose": "buffered-memory-ports",
+    "registered_at": "2026-10-07T05:52:41+00:00",
+    "source": {
+      "commit": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+      "dirty": true,
+      "inputs_sha256": "b7558e21a7e9f26debe94b4c411bf0716bb1119d25b66dafe07fabf96b17d166",
+      "kind": "captured",
+      "created_at": "2026-10-07T05:49:09+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--purpose",
+        "buffered-memory-ports",
+        "--output-dir",
+        "build\\buffered-ports-final",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\recipes\\buffered-ports-final-709ddac8"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "ad4dbd4338e3ed8b47596a5f933ff0bcb6ea192695d9f558a0088c67c69dc998",
+    "bitstream_sha256": "570609605ae7984068ee68a512525aac840a7c256348358c990804e1562f9d2c",
+    "abi": "ba18270e",
+    "component_versions": {
+      "rtl": "0.7.1",
+      "bootloader": "0.7.1",
+      "hal": "0.7.1",
+      "bios": "0.7.2",
+      "opensbi": "0.7.1",
+      "uboot": "0.1.0"
+    },
+    "status": "pnr-pass",
+    "evidence": []
+  },
+  "baseline": {
+    "id": "v0.7.1-full-rv32imafc-rom4k-l24k-code-release-621823d2-123ceedf",
+    "label": "正式代码发布",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k",
+    "purpose": "code-release",
+    "registered_at": "2026-10-06T07:29:29+00:00",
+    "source": {
+      "commit": "ce277e0992754fc08a3b7a133088d25d9191dd03",
+      "dirty": false,
+      "inputs_sha256": "d3ece9562dc993a527e2097e75f263eb693e681fc74cda669eab0bd27383142f",
+      "kind": "captured",
+      "created_at": "2026-10-06T07:24:00+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "final-build",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "2",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--with-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\v0.7.1-ce277e099275-full-rv32imafc-rom4k-l24k-final-build"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\replay",
+      "version": "0.7.1"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "2b65ca0201b33e5d3573493125a98e48596d317c88cc9f07ff9c0d9c8baa9006",
+    "bitstream_sha256": "621823d2261fa44e2cf07970d0763b6de4b9441b174de93bb4f9ebda780a0e1a",
+    "abi": "ba18270e",
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\reports\\firmware-verification.json",
+        "sha256": "28b558ba87e436f9ce9b64224624b5d9bc8bb2ab168a3dbad016ebdcd218f374"
+      }
+    ]
+  },
+  "comparisons": [
+    {
+      "name": "cache.read-conflict",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 112.87939453125,
+        "minimum": 112.824462890625,
+        "maximum": 112.882080078125,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 111.760498046875,
+        "minimum": 111.720458984375,
+        "maximum": 111.843017578125,
+        "samples": 3
+      },
+      "change_percent": -0.99123182669556
+    },
+    {
+      "name": "cache.read-l1",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 3.26025390625,
+        "minimum": 3.26025390625,
+        "maximum": 3.2626953125,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 3.295654296875,
+        "minimum": 3.294189453125,
+        "maximum": 3.29638671875,
+        "samples": 3
+      },
+      "change_percent": 1.085816983675314
+    },
+    {
+      "name": "cache.read-l2",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 55.158935546875,
+        "minimum": 55.091064453125,
+        "maximum": 55.171875,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 55.17529296875,
+        "minimum": 55.1298828125,
+        "maximum": 55.226806640625,
+        "samples": 3
+      },
+      "change_percent": 0.029655071681178313
+    },
+    {
+      "name": "cache.read-l2-off",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 274.0341796875,
+        "minimum": 273.9287109375,
+        "maximum": 274.260009765625,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 270.746337890625,
+        "minimum": 270.639404296875,
+        "maximum": 272.116943359375,
+        "samples": 3
+      },
+      "change_percent": -1.1997925954435162
+    },
+    {
+      "name": "cache.write-l1-conflict",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 7.492683410644531,
+        "minimum": 7.492176055908203,
+        "maximum": 7.493473052978516,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 7.471710205078125,
+        "minimum": 7.471096038818359,
+        "maximum": 7.472072601318359,
+        "samples": 3
+      },
+      "change_percent": -0.2799158114249245
+    },
+    {
+      "name": "cache.write-l1-hot",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 7.493007659912109,
+        "minimum": 7.4915924072265625,
+        "maximum": 7.493045806884766,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 7.473812103271484,
+        "minimum": 7.472949981689453,
+        "maximum": 7.474544525146484,
+        "samples": 3
+      },
+      "change_percent": -0.2561795945214662
+    },
+    {
+      "name": "cache.write-l2-conflict",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 60.29484176635742,
+        "minimum": 60.285369873046875,
+        "maximum": 60.29720687866211,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 60.295074462890625,
+        "minimum": 60.2789306640625,
+        "maximum": 60.29688262939453,
+        "samples": 3
+      },
+      "change_percent": 0.000385931078650259
+    },
+    {
+      "name": "cache.write-l2-off",
+      "size": 4,
+      "metric": "cycles/access",
+      "baseline": {
+        "median": 33.21878433227539,
+        "minimum": 33.214290618896484,
+        "maximum": 33.270721435546875,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 33.03090286254883,
+        "minimum": 33.030845642089844,
+        "maximum": 33.03227996826172,
+        "samples": 3
+      },
+      "change_percent": -0.5655880355140419
+    },
+    {
+      "name": "cpu.fadd-dependent",
+      "size": 1,
+      "metric": "cycles/iteration",
+      "baseline": {
+        "median": 9.157912,
+        "minimum": 9.157428,
+        "maximum": 9.1591,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 9.173734,
+        "minimum": 9.172706,
+        "maximum": 9.17453,
+        "samples": 3
+      },
+      "change_percent": 0.1727686398384165
+    },
+    {
+      "name": "cpu.mul-add",
+      "size": 2,
+      "metric": "cycles/iteration",
+      "baseline": {
+        "median": 39.71828,
+        "minimum": 39.70074,
+        "maximum": 39.72135,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 39.76052,
+        "minimum": 39.75823,
+        "maximum": 39.77271,
+        "samples": 3
+      },
+      "change_percent": 0.10634901612054382
+    },
+    {
+      "name": "cpu.xorshift",
+      "size": 6,
+      "metric": "cycles/iteration",
+      "baseline": {
+        "median": 44.781424,
+        "minimum": 44.779962,
+        "maximum": 44.781956,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 44.859846,
+        "minimum": 44.857606,
+        "maximum": 44.860274,
+        "samples": 3
+      },
+      "change_percent": 0.1751217201132249
+    },
+    {
+      "name": "io.flash-read",
+      "size": 65536,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 0.526731038349812,
+        "minimum": 0.5266993004871477,
+        "maximum": 0.5269702680564254,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 0.5248839796451392,
+        "minimum": 0.5248011213670467,
+        "maximum": 0.525240318455306,
+        "samples": 3
+      },
+      "change_percent": -0.35066448912133286
+    },
+    {
+      "name": "io.rgb-fill16",
+      "size": 261120,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 3.6264114429453396,
+        "minimum": 3.613182631368179,
+        "maximum": 3.6570737278913494,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 3.653478926496673,
+        "minimum": 3.6344766627260388,
+        "maximum": 3.6573109471813083,
+        "samples": 3
+      },
+      "change_percent": 0.7463985809991192
+    },
+    {
+      "name": "io.sd-read",
+      "size": 512,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 0.5962660152579703,
+        "minimum": 0.595773842501783,
+        "maximum": 0.5968050400265205,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 0.614692710964613,
+        "minimum": 0.6145086726633154,
+        "maximum": 0.6147572603293513,
+        "samples": 3
+      },
+      "change_percent": 3.0903481391054033
+    },
+    {
+      "name": "io.sd-read",
+      "size": 4096,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 1.8882632792901892,
+        "minimum": 1.8856634859399746,
+        "maximum": 1.8889623240482754,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 1.9348066262354426,
+        "minimum": 1.934251627890348,
+        "maximum": 1.935409576213042,
+        "samples": 3
+      },
+      "change_percent": 2.464875923592036
+    },
+    {
+      "name": "io.uart-tx",
+      "size": 4096,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 0.010978488626426308,
+        "minimum": 0.010978409946825852,
+        "maximum": 0.010978570906953386,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 0.010977799575426722,
+        "minimum": 0.010977769752784139,
+        "maximum": 0.010977866934060573,
+        "samples": 3
+      },
+      "change_percent": -0.0062763739439253285
+    },
+    {
+      "name": "mem.chase32",
+      "size": 1048576,
+      "metric": "ns/load",
+      "baseline": {
+        "median": 2130.086135864258,
+        "minimum": 2128.136571248372,
+        "maximum": 2130.35405476888,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 2114.2286936442056,
+        "minimum": 2114.1653696695967,
+        "maximum": 2114.6011988321943,
+        "samples": 3
+      },
+      "change_percent": -0.7444507502800235
+    },
+    {
+      "name": "mem.copy32",
+      "size": 1024,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 23.723197728899205,
+        "minimum": 23.71263136303762,
+        "maximum": 23.72867681779461,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 23.814229954967292,
+        "minimum": 23.813880237614896,
+        "maximum": 23.82131157759415,
+        "samples": 3
+      },
+      "change_percent": 0.38372662534102986
+    },
+    {
+      "name": "mem.copy32",
+      "size": 4096,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 5.2819560984936915,
+        "minimum": 5.279751598246806,
+        "maximum": 5.292745736230194,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 5.347860499276257,
+        "minimum": 5.340642655552671,
+        "maximum": 5.350387515191756,
+        "samples": 3
+      },
+      "change_percent": 1.2477271592878258
+    },
+    {
+      "name": "mem.copy32",
+      "size": 65536,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 5.325029600508292,
+        "minimum": 5.324287723443717,
+        "maximum": 5.332178265028278,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 5.3878778137069405,
+        "minimum": 5.386791372083995,
+        "maximum": 5.390212290815968,
+        "samples": 3
+      },
+      "change_percent": 1.1802415744815775
+    },
+    {
+      "name": "mem.copy32",
+      "size": 1048576,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 5.3292352698382786,
+        "minimum": 5.3264231869854175,
+        "maximum": 5.334418709726806,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 5.389103125697776,
+        "minimum": 5.383980074966539,
+        "maximum": 5.399495147203736,
+        "samples": 3
+      },
+      "change_percent": 1.1233854920673192
+    },
+    {
+      "name": "mem.libc-copy",
+      "size": 1048576,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 5.165413766860771,
+        "minimum": 5.155191453929815,
+        "maximum": 5.165425773563403,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 5.227987298082061,
+        "minimum": 5.22570198814445,
+        "maximum": 5.232219870436284,
+        "samples": 3
+      },
+      "change_percent": 1.2113943634629365
+    },
+    {
+      "name": "mem.libc-set",
+      "size": 1048576,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 8.704042113637362,
+        "minimum": 8.69732105116982,
+        "maximum": 8.711961217833442,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 8.56609678804207,
+        "minimum": 8.56487155048014,
+        "maximum": 8.571999221662471,
+        "samples": 3
+      },
+      "change_percent": -1.5848421204116225
+    },
+    {
+      "name": "mem.read32",
+      "size": 1024,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 18.338069649211064,
+        "minimum": 18.331732871210715,
+        "maximum": 18.343906047404932,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 18.468124478852612,
+        "minimum": 18.457625444944135,
+        "maximum": 18.470847768813943,
+        "samples": 3
+      },
+      "change_percent": 0.7092067601954133
+    },
+    {
+      "name": "mem.read32",
+      "size": 4096,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 11.430563612515325,
+        "minimum": 11.421824937308457,
+        "maximum": 11.44276918065577,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 11.433735121137564,
+        "minimum": 11.428549659905409,
+        "maximum": 11.436383022765645,
+        "samples": 3
+      },
+      "change_percent": 0.027745863893935407
+    },
+    {
+      "name": "mem.read32",
+      "size": 65536,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 8.312431032798775,
+        "minimum": 8.308971889363269,
+        "maximum": 8.321984227343293,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 8.302167917434387,
+        "minimum": 8.298196234914744,
+        "maximum": 8.302928470547991,
+        "samples": 3
+      },
+      "change_percent": -0.1234670738787802
+    },
+    {
+      "name": "mem.read32",
+      "size": 1048576,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 8.31770183007462,
+        "minimum": 8.316706850221932,
+        "maximum": 8.324754211631902,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 8.305388009732807,
+        "minimum": 8.296520978375533,
+        "maximum": 8.305555863168737,
+        "samples": 3
+      },
+      "change_percent": -0.1480435412735015
+    },
+    {
+      "name": "mem.write32",
+      "size": 1024,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 20.54897265411216,
+        "minimum": 20.53935665942426,
+        "maximum": 20.549655330905964,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 20.652793496848382,
+        "minimum": 20.64955231770575,
+        "maximum": 20.6528788047766,
+        "samples": 3
+      },
+      "change_percent": 0.5052361715778941
+    },
+    {
+      "name": "mem.write32",
+      "size": 4096,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 19.43180117899215,
+        "minimum": 19.40347257480847,
+        "maximum": 19.449866995326197,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 19.626411261634782,
+        "minimum": 19.58196422766775,
+        "maximum": 19.63342433425512,
+        "samples": 3
+      },
+      "change_percent": 1.0015030559958005
+    },
+    {
+      "name": "mem.write32",
+      "size": 65536,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 8.688621945460651,
+        "minimum": 8.685854781483437,
+        "maximum": 8.689512844186172,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 8.572419298173175,
+        "minimum": 8.570487042209221,
+        "maximum": 8.572660585221248,
+        "samples": 3
+      },
+      "change_percent": -1.3374117094389848
+    },
+    {
+      "name": "mem.write32",
+      "size": 1048576,
+      "metric": "MiB/s",
+      "baseline": {
+        "median": 8.688389184229763,
+        "minimum": 8.688250791572049,
+        "maximum": 8.693621142422959,
+        "samples": 3
+      },
+      "candidate": {
+        "median": 8.571219188788389,
+        "minimum": 8.570822491838078,
+        "maximum": 8.57521146471472,
+        "samples": 3
+      },
+      "change_percent": -1.3485813417986492
+    }
+  ],
+  "configuration_differences": {},
+  "candidate_sources": [
+    {
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\reports\\performance\\buffered-ports\\all\\results.json",
+      "sha256": "a22dad07699446d6fccf80e4e5cbab9f628d24633930de3349f6dd2da26261cd",
+      "identity": "recorded"
+    },
+    {
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\reports\\performance\\buffered-ports\\cache\\results.json",
+      "sha256": "6df9e6df8d921e5854a4837fc671ebdc25a0c3439e61477ac927989af0b221cd",
+      "identity": "recorded"
+    }
+  ],
+  "baseline_sources": [
+    {
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\reports\\performance\\candidate\\all\\results.json",
+      "sha256": "fcfe2d1f164934e530e34e906cbbae792c1146edc7cbffe7808e756c305d1d95",
+      "identity": "recorded"
+    },
+    {
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\reports\\performance\\candidate\\cache\\results.json",
+      "sha256": "caa272dc2891361718416b64ae7e054bde68612034efe9ad8ad175bd7cb89e39",
+      "identity": "recorded"
+    }
+  ],
+  "unmatched_candidate": [],
+  "unmatched_baseline": [],
+  "lcd_underflows": {
+    "baseline": {
+      "all": [
+        0,
+        0
+      ],
+      "cache": [
+        0,
+        27
+      ]
+    },
+    "candidate": {
+      "all": [
+        0,
+        0
+      ],
+      "cache": [
+        0,
+        27
+      ]
+    }
+  },
+  "method": "Explicit build pairing; observed whole-version differences, not attribution to a single RTL change.",
+  "limitations": [
+    "基线使用 v0.7.1 已保存三轮实板数据，候选 BIOS 为基于 da9a3d8 的 v0.7.2；两版 benchmark.c 与 firmware/hal 无差异，但整体固件布局不同，因此数值为版本对比，不能完全归因于端口缓冲。",
+    "CPU 输入 RTL、sys 60 MHz / DDR CK 120 MHz、4 KiB ROM/L2、SD lite、USB ultra、DDS audio 相同；没有补测基线或运行网络专用基准。",
+    "候选另行通过 60 秒 SD/LCD/USB/audio 并发 soak：42 轮，LCD underflow、audio underrun/error 为 0。没有主机听音或屏幕人工观察。"
+  ]
+}

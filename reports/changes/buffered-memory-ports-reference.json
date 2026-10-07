@@ -1,0 +1,168 @@
+{
+  "created_at": "2026-10-07T09:46:09+00:00",
+  "title": "集中管理 SD/LCD 内存端口缓冲的实验分支",
+  "changes": [
+    "SD 读写端口收窄到 32 bit、LCD 到 16 bit；每端口 16 B 缓冲由 SharedMemoryController 管理，保留内部 128-bit SharedL2/native 路径。",
+    "写 completion、取消排空和缓存维护屏障通过 RTL 回归；匹配候选 PnR 0/0、实板 49 检查、60 秒 soak 与三轮 all/cache 通过。",
+    "按用户要求仅提交参考分支，暂不合并或发布；已有 dirty 候选与捕获 recipe 保留，不将其重新标为提交后发布构建。"
+  ],
+  "build": {
+    "id": "da9a3d8-full-rv32imafc-rom4k-l24k-buffered-memory-ports-57060960-709ddac8",
+    "label": "buffered-memory-ports",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\buffered-ports-final",
+    "purpose": "buffered-memory-ports",
+    "registered_at": "2026-10-07T05:52:41+00:00",
+    "source": {
+      "commit": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+      "dirty": true,
+      "inputs_sha256": "b7558e21a7e9f26debe94b4c411bf0716bb1119d25b66dafe07fabf96b17d166",
+      "kind": "captured",
+      "created_at": "2026-10-07T05:49:09+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--purpose",
+        "buffered-memory-ports",
+        "--output-dir",
+        "build\\buffered-ports-final",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\recipes\\buffered-ports-final-709ddac8"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "ad4dbd4338e3ed8b47596a5f933ff0bcb6ea192695d9f558a0088c67c69dc998",
+    "bitstream_sha256": "570609605ae7984068ee68a512525aac840a7c256348358c990804e1562f9d2c",
+    "abi": "ba18270e",
+    "component_versions": {
+      "rtl": "0.7.1",
+      "bootloader": "0.7.1",
+      "hal": "0.7.1",
+      "bios": "0.7.2",
+      "opensbi": "0.7.1",
+      "uboot": "0.1.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "kind": "firmware-verification",
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\build\\buffered-ports-final\\firmware-verification.json",
+        "passed": true
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\buffered-memory-ports.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 24,
+    "checks": [
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+          "tests/config_test.py"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\config_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+          "tests/memory_ports_test.py"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\memory_ports_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+          "sim/test_native_dma.py"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\test_native_dma.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+          "tests/native_sd_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\native_sd_verilog_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+          "tests/memory_controller_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\memory_controller_verilog_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+          "tests/lcd_memory_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\lcd_memory_verilog_test.log"
+      }
+    ],
+    "workflow": {
+      "passed": true,
+      "tests_run": 18,
+      "command": [
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\memory-ports\\.venv\\Scripts\\python.exe",
+        "tests/workflow_test.py",
+        "--report",
+        "build/reports/checks/commit-workflow.json"
+      ],
+      "source_inputs_sha256": "b7558e21a7e9f26debe94b4c411bf0716bb1119d25b66dafe07fabf96b17d166"
+    },
+    "source_inputs_sha256": "b7558e21a7e9f26debe94b4c411bf0716bb1119d25b66dafe07fabf96b17d166"
+  },
+  "mode": "staged review",
+  "base_revision": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+  "source_revision": null
+}

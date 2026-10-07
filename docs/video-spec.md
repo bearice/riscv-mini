@@ -7,7 +7,7 @@
 
 480×272、RGB565、9 MHz 像素时钟、约 59.94006 Hz。
 水平 active/front/sync/back=480/2/41/2，总 525；垂直=272/2/10/2，总 286；HS/VS 负极性。
-DDR → 单个 LiteDRAM native 128-bit DMA → 8 KiB 数据 FIFO → RGB565 转换/CDC → LCD 像素寄存器。
+DDR → SharedL2 → 内存控制器的 16 B read buffer → 16-bit RGB565 stream → 8 KiB 数据 FIFO → CDC → LCD 像素寄存器。宽度转换位于 [共享内存控制器](memory-controller.md)。
 LCD DCLK 转发相位使数据/控制在外部时钟上升沿前稳定；面板实际显示仍需用户目视验收。
 
 单帧 261,120 字节（255 KiB），stride 960，双帧有效像素 510 KiB。

@@ -269,6 +269,8 @@ def main():
         'cpu_variant':a.cpu_variant,'cpu_verilog':str(a.cpu_verilog.resolve()) if a.cpu_verilog else None,'isa':isa,'abi':'ilp32',
          'cpu_capabilities':capabilities,'l2_size_bytes':a.l2_size,
         'memory_system':'shared-writeback',
+        'memory_port_widths':{'wishbone':32,'video':16,'sd':32},
+        'memory_burst_bytes':16,
         'dma_backend':'native' if features.sd and a.sd_profile=='lite' else 'wishbone',
         'native_dma_clients':['sd'] if features.sd and a.sd_profile=='lite' else [],
         'l2_policy':'write-back',

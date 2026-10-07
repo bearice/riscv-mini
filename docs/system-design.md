@@ -6,14 +6,14 @@
 
 Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 8 KiB boot ROM 启动，在 L2 启动 RAM 上运行软件 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
-- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD/SD lite 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
+- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
 - 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，片上 ROM 负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
 
 MMU 配置另有 60 MHz 的独立 64 位机器定时器，接 MTIP；S-mode 外设 mask/pending CSR 为 `0x9c0` / `0xdc0`。OpenSBI 的 OSB1 一次性交接与保护边界见 [OpenSBI](opensbi-port.md)。
 
-SD lite 与 LCD 使用共享 L2 的 coherent 128-bit 入口，音频保留 32-bit Wishbone DMA，Ethernet 使用 CPU 访问 packet SRAM。详细路径见 [DMA](native-dma.md)。
+SD lite 与 LCD 分别使用 32-bit / 16-bit 客户端接口，由 [共享内存控制器](memory-controller.md) 的独立缓冲转换到共享 L2 的 coherent 128-bit 入口，音频保留 32-bit Wishbone DMA，Ethernet 使用 CPU 访问 packet SRAM。详细路径见 [DMA](native-dma.md)。
 
 ## 地址映射
 
@@ -53,7 +53,7 @@ Flash 写入按用户要求只做擦除与编程，不做写后读回或配置 C
 `scripts/build.py` 默认启用全部功能；`--profile minimal` 或 `--without-NAME` 裁剪外设，关闭项同时从硬件与应用驱动移除。
 
 - `--with-mmu` / `--with-fpu`：独立开关，默认 full 开启两者；minimal 默认关闭。
-- `--sd-profile`：`none` / `spi` / `lite` / `full` 四种 profile，默认 lite 原生四位 SDR + 128-bit coherent DMA，SPI 为回退（共用同一组 SD 引脚，需重新下载匹配的配置与应用）。
+- `--sd-profile`：`none` / `spi` / `lite` / `full` 四种 profile，默认 lite 原生四位 SDR + 32-bit DMA 端口和内存侧 burst buffer，SPI 为回退（共用同一组 SD 引脚，需重新下载匹配的配置与应用）。
 - `--l2-size`：共享 writeback 缓存，默认 `4096`（4 KiB）；启动 RAM 要求至少 4 KiB，`8192` 提供但尚未实板验收。CPU 帧缓冲访问不分配缓存行。见 [L2 缓存](l2-cache.md)。
 - `--usb-backend`：默认轻量 Ultraembedded PIO Host + TinyUSB；OHCI 为可选回退（`gateware/usb.py` 在构建时把 Gowin IP 复制进 `build/vendor/`）。见 [轻量 USB](usb-light.md)。
 - 麦克风、Ethernet、音频、两块 LCD、board_io、WS2812 均为可裁剪功能；组合矩阵由 `scripts/build_matrix.py` 编译验证。
