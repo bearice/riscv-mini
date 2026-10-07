@@ -64,6 +64,7 @@ TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大
 | `set file NAME` | 默认程序文件名，1..63 字节 |
 | `set delay 0..30000` | 自动引导等待毫秒数 |
 | `set ip A.B.C.D` / `set server A.B.C.D` | 板端 / TFTP 服务器静态 IPv4 |
+| `ping [A.B.C.D] [1..32]` | ICMP echo 请求，默认目标为服务器地址、默认 4 包；先 ARP 解析，逐包 1 秒超时，打印 `PING a.b.c.d sent=N replies=N ms=N` |
 | `test bios` | 程序格式、截断、CRC、保留区拒绝和 ECALL 错误返回检查 |
 | `test ...` / `reboot` | [硬件自检](firmware-tests.md) / 软件复位；`!` 为 setup 的复位快捷键 |
 

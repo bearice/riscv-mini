@@ -34,7 +34,7 @@ static void settings_show(void) {
     bios_puts("IP=");for(unsigned i=0;i<4;++i) {if(i)bios_putc('.');bios_decimal(bios_settings.ip[i]);}
     bios_puts(" server=");for(unsigned i=0;i<4;++i) {if(i)bios_putc('.');bios_decimal(bios_settings.server[i]);}bios_puts("\r\n");
 }
-static int parse_ip(const char *p,uint8_t ip[4]) {
+int parse_ip(const char *p,uint8_t ip[4]) {
     uint8_t v[4];for(unsigned i=0;i<4;++i) {unsigned n=0,d=0;
         while(*p>='0' && *p<='9') {n=n*10+*p++-'0';if(++d>3 || n>255)return 0;}
         if(!d)return 0;
@@ -53,7 +53,7 @@ static int parse_hex(const char *p,unsigned digits,unsigned *value) {
 }
 static void command(char *s) {
     if(bios_benchmark_command(s))return;
-    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\n");return;}
+    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, ping [A.B.C.D] [1..32], io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\n");return;}
     if(!strcmp(s,"status")) {
         bios_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=");bios_decimal(MINI_FEATURE_MMU);
         bios_puts(" FPU=");bios_decimal(MINI_FEATURE_FPU);bios_puts("\r\n");bios_puts("BUILD " MINI_BUILD_ID " " MINI_BUILD_RTL_ID " " MINI_BUILD_ROM_ID "\r\n");settings_show();hal_video_status();
@@ -91,6 +91,31 @@ static void command(char *s) {
     if(!strncmp(s,"fetch ",6) && s[6]) {bios_fetch(s+6);return;}
     if(!strcmp(s,"boot sd") || !strncmp(s,"boot sd ",8)) {bios_sd_boot(s[7]?s+8:bios_settings.file);return;}
     if(!strcmp(s,"boot net") || !strncmp(s,"boot net ",9)) {bios_net_boot(bios_settings.server,s[8]?s+9:bios_settings.file);return;}
+    if(!strncmp(s,"ping",4)) {
+        const char *p=s+4;unsigned count=4;
+        while(*p==' ')++p;
+        if(!*p) {
+            char server[16];unsigned n=0;
+            for(unsigned i=0;i<4;++i) {
+                if(i)server[n++]='.';
+                unsigned v=bios_settings.server[i],w=1;
+                while(v>=10*w) w*=10;
+                while(w) {server[n++]='0'+v/w;v%=w;w/=10;}
+            }
+            server[n]=0;bios_ping(server,count);return;
+        }
+        const char *e=p;while(*e && *e!=' ')++e;
+        char target[17];unsigned n=(unsigned)(e-p);
+        if(!n || n>16) {bios_puts("ERR ping target\r\n");return;}
+        memcpy(target,p,n);target[n]=0;
+        p=e;while(*p==' ')++p;
+        if(*p) {unsigned v=0;const char *q=p;while(*q>='0' && *q<='9')++q;
+            if(q==p) {bios_puts("ERR ping count\r\n");return;}
+            for(const char *t=p;t<q;++t)v=v*10+*t-'0';
+            if(!v || v>32) {bios_puts("ERR ping count\r\n");return;}
+            count=v;}
+        bios_ping(target,count);return;
+    }
     if(!strncmp(s,"test lcd",8) || !strncmp(s,"test soak",9))bios_video_mode(BIOS_GRAPHICS);
     if(tests_command(s))return;
     if(*s)bios_puts("ERR unknown command\r\n");

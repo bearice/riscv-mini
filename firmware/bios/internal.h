@@ -21,6 +21,8 @@ void bios_sd_list(void);
 int bios_net_boot(const uint8_t server[4],const char *path);
 int bios_fetch(const char *path);
 int bios_tftp_get(const uint8_t server[4],const char *path,void *dest,unsigned capacity,unsigned *length);
+int bios_ping(const char *target,unsigned count);
+int parse_ip(const char *text,uint8_t ip[4]);
 int bios_file_read(const char *path,unsigned offset,void *data,unsigned capacity);
 int bios_payload_run(const void *image,unsigned length);
 int bios_payload_check(const void *image,unsigned length);
