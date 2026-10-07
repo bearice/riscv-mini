@@ -143,36 +143,23 @@ class MiniSoC(SoCCore):
         self.ddrphy.settings.rtt_wr='disabled'
         self.comb += [self.crg.stop.eq(self.ddrphy.init.stop),self.crg.reset.eq(self.ddrphy.init.reset)]
         self.sdram=SoftwareDDRCore(self.ddrphy,H5TQ1G63EFR(60e6,'1:2'),self.sys_clk_freq)
-        # A single shared writeback cache owns CPU, video and SD transactions.
-        from types import SimpleNamespace
-        from litedram.common import LiteDRAMNativePort
+        # The memory controller owns client burst buffers and the shared cache.
         dma_sd=features.sd and sd_profile=='lite'
         backend=self.sdram.crossbar.get_port()
-        self.memory_port=SimpleNamespace(cpu=backend,
-            video=LiteDRAMNativePort('read',backend.address_width,128),
-            dma=LiteDRAMNativePort('both',backend.address_width,128))
         self.add_constant('CONFIG_DMA_NATIVE',int(dma_sd))
-        sd_ports=None
-        if dma_sd:
-            from gateware.native_dma import NativeDMAArbiter
-            dma_port=self.memory_port.dma
-            self.native_dma=NativeDMAArbiter(dma_port,2)
-            sd_ports=tuple(self.native_dma.ports)
-        else:
-            self.comb += [self.memory_port.dma.cmd.valid.eq(0),self.memory_port.dma.wdata.valid.eq(0),
-                          self.memory_port.dma.rdata.ready.eq(1)]
-        if not features.video:
-            self.comb += [self.memory_port.video.cmd.valid.eq(0),self.memory_port.video.rdata.ready.eq(1)]
+        self.add_constant('CONFIG_BUFFERED_MEMORY_PORTS',1)
         wb_ram=wishbone.Interface(data_width=32,address_width=32,addressing='word')
         self.bus.add_slave(name='main_ram',slave=wb_ram,
             region=SoCRegion(origin=0x40000000,size=128*1024*1024))
         ram_request=wishbone.Interface(data_width=32,address_width=32,addressing='word')
         self.add_constant('CONFIG_L2_SIZE',l2_size)
         self.add_constant('CONFIG_L2_MODE',2)
-        from gateware.shared_l2 import SharedL2
+        from gateware.memory import SharedMemoryController
         self.comb += wb_ram.connect(ram_request)
-        self.l2=SharedL2(ram_request,self.memory_port.cpu,size=l2_size,writeback=True,
-            enabled=self.sdram.boot.ready,video=self.memory_port.video,dma=self.memory_port.dma,boot_ram=True)
+        self.memory=SharedMemoryController(ram_request,backend,size=l2_size,
+            enabled=self.sdram.boot.ready,video=features.video,sd=dma_sd,eth=features.eth_dma)
+        self.l2=self.memory.l2
+        sd_ports=(self.memory.sd_read,self.memory.sd_write) if dma_sd else None
         self.add_constant('CONFIG_SHARED_L2',1)
 
         # System timers and board IO.
@@ -205,6 +192,7 @@ class MiniSoC(SoCCore):
                 self.sdcard=NativeSD(self,profile=sd_profile,native_ports=sd_ports)
                 self.irq.add("sdcard",use_loc_if_exists=True)
                 self.sd_control=SDControl(self.sdcard.reset)
+                if dma_sd:self.comb += self.memory.sd_reset.eq(self.sdcard.reset)
             else:
                 self.spisdcard = SPIMaster(
                     platform.request('spisdcard'), 8, 60e6, 400e3,
@@ -235,7 +223,7 @@ class MiniSoC(SoCCore):
             platform.add_extension([('rgb_lcd',0,
                 *[Subsignal(name,Pins(pins[name])) for name in ('clk','hsync','vsync','de')],
                 *[Subsignal(color,Pins(' '.join(pins[color+'_lsb_first']))) for color in 'rgb'],IOStandard('LVCMOS33'))])
-            self.rgb_lcd=RGBLCD(self.memory_port.video,platform.request('rgb_lcd'))
+            self.rgb_lcd=RGBLCD(self.memory.video,platform.request('rgb_lcd'))
 
         # Shared audio reference, DAC output and microphone inputs.
         audio_tick=mic_tick=1

@@ -6,7 +6,6 @@ from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 from litex.build.io import DDROutput, SDROutput
-from litedram.frontend.dma import LiteDRAMDMAReader
 
 WIDTH, HEIGHT = 480, 272
 BASES = (0x47e00000, 0x47e40000)
@@ -57,23 +56,21 @@ class LCDScan(LiteXModule):
 
 class RGBLCD(LiteXModule):
     def __init__(self, port, pads):
-        if port.data_width % 16: raise ValueError('LCD DMA requires complete RGB565 pixels')
-        from migen.fhdl.bitcontainer import log2_int
-        word_bytes=port.data_width//8
-        shift=log2_int(word_bytes)
-        words=FRAME_BYTES//word_bytes
-        if FRAME_BYTES%word_bytes: raise ValueError('Frame must contain complete native words')
+        if port.data_width != 16: raise ValueError('LCD requires a 16-bit buffered memory port')
+        words=FRAME_BYTES//16
         self._enable = CSRStorage(name='enable')
         self._select = CSRStorage(name='select')
         packed_status(self, 'rgb_lcd')
         self._frames = CSRStatus(32,name='frames')
         self._completed = CSRStatus(32,name='completed')
         self._underflows = CSRStatus(32,name='underflows')
-        self.dma = dma = LiteDRAMDMAReader(port,fifo_depth=8192//word_bytes,fifo_buffered=True)
-        self.conv = conv = stream.Converter(port.data_width,16)
+        self.fifo = fifo = stream.SyncFIFO([('data',16)],depth=8192//2,buffered=True)
         self.cdc = cdc = stream.ClockDomainCrossing([('data',16)],cd_from='sys',cd_to='video')
         self.scan = scan = ClockDomainsRenamer('video')(LCDScan())
-        self.comb += [dma.source.connect(conv.sink),conv.source.connect(cdc.sink),cdc.source.connect(scan.sink)]
+        final_burst=Signal()
+        self.comb += [port.rdata.connect(fifo.sink,omit={'last'}),
+                      fifo.sink.last.eq(port.rdata.last & final_burst),
+                      fifo.source.connect(cdc.sink),cdc.source.connect(scan.sink)]
         enable_source=Signal(name_override='lcd_video_enable')
         enable_source.attr.add('keep')
         self.comb += enable_source.eq(self._enable.storage)
@@ -92,8 +89,8 @@ class RGBLCD(LiteXModule):
         selected = Signal()
         offset = Signal(max=words)
         self.comb += [self._active.status.eq(selected),self._busy.status.eq(busy),
-            dma.sink.valid.eq(issuing),dma.sink.last.eq(offset==words-1),
-            dma.sink.address.eq((BASES[0]-0x40000000)//word_bytes + (selected<<(18-shift)) + offset)]
+            port.cmd.valid.eq(issuing),port.cmd.we.eq(0),port.cmd.count.eq(8),
+            port.cmd.addr.eq((BASES[0]-0x40000000)//16 + (selected<<14) + offset)]
         self.sync += [
             If(start.o,self._frames.status.eq(self._frames.status+1),pending.eq(self._enable.storage)),
             If(error.o,self._underflows.status.eq(self._underflows.status+1)),
@@ -101,8 +98,9 @@ class RGBLCD(LiteXModule):
             If(pending & ~busy,
                 pending.eq(0),
                 If(self._enable.storage,busy.eq(1),issuing.eq(1),offset.eq(0),selected.eq(self._select.storage))),
-            If(dma.sink.valid & dma.sink.ready,
-                If(dma.sink.last,issuing.eq(0)).Else(offset.eq(offset+1))),
+            If(port.cmd.valid & port.cmd.ready,
+                final_burst.eq(offset==words-1),
+                If(offset==words-1,issuing.eq(0)).Else(offset.eq(offset+1))),
         ]
         if pads is None: return
         # Register all LCD data/controls at pixel rising edge; forwarded clock

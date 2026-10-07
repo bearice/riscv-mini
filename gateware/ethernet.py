@@ -6,6 +6,7 @@ from migen.genlib.resetsync import AsyncResetSynchronizer
 from litex.gen import LiteXModule
 from litex.build.generic_platform import Subsignal, Pins, IOStandard
 from litex.soc.interconnect.csr import CSRStatus
+from litex.soc.interconnect import wishbone
 from liteeth.phy.rmii import LiteEthPHYRMIICRG, LiteEthPHYRMIITX, LiteEthPHYRMIIRX
 from liteeth.phy.common import LiteEthPHYMDIO
 
@@ -64,3 +65,8 @@ def add_ethernet(soc):
     # state in eth_rx/eth_tx, without driving the shared Ethernet/USB F10 pin.
     ResetInserter(['sys'])(soc.ethmac)
     soc.comb += soc.ethmac.reset_sys.eq(soc.ethphy.crg.reset)
+    if soc.features.eth_dma:
+        from gateware.ethernet_dma import EthernetDMA
+        bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
+        soc.eth_dma=EthernetDMA(bus,soc.memory.eth_read,soc.memory.eth_write)
+        soc.bus.add_master(name='eth_dma',master=bus)

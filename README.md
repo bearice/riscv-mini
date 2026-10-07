@@ -20,7 +20,7 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 K
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
-| SD | 原生四位 SD lite + 128-bit coherent DMA，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
+| SD | 原生四位 SD lite + 32-bit DMA 端口 / 内存侧 burst buffer，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
 | SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 | 音频 | PT8211 PCM16 stereo，48,000 Hz 共用 DDS；512 帧 FIFO、DDR ring DMA；默认静音 |
@@ -37,7 +37,7 @@ MMU/FPU 独立开关、SD none/spi/lite/full 四种 profile 及 48 kHz 共用 DD
 MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/rtl-defaults.md)。
 
 软件 DDR 启动、L2 启动 RAM和函数大小见 [DDR 启动](docs/ddr-boot.md)。
-默认包含 4 KiB 共享 writeback L2（`--l2-size 4096`）：CPU/音频 32-bit，LCD/SD lite 128-bit coherent，帧缓冲不分配缓存行，
+默认包含 4 KiB 共享 writeback L2（`--l2-size 4096`）：CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent，帧缓冲不分配缓存行，
 后端直接连接 LiteDRAM native crossbar；启动 RAM 要求 L2 至少 4 KiB。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 

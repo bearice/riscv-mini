@@ -1,0 +1,752 @@
+{
+  "created_at": "2026-10-07T09:45:38.326340+00:00",
+  "purpose": "experimental branch reference, not a release",
+  "base_revision": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+  "builds": [
+    {
+      "build": "no-audio-control",
+      "bitstream_sha256": "42e03fbdb44019722fb2ab15e2ab3f96dbac71a1ca068e6737f7ca3361bb8ed3",
+      "image_sha256": "0ea67c9ce6729eb8395319c2d8892c96083fa981186e80941ba77366d5cef8c8",
+      "source_inputs_sha256": "ad324d1c0f6f560b903aad8dc56e235a4fc6aa229ca04ea12da20b37c9055fba",
+      "captured_recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\build\\recipes\\no-audio-control-f3fcae6c",
+      "arguments": [
+        "--profile",
+        "full",
+        "--without-audio",
+        "--without-mic",
+        "--without-eth-dma",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--purpose",
+        "no-audio-control",
+        "--output-dir",
+        "build\\no-audio-control",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "timing_violated_endpoints": {
+        "setup": 0,
+        "hold": 0
+      },
+      "resources": {
+        "Logic": {
+          "used": 18656,
+          "available": 20736
+        },
+        "Register": {
+          "used": 10707,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10077,
+          "available": 10368
+        },
+        "I/O Port": {
+          "used": 127,
+          "available": 207
+        },
+        "IOLOGIC": {
+          "used": 62,
+          "available": 207
+        },
+        "BSRAM": {
+          "used": 34,
+          "available": 46
+        },
+        "PRIMARY": {
+          "used": 8,
+          "available": 8
+        },
+        "LW": {
+          "used": 8,
+          "available": 8
+        },
+        "GCLK_PIN": {
+          "used": 6,
+          "available": 8
+        },
+        "CLKDIV": {
+          "used": 1,
+          "available": 8
+        },
+        "DHCEN": {
+          "used": 1,
+          "available": 16
+        },
+        "DLL": {
+          "used": 1,
+          "available": 4
+        },
+        "DQS": {
+          "used": 2,
+          "available": 9
+        },
+        "rPLL": {
+          "used": 3,
+          "available": 4
+        }
+      },
+      "board_passed": true,
+      "board_check_groups": 34,
+      "board_failures": []
+    },
+    {
+      "build": "eth-dma-final",
+      "bitstream_sha256": "1065bc878659b91549cbcf6c52f9c585d3c5bf0f0bbd38e8339d4fd052017d14",
+      "image_sha256": "133f79aa373e876ea8d77a0517797a1f42c4b9f1213257f641f7449dd4d40cff",
+      "source_inputs_sha256": "ad324d1c0f6f560b903aad8dc56e235a4fc6aa229ca04ea12da20b37c9055fba",
+      "captured_recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\build\\recipes\\eth-dma-final-2b4b1edd",
+      "arguments": [
+        "--profile",
+        "full",
+        "--without-audio",
+        "--without-mic",
+        "--with-eth-dma",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--purpose",
+        "eth-dma-no-audio",
+        "--output-dir",
+        "build\\eth-dma-final",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "timing_violated_endpoints": {
+        "setup": 0,
+        "hold": 0
+      },
+      "resources": {
+        "Logic": {
+          "used": 19143,
+          "available": 20736
+        },
+        "Register": {
+          "used": 10926,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10159,
+          "available": 10368
+        },
+        "I/O Port": {
+          "used": 127,
+          "available": 207
+        },
+        "IOLOGIC": {
+          "used": 62,
+          "available": 207
+        },
+        "BSRAM": {
+          "used": 34,
+          "available": 46
+        },
+        "PRIMARY": {
+          "used": 8,
+          "available": 8
+        },
+        "LW": {
+          "used": 8,
+          "available": 8
+        },
+        "GCLK_PIN": {
+          "used": 6,
+          "available": 8
+        },
+        "CLKDIV": {
+          "used": 1,
+          "available": 8
+        },
+        "DHCEN": {
+          "used": 1,
+          "available": 16
+        },
+        "DLL": {
+          "used": 1,
+          "available": 4
+        },
+        "DQS": {
+          "used": 2,
+          "available": 9
+        },
+        "rPLL": {
+          "used": 3,
+          "available": 4
+        }
+      },
+      "board_passed": true,
+      "board_check_groups": 34,
+      "board_failures": [],
+      "external_verification": {
+        "passed": true,
+        "bitstream_sha256": "1065bc878659b91549cbcf6c52f9c585d3c5bf0f0bbd38e8339d4fd052017d14",
+        "image_sha256": "133f79aa373e876ea8d77a0517797a1f42c4b9f1213257f641f7449dd4d40cff",
+        "commands": [
+          {
+            "name": "status",
+            "output": "status\r\nCPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=1 FPU=1\r\nBUILD 0.7.2+da9a3d8.ad324d1c.dirty rtlacd6a0b3 rom741ab13b\r\nboot=none delay_ms=3000 file=BIOSDE3.RPB\r\nIP=169.254.20.20 server=169.254.25.153\r\nRGB LCD active=00000000 frames=00000d1a completed=00000a86 underflows=00000000\r\nFLASH JEDEC=000b4017 bytes=00800000\r\nAUDIO hz=00000000 control=00000000 level=00000000 underruns=00000000 errors=00000000 amp=00000000\r\nIRQ timer=0000b0bc drops=00000000 unhandled=00000000\r\n> "
+          },
+          {
+            "name": "test flash",
+            "output": "test flash\r\nFLASH JEDEC=000b4017 bytes=00800000 UID=41503446333236000000000200280050 (read-only, no write verification)\r\nTEST flash PASS\r\n> "
+          },
+          {
+            "name": "test eth start",
+            "output": "test eth start\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000000 tx=00000000 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000001 slot=00000000 length=00000156 tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000000 ignored=00000000\r\nETH DMA rx=00000000 tx=00000000\r\nETH echo active IP=169.254.20.20 UDP=1234; host ARP/ping/UDP required\r\nTEST eth start PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000002 tx=00000000 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000000 length=00000156 tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000000 ignored=00000002\r\nETH DMA rx=00000001 tx=00000000\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test lcd start",
+            "output": "test lcd start\r\nTEST lcd start PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=00009c8b HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000b744\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=e35afa0c expected=e35afa0c fill_ticks=007edd41 fill_us=00021d49\r\nRGB LCD active=00000001 frames=00000e49 completed=00000bb5 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000011 tx=0000000f drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=0000000f ignored=00000002\r\nETH DMA rx=0000000d tx=0000000c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000a299 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000bd52\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=030aa1ce expected=030aa1ce fill_ticks=007f618c fill_us=00021f7e\r\nRGB LCD active=00000001 frames=00000ea6 completed=00000c12 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=0000001b tx=00000019 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000019 ignored=00000002\r\nETH DMA rx=00000015 tx=00000014\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000a8a8 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000c361\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=e7ca0956 expected=e7ca0956 fill_ticks=007fc864 fill_us=00022134\r\nRGB LCD active=00000001 frames=00000f03 completed=00000c6f underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000025 tx=00000023 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000023 ignored=00000002\r\nETH DMA rx=0000001d tx=0000001c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000aeb8 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000c971\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=65d31bb8 expected=65d31bb8 fill_ticks=007f1435 fill_us=00021e34\r\nRGB LCD active=00000001 frames=00000f60 completed=00000ccc underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=0000002f tx=0000002d drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=0000002d ignored=00000002\r\nETH DMA rx=00000025 tx=00000024\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000b4c7 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000cf80\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=945ebfdd expected=945ebfdd fill_ticks=007f4f53 fill_us=00021f30\r\nRGB LCD active=00000001 frames=00000fbd completed=00000d29 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000039 tx=00000037 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000037 ignored=00000002\r\nETH DMA rx=0000002d tx=0000002c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000bad6 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000d58f\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=ab8245a4 expected=ab8245a4 fill_ticks=007fbcdc fill_us=00022103\r\nRGB LCD active=00000001 frames=0000101a completed=00000d86 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000043 tx=00000041 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000041 ignored=00000002\r\nETH DMA rx=00000035 tx=00000034\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000c0e5 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000db9e\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=b11675b7 expected=b11675b7 fill_ticks=007f4fc1 fill_us=00021f32\r\nRGB LCD active=00000001 frames=00001077 completed=00000de3 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=0000004d tx=0000004b drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=0000004b ignored=00000002\r\nETH DMA rx=0000003d tx=0000003c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000c6f6 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000e1af\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=30e7a57f expected=30e7a57f fill_ticks=007f36c4 fill_us=00021ec7\r\nRGB LCD active=00000001 frames=000010d4 completed=00000e40 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000057 tx=00000055 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000055 ignored=00000002\r\nETH DMA rx=00000045 tx=00000044\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000cd05 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000e7be\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=aa44fb1f expected=aa44fb1f fill_ticks=007edaf9 fill_us=00021d3f\r\nRGB LCD active=00000001 frames=00001131 completed=00000e9d underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000061 tx=0000005f drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=0000005f ignored=00000002\r\nETH DMA rx=0000004d tx=0000004c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000d315 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000edce\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=b350b929 expected=b350b929 fill_ticks=007f5d25 fill_us=00021f6b\r\nRGB LCD active=00000001 frames=0000118e completed=00000efa underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=0000006b tx=00000069 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000069 ignored=00000002\r\nETH DMA rx=00000055 tx=00000054\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000d925 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000f3de\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=2b57391e expected=2b57391e fill_ticks=007f110e fill_us=00021e26\r\nRGB LCD active=00000001 frames=000011eb completed=00000f57 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000075 tx=00000073 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000073 ignored=00000002\r\nETH DMA rx=0000005d tx=0000005c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000df34 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000f9ed\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=879a4bbf expected=879a4bbf fill_ticks=007f1807 fill_us=00021e44\r\nRGB LCD active=00000001 frames=00001248 completed=00000fb4 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=0000007f tx=0000007d drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=0000007d ignored=00000002\r\nETH DMA rx=00000065 tx=00000064\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000e544 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0000fffd\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=925b8ebf expected=925b8ebf fill_ticks=007f01b9 fill_us=00021de5\r\nRGB LCD active=00000001 frames=000012a5 completed=00001011 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000089 tx=00000087 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000087 ignored=00000002\r\nETH DMA rx=0000006d tx=0000006c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000eb53 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0001060c\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=2b9b5b34 expected=2b9b5b34 fill_ticks=007f12ca fill_us=00021e2e\r\nRGB LCD active=00000001 frames=00001302 completed=0000106e underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=00000093 tx=00000091 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=00000091 ignored=00000002\r\nETH DMA rx=00000075 tx=00000074\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000f163 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=00010c1c\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=b6de5086 expected=b6de5086 fill_ticks=007fcf9c fill_us=00022153\r\nRGB LCD active=00000001 frames=0000135f completed=000010cb underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=0000009d tx=0000009b drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=0000009b ignored=00000002\r\nETH DMA rx=0000007d tx=0000007c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000f771 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0001122a\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=e495f9a4 expected=e495f9a4 fill_ticks=007f0900 fill_us=00021e04\r\nRGB LCD active=00000001 frames=000013bc completed=00001128 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=000000a7 tx=000000a5 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=000000a5 ignored=00000002\r\nETH DMA rx=00000085 tx=00000084\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=0000fd82 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=0001183b\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=162fcd49 expected=162fcd49 fill_ticks=007fb00a fill_us=000220cc\r\nRGB LCD active=00000001 frames=00001419 completed=00001185 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=000000b3 tx=000000af drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=00000156 tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=000000af ignored=00000004\r\nETH DMA rx=0000008f tx=0000008c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=00010390 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=00011e49\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=28a6499b expected=28a6499b fill_ticks=007f6424 fill_us=00021f89\r\nRGB LCD active=00000001 frames=00001476 completed=000011e2 underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=000000bd tx=000000b9 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=000000b9 ignored=00000004\r\nETH DMA rx=00000097 tx=00000094\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=000109a0 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=00012459\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=4e9a78c5 expected=4e9a78c5 fill_ticks=007fd720 fill_us=00022173\r\nRGB LCD active=00000001 frames=000014d3 completed=0000123f underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=000000c9 tx=000000c3 drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=000000b3 tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=000000c3 ignored=00000006\r\nETH DMA rx=000000a1 tx=0000009c\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "test usb",
+            "output": "test usb\r\nUSB initialized=00000001 phy_ready=00000001 phy=00060424 connected=00000001 VID=0000046d PID=0000c52b HID=00000003 frame=00010fb1 HCCA=00000000 errors=00000000\r\nUSB control=000000e9 port=00000001 lines=00000001 irqs=00012a6a\r\nUSB key_events=00000000 mouse_events=00000000 key_drops=00000000 mouse_drops=00000000 report_drops=00000000\r\nTEST usb PASS\r\n> "
+          },
+          {
+            "name": "test sd",
+            "output": "test sd\r\nSD init PASS: native4 DMA sectors=0747b000 SDHC=00000001 hz=00e4e1c0\r\nSD bytes=00001000 crc=08040e1e\r\nTEST sd PASS\r\n> "
+          },
+          {
+            "name": "test lcd",
+            "output": "test lcd\r\nLCD crc=9f72a5da expected=9f72a5da fill_ticks=007efec6 fill_us=00021dd8\r\nRGB LCD active=00000001 frames=00001530 completed=0000129c underflows=00000000\r\nTEST lcd PASS\r\n> "
+          },
+          {
+            "name": "test eth",
+            "output": "test eth\r\nETH ready=00000001 phy=001cc816 link=00000001 rx=000000d3 tx=000000cd drops=0000004a crc=00000000 preamble=00000000 mdio=00000000 pending=00000000 slot=00000001 length=0000042a tx_ready=00000001 tx_level=00000000 tx_pending=00000000 tx_enable=00000001 tx_busy=00000000 replies=000000cd ignored=00000006\r\nETH DMA rx=000000a9 tx=000000a4\r\nTEST eth PASS\r\n> "
+          },
+          {
+            "name": "status",
+            "output": "status\r\nCPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=1 FPU=1\r\nBUILD 0.7.2+da9a3d8.ad324d1c.dirty rtlacd6a0b3 rom741ab13b\r\nboot=none delay_ms=3000 file=BIOSDE3.RPB\r\nIP=169.254.20.20 server=169.254.25.153\r\nRGB LCD active=00000001 frames=00001534 completed=000012a0 underflows=00000000\r\nFLASH JEDEC=000b4017 bytes=00800000\r\nAUDIO hz=00000000 control=00000000 level=00000000 underruns=00000000 errors=00000000 amp=00000000\r\nIRQ timer=000137e0 drops=00000000 unhandled=00000000\r\n> "
+          },
+          {
+            "name": "test lcd stop",
+            "output": "test lcd stop\r\nLCD rendered=00000029 elapsed_ms=00007a89 fill_ticks=007efec6\r\nTEST lcd stop PASS\r\n> "
+          },
+          {
+            "name": "test eth stop",
+            "output": "test eth stop\r\nTEST eth stop PASS\r\n> "
+          }
+        ],
+        "excluded": "Physical input and screen observation; no Flash or power-cycle test",
+        "expected_mac": "8e:6f:09:e9:70:28",
+        "host_ip": "169.254.25.153",
+        "interface_index": 25,
+        "arp_mac": "8e:6f:09:e9:70:28",
+        "ping": "\r\nPinging 169.254.20.20 from 169.254.25.153 with 32 bytes of data:\r\nReply from 169.254.20.20: bytes=32 time=1ms TTL=64\r\nReply from 169.254.20.20: bytes=32 time=1ms TTL=64\r\nReply from 169.254.20.20: bytes=32 time=1ms TTL=64\r\nReply from 169.254.20.20: bytes=32 time=1ms TTL=64\r\n\r\nPing statistics for 169.254.20.20:\r\n    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\r\nApproximate round trip times in milli-seconds:\r\n    Minimum = 1ms, Maximum = 1ms, Average = 1ms\r\n",
+        "icmp": {
+          "transport": "Windows ping",
+          "passed": true
+        },
+        "network": {
+          "udp_packets": 200,
+          "payload_bytes": 69060,
+          "udp_timeouts": 0,
+          "max_rtt_ms": 3.4945000006700866,
+          "seconds": 31.029764100000648,
+          "rounds": 20,
+          "sizes": [
+            0,
+            1,
+            31,
+            32,
+            63,
+            64,
+            255,
+            511,
+            1024,
+            1472
+          ]
+        }
+      }
+    },
+    {
+      "build": "eth-native-final",
+      "bitstream_sha256": "f8eb895db1af26d9653db4a61caff2fa9d00e64b5357f505113db81d3240de85",
+      "image_sha256": "a98715c19f92a7475df9bc5c55873e3e90f4aa21ba87e31617f60eeab62b282d",
+      "source_inputs_sha256": "261c12105c3123d5aed99ee2042fb216007f1be873cd5d86bba4acd94e05fda6",
+      "captured_recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\build\\recipes\\eth-native-final-24d8e937",
+      "arguments": [
+        "--profile",
+        "full",
+        "--without-audio",
+        "--without-mic",
+        "--with-eth-dma",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--purpose",
+        "eth-native-dma-no-audio",
+        "--output-dir",
+        "build\\eth-native-final",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "timing_violated_endpoints": {
+        "setup": 0,
+        "hold": 0
+      },
+      "resources": {
+        "Logic": {
+          "used": 19539,
+          "available": 20736
+        },
+        "Register": {
+          "used": 11266,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10217,
+          "available": 10368
+        },
+        "I/O Port": {
+          "used": 127,
+          "available": 207
+        },
+        "IOLOGIC": {
+          "used": 62,
+          "available": 207
+        },
+        "BSRAM": {
+          "used": 34,
+          "available": 46
+        },
+        "PRIMARY": {
+          "used": 8,
+          "available": 8
+        },
+        "LW": {
+          "used": 8,
+          "available": 8
+        },
+        "GCLK_PIN": {
+          "used": 6,
+          "available": 8
+        },
+        "CLKDIV": {
+          "used": 1,
+          "available": 8
+        },
+        "DHCEN": {
+          "used": 1,
+          "available": 16
+        },
+        "DLL": {
+          "used": 1,
+          "available": 4
+        },
+        "DQS": {
+          "used": 2,
+          "available": 9
+        },
+        "rPLL": {
+          "used": 3,
+          "available": 4
+        }
+      },
+      "board_passed": false,
+      "board_check_groups": 10,
+      "board_failures": [
+        {
+          "command": "test sd",
+          "checks": [
+            {
+              "seconds": 0.09400000000005093,
+              "expected": "TEST sd PASS",
+              "matched": false,
+              "output": "test sd\r\nSD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096\r\nSD unavailable: native timeout/protocol/no-media; UART remains available\r\nSD mount failed FatFs=00000003\r\nTEST sd FAIL\r\n> "
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diagnostics": {
+    "eth-native-csr-uart.log": {
+      "sha256": "fdad41549877de897cf786fb3786a76707ffc6ef2ee54586aa7a282f46a77b0a",
+      "excerpt": [
+        "CSR pattern=00000000 got=08000000 eth=00000000 tx=00000000",
+        "CSR pattern=ffffffff got=ffffffff eth=ffffffff tx=ffffffff",
+        "CSR pattern=40000000 got=48000000 eth=40000000 tx=40000000",
+        "CSR pattern=408135b0 got=488135b0 eth=408135b0 tx=408135b0",
+        "CSR pattern=48000000 got=48000000 eth=48000000 tx=48000000",
+        "CSR pattern=a5a55a5a got=ada55a5a eth=a5a55a5a tx=a5a55a5a",
+        "DMA diagnostic base=488135b0 length=00000008 enable=00000001 expected=408135b0",
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096",
+        "CSR pattern=00000000 got=08000000 eth=00000000 tx=00000000",
+        "CSR pattern=ffffffff got=ffffffff eth=ffffffff tx=ffffffff",
+        "CSR pattern=40000000 got=48000000 eth=40000000 tx=40000000",
+        "CSR pattern=408135b0 got=488135b0 eth=408135b0 tx=408135b0",
+        "CSR pattern=48000000 got=48000000 eth=48000000 tx=48000000",
+        "CSR pattern=a5a55a5a got=ada55a5a eth=a5a55a5a tx=a5a55a5a",
+        "DMA diagnostic base=488135b0 length=00000008 enable=00000001 expected=408135b0",
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096",
+        "CSR pattern=00000000 got=08000000 eth=00000000 tx=00000000",
+        "CSR pattern=ffffffff got=ffffffff eth=ffffffff tx=ffffffff",
+        "CSR pattern=40000000 got=48000000 eth=40000000 tx=40000000",
+        "CSR pattern=408135b0 got=488135b0 eth=408135b0 tx=408135b0",
+        "CSR pattern=48000000 got=48000000 eth=48000000 tx=48000000",
+        "CSR pattern=a5a55a5a got=ada55a5a eth=a5a55a5a tx=a5a55a5a",
+        "DMA diagnostic base=488135b0 length=00000008 enable=00000001 expected=408135b0",
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096"
+      ]
+    },
+    "eth-native-final/firmware-verification-first-failure-uart.log": {
+      "sha256": "1bff3c1aadeb3ca8b7e0f33953f529c31dd5a9114caf4b326a31576955c435ae",
+      "excerpt": [
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096",
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096",
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096",
+        "SD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096"
+      ]
+    },
+    "eth-native-place3/gateware/impl/pnr/project.log": {
+      "sha256": "dc82d4e6623672c87b7f3de6f373ec0b9968ca8b961b885a0065e76cca842bb4",
+      "excerpt": [
+        "ERROR  (PR0004) : There are total 182 unrouted nets"
+      ]
+    }
+  },
+  "native_board_qualified": false,
+  "native_performance_measured": false,
+  "limitations": [
+    "Wishbone comparison results do not qualify native DMA",
+    "CSR readback symptom is reproducible but root cause remains unknown",
+    "No autonomous ring, no MAC direct DDR stream, no frequency increase"
+  ]
+}
