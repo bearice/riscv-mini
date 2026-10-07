@@ -1,0 +1,12 @@
+if TARGET_RISCV_MINI
+
+config SYS_BOARD
+	default "riscv_mini"
+
+config SYS_VENDOR
+	default "riscv-mini"
+
+config SYS_CONFIG_NAME
+	default "riscv_mini"
+
+endif

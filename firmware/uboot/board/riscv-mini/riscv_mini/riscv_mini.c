@@ -6,9 +6,10 @@
  * same DTB is handed to the kernel by booti. No SPL: the payload is
  * entered directly at CONFIG_TEXT_BASE (0x41100000 = FW_PAYLOAD_OFFSET).
  */
-#include <common.h>
 #include <init.h>
 #include <asm/global_data.h>
+#include <fdtdec.h>
+#include <fdt_support.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -25,13 +26,6 @@ int dram_init(void)
 int dram_init_banksize(void)
 {
 	return fdtdec_setup_memory_banksize();
-}
-
-void *board_fdt_blob_setup(int *err)
-{
-	*err = 0;
-	/* DTB pointer passed by OpenSBI, saved during arch init. */
-	return (void *)(ulong)gd->arch.firmware_fdt_addr;
 }
 
 int board_late_init(void)

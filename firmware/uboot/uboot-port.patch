@@ -1,0 +1,245 @@
+diff --git a/arch/riscv/Kconfig b/arch/riscv/Kconfig
+index ad758912..804513a8 100644
+--- a/arch/riscv/Kconfig
++++ b/arch/riscv/Kconfig
+@@ -39,6 +39,9 @@ config TARGET_QEMU_VIRT
+ 	bool "Support QEMU Virt & RVVM Boards"
+ 	select BOARD_LATE_INIT
+ 
++config TARGET_RISCV_MINI
++	bool "Support TangPrimer-20K riscv-mini board"
++
+ config TARGET_SIFIVE_UNLEASHED
+ 	bool "Support SiFive Unleashed Board"
+ 
+@@ -119,6 +122,7 @@ source "board/sifive/unmatched/Kconfig"
+ source "board/sipeed/maix/Kconfig"
+ source "board/sophgo/milkv_duo/Kconfig"
+ source "board/sophgo/licheerv_nano/Kconfig"
++source "board/riscv-mini/riscv_mini/Kconfig"
+ source "board/spacemit/bananapi-f3/Kconfig"
+ source "board/starfive/visionfive2/Kconfig"
+ source "board/thead/th1520_lpi4a/Kconfig"
+diff --git a/arch/riscv/Makefile b/arch/riscv/Makefile
+index fdda6da1..41ac8ad8 100644
+--- a/arch/riscv/Makefile
++++ b/arch/riscv/Makefile
+@@ -63,5 +63,5 @@ CFLAGS_EFI		+= $(ARCH_FLAGS)
+ head-y := arch/riscv/cpu/start.o
+ 
+ libs-y += arch/riscv/cpu/
+-libs-y += arch/riscv/cpu/$(CPU)/
++libs-y += $(if $(CPU),arch/riscv/cpu/$(CPU)/)
+ libs-y += arch/riscv/lib/
+diff --git a/arch/riscv/config.mk b/arch/riscv/config.mk
+index eddd6a3b..4aad4106 100644
+--- a/arch/riscv/config.mk
++++ b/arch/riscv/config.mk
+@@ -37,7 +37,10 @@ endif
+ 
+ PLATFORM_CPPFLAGS	+= -ffixed-x3 -fpic
+ PLATFORM_RELFLAGS	+= -fno-common -ffunction-sections -fdata-sections
+-LDFLAGS_u-boot		+= --gc-sections -static -pie
++# riscv-mini: bare-metal riscv64-elf ld has no -pie support; payload is
++# loaded at fixed CONFIG_TEXT_BASE, non-PIE link. .dynamic empty =>
++# relocate_code dynamic loop (start.S:318) is a no-op.
++LDFLAGS_u-boot		+= --gc-sections -static
+ 
+ EFI_CRT0		:= crt0_riscv_efi.o
+ EFI_RELOC		:= reloc_riscv_efi.o
+diff --git a/arch/riscv/dts/Makefile b/arch/riscv/dts/Makefile
+index 8e591cb7..ff0af261 100644
+--- a/arch/riscv/dts/Makefile
++++ b/arch/riscv/dts/Makefile
+@@ -14,6 +14,7 @@ dtb-$(CONFIG_TARGET_XILINX_MBV) += xilinx-mbv32.dtb
+ dtb-$(CONFIG_TARGET_XILINX_MBV) += xilinx-mbv64.dtb
+ dtb-$(CONFIG_TARGET_XILINX_MBV) += xilinx-binman.dtb
+ dtb-$(CONFIG_TARGET_ASPEED_AST2700_IBEX) += ast2700-ibex.dtb
++dtb-$(CONFIG_TARGET_RISCV_MINI) += riscv-mini.dtb
+ 
+ include $(srctree)/scripts/Makefile.dts
+ 
+diff --git a/arch/riscv/lib/cache.c b/arch/riscv/lib/cache.c
+index 31aa30bc..ee4bdeca 100644
+--- a/arch/riscv/lib/cache.c
++++ b/arch/riscv/lib/cache.c
+@@ -44,7 +44,7 @@ static inline void do_cbo_inval(unsigned long base)
+ 		      "r"(base) : "memory");
+ }
+ 
+-static void cbo_op(int op_type, unsigned long start,
++static __maybe_unused void cbo_op(int op_type, unsigned long start,
+ 		   unsigned long end)
+ {
+ 	unsigned long op_size = end - start, size = 0;
+@@ -70,14 +70,12 @@ static void cbo_op(int op_type, unsigned long start,
+ 
+ void cbo_flush(unsigned long start, unsigned long end)
+ {
+-	if (zicbom_block_size)
+-		cbo_op(CBO_FLUSH, start, end);
++	/* riscv-mini: no Zicbom; cache is not write-back. */
+ }
+ 
+ void cbo_inval(unsigned long start, unsigned long end)
+ {
+-	if (zicbom_block_size)
+-		cbo_op(CBO_INVAL, start, end);
++	/* riscv-mini: no Zicbom. */
+ }
+ 
+ void invalidate_icache_all(void)
+diff --git a/common/board_r.c b/common/board_r.c
+index a397e209..e153616c 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -122,6 +122,11 @@ __weak int fixup_cpu(void)
+ 
+ static int initr_reloc_global_data(void)
+ {
++	/* Pre-reloc serial udevice lives in the old malloc pool, which
++	 * initr_malloc() zeroes. Drop the stale pointer so puts() stays
++	 * silent until serial_initialize() (after initr_dm) rebinds it.
++	 */
++	gd->cur_serial_dev = NULL;
+ #ifdef __ARM__
+ 	monitor_flash_len = _end - __image_copy_start;
+ #elif defined(CONFIG_RISCV)
+@@ -617,6 +622,11 @@ static void initcall_run_r(void)
+ #endif
+ 	INITCALL(initr_barrier);
+ 	INITCALL(initr_malloc);
++	INITCALL(initr_of_live);
++#if CONFIG_IS_ENABLED(DM)
++	INITCALL(initr_dm);
++#endif
++	INITCALL(serial_initialize);
+ 	INITCALL(log_init);
+ 	INITCALL(initr_bootstage); /* Needs malloc() but has its own timer */
+ #if CONFIG_IS_ENABLED(CONSOLE_RECORD)
+@@ -624,10 +634,6 @@ static void initcall_run_r(void)
+ #endif
+ #if CONFIG_IS_ENABLED(SYS_HAS_NONCACHED_MEMORY)
+ 	INITCALL(noncached_init);
+-#endif
+-	INITCALL(initr_of_live);
+-#if CONFIG_IS_ENABLED(DM)
+-	INITCALL(initr_dm);
+ #endif
+ #if CONFIG_IS_ENABLED(ADDR_MAP)
+ 	INITCALL(init_addr_map);
+@@ -656,7 +662,6 @@ static void initcall_run_r(void)
+ #endif
+ 	INITCALL(initr_dm_devices);
+ 	INITCALL(stdio_init_tables);
+-	INITCALL(serial_initialize);
+ 	INITCALL(initr_announce);
+ 	INITCALL(dm_announce);
+ #if CONFIG_IS_ENABLED(WDT)
+diff --git a/drivers/mmc/Kconfig b/drivers/mmc/Kconfig
+index 6c513328..29c87a32 100644
+--- a/drivers/mmc/Kconfig
++++ b/drivers/mmc/Kconfig
+@@ -75,6 +75,14 @@ config TPL_DM_MMC
+ 
+ if MMC
+ 
++config LITESD
++	bool "LiteSDCard native SD host (LiteX)"
++	depends on DM_MMC
++	help
++	  Enable support for the LiteX LiteSDCard native SD host as
++	  modified by the riscv-mini SoC (32-bit CSRs, SDCore + DMA).
++
++
+ config MMC_SDHCI_ADMA_HELPERS
+ 	bool
+ 
+diff --git a/drivers/mmc/Makefile b/drivers/mmc/Makefile
+index a23336d7..e7fa52dd 100644
+--- a/drivers/mmc/Makefile
++++ b/drivers/mmc/Makefile
+@@ -84,3 +84,4 @@ obj-$(CONFIG_RENESAS_SDHI)		+= tmio-common.o renesas-sdhi.o
+ obj-$(CONFIG_MMC_BCM2835)		+= bcm2835_sdhost.o
+ obj-$(CONFIG_MMC_MTK)			+= mtk-sd.o
+ obj-$(CONFIG_MMC_SDHCI_F_SDH30)		+= f_sdh30.o
++obj-$(CONFIG_LITESD) += litesd.o
+diff --git a/drivers/serial/Kconfig b/drivers/serial/Kconfig
+index 5f8b98f0..b1d8c6e7 100644
+--- a/drivers/serial/Kconfig
++++ b/drivers/serial/Kconfig
+@@ -15,6 +15,14 @@ menuconfig SERIAL
+ 
+ if SERIAL
+ 
++config LITEUART32_SERIAL
++	bool "LiteX CSR LiteUART (32-bit registers)"
++	depends on SERIAL
++	help
++	  Select this to enable the LiteX CSR LiteUART variant with
++	  32-bit-wide registers used by the riscv-mini TangPrimer 20K SoC.
++
++
+ config BAUDRATE
+ 	int "Default baudrate"
+ 	default 115200
+diff --git a/drivers/serial/Makefile b/drivers/serial/Makefile
+index 66088b44..4706c005 100644
+--- a/drivers/serial/Makefile
++++ b/drivers/serial/Makefile
+@@ -18,6 +18,7 @@ obj-$(CONFIG_AR933X_UART) += serial_ar933x.o
+ obj-$(CONFIG_ARM_DCC) += arm_dcc.o
+ obj-$(CONFIG_ATMEL_USART) += atmel_usart.o
+ obj-$(CONFIG_BCM6345_SERIAL) += serial_bcm6345.o
++obj-$(CONFIG_LITEUART32_SERIAL) += serial_liteuart32.o
+ obj-$(CONFIG_COREBOOT_SERIAL) += serial_coreboot.o
+ obj-$(CONFIG_CORTINA_UART) += serial_cortina.o
+ obj-$(CONFIG_DEBUG_SBI_CONSOLE) += serial_sbi.o
+diff --git a/drivers/usb/host/Kconfig b/drivers/usb/host/Kconfig
+index d75883e2..983c151d 100644
+--- a/drivers/usb/host/Kconfig
++++ b/drivers/usb/host/Kconfig
+@@ -20,6 +20,14 @@ config SPL_USB_HOST
+ 	  For detailed help see USB_HOST Kconfig symbol. This option enables
+ 	  the drivers in drivers/usb/host as part of an SPL build.
+ 
++config USB_LITEUSB
++	bool "riscv-mini custom PIO full-speed USB host"
++	depends on DM && OF_CONTROL
++	select USB_HOST
++	help
++	  Enable support for the riscv-mini custom Ultraembedded PIO
++	  full-speed USB host (single root port, polled transactions).
++
+ config USB_XHCI_HCD
+ 	bool "xHCI HCD (USB 3.0) support"
+ 	depends on DM && OF_CONTROL
+diff --git a/drivers/usb/host/Makefile b/drivers/usb/host/Makefile
+index 9cac53f0..8188b107 100644
+--- a/drivers/usb/host/Makefile
++++ b/drivers/usb/host/Makefile
+@@ -58,3 +58,4 @@ obj-$(CONFIG_USB_XHCI_OCTEON) += dwc3-octeon-glue.o
+ 
+ # designware
+ obj-$(CONFIG_USB_DWC2) += dwc2.o
++obj-$(CONFIG_USB_LITEUSB) += liteusb.o
+diff --git a/tools/prelink-riscv.inc b/tools/prelink-riscv.inc
+index 57c0f655..ebe0c84e 100644
+--- a/tools/prelink-riscv.inc
++++ b/tools/prelink-riscv.inc
+@@ -61,8 +61,13 @@ static void prelink_bonn(void *data)
+ 		}
+ 	}
+ 
+-	if (dyns == NULL)
+-		die("No dynamic section found");
++	if (dyns == NULL) {
++		/*
++		 * Statically linked image (no PT_DYNAMIC): there are no runtime
++		 * relocations to pre-process, so prelink is a no-op here.
++		 */
++		return;
++	}
+ 
+ 	Elf_Rela *rela_dyn = NULL;
+ 	size_t rela_count = 0;

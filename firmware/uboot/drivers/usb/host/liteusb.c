@@ -95,13 +95,16 @@ static struct ep_toggle *toggle_get(struct liteusb_priv *priv, u8 addr, u8 ep)
 
 /*
  * Launch one packet and wait for the device response.
- * in=1: IN token, data read into rbuf. in=0: OUT token, data from data.
- * Returns 0 on a completed transaction; *rpid is the device PID (ACK/NAK/STALL/
- * DATA0/DATA1), *rcount the byte count. Negative on a host-side error.
+ * in=1: IN token, data read into rbuf, bounded by cap bytes. in=0: OUT token,
+ * data from data. Returns 0 on a completed transaction; *rpid is the device PID
+ * (ACK/NAK/STALL/DATA0/DATA1), *rcount the byte count the device actually sent
+ * (may exceed cap — the FIFO is always fully drained). Callers must advance
+ * their transfer offset by min(*rcount, cap), not by *rcount, and use *rcount
+ * only for short-packet detection. Negative on a host-side error.
  */
 static int liteusb_packet(struct liteusb_plat *plat, int addr, int ep, int in,
 			  int toggle, int pid, const u8 *data, int len,
-			  u8 *rbuf, int *rcount, int *rpid)
+			  u8 *rbuf, int cap, int *rcount, int *rpid)
 {
 	void __iomem *regs = plat->regs;
 	u32 status = 0;
@@ -148,8 +151,13 @@ static int liteusb_packet(struct liteusb_plat *plat, int addr, int ep, int in,
 			continue;	/* host-side error: retry the packet */
 
 		if (in && rbuf) {
-			for (int i = 0; i < count; i++)
+			int n = count < cap ? count : cap;
+			for (int i = 0; i < n; i++)
 				rbuf[i] = readb(regs + R_FIFO);
+			/* Drain bytes beyond the caller's buffer so the FIFO is
+			 * empty for the next transaction. */
+			for (int i = n; i < count; i++)
+				(void)readb(regs + R_FIFO);
 		} else {
 			for (int i = 0; i < count; i++)
 				(void)readb(regs + R_FIFO);
@@ -184,7 +192,7 @@ static int liteusb_control_xfer(struct liteusb_plat *plat,
 	/* SETUP stage (always OUT, PID_SETUP). */
 	for (tries = 0; ; tries++) {
 		ret = liteusb_packet(plat, addr, ep, 0, 0, PID_SETUP,
-				     (const u8 *)setup, 8, NULL, &cnt, &rpid);
+				     (const u8 *)setup, 8, NULL, 0, &cnt, &rpid);
 		if (ret)
 			return ret;
 		if (rpid == PID_ACK)
@@ -205,10 +213,12 @@ static int liteusb_control_xfer(struct liteusb_plat *plat,
 				thislen = mps;
 
 			if (in) {
+				int cap = len - act;
+
 				ret = liteusb_packet(plat, addr, ep, 1, toggle,
 						      PID_IN, NULL, 0,
 						      (u8 *)buffer + act,
-						      &cnt, &rpid);
+						      cap, &cnt, &rpid);
 				if (ret)
 					return ret;
 				if (rpid == PID_STALL)
@@ -220,7 +230,10 @@ static int liteusb_control_xfer(struct liteusb_plat *plat,
 				}
 				if (rpid != PID_DATA0 && rpid != PID_DATA1)
 					return -EPROTO;
-				act += cnt;
+				/* cnt is what the device sent; only min(cnt, cap)
+				 * actually landed in the buffer. Advance by that,
+				 * but still use cnt for short-packet detection. */
+				act += cnt < cap ? cnt : cap;
 				toggle ^= 1;
 				nak = 0;
 				if (cnt < mps)
@@ -229,7 +242,7 @@ static int liteusb_control_xfer(struct liteusb_plat *plat,
 				ret = liteusb_packet(plat, addr, ep, 0, toggle,
 						      PID_OUT,
 						      (const u8 *)buffer + act,
-						      thislen, NULL, &cnt, &rpid);
+						      thislen, NULL, 0, &cnt, &rpid);
 				if (ret)
 					return ret;
 				if (rpid == PID_STALL)
@@ -254,10 +267,10 @@ static int liteusb_control_xfer(struct liteusb_plat *plat,
 			if (sdir)
 				ret = liteusb_packet(plat, addr, ep, 1, 1, PID_IN,
 						      NULL, 0, status_buf,
-						      &cnt, &rpid);
+						      sizeof(status_buf), &cnt, &rpid);
 			else
 				ret = liteusb_packet(plat, addr, ep, 0, 1, PID_OUT,
-						      status_buf, 0, NULL,
+						      status_buf, 0, NULL, 0,
 						      &cnt, &rpid);
 			if (ret)
 				return ret;
@@ -483,7 +496,7 @@ static int liteusb_xfer(struct udevice *bus, struct usb_device *dev,
 				want = mps;
 			ret = liteusb_packet(plat, addr, epnum, 1, tg->toggle,
 					      PID_IN, NULL, 0,
-					      (u8 *)buffer + act, &cnt, &rpid);
+					      (u8 *)buffer + act, want, &cnt, &rpid);
 			if (ret)
 				return ret;
 			if (rpid == PID_STALL)
@@ -496,7 +509,10 @@ static int liteusb_xfer(struct udevice *bus, struct usb_device *dev,
 			if (rpid != PID_DATA0 && rpid != PID_DATA1)
 				return -EPROTO;
 			tg->toggle ^= 1;
-			act += cnt;
+			/* cnt is what the device sent; only min(cnt, want) landed
+			 * in the buffer. Advance by that, keep cnt for the
+			 * short-packet test. */
+			act += cnt < want ? cnt : want;
 			nak = 0;
 			if (cnt < mps)
 				break;
@@ -511,7 +527,7 @@ static int liteusb_xfer(struct udevice *bus, struct usb_device *dev,
 			ret = liteusb_packet(plat, addr, epnum, 0, tg->toggle,
 					      PID_OUT,
 					      (const u8 *)buffer + act, thislen,
-					      NULL, &cnt, &rpid);
+					      NULL, 0, &cnt, &rpid);
 			if (ret)
 				return ret;
 			if (rpid == PID_STALL)

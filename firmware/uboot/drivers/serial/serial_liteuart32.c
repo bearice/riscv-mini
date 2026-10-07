@@ -6,12 +6,13 @@
  *   0x00 rxtx      0x04 txfull     0x08 rxempty
  *   0x0c ev_status 0x10 ev_pending 0x14 ev_enable 0x18 txempty 0x1c rxfull
  */
-#include <common.h>
 #include <debug_uart.h>
 #include <dm.h>
+#include <mapmem.h>
 #include <serial.h>
 #include <asm/io.h>
 #include <linux/err.h>
+#include <linux/types.h>
 
 #define LITEUART32_RXTX		0x00
 #define LITEUART32_TXFULL	0x04
@@ -66,10 +67,10 @@ static int liteuart32_of_to_plat(struct udevice *dev)
 	struct liteuart32_plat *plat = dev_get_plat(dev);
 
 	plat->base = dev_read_addr_ptr(dev);
-	return PTR_IS_ERR(plat->base) ? -EINVAL : 0;
+	return IS_ERR(plat->base) ? -EINVAL : 0;
 }
 
-static const struct serial_ops liteuart32_ops = {
+static const struct dm_serial_ops liteuart32_ops = {
 	.getc = liteuart32_getc,
 	.putc = liteuart32_putc,
 	.pending = liteuart32_pending,
@@ -90,18 +91,8 @@ U_BOOT_DRIVER(serial_liteuart32) = {
 	.flags = DM_FLAG_PRE_RELOC,
 };
 
-/* Pre-relocation console: debug UART (CONFIG_DEBUG_UART) on the same base. */
-static inline void _debug_uart_init(void)
-{
-}
-
-static inline void _debug_uart_putc(int ch)
-{
-	void __iomem *base = (void __iomem *)CONFIG_DEBUG_UART_BASE;
-
-	while (in_le32(base + LITEUART32_TXFULL))
-		;
-	out_le32(base + LITEUART32_RXTX, ch);
-}
-
-DEBUG_UART_FUNCS
+/* No DEBUG_UART_FUNCS here: with CONFIG_RISCV_SMODE the debug-UART choice
+ * defaults to DEBUG_SBI_CONSOLE (drivers/serial/Kconfig:242), whose
+ * implementation lives in serial_sbi.c. Defining these functions in this
+ * file as well causes multiple-definition link errors.
+ */

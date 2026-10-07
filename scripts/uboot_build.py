@@ -1,86 +1,103 @@
-"""Build U-Boot v2026.07 as the riscv-mini S-mode payload (Windows toolchain).
+"""Build U-Boot v2026.07 as the riscv-mini S-mode payload.
 
-Host tools come from MSYS2 (make/gcc/python/dtc); the target compiler is the
-xPack riscv-none-elf GCC. Board files and the LiteUART32 serial driver live
-in firmware/uboot/ and are copied into the pinned source tree, mirroring
-scripts/opensbi_build.py's platform-copy pattern.
+The build runs inside the WSL archlinux toolchain (riscv64-elf-gcc) on a
+native ext4 tree, which is the verified environment; building on a
+Windows-mounted path is far too slow. The port is fully described under
+firmware/uboot/ and applied to the pinned source tree automatically,
+mirroring scripts/opensbi_build.py's platform-copy pattern:
+
+  * Added files (board dir, top-level defconfig, include/configs header,
+    build-time fallback dts, and the own serial/Ethernet/MMC/USB drivers)
+    are copied into the tree from firmware/uboot/, which mirrors the U-Boot
+    layout one-for-one.
+  * Edits to existing upstream files (arch/riscv Kconfig/Makefile/config.mk/
+    dts Makefile/cache.c, common/board_r.c initcall order, drivers/*/Kconfig
+    and Makefile wiring, tools/prelink-riscv.inc) live in
+    firmware/uboot/uboot-port.patch and are applied with `git apply`.
+
+The result is reproducible from a clean clone: no manual tree edits are
+required. The Ethernet driver reuses upstream's LITEETH Kconfig/Makefile
+entry and only replaces drivers/net/liteeth.c with our 32-bit-CSR version.
+The produced u-boot.bin is copied back to the Windows build tree for
+scripts/opensbi_build.py to pack.
 """
-import argparse, os, shutil, subprocess, sys
+import argparse, subprocess, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REV = "v2026.07"
-MSYS = Path(r"C:\msys64")
+DISTRO = "archlinux"
+# WSL-native (ext4) build tree; never build on a /mnt/c path.
+WSL_SRC = "$HOME/uboot-port"
+WSL_OBJ = "$HOME/uboot-port-obj"
+CROSS = "riscv64-elf-"
+LIBGCC = "-L /usr/lib/gcc/riscv64-elf/16.2.0/rv32imac/ilp32 -lgcc"
+ARCH_FLAGS = "-march=rv32ima_zicsr_zifencei -mabi=ilp32"
+
+# (path under firmware/uboot/, destination under the U-Boot tree)
+COPIES = [
+    ("board/riscv-mini", "board/riscv-mini"),
+    ("configs/riscv_mini_defconfig", "configs/riscv_mini_defconfig"),
+    ("include/configs/riscv_mini.h", "include/configs/riscv_mini.h"),
+    ("arch/riscv/dts/riscv-mini.dts", "arch/riscv/dts/riscv-mini.dts"),
+    ("drivers/serial/serial_liteuart32.c", "drivers/serial/serial_liteuart32.c"),
+    ("drivers/net/liteeth.c", "drivers/net/liteeth.c"),
+    ("drivers/mmc/litesd.c", "drivers/mmc/litesd.c"),
+    ("drivers/usb/host/liteusb.c", "drivers/usb/host/liteusb.c"),
+]
+
+def to_wsl(p):
+    """Windows path -> WSL /mnt/<drive>/... path."""
+    s = str(Path(p).resolve()).replace("\\", "/")
+    return "/mnt/" + s[0].lower() + s[2:]
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=ROOT / "build/vendor/uboot")
-    parser.add_argument("--output-dir", type=Path, default=ROOT / "build/uboot/firmware")
-    parser.add_argument("--toolchain-prefix", default="C:/xpack-riscv-none-elf-gcc-15.2.0-1/bin/riscv-none-elf-")
+    parser.add_argument("--source", default=WSL_SRC,
+                        help="WSL-native source path (default $HOME/uboot-port)")
+    parser.add_argument("--obj", default=WSL_OBJ,
+                        help="WSL-native build output path (default $HOME/uboot-port-obj)")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "build/uboot/firmware",
+                        help="Windows dir to receive u-boot.bin")
     a = parser.parse_args()
-    src = a.source.resolve(); out = a.output_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
-    if not src.exists():
-        subprocess.run(["git", "clone", "--depth", "1", "--branch", REV,
-                        "https://github.com/u-boot/u-boot.git", str(src)], check=True)
-    tag = subprocess.check_output(["git", "-C", str(src), "describe", "--tags", "--abbrev=0"],
-                                  text=True).strip()
-    if tag != REV:
-        raise ValueError(f"U-Boot source tag {tag} differs from pinned {REV}")
-    port = ROOT / "firmware/uboot"
-    shutil.copytree(port / "board/riscv-mini", src / "board/riscv-mini", dirs_exist_ok=True)
-    maintainers = src / "MAINTAINERS"
-    entry = "RISCV-MINI\nM:\tbearice\nS:\tgithub.com/bearice/riscv-mini\nF:\tboard/riscv-mini/\n\n"
-    text = maintainers.read_text()
-    if "RISCV-MINI" not in text:
-        maintainers.write_text(text + entry)
-    shutil.copy(port / "drivers/serial/serial_liteuart32.c", src / "drivers/serial/serial_liteuart32.c")
-    mk = src / "drivers/serial/Makefile"
-    if "LITEUART32" not in mk.read_text():
-        mk.write_text(mk.read_text().replace(
-            "obj-$(CONFIG_BCM6345_SERIAL) += serial_bcm6345.o",
-            "obj-$(CONFIG_BCM6345_SERIAL) += serial_bcm6345.o\nobj-$(CONFIG_LITEUART32_SERIAL) += serial_liteuart32.o"))
-    kc = src / "drivers/serial/Kconfig"
-    if "LITEUART32_SERIAL" not in kc.read_text():
-        block = ('config LITEUART32_SERIAL\n\tbool "LiteX CSR LiteUART (32-bit registers)"\n'
-                 '\tdepends on SERIAL\n\thelp\n\t  Select this to enable the LiteX CSR LiteUART variant with\n'
-                 '\t  32-bit-wide registers used by the riscv-mini TangPrimer 20K SoC.\n\n')
-        kc.write_text(kc.read_text().replace("if SERIAL\n", "if SERIAL\n\n" + block, 1))
-    # bash -l rebuilds PATH from scratch, so export the toolchain paths
-    # inside the command in MSYS POSIX form.
-    def posix(p):
-        s = Path(p).as_posix()
-        return "/" + s[0].lower() + s[2:]
-    # U-Boot's Makefile errors out when abs_srctree contains a colon (every
-    # Windows drive path does). Run make inside the MSYS2 POSIX layer, where
-    # paths are /c/... and colon-free.
-    toolchain_bin = str(Path(a.toolchain_prefix).parent)
-    msys_path = ":".join([posix(MSYS / "ucrt64" / "bin"), posix(MSYS / "usr" / "bin"), posix(toolchain_bin)])
-    out_rel = os.path.relpath(out, src).replace("\\", "/")
-    prefix = Path(a.toolchain_prefix).name
-    bash = str(MSYS / "usr" / "bin" / "bash.exe")
-    # Native gcc takes its temp dir from Windows TMP/TEMP. MSYS bash -l
-    # resets TMP to /tmp (C:\msys64\tmp), which is not writable from
-    # Python child processes; re-export Windows-style TMP/TEMP inside the
-    # command so gcc keeps temps inside the workspace.
-    gcc_tmp = out / "tmp"
-    gcc_tmp.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ)
-    tmp_exports = f"export TMP='{gcc_tmp}' TEMP='{gcc_tmp}' && "
-    # MSYS gcc writes Windows-style paths (C:/...) into .d files; the
-    # MSYS-built fixdep cannot open them ("fixdep: read: No error").
-    # Build host tools with the native ucrt64 gcc so fixdep is a native
-    # binary that reads those paths fine.
-    hostcc = posix(MSYS / "ucrt64" / "bin" / "gcc.exe")
-    def run_make(target):
-        subprocess.run([bash, "-lc",
-                        f"cd {src_posix} && export PATH={msys_path}:$PATH && {tmp_exports}"
-                        f"make O={out_rel} HOSTCC={hostcc} {target}"],
-                       env=env, check=True)
-    # Python's cwd is not honored by MSYS bash (it falls back to $HOME), so
-    # cd inside the command using the POSIX form of the source path.
-    src_posix = posix(src)
-    run_make("riscv_mini_defconfig")
-    run_make("-j8 CROSS_COMPILE=" + prefix +
-             " PLATFORM_CFLAGS='-march=rv32ima_zicsr_zifencei -mabi=ilp32'")
-    binary = out / "u-boot.bin"
-    print("U-Boot payload:", binary, binary.stat().st_size, "bytes")
+    out = a.output_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
+    port_wsl = to_wsl(ROOT / "firmware/uboot")
+    out_wsl = to_wsl(out)
+
+    copy_cmds = []
+    for rel_src, rel_dst in COPIES:
+        s = f"{port_wsl}/{rel_src}"; d = rel_dst
+        if (ROOT / "firmware/uboot" / rel_src).is_dir():
+            copy_cmds.append(f'mkdir -p "$(dirname {d})"; cp -a {s}/. {d}/')
+        else:
+            copy_cmds.append(f'mkdir -p "$(dirname {d})"; cp -a {s} {d}')
+
+    script = f"""
+set -euo pipefail
+SRC="{a.source}"; OBJ="{a.obj}"; PORT="{port_wsl}"; OUT="{out_wsl}"
+if [ ! -d "$SRC" ]; then
+  git clone --depth 1 --branch {REV} https://github.com/u-boot/u-boot.git "$SRC"
+fi
+cd "$SRC"
+tag=$(git describe --tags --abbrev=0)
+[ "$tag" = "{REV}" ] || {{ echo "U-Boot source tag $tag differs from pinned {REV}" >&2; exit 1; }}
+{chr(10).join(copy_cmds)}
+if git apply --reverse --check "$PORT/uboot-port.patch" 2>/dev/null; then
+  echo "uboot-port.patch already applied"
+else
+  git apply --reverse "$PORT/uboot-port.patch" 2>/dev/null || true
+  git apply "$PORT/uboot-port.patch"
+  echo "uboot-port.patch applied"
+fi
+if ! grep -q RISCV-MINI MAINTAINERS; then
+  printf 'RISCV-MINI\\nM:\\tbearice\\nS:\\tgithub.com/bearice/riscv-mini\\nF:\\tboard/riscv-mini/\\n\\n' >> MAINTAINERS
+fi
+make O="$OBJ" riscv_mini_defconfig
+make -j8 O="$OBJ" CROSS_COMPILE={CROSS} PLATFORM_LIBGCC="{LIBGCC}" PLATFORM_CFLAGS='{ARCH_FLAGS}'
+mkdir -p "$OUT"
+cp "$OBJ/u-boot.bin" "$OUT/u-boot.bin"
+echo "U-Boot payload: $OUT/u-boot.bin $(stat -c%s "$OUT/u-boot.bin") bytes"
+"""
+    subprocess.run(["wsl", "-d", DISTRO, "-e", "bash", "-lc", script], check=True)
+
 if __name__ == "__main__":
     main()
