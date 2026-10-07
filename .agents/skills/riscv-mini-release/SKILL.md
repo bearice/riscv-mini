@@ -11,25 +11,28 @@ description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码�
 
 ## 正式发布
 
-核对干净 HEAD 与 VERSION；正式发布还需同版本 tag 指向 HEAD，版本不可覆盖。尚未提交时先完成同级 `riscv-mini-commit/SKILL.md`。涉及代码变更：先提交干净源码，再生成最终包。
+核对干净 HEAD 与 `VERSIONS.yaml`；正式发布还需在 `RELEASES.yaml` 写好本次系统包（`system/v<版本>` 的 tag 指向 HEAD），版本不可覆盖。尚未提交时先完成同级 `riscv-mini-commit/SKILL.md`。涉及代码变更：先提交干净源码，再生成最终包。
+
+系统包声明六个组件的版本，但 `release.py` 从当前 HEAD 构建：它要求 `RELEASES.yaml` 的组件组合等于当前 `VERSIONS.yaml`，构建后还会把产物里的 `component_versions` 与组合再核对一次，不一致就拒绝。包只构建并板测 SoC/bootloader/应用；OpenSBI、U-Boot 等由各自流程（`uboot_verify.py` 等）单独构建与验收的组件，在 `RELEASES.yaml` 的 `external:` 里声明为"已声明兼容、不在本包内构建/验证"，避免用六个版本号暗示全部已验收。
 
 顺序不可颠倒：
 
-1. bump `VERSION` 并在 `CHANGELOG.md` 写本版条目，与功能代码同一个提交。
-2. 提交，得到 git hash。
-3. 从该提交运行构建（干净工作树，产物身份不带 `.dirty`），并在实板完成测试。
-4. 归档 report/change 记录（`reports/changes/<commit7>.md` 与同名 `.json`），打 tag，然后运行 `release.py` 生成最终包。
+1. 递增被改动组件在 `VERSIONS.yaml` 的版本，并在 `CHANGELOG.md` 写该组件本版条目，与功能代码同一个提交；提交后打 `<component>/v<版本>` tag。
+2. 在 `RELEASES.yaml` 写系统包：`components` 钉住六个组件版本（须等于 `VERSIONS.yaml`），`external` 列出不在本包构建/验证的组件。
+3. 提交，得到 git hash，打 `system/v<版本>` tag 指向该提交。
+4. 从该提交运行构建（干净工作树，产物身份不带 `.dirty`），并在实板完成测试。
+5. 归档 report/change 记录（`reports/changes/<commit7>.md` 与同名 `.json`），然后运行 `release.py` 生成最终包。
 
 被测试与被发布的 binary 必须来自已提交树；dirty 树的构建只能作为候选验证，不能作为发布验收。
 
 ```powershell
-.venv/Scripts/python.exe scripts/release.py --version <VERSION> --build <配置模板ID> `
+.venv/Scripts/python.exe scripts/release.py --version <系统包版本> --build <配置模板ID> `
   --app firmware/bios/main.c --board-check --baseline <基线ID> `
   --baseline-results <基线all目录> --baseline-results <基线cache目录>
 .venv/Scripts/python.exe scripts/release.py --verify <生成的最终包目录>
 ```
 
-不发布新版本的代码提交加 `--snapshot`，输出 `build/archives/v<版本>-<Git>/`。纯文档提交无需 FPGA 重建。
+不发布新版本的代码提交加 `--snapshot --version <版本>`，输出 `build/archives/v<版本>-<Git>/`。纯文档提交无需 FPGA 重建。
 
 ## 历史阶段补建 tag 与构建包
 
@@ -68,8 +71,8 @@ foreach($tag in <本次 tag 列表>){
 
 - zip 与说明文本由现写的 helper 生成，同样不入库。zip 以 `<tag>/<配置>/` 为顶层目录，内容是已 verify 的整个包，命名 `riscv-mini-<tag>-<配置>.zip`，放在 `build/release-archives/`。
 - 说明文本从各包 `release.json` 与 `validation.json` 生成，不手写数字：阶段能力、tag 指向的完整 commit、构建方式与工具链、PnR 0/0 与 Logic/BSRAM、实板检查数、基准结果与失败项，并指向 `docs/version-history.md` 与 `docs/lab-environment.md`。
-- 历史阶段的包写明它不是正式发布、只有当前 VERSION 是；不使用回填或 backfill 这类标记。
+- 历史阶段的包写明它不是正式发布、只有当前 `VERSIONS.yaml` 各组件版本是；不使用回填或 backfill 这类标记。
 
 ## 完成条件
 
-最终包 complete 且 verify 通过，含二进制、报告、参数、CPU 与工具输入、版本、完整 Git hash 和文件 SHA256。正式包位于 `build/releases/v<版本>/`，提交快照位于 `build/archives/v<版本>-<Git>/`。GitHub 上每个 tag 有对应 Release 与可校验的 archive。
+最终包 complete 且 verify 通过，含二进制、报告、参数、CPU 与工具输入、版本、完整 Git hash 和文件 SHA256。正式包位于 `build/releases/system/v<版本>/`，提交快照位于 `build/archives/v<版本>-<Git>/`。GitHub 上每个 tag 有对应 Release 与可校验的 archive。

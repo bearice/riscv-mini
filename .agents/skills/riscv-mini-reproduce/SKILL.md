@@ -12,6 +12,6 @@ description: 在 TangPrimer-20K/riscv-mini 根据保存的构建 ID 和 recipe �
 .venv/Scripts/python.exe scripts/builds.py reproduce <完整构建ID> --output-dir build/runs/<新复现目录>
 ```
 
-确认 catalog、recipe 和匹配的工具/依赖可用。脚本在独立 detached checkout 恢复 Git 源码、VERSION、dirty patch、未跟踪源码、构建参数与 CPU RTL/元数据。使用新目录，保留原身份和证据。
+确认 catalog、recipe 和匹配的工具/依赖可用。脚本在独立 detached checkout 恢复 Git 源码、VERSIONS.yaml、dirty patch、未跟踪源码、构建参数与 CPU RTL/元数据。使用新目录，保留原身份和证据。
 
 完成条件：新产物及 validation 可查，参数和输入对应原 recipe。PnR、板测或性能按实际复验记录，复现生成不继承旧板测；需要验证时读取同级 `riscv-mini-test/SKILL.md`。

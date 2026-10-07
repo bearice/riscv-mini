@@ -56,7 +56,7 @@ git status --short
 git tag -a bios/v0.7.2 -m 'riscv-mini bios 0.7.2'  # 组件发布；system 包用 system/v<版本>
 ```
 
-普通提交不创建发布 tag。组件发布顺序：bump `VERSIONS.yaml` 里那个组件并在 `CHANGELOG.md` 写 `## <组件> v<版本>` 条目，与功能代码同一个提交；提交得到 git hash 后，从该提交运行构建（干净工作树，产物身份不带 `.dirty`）并完成实板测试；再归档范围记录（`reports/changes/<commit7>.md` 与同名 `.json`）、打 `<组件>/v<版本>` tag，tag 指向最终干净提交。系统包发布另在 `RELEASES.yaml` 钉住组件组合，打 `system/v<版本>` tag，然后进入第 6 节生成整 SoC 最终包。不可覆盖已发布版本。实现或普通报告改动后重新验证并生成范围。此流程不自动推送。
+普通提交不创建发布 tag。组件发布顺序：bump `VERSIONS.yaml` 里那个组件并在 `CHANGELOG.md` 写 `## <组件> v<版本>` 条目，与功能代码同一个提交；提交得到 git hash 后，从该提交运行构建（干净工作树，产物身份不带 `.dirty`）并完成实板测试；再归档范围记录（`reports/changes/<commit7>.md` 与同名 `.json`）、打 `<组件>/v<版本>` tag，tag 指向最终干净提交。系统包发布另在 `RELEASES.yaml` 钉住组件组合（`components` 必须等于当前 `VERSIONS.yaml`，`release.py` 会校验并在构建后核对产物 `component_versions`；不在本包构建/验证的组件如 OpenSBI、U-Boot 写进 `external:`），打 `system/v<版本>` tag，然后进入第 6 节生成整 SoC 最终包。不可覆盖已发布版本。实现或普通报告改动后重新验证并生成范围。此流程不自动推送。
 
 ## 6. 提交后生成并校验最终产物
 

@@ -23,6 +23,6 @@ git commit -m '<本次提交说明>'
 
 硬件/固件提交还需为 prepare 指定本次 `--build` 和 `--performance-report`。暂存内容变化后重新 prepare；本地指纹丢失也重新生成。报告写行为、验收和限制，文件清单与精确范围直接查 Git。
 
-产品代码发布更新 VERSION，prepare 增加 `--release-version <版本> --write-changelog`，提交后创建同版本 tag。文档、报告与流程提交直接按第 1、3 节确认范围并提交，不生成 `reports/changes/` 记录，版本和 CHANGELOG 不增加条目。推送按用户要求执行。
+产品代码发布只递增被改动组件在 `VERSIONS.yaml` 里的版本（rtl/bootloader/hal/bios/opensbi/uboot 各自独立），prepare 增加 `--component <组件> --release-version <版本> --write-changelog`（版本必须等于该组件在 `VERSIONS.yaml` 的值），提交后创建命名空间 tag `<component>/v<版本>`。系统包版本不在此递增——它由 `RELEASES.yaml` 在发布时定义，见 `riscv-mini-release/SKILL.md`。文档、报告与流程提交直接按第 1、3 节确认范围并提交，不生成 `reports/changes/` 记录，版本和 CHANGELOG 不增加条目。推送按用户要求执行。
 
 代码提交后继续生成最终产物，读取同级 `riscv-mini-release/SKILL.md`。

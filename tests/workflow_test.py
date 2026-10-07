@@ -17,8 +17,8 @@ from scripts.build_recipe import create_recipe, reproduce, verify_recipe
 from builds import clean_build
 from performance_report import compare, load_measurements
 from prepare_commit import scope
-from release import release_version, verify_bundle
-from versions import COMPONENTS, bundle_versions, read_versions
+from release import bundle_mismatch, release_version, verify_bundle
+from versions import COMPONENTS, bundle_external, bundle_versions, read_releases, read_versions
 
 
 def sha(data):return hashlib.sha256(data).hexdigest()
@@ -183,7 +183,20 @@ class WorkflowTests(unittest.TestCase):
             rel=Path(tmp)/'RELEASES.yaml'
             rel.write_text('0.7.2:\n  '+'\n  '.join(f'{c}: 0.7.1' for c in COMPONENTS)+'\n')
             self.assertEqual(set(bundle_versions('0.7.2',rel)),set(COMPONENTS))
+            self.assertEqual(bundle_external('0.7.2',rel),[])
             with self.assertRaises(ValueError):bundle_versions('9.9.9',rel)
+            rel.write_text('0.7.2:\n  components:\n    '+'\n    '.join(f'{c}: 0.7.1' for c in COMPONENTS)
+                +'\n  external: [opensbi, uboot]\n')
+            self.assertEqual(bundle_external('0.7.2',rel),['opensbi','uboot'])
+            rel.write_text('0.7.2:\n  components:\n    '+'\n    '.join(f'{c}: 0.7.1' for c in COMPONENTS)
+                +'\n  external: [nonexistent]\n')
+            with self.assertRaises(ValueError):read_releases(rel)
+
+    def test_bundle_must_match_current_versions(self):
+        current=read_versions()
+        self.assertEqual(bundle_mismatch(current,current),'')
+        off=dict(current);off['bios']='9.9.9'
+        self.assertIn('bios: bundle 9.9.9 != current',bundle_mismatch(off,current))
 
 
 if __name__=='__main__':

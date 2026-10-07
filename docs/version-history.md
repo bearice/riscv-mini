@@ -2,13 +2,15 @@
 
 ## 组件版本与系统包
 
-版本是给人看的标签；组件之间的真实兼容性由内容哈希保证——每个镜像内嵌 CSR `abi_tag`，RTL 身份是 `validation.json` 的 `rtl_sha256`。所以"旧 RTL 跑新 BIOS"在机制上本来就成立，不需要版本号相等。版本号只用于沟通"这是哪一版"。
+版本是给人看的标签，本身不证明兼容性。构建会记录内容指纹——每个镜像内嵌 CSR `abi_tag`（覆盖 CSR 地址、内存映射与部分配置），`validation.json` 的 `rtl_sha256` 记录 RTL 输入身份——但这些只是接口/身份指纹：指纹一致只能说明 CSR 与 RTL 输入未变，**不能单独证明所有硬件行为兼容**。真正的兼容性结论要靠接口契约加针对性验证（板测）。所以"旧 RTL 跑新 BIOS"在 CSR/内存映射不变时通常能加载，行为是否正确仍要上板确认；版本号只用于沟通"这是哪一版"。
 
 因此版本按组件独立递增，记录在 `VERSIONS.yaml`（六个组件：`rtl`、`bootloader`、`hal`、`bios`、`opensbi`、`uboot`）。只有真正改动的组件才递增自己的版本，未改的组件保持原版本。`hal` 是静态链接进 BIOS 的源码库，它的版本是溯源标签（BIOS 构建记录"built against hal vX"），兼容性仍走 `abi_tag`。新组件从 `0.1.0` 起；既有组件继承最后一次合并发布的版本（0.7.1）。
 
 真正上板验收、打包发布的是**系统包**：一组被验证过能一起工作的组件版本，记录在 `RELEASES.yaml`。`scripts/release.py --version <包版本>` 按 `RELEASES.yaml` 里钉住的组件组合构建整 SoC 包，打 `system/v<包版本>` tag。组件单独发布打 `<组件>/v<版本>` tag（如 `bios/v0.7.2`、`uboot/v0.1.0`）。只有 `rtl` 版本变化才重跑 PnR 与性能（见 [提交前 SOP](pre-commit-sop.md)）。
 
-读取入口是 `scripts/versions.py`：`read_versions()`、`component_version()`、`read_releases()`、`bundle_versions()`。`build.py` 把各组件版本写进 `features.h`（`MINI_VERSION_*`）和 `validation.json` 的 `component_versions`，构建身份 `build_id` 用被构建应用组件的版本。
+`release.py` 从当前 HEAD 构建，所以它要求 `RELEASES.yaml` 的组件组合等于当前 `VERSIONS.yaml`，构建后还会把产物 `validation.json` 的 `component_versions` 与组合再核对一次，不一致就拒绝——包不会宣称它没构建的版本。包只构建并板测 SoC/bootloader/应用；OpenSBI、U-Boot 这类由各自流程（`uboot_verify.py` 等）单独构建与验收的组件，在 `RELEASES.yaml` 的 `external:` 里声明为"已声明兼容、不在本包内构建/验证"，包的 `validation.json` 用 `verified_components` 标明本包实际覆盖的组件，避免用六个版本号暗示全部已验收。
+
+读取入口是 `scripts/versions.py`：`read_versions()`、`component_version()`、`read_releases()`、`bundle_versions()`、`bundle_external()`。`build.py` 把各组件版本写进 `features.h`（`MINI_VERSION_*`）和 `validation.json` 的 `component_versions`。ROM 横幅用 bootloader 版本（`MINI_BUILD_ID`，`MINI_BUILD_VERSION`=`bootloader`），BIOS 横幅用 BIOS 版本（`MINI_APP_ID`，`MINI_APP_VERSION`=`bios`），两者共享 Git/输入指纹与 RTL/ROM 哈希；`build_id` 用被构建应用组件的版本。
 
 ## 合并版本时代（0.1.0–0.7.1）
 

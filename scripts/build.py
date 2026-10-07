@@ -182,9 +182,11 @@ def main():
     capabilities=cpu_capabilities(a.cpu_verilog) if a.cpu_verilog else {'mmu':False,'fpu':False,'dcache':False,'compressed':False,'bitmanip':[]}
     isa=cpu_isa(features,capabilities)
     component_versions=read_versions()
-    # The released artifact is the DDR application; identify it by its component.
+    # The ROM is the bootloader; the DDR application is a separate component. Each banner must
+    # carry its own component's version, never the other's.
     app_component='bios' if a.app.resolve()==ROOT/'firmware/bios/main.c' else None
-    version=component_versions[app_component] if app_component else '0.0.0-dev'
+    app_version=component_versions[app_component] if app_component else '0.0.0-dev'
+    boot_version=component_versions['bootloader']
     version_defines=''.join(f'#define MINI_VERSION_{name.upper()} "{component_versions[name]}"\n' for name in COMPONENTS)
     rtl_digest=hashlib.sha256()
     for rel in ('gateware/riscv_mini.v','gateware/rtl-manifest.json'):
@@ -193,11 +195,12 @@ def main():
     if a.cpu_verilog:rtl_digest.update(a.cpu_verilog.read_bytes())
     (include/'features.h').write_text(features.header()+f'#define MINI_CPU_ISA "{isa}"\n#define MINI_CPU_COMPRESSED {int(capabilities["compressed"])}\n#define MINI_CPU_BITMANIP {int(bool(capabilities["bitmanip"]))}\n#define MINI_SD_PROFILE "{a.sd_profile}"\n'
         +version_defines
-        +f'#define MINI_BUILD_VERSION "{version}"\n#define MINI_BUILD_COMMIT "{source["commit"][:7]}"\n'
+        +f'#define MINI_BUILD_VERSION "{boot_version}"\n#define MINI_APP_VERSION "{app_version}"\n#define MINI_BUILD_COMMIT "{source["commit"][:7]}"\n'
         +f'#define MINI_BUILD_DIRTY {int(bool(source["dirty"]))}\n#define MINI_BUILD_CONFIG "{source["inputs_sha256"][:8]}"\n'
         +f'#define MINI_BUILD_RTL "{rtl_digest.hexdigest()[:8]}"\n'
         '#if MINI_BUILD_DIRTY\n#define MINI_BUILD_SUFFIX ".dirty"\n#else\n#define MINI_BUILD_SUFFIX ""\n#endif\n'
         '#define MINI_BUILD_ID MINI_BUILD_VERSION "+" MINI_BUILD_COMMIT "." MINI_BUILD_CONFIG MINI_BUILD_SUFFIX\n'
+        '#define MINI_APP_ID MINI_APP_VERSION "+" MINI_BUILD_COMMIT "." MINI_BUILD_CONFIG MINI_BUILD_SUFFIX\n'
         '#define MINI_BUILD_RTL_ID "rtl" MINI_BUILD_RTL\n',encoding='utf-8')
     abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
     loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
@@ -280,7 +283,7 @@ def main():
         'place_option':a.place_option,'route_option':a.route_option,
         'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'application_source':str(a.app.resolve()),
-        'build_id':f'{app_component or "app"}-{version}+{source["commit"][:7]}.{source["inputs_sha256"][:8]}' + ('.dirty' if source['dirty'] else ''),
+        'build_id':f'{app_component or "app"}-{app_version}+{source["commit"][:7]}.{source["inputs_sha256"][:8]}' + ('.dirty' if source['dirty'] else ''),
         'component_versions':component_versions,'app_component':app_component,
         'rtl_sha256':rtl_digest.hexdigest(),'config_sha256':source['inputs_sha256'],
         'boot_image':{'abi_tag':abi,'flash_offset':FLASH_OFFSET,'load_address':LOAD,'entry':LOAD,

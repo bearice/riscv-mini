@@ -5,11 +5,19 @@
 # was qualified together. Component versions live in VERSIONS.yaml; a bundle
 # only records which of those versions were verified as one system.
 #
+# A bundle pins all six component versions, but the release package only builds
+# and board-checks part of that set. `external` names the components that are
+# declared compatible yet NOT built or verified by this package — they are built
+# and verified by their own flows (e.g. uboot_verify.py) and are not shipped in
+# the package. Omit `external` when the package covers every component.
+#
 # Example:
 #   0.7.2:
-#     rtl: 0.7.1
-#     bootloader: 0.7.1
-#     hal: 0.7.1
-#     bios: 0.7.2
-#     opensbi: 0.7.1
-#     uboot: 0.1.0
+#     components:
+#       rtl: 0.7.1
+#       bootloader: 0.7.1
+#       hal: 0.7.1
+#       bios: 0.7.2
+#       opensbi: 0.7.1
+#       uboot: 0.1.0
+#     external: [opensbi, uboot]

@@ -36,25 +36,47 @@ def component_version(component, path=ROOT / 'VERSIONS.yaml'):
 
 
 def read_releases(path=ROOT / 'RELEASES.yaml'):
-    """System bundles: a board-qualified combination pinning exact component versions."""
+    """System bundles: a board-qualified combination pinning exact component versions.
+
+    A bundle pins all six component versions, but the release package only builds
+    and board-checks part of that set. `external` names the components that are
+    declared compatible but NOT built or verified by this package (they are built
+    and verified by their own flows, e.g. uboot_verify.py). A bundle written as a
+    flat map of six versions has an empty external set."""
     path = Path(path)
     data = (yaml.safe_load(path.read_text(encoding='utf-8')) if path.is_file() else None) or {}
     if not isinstance(data, dict):
         raise ValueError('RELEASES.yaml must map each bundle version to component versions')
-    for bundle, pins in data.items():
+    releases = {}
+    for bundle, spec in data.items():
         if not SEMVER.match(str(bundle)):
             raise ValueError(f'bundle version {bundle!r} is not MAJOR.MINOR.PATCH')
+        if isinstance(spec, dict) and 'components' in spec:
+            pins, external = spec['components'], spec.get('external', [])
+        else:
+            pins, external = spec, []
         if not isinstance(pins, dict) or set(pins) != set(COMPONENTS):
             raise ValueError(f'bundle {bundle} must pin exactly the six components')
         for component, value in pins.items():
             if not SEMVER.match(str(value)):
                 raise ValueError(f'bundle {bundle} pins {component}={value!r}, not MAJOR.MINOR.PATCH')
-    return {str(bundle): {component: str(pins[component]) for component in COMPONENTS}
-            for bundle, pins in data.items()}
+        if not isinstance(external, list) or any(e not in COMPONENTS for e in external):
+            raise ValueError(f'bundle {bundle} external must list component names')
+        releases[str(bundle)] = {'components': {c: str(pins[c]) for c in COMPONENTS},
+                                'external': [str(e) for e in external]}
+    return releases
 
 
 def bundle_versions(version, path=ROOT / 'RELEASES.yaml'):
     releases = read_releases(path)
     if version not in releases:
         raise ValueError(f'Add bundle {version} to RELEASES.yaml before releasing it')
-    return releases[version]
+    return releases[version]['components']
+
+
+def bundle_external(version, path=ROOT / 'RELEASES.yaml'):
+    """Components declared compatible by the bundle but not built/verified by its package."""
+    releases = read_releases(path)
+    if version not in releases:
+        raise ValueError(f'Add bundle {version} to RELEASES.yaml before releasing it')
+    return releases[version]['external']

@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from build_records import ROOT, artifact_identity, configuration_name, get_record, git, now, pin, register, source_identity, write_json
-from versions import bundle_versions, read_versions
+from versions import COMPONENTS, bundle_external, bundle_versions, read_versions
 
 
 def release_version(value):
@@ -19,6 +19,12 @@ def release_version(value):
     if not match or any(not token or token.isdigit() and len(token)>1 and token[0]=='0' for token in identifiers):
         raise ValueError('Use a semantic release version such as 0.7.0')
     return value
+
+
+def bundle_mismatch(components, current):
+    """Human-readable diff between a bundle's pins and the current component versions, or ''."""
+    return ', '.join(f'{c}: bundle {components[c]} != current {current[c]}'
+                     for c in COMPONENTS if components[c] != current[c])
 
 
 def verify_bundle(directory):
@@ -59,6 +65,10 @@ def package(run, destination, source):
     v['final_git_commit']=source['commit']
     v['release_version']=source['version']
     v['components']=source.get('components')
+    v['external']=source.get('external')
+    if source.get('components'):
+        external=set(source.get('external') or [])
+        v['verified_components']=[c for c in COMPONENTS if c not in external]
     write_json(destination/'validation.json',v)
     recipe=json.loads((destination/'replay/recipe.json').read_text(encoding='utf-8'))
     write_json(destination/'build-parameters.json',dict(arguments=recipe['arguments'],
@@ -94,14 +104,21 @@ def main():
     if a.snapshot:
         # A commit snapshot is a whole-tree archive, not a qualified bundle: it
         # keeps the legacy v<version> label and needs no RELEASES.yaml entry.
-        components=None;tag='v'+version
+        components=None;external=None;tag='v'+version
     else:
-        components=bundle_versions(version);tag='system/v'+version
+        components=bundle_versions(version);external=bundle_external(version);tag='system/v'+version
+        # The release builds from HEAD, so the bundle must equal the current
+        # component versions; otherwise the package would claim versions it did
+        # not build. (Mixing components from different commits would need
+        # per-component source selection, which this single-HEAD model does not do.)
+        current=read_versions()
+        diff=bundle_mismatch(components,current)
+        if diff:p.error('RELEASES.yaml bundle '+version+' does not match current VERSIONS.yaml ('+diff+'); bump VERSIONS.yaml or fix the bundle first')
         try:tag_commit=git('rev-parse',tag+'^{commit}').decode().strip()
         except subprocess.CalledProcessError:p.error('Create the local release tag '+tag+' after committing code first')
         if tag_commit!=git('rev-parse','HEAD').decode().strip():p.error('Release tag must point to the clean checkout being built')
     template=get_record(a.build);v=artifact_identity(template['path'])
-    source=source_identity();source.update(kind='captured',created_at=now(),version=version,components=components)
+    source=source_identity();source.update(kind='captured',created_at=now(),version=version,components=components,external=external)
     config=configuration_name(v['profile'],v['isa'],v['rom_size_bytes'],v['l2_size_bytes'])
     final=(ROOT/'build/archives'/f"{tag}-{source['commit'][:12]}" if a.snapshot else ROOT/'build/releases'/tag)/config
     receipt=dict(version=version,tag=None if a.snapshot else tag,release_kind='commit-snapshot' if a.snapshot else 'code-release')
@@ -135,7 +152,10 @@ def main():
         execute('build',['scripts/build.py',*args])
         info=json.loads((run/'build-info.json').read_text(encoding='utf-8'));source=info['source']
         source['version']=version
-        source['components']=components
+        source['components']=components;source['external']=external
+        # The package claims the bundle's versions; the build must have produced exactly them.
+        built=json.loads((run/'validation.json').read_text(encoding='utf-8')).get('component_versions')
+        if components and built!=components:raise ValueError('Built component versions differ from the released bundle: built '+str(built)+' != bundle '+str(components))
         if source['dirty'] or source['commit']!=git('rev-parse','HEAD').decode().strip():raise ValueError('Committed source changed during final build')
         if a.board_check:execute('board',['scripts/firmware_verify.py','--program','--output-dir',str(run),'--soak-seconds','60','--mic'])
         if a.baseline:
