@@ -103,6 +103,12 @@ int bios_ping(const char *target,unsigned count) {
     bios_puts(" ms=");bios_decimal(hal_time_ms()-start);bios_puts("\r\n");
     return answered;
 }
+#else
+int bios_ping(const char *target,unsigned count) {
+    (void)target;(void)count;
+    bios_puts("ERR eth unavailable\r\n");
+    return 0;
+}
 #endif
 static int tftp_transfer(const uint8_t server[4],const char *path,void *dest,unsigned cap,unsigned *length) {
 #if MINI_FEATURE_ETH

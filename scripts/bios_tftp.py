@@ -56,19 +56,26 @@ class PayloadServer:
             t_start = time.monotonic()
             if blksize != 512:
                 # OACK (opcode 6) then wait for the client's ACK 0 before DATA 1.
+                # The OACK can be lost; retransmit it until the client's ACK 0
+                # arrives. If we sent DATA without the client having the OACK it
+                # would still be at 512 B and reject our larger blocks, and the
+                # negotiation could not recover. Give up after bounded retries.
                 oack = struct.pack('!H', 6) + b'blksize\0' + str(blksize).encode() + b'\0'
                 transfer.sendto(oack, client)
                 self.events.append(f'OACK blksize={blksize}')
                 self.stats['blksize'] = blksize
-                deadline = time.monotonic() + 2.0
-                while time.monotonic() < deadline:
+                acked = False
+                for _ in range(5):
                     try:
                         ack, sender = transfer.recvfrom(1024)
                     except socket.timeout:
-                        break
+                        transfer.sendto(oack, client)
+                        self.events.append('OACK retransmit')
+                        continue
                     if sender == client and ack == struct.pack('!HH', 4, 0):
+                        acked = True
                         break
-                else:
+                if not acked:
                     raise TimeoutError('TFTP ACK 0 not received')
             for block, offset in enumerate(range(0, len(self.data) + 1, blksize), 1):
                 packet = struct.pack('!HH', 3, block) + self.data[offset:offset + blksize]
