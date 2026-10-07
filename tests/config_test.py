@@ -13,6 +13,9 @@ def rejected(function,*args):
 
 full=Features.resolve('full')
 assert full.mmu and full.fpu
+assert not full.eth_dma
+assert Features.resolve('full',{'eth_dma':True}).eth_dma
+rejected(Features.resolve,'full',{'eth_dma':True,'eth':False})
 assert not Features.resolve('minimal').mmu and not Features.resolve('minimal').fpu
 assert not Features.resolve('full',{'mmu':False,'fpu':False}).mmu
 assert storage_profile(None,None,full)[0]=='lite'

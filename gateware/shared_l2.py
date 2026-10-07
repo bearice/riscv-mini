@@ -12,7 +12,8 @@ from litedram.common import LiteDRAMNativePort
 
 
 class SharedL2(LiteXModule):
-    def __init__(self, master, backend, size=4096, writeback=True, enabled=1, video=None, dma=None, boot_ram=False):
+    def __init__(self, master, backend, size=4096, writeback=True, enabled=1, video=None, dma=None, boot_ram=False, maintenance_ready=1):
+        if isinstance(enabled,int):enabled=Constant(enabled,1)
         if size < 256 or size & (size-1):raise ValueError('Invalid shared L2 size')
         if boot_ram and (size < 4096 or not writeback):raise ValueError('Boot RAM requires >=4 KiB writeback L2')
         self.video=video=video or LiteDRAMNativePort('read',backend.address_width,128)
@@ -36,6 +37,8 @@ class SharedL2(LiteXModule):
         invalidate=Signal();request=Signal();invalidate_request=Signal();active=Signal(reset=1)
         hits=Signal(16);misses=Signal(16);last=Signal(2,reset=2);choice=Signal(2)
         pending=[master.cyc & master.stb,video.cmd.valid,dma.cmd.valid]
+        self.maintenance_pending=Signal()
+        self.comb += self.maintenance_pending.eq(request | cleaning | (active != self._enable.storage))
         # Round robin at complete transaction boundaries, so a streaming video
         # reader cannot starve the CPU and a CPU burst cannot starve scanout.
         self.comb += Case(last,{i:
@@ -77,7 +80,7 @@ class SharedL2(LiteXModule):
             NextValue(lane,master.adr[:2]),NextValue(abandoned,0),
             NextValue(allocate,active & (master.adr < (RAM_END>>2))),NextState('RAM')]
         fsm.act('IDLE',
-            If((request | (active != self._enable.storage)) & (enabled if boot_ram else 1),
+            If((request | (active != self._enable.storage)) & (enabled if boot_ram else 1) & maintenance_ready,
                 NextValue(cleaning,1),NextValue(cursor,0),
                 NextValue(invalidate,invalidate_request | ~self._enable.storage),
                 NextValue(request,0),NextValue(invalidate_request,0),NextState('SCAN_RAM')

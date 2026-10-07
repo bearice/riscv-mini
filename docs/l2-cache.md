@@ -1,6 +1,6 @@
 # 共享 writeback L2
 
-默认构建使用 [`SharedL2`](../gateware/shared_l2.py)：CPU 和低带宽 Wishbone DMA 共用一个 32-bit 入口，LCD 扫描和 SD lite 使用两个 128-bit coherent streaming 入口。缓存与端口仲裁处于同一个状态机内，后端直接连接 LiteDRAM native crossbar，不再经过 128-bit Wishbone 或另一套自定义 DDR scheduler。
+默认构建使用 [`SharedL2`](../gateware/shared_l2.py)：CPU 和低带宽 Wishbone DMA 共用一个 32-bit 入口，LCD 扫描和 SD lite 通过 [共享内存控制器](memory-controller.md) 的独立端口缓冲，转换到 L2 内部的两个 128-bit coherent streaming 入口。LCD 外部接口是 16-bit，SD 是 32-bit。缓存与内部三入口仲裁处于同一个状态机内，后端直接连接 LiteDRAM native crossbar。
 
 ## 数据与所有权
 
@@ -16,7 +16,9 @@ LiteDRAM crossbar 保留控制器的 bank 仲裁与响应路由职责；L2 内�
 
 32-bit 写 ACK 表示修改已进入共享缓存或提交 DDR，128-bit 入口随后能观察修改。普通设备访问不要求将整个 L2 写回物理 DDR。CPU 使用原生 VexRiscv cache/fence 实现，不再导出外部 fence/atomic 信号；L2 按普通读写事务处理 CPU 请求，没有独立的 atomic bypass 或 fence drain 路径。这不增加 CPU 与 DMA 并发访问下的原子性保证。
 
-L2 CSR 提供 enable、stats、flush、invalidate、busy。flush 写回 dirty 行并保留 valid；invalidate 先写回再失效；禁用缓存先写回并失效。软件请求维护后要等待 busy 完成。stats 的低/高 16-bit 分别为命中/未命中，按模计数。
+内存控制器将慢客户端的数据等待留在各自的端口 buffer，读响应存入 buffer 后释放 L2，写 burst 收齐后才进入 L2。
+
+L2 CSR 提供 enable、stats、flush、invalidate、busy。flush 写回 dirty 行并保留 valid；invalidate 先写回再失效；禁用缓存先写回并失效。软件请求维护后要等待 busy 完成。维护开始前会排空已接收的 SD 写 buffer，期间不接收新的 SD 写命令。stats 的低/高 16-bit 分别为命中/未命中，按模计数。
 
 共享 L2 没有 snoop CPU 私有 L1。DMA buffer 所有权交接仍使用 HAL 的 fence 与 D-cache invalidate；coherent streaming 入口解决的是 L2 可见性，不保证任意并发 CPU/DMA 修改或完整多核缓存一致性。音频保持 32-bit Wishbone DMA，Ethernet 保持 CPU 访问 packet SRAM。
 

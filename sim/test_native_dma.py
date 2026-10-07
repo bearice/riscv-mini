@@ -7,6 +7,7 @@ from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
 from gateware.native_dma import NativeSDTransfer, NativeDMAArbiter
+from gateware.memory import MemoryPort, PortBuffer
 
 def backend(port, memory, counts):
     @passive
@@ -34,42 +35,44 @@ def backend(port, memory, counts):
     return serve()
 
 def sd(write,length,abort=False):
-    p=LiteDRAMNativePort('both',23,128);dut=NativeSDTransfer(p,write)
+    p=LiteDRAMNativePort('both',23,128);client=MemoryPort('write' if write else 'read')
+    dut=Module();dut.submodules.transfer=transfer=NativeSDTransfer(client,write)
+    dut.submodules.buffer=PortBuffer(client,p)
     data=bytes((i*37+11)&255 for i in range(length));memory={0x1000+i:v for i,v in enumerate(data)} if not write else {}
     counts=[]
     def check():
-        yield dut._base.storage.eq(0x40001000);yield dut._length.storage.eq(length);yield dut._enable.storage.eq(1);yield
+        yield transfer._base.storage.eq(0x00001000);yield transfer._length.storage.eq(length);yield transfer._enable.storage.eq(1);yield
         if abort:
             if write:
                 for i in range(4):
-                    yield dut.sink.data.eq(i);yield dut.sink.valid.eq(1);yield
-                    while not (yield dut.sink.ready):yield
-                    yield dut.sink.valid.eq(0);yield
+                    yield transfer.sink.data.eq(i);yield transfer.sink.valid.eq(1);yield
+                    while not (yield transfer.sink.ready):yield
+                    yield transfer.sink.valid.eq(0);yield
             while not counts:yield
-            yield dut._enable.storage.eq(0)
+            yield transfer._enable.storage.eq(0)
             for _ in range(80):yield
-            assert not (yield dut._busy.status)
+            assert not (yield transfer._busy.status)
             return
         for offset in range(0,length,4):
             word=int.from_bytes(data[offset:offset+4],'big')
             if write:
-                yield dut.sink.data.eq(word);yield dut.sink.valid.eq(1);yield
-                while not (yield dut.sink.ready):yield
-                yield dut.sink.valid.eq(0);yield
+                yield transfer.sink.data.eq(word);yield transfer.sink.valid.eq(1);yield
+                while not (yield transfer.sink.ready):yield
+                yield transfer.sink.valid.eq(0);yield
             else:
-                while not (yield dut.source.valid):yield
-                assert (yield dut.source.data)==word,(write,length,offset,hex((yield dut.source.data)),hex(word))
-                yield dut.source.ready.eq(1);yield
-                yield dut.source.ready.eq(0)
+                while not (yield transfer.source.valid):yield
+                assert (yield transfer.source.data)==word,(write,length,offset,hex((yield transfer.source.data)),hex(word))
+                yield transfer.source.ready.eq(1);yield
+                yield transfer.source.ready.eq(0)
                 for _ in range(offset%3+1):yield
-        while not (yield dut._done.status):yield
-        assert not (yield dut._error.status)
+        while not (yield transfer._done.status):yield
+        assert not (yield transfer._error.status)
         assert len(counts)==(length+15)//16,(length,counts)
         assert bytes(memory.get(0x1000+i,0) for i in range(length))==data
         if write:assert 0x1000+length not in memory,'partial final beat wrote outside buffer'
     def timeout():
         for _ in range(100000):
-            if (yield dut._done.status) or (abort and counts and not (yield dut._busy.status)):return
+            if (yield transfer._done.status) or (abort and counts and not (yield transfer._busy.status)):return
             yield
         raise AssertionError('SD stalled')
     run_simulation(dut,[check(),backend(p,memory,counts),timeout()])

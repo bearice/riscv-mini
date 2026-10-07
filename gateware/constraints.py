@@ -66,7 +66,7 @@ def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
             if with_video:
                 pairs=re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl)
                 stages=[dest for dest,src in pairs if src=='lcd_video_enable' or
-                    re.fullmatch(r'rgb_lcd_(?:cdc_cdc_graycounter[01]_q|(?:start|done|error)_toggle_i)',src)]
+                    re.fullmatch(r'rgb_lcd_(?:cdc_(?:cdc_)?graycounter[01]_q|(?:start|done|error)_toggle_i)',src)]
                 if len(stages)!=6: raise ValueError(f'Unexpected LCD CDC first stages: {stages}')
                 stream.write('# LCD CDC: only async first-stage D pins; second stages stay timed.\n')
                 stream.write('set_false_path -through [get_nets {lcd_video_async_reset}]\n')
