@@ -20,7 +20,9 @@
 | --- | --- |
 | 文档、提交/构建管理脚本 | 相应主机回归、CLI smoke、范围/报告校验；历史性能只作关联 |
 | CPU/L2/DDR/总线/外设 gateware | 针对性 RTL/DFI 回归、实际配置 PnR setup/hold 0/0、匹配镜像实板检查、受影响并发及性能 |
-| firmware/HAL/编译参数 | 编译、ABI/CRC、相关主机/实板测试及受影响热点 benchmark |
+| firmware/HAL/编译参数（bootloader、BIOS、驱动等软件） | 编译、ABI/CRC、相关主机回归与功能实板测试；RTL 不变时跳过全部硬件相关测试 |
+
+RTL（gateware）不变时，先前硬件验收仍然成立：纯软件改动（bootloader、BIOS、驱动、HAL、编译参数）跳过所有硬件相关测试——不重跑 PnR/时序、不要求 captured board-qualified 构建、不做性能基准，只做主机回归与功能实板验证。只有 RTL 改变才重新做硬件验收（captured board-qualified 构建 + PnR + 性能基线），因为 RTL 影响时序与资源。
 
 记录测试命令、源码输入指纹和实际报告路径。PnR 与实板验收分开，板测必须同时匹配 FS 和 app image hash。新增硬件/固件不能继承旧板测。失败、未跑项和物理观察限制保留。默认 storage benchmark 只读，常规程序只写 FPGA SRAM/UART。
 
@@ -37,7 +39,7 @@ all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测
   --checks build/reports/checks/workflow.json --output reports/changes/pending.md
 ```
 
-报告只保存人工审阅的改动说明、验证结果、性能依据和必要版本引用，不重复 Git 的文件清单或 diffstat。最终 Git index 的 patch 指纹只保存在本地 build/reports/commit-checks，--verify 用它检测暂存内容是否变化；本地记录缺失时重新 prepare。CHANGELOG 和 reports/changes 自身排除以免自引用。检查输入指纹必须匹配。硬件/固件提交额外使用新 captured/board-qualified 构建及性能报告。
+报告只保存人工审阅的改动说明、验证结果、性能依据和必要版本引用，不重复 Git 的文件清单或 diffstat。最终 Git index 的 patch 指纹只保存在本地 build/reports/commit-checks，--verify 用它检测暂存内容是否变化；本地记录缺失时重新 prepare。CHANGELOG 和 reports/changes 自身排除以免自引用。检查输入指纹必须匹配。RTL（gateware）提交额外使用新 captured/board-qualified 构建及性能报告；纯软件（firmware/bootloader/BIOS/驱动）提交在 RTL 不变时跳过这些硬件验收，只保留主机回归与功能实板检查。
 
 仅产品代码发布额外传 --release-version <VERSION> --write-changelog，change 只写发布变化；普通提交不传这两个选项。历史功能版本补记可使用 --revision <产品代码提交>，明确是事后记录，不伪造当时的检查。完整提交范围直接查 Git，不再复制到报告或 changelog。
 

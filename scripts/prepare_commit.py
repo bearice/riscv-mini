@@ -51,17 +51,22 @@ def changelog_entry(title, changes, record, performance, checks):
 
 def prepare(title, changes, revision=None, build=None, performance=None, checks=None):
     selected = scope(revision)
-    hardware = any(f['path'].startswith(('gateware/', 'firmware/')) for f in selected['files'])
+    # Only RTL (gateware) changes re-qualify the hardware: they affect timing
+    # and resources, so they need a captured board-qualified build and a
+    # performance baseline. With RTL unchanged the prior hardware qualification
+    # still holds, so software-only changes (bootloader/BIOS/drivers/HAL under
+    # firmware/) skip every hardware-related test and are checked on the host.
+    rtl = any(f['path'].startswith('gateware/') for f in selected['files'])
     if not revision:
         if not checks or checks.get('passed') is not True or checks.get('source_inputs_sha256') != source_identity()['inputs_sha256']:
             raise ValueError('Matching successful check record required; rerun checks after code edits')
-        if hardware:
+        if rtl:
             if not build or build['status'] != 'board-qualified' or build['source'].get('kind') != 'captured':
-                raise ValueError('Hardware/firmware changes require a new captured and board-qualified build')
+                raise ValueError('RTL/gateware changes require a new captured and board-qualified build')
             if build['source']['inputs_sha256'] != source_identity()['inputs_sha256']:
                 raise ValueError('Build inputs no longer match the worktree')
             if not performance:
-                raise ValueError('Hardware/firmware changes require a performance report or an explicitly documented SOP exception')
+                raise ValueError('RTL/gateware changes require a performance report')
     if performance:
         data = json.loads(performance.with_suffix('.json').read_text(encoding='utf-8'))
         if build and (data['candidate']['bitstream_sha256'] != build['bitstream_sha256'] or
