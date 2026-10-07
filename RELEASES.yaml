@@ -21,3 +21,13 @@
 #       opensbi: 0.7.1
 #       uboot: 0.1.0
 #     external: [opensbi, uboot]
+
+0.7.2:
+  components:
+    rtl: 0.7.1
+    bootloader: 0.7.1
+    hal: 0.7.1
+    bios: 0.7.2
+    opensbi: 0.7.1
+    uboot: 0.1.0
+  external: [opensbi, uboot]

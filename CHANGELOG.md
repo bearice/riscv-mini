@@ -2,6 +2,25 @@
 
 版本与功能阶段的对应关系见 [docs/version-history.md](docs/version-history.md)。0.7.1 及之前所有组件共享一个版本号（条目形如 `## v0.7.1`）。从 0.7.2 起版本按组件独立递增，条目形如 `## <组件> v<版本>`（如 `## bios v0.7.2`、`## uboot v0.1.0`），系统包条目形如 `## system v<版本>`；组件版本见 `VERSIONS.yaml`，已验收的组件组合见 `RELEASES.yaml`。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/lab-environment.md](docs/lab-environment.md)。v0.7.1 是合并版本时代的最后一次正式发布。
 
+## system v0.7.2 — 首个按组件独立版本的系统包
+
+- 这是第一个用组件版本机制（`VERSIONS.yaml` + `RELEASES.yaml`）发布的系统包：`rtl 0.7.1`、`bootloader 0.7.1`、`hal 0.7.1`、`bios 0.7.2`、`opensbi 0.7.1`、`uboot 0.1.0`。RTL 未改动，沿用 v0.7.1 已验收的 bitstream，不重跑 PnR 与性能。
+- 系统包只构建并板测 SoC/bootloader/BIOS；`opensbi`、`uboot` 在 `RELEASES.yaml` 中标为 `external`——它们声明兼容、由各自的流程（`uboot_verify.py`）构建与验收，但不随本包收录。`release.json` 因此记录 `external` 与 `verified_components`，不用六个版本号暗示全部已随包验收。
+- 实板验收（同一 bitstream，UART 加载新 BIOS）：`scripts/firmware_verify.py --program` 全部通过（fpu/mmu/isa/l2/fence/uart/irq/ddr/flash/sd/sd blocks/lcd/spi-lcd/io/audio/eth/eth parser/usb/usb tree/dma/usb restart×3/phys/usb input/audio 与 eth 启停、soak 301、usb leds、status）；`scripts/uboot_verify.py --program` 经新 BIOS 的 TFTP 客户端网络启动 `UBOOT.OSB` 成功（1331888 B，933 块 @1428 B，0 重传，380 KiB/s），OpenSBI v1.9 → U-Boot 2026.07 控制台与 `version` 正常。
+
+## bios v0.7.2 — 大镜像网络启动与构建身份分离
+
+- TFTP 客户端支持 RFC 2348 `blksize` 协商（OACK，块大小 1428 B，接收缓冲 1600 B），修复大镜像传输在约 85% 处停滞超时的问题；v0.7.1 的 512 B 客户端下载 1.33 MB 的 `UBOOT.OSB` 会停滞失败，本版实测 933 块、0 重传、380 KiB/s。OACK 重传改为有界循环，只在收到匹配的 ACK 0 后进入 DATA，否则报 `TFTP ACK 0 not received`。
+- `arp_request` 改为按目标 IP 请求；`arp_input` 学习服务器 MAC 而不再污染 `server_ip`；新增 `bios_ping`（ICMP echo），ETH 关闭时提供空实现存根以保证链接。
+- USB IN 传输增加缓冲区上界参数（`cap`），所有调用点受限，避免越界写。
+- 构建身份按组件分离：BIOS 横幅与 `status` 改用 `MINI_APP_ID`（BIOS 自身版本），ROM 横幅继续用 `MINI_BUILD_ID`（解析为 bootloader 版本）。`bootloader=0.7.1`、`bios=0.7.2` 时 ROM 不再误显示 0.7.2；非 BIOS 应用也不再让 ROM 显示 `0.0.0-dev`。Git、输入指纹与产物哈希保持不变。
+
+## uboot v0.1.0 — U-Boot 移植到 riscv-mini
+
+- 首个 U-Boot 移植：基于上游 v2026.07，`firmware/uboot/uboot-port.patch` 记录对上游的最小改动，`scripts/uboot_build.py` 在 WSL 原生 ext4 树可复现地构建（`riscv_mini_defconfig`）。
+- 自研 DM 驱动（IP 均经我方修改，上游驱动不匹配）：`liteeth.c`（UCLASS_ETH，32 位访问）、`litesd.c`（UCLASS_MMC，4-bit + HS，f_max 7.5 MHz）、`liteusb.c`（UCLASS_USB，从零写的 PIO 主机控制器，含共享 PHY 复位 F10 处理）。
+- 实板验收：`ping` 通、SD 识别 58.2 GiB（4-bit）、USB 枚举 Logitech USB Receiver（Vendor 0x046d Product 0xc52b，HID Boot Keyboard+Mouse），`usb tree` 正常。OpenSBI 运行时 DT 暴露 `ethernet@f0002800`、`mmc@f0008000`、`usb@b1000000`。
+
 ## v0.7.1 — 构建身份显示
 
 - ROM、BIOS 与 BIOS `status` 现在打印可追踪的构建身份：`<semver>+<commit7>.<config8>[.dirty]`，其中 `config8` 是构建输入指纹（gateware/firmware 源码、`requirements.lock`、`VERSION` 的 SHA256 前 8 位），同一 `config8` 唯一对应一份构建配置；工作树未提交时带 `.dirty`。
