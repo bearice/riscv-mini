@@ -27,7 +27,7 @@ USB3317 still boots in ULPI mode. The retained `USBPHYInit` FSM reads its ID,
 writes Function Control `04=45`, OTG Control `0A=26`, Interface Control `07=09`,
 then leaves STP low for six-pin serial mode. STP returns an earlier serial
 session to ULPI during a local restart. F10 is still the shared PHY reset.
-The 60 MHz PHY-derived PLL with configured 225 degree phase remains for this
+The 60 MHz PHY-derived PLL with configured 247.5 degree phase remains for this
 initialization timing; it stays running when USB is stopped so the FSM resets.
 With the RGB LCD enabled, this path allocates three PLLs rather than four.
 
@@ -35,8 +35,8 @@ The reference [USB3317 serial-mode notes](https://github.com/kami4ka/tang_comput
 describe this serial pin mapping. This removes ULPI from packet transport;
 it does not remove ULPI register initialization.
 
-PIO registers occupy the same uncached 4 KiB window at `0xB1000000`, named
-`USB_PIO_BASE`. `CONFIG_USB_ULTRA` selects the firmware adapter. The boot image
+PIO registers occupy the uncached 4 KiB window at `0xF2000000`, named
+`USB_PIO_BASE` (`USB_BASE`). `CONFIG_USB_ULTRA` selects the firmware adapter. The boot image
 ABI includes the backend, so an OHCI image cannot silently run against PIO RTL.
 
 TinyUSB still owns enumeration, HID interfaces, Boot keyboard/mouse decoding

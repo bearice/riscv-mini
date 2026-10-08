@@ -4,12 +4,12 @@
 
 ## 系统概览
 
-Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 8 KiB boot ROM 启动，在 L2 启动 RAM 上运行软件 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
+Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 8 KiB boot ROM 或 4 MiB Flash XIP 启动（v0.8.0 默认 XIP，复位入口 0xf3100000 对应物理 Flash 1 MiB，无片内 ROM），在 L2 启动 RAM 上运行软件 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
 - CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD/SD lite 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
-- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，片上 ROM 负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
+- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，启动代码负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
 
 MMU 配置另有 60 MHz 的独立 64 位机器定时器，接 MTIP；S-mode 外设 mask/pending CSR 为 `0x9c0` / `0xdc0`。OpenSBI 的 OSB1 一次性交接与保护边界见 [OpenSBI](opensbi-port.md)。
 
@@ -19,33 +19,37 @@ SD lite 与 LCD 使用共享 L2 的 coherent 128-bit 入口，音频保留 32-bi
 
 | 区域 | 地址 | 说明 |
 | --- | --- | --- |
-| DDR | `0x40000000` | 128 MiB，CPU/LCD/SD 经共享 L2；后端为 LiteDRAM native crossbar |
-| bootloader 栈 / data / BSS | `0x407ff000` | 4 KiB 保留区，训练前由 L2 RAM 提供，训练后按 writeback 保留到 DDR |
-| DDR 应用 | `0x40800000` | linker 固定入口，4 MiB 上限 |
-| RGB 帧缓冲槽 | `0x47e00000` / `0x47e40000` | 双槽，每帧 261,120 B，槽间距 262,144 B，共保留 2 MiB |
-| CSR 外设 | `0xF0000000` 起 | 每个外设 2 KiB 对齐槽位，由 LiteX 自动分配 |
-| Ethernet MAC | `0xb0000000` | 非缓存 Wishbone |
-| USB PIO Host | `0xb1000000` | 非缓存，4 KiB，`CONFIG_USB_ULTRA=1` |
+| Flash XIP | `0xf3000000..0xf33fffff` | Wishbone，4 MiB 只读、可缓存；物理 1 MiB 对应复位入口 0xf3100000 |
+| DDR | `0x00000000..0x07ffffff` | 128 MiB，CPU/LCD/SD 经共享 L2；后端为 LiteDRAM native crossbar |
+| bootloader 栈 / data / BSS | `0x007ff000..0x007fffff` | 4 KiB 保留区，训练前由 L2 RAM 提供，训练后按 writeback 保留到 DDR |
+| DDR 应用 | `0x00800000` | linker 固定入口，4 MiB 窗口 |
+| RGB 帧缓冲槽 | base0/base1 CSR 指定 DDR 地址 | 16 字节对齐，每帧 261,120 B；BIOS 分配双缓冲，U-Boot 单缓冲；CPU 访问可分配 L2 行 |
+| CSR 外设 | `0xf0000000` 起 | 每个外设 2 KiB 对齐槽位，由 LiteX 自动分配 |
+| Ethernet MAC | `0xf1000000` | Wishbone MMIO，2 RX / 2 TX packet slots |
+| USB Host | `0xf2000000` | Wishbone，4 KiB 窗口，Ultra PIO / OHCI 寄存器 |
 
-视频帧槽只允许两个固定地址，不能通过 CSR 任意读 DDR；见 [视频规格](video-spec.md)。
+帧地址由软件通过 `base0/base1` CSR 配置，完整一帧须位于 DDR 内；见 [视频规格](video-spec.md)。
 
 ## 启动与固件更新
 
-1. FPGA 配置（Flash 前 2 MiB）加载后，L2 固定 4 KiB 启动 RAM，ROM 在其中建立栈/data/BSS。
-2. ROM 软件执行 DDR 初始化与训练，成功后解除缓存行固定，保持同一栈地址继续装载。
-3. 两秒窗口内按 `b` 进入恢复菜单、按 `u` 走 UART 装载；无有效 Flash 镜像时同样进入恢复菜单。
-4. 从 Flash 应用分区 `[2,4)` MiB 自动装载；镜像头含 magic/version、CSR ABI id、load 地址、长度、entry、CRC32，CRC/地址/ABI 不匹配则不执行。
-5. 应用跳转到 `0x40800000` 执行。
+统一操作入口是 `./mini.ps1`（Python `scripts/mini.py`），详见 [任务指南](../scripts/README.md)。
 
-Flash 写入按用户要求只做擦除与编程，不做写后读回或配置 CRC 比对；Gowin 使用普通 exFlash Erase/Program，不执行 Verify。默认串口 `COM4`、调试器 location `107569`。命令与镜像格式见 [bootloader](bootloader.md)、[DDR 启动](ddr-boot.md)。
+1. FPGA 配置加载后，L2 固定 4 KiB 启动 RAM，启动代码在 `0x007ff000` 建立栈/data/BSS。
+2. 启动代码执行软件 DDR 初始化与读训练，成功后解除缓存固定，保持同一栈地址继续装载。
+3. 两秒窗口内按 `b` 进入恢复菜单、按 `u` 走 UART 装载；无有效 Flash 镜像时同样进入恢复菜单。
+4. 从 Flash 应用分区（`0x200000` 起）自动装载；镜像头含 magic、CSR ABI id、load 地址（`0x00800000`）、长度、entry、CRC32，CRC/地址/ABI 不匹配则不执行。
+5. 应用跳转到 `0x00800000` 执行。
+
+日常运行与验证优先使用 SRAM 加载和 DDR 运行，不触碰 Flash；持久更新使用 `scripts/mini.py board update --build <ID>`，支持 ROM 与 XIP 双流程，并在写入后对应用及启动区执行逐字节精确读回比较。
 
 ```powershell
-& $MiniPython .\scripts\boot_upload.py --program --mode uart      # FPGA SRAM + UART 装入 DDR
-& $MiniPython .\scripts\boot_upload.py --reset --mode install     # 软件复位并更新应用分区
-& $MiniPython .\scripts\boot_upload.py --configure-flash --mode install
-& $MiniPython .\scripts\boot_verify.py --program --install
-& $MiniPython .\scripts\boot_verify.py --reset --soak-seconds 300
-& $MiniPython .\scripts\boot_repeat_verify.py --output-dir build/base --program-count 3 --reset-count 5
+./mini.ps1 board status                                          # 被动观察 UART
+./mini.ps1 board recover --build current                         # SRAM 加载，进入 boot 菜单
+./mini.ps1 board run --build current                             # SRAM gateware + UART 应用到 DDR
+./mini.ps1 board update --build current --dry-run                # 持久更新预检
+./mini.ps1 board verify --build current --suite firmware         # 固件功能验收
+./mini.ps1 board verify --build current --suite flash            # 精确 Flash 读回比较
+./mini.ps1 board verify --build current --suite cold             # 外部断电冷启动观察
 ```
 
 ## 功能开关与 profile

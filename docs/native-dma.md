@@ -15,7 +15,7 @@
 
 ## 所有权与约束
 
-共享入口的读能看到 L2 dirty 行，SD 写命中会更新 dirty 行，未命中提交 DDR。写入确认在事务提交后返回，不采用提前确认的 posted write。帧缓冲区不分配缓存行。
+共享入口的读能看到 L2 dirty 行，SD 写命中会更新 dirty 行，未命中提交 DDR。写入确认在事务提交后返回，不采用提前确认的 posted write。LCD 扫描流式读取不分配缓存行（但可命中 dirty 行）；CPU 对帧缓冲区的访问属于普通 RAM 访问，可分配 L2 缓存行。
 
 SD 使用 16 字节对齐、4 KiB DDR bounce buffer，上层可提供非对齐缓冲。HAL 所有权交接仍执行 fence 和私有 L1 D-cache invalidate，见 [L2](l2-cache.md)。停止会排空已经接受的请求；长度、对齐和地址错误返回错误，不能用关闭使能撤回已经提交的 DDR 写。
 

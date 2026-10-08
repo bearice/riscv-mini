@@ -100,7 +100,7 @@ flowchart LR
 
 主系统复位由 PLL lock、复位按键、DDR PHY 初始化和 SoC reset 共同参与；LCD 复位同步到 video 域。Ethernet/USB 的外部 PHY 共用 F10 复位输出。USB Host/桥接还有独立的软件复位，PHY 初始化域受 ULPI PLL lock、PHY reset 和 enable 控制。DDR init 时钟独立于可暂停的 sys2x/sys 路径。
 
-`docs/clocks.md` 的 Ultra PLL 225° 描述与当前 `gateware/usb_ultra.py` 不符；本图采用源码的 247.5°。
+Ultra PLL 与当前 `gateware/usb_ultra.py` 及 `docs/clocks.md` 一致，采用 247.5° 配置。
 
 ## 关键设计结论
 

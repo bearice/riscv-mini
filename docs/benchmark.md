@@ -39,7 +39,7 @@ CPU 采用默认 `-Os` 编译。整数/浮点核心使用明确的指令，整�
 当前 [CPU 生成器](../scripts/cpu_generate.py) 设置 `singleCycleMulDiv=false`、`singleCycleShift=false`；因此依赖乘法、移位测试包含多周期执行，不应把 CPU 时钟直接等同于运算吞吐。
 内存读取和复制前执行 D-cache invalidate/fence；小工作集随后重复访问，因此结果包含首轮冷访问和后续热访问。L2 仍启用，没有将 L2 冷/热单独分离。write32 使用当前共享 writeback L2，计时末尾的 fence 保证顺序，不代表所有 dirty 数据已写回物理 DDR。
 
-临时内存窗口为 `0x46000000..0x460fffff` 和 `0x46200000..0x462fffff`，不重叠 BIOS、ROM 工作区、装载暂存区或 framebuffer。只在 BIOS setup 执行，窗口内旧的二级程序数据会被覆盖；后续启动仍按正常装载流程运行。
+临时内存窗口为 `0x06000000..0x060fffff` 和 `0x06200000..0x062fffff`，不重叠 BIOS、ROM 工作区、装载暂存区或 framebuffer。只在 BIOS setup 执行，窗口内旧的二级程序数据会被覆盖；后续启动仍按正常装载流程运行。
 
 USB HID、音频、麦克风是事件或固定采样率接口，本命令不测其最大吞吐。SD 不包含文件系统读写和写入速度；网络不包含 MAC 饱和吞吐、TCP 或独立链路带宽测试。
 

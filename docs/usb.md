@@ -27,7 +27,7 @@ DIR preemption and terminate with STP, including serial-mode entry. STP also
 returns a previous serial session to ULPI for local restart. HAL initialization
 has a 150 ms PHY deadline and OHCI reset/ownership waits are bounded.
 
-OHCI registers occupy `0xB1000000..0xB1000FFF`. HCCA (256-byte aligned), ED/TD
+OHCI registers occupy `0xF2000000..0xF2000FFF` (`USB_BASE`). HCCA (256-byte aligned), ED/TD
 lists, enumeration buffers and HID buffers are in application DDR. No extra
 CPU SRAM ring is required. The default build includes a 4 KiB shared writeback L2 (`--l2-size 4096`). OHCI DMA shares its 32-bit Wishbone entry; HAL fences and private L1 invalidation remain required at ownership changes. The default Ultra backend uses PIO instead. The
 USB Host IRQ number

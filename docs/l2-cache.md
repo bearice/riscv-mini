@@ -5,8 +5,8 @@
 ## 数据与所有权
 
 - 默认容量 4 KiB、直接映射、每行 16 B。数据 RAM 为 256 × 128-bit，tag RAM 保存地址、valid、dirty；共五块 BSRAM。
-- CPU 对低于 `0x47e00000` 的 DDR 访问采用 read/write allocate、writeback。读写命中在缓存完成；替换 dirty 行先完整写回 DDR，再装入新行。帧缓冲区不分配缓存行。
-- LCD/SD streaming 读不分配缓存，但命中时可以读到 CPU dirty 行；写命中合并字节掩码并标记 dirty，写未命中直接提交 DDR。
+- CPU 对 DDR（`0x00000000..0x07ffffff`）的访问采用 read/write allocate、writeback（包括 CPU 对帧缓冲区的读写亦可分配 L2 缓存行）。读写命中在缓存完成；替换 dirty 行先完整写回 DDR，再装入新行。
+- LCD 扫描与 SD lite 等 streaming 读不分配缓存行，但命中时可以读到 CPU dirty 行；写命中合并字节掩码并标记 dirty，写未命中直接提交 DDR。
 - CPU、LCD、SD 按完整事务轮转。一个事务占有 RAM/后端直到提交或返回数据完成，背压期间保持数据与所有者。SD 写入的 ready 在缓存/DDR 提交后才返回。
 - CPU 取消请求会排空已接受事务，不返回过期 ACK。复位初始化启动窗口的 valid/dirty tag 并清零数据，其余 tag 无效；复位会丢弃未写回的 dirty 数据，不能作为持久化操作。
 

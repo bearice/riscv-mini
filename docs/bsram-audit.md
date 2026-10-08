@@ -1,6 +1,6 @@
 # 当前 BSRAM 分配
 
-默认 full：8 KiB ROM、无集成 SRAM、4 KiB L2。实际原语分配与 PnR 总数为 44 / 46，余两块。
+默认 full：ROM 模式（8 KiB ROM、4 KiB L2）实际原语分配与 PnR 总数为 44 / 46，余两块；XIP 模式无片内 ROM，分配为 40 / 46，余六块。
 
 | 模块 | BSRAM | 用途 |
 | --- | ---: | --- |
@@ -17,6 +17,6 @@
 
 BSRAM 数量取决于端口、位宽及写粒度，不能只按有效字节数推算。D-cache/TX 按字节写可能拆成多个 bank；CPU 多读端口寄存器文件会复制存储。USB PIO、UART、SPI 和 CSR 不占 BSRAM，但仍消耗寄存器/LUT RAM。
 
-启动栈/data/BSS 的 4 KiB 保留区为 `0x407ff000..0x407fffff`，训练前固定在 L2 数据 RAM，训练后按正常 writeback 写入 DDR；应用 SP 为 `0x40c00000`，应用预留 64 KiB 栈。没有地址 `0x10000000` 的集成 SRAM。默认 4 KiB L2 采用整条 128-bit refill/合并写，避免按字节拆分数据 RAM；8 KiB 配置尚未上板验证。
+启动栈/data/BSS 的 4 KiB 保留区为 `0x007ff000..0x007fffff`，训练前固定在 L2 数据 RAM，训练后按正常 writeback 写入 DDR；应用栈顶为 `0x00c00000`，应用预留 64 KiB 栈。没有地址 `0x10000000` 的集成 SRAM。默认 4 KiB L2 采用整条 128-bit refill/合并写，避免按字节拆分数据 RAM；8 KiB 配置尚未上板验证。
 
 本页直接记录当前默认 full 的存储分配。相关实现见 [`gateware/soc.py`](../gateware/soc.py)、[`gateware/shared_l2.py`](../gateware/shared_l2.py)、[`gateware/audio.py`](../gateware/audio.py)、[`gateware/microphone.py`](../gateware/microphone.py)。修改配置后需重新统计，不能从逻辑字节数直接推导原语数量。

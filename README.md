@@ -1,13 +1,13 @@
 # riscv-mini
 
-Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 KiB boot ROM 启动，使用 L2 RAM 作为启动栈，
+Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 KiB boot ROM 或 Flash XIP 启动（v0.8.0 默认 XIP，片内 ROM 为 0），使用 L2 RAM 作为启动栈，
 由软件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。
 默认 DDR 固件为常驻 BIOS，提供 POST、LCD/UART 文字终端、USB 键盘、图形与 IO 服务，
 支持从 SD/TFTP 引导自定义裸机程序；OSB1 可一次性交接给 OpenSBI，进入 S-mode，见 [OpenSBI](docs/opensbi-port.md)。接口与用法见 [BIOS](docs/bios.md)。
 验收统一为 BIOS/DDR monitor 的 `test ...` 命令。系统整体结构、地址映射、中断映射与文档索引见
 [系统设计](docs/system-design.md)；板级引脚与电气约束见 [板级参考](docs/board-reference.md)。
 
-当前代码发布为 **v0.7.0**（C/MMU/FPU、4 KiB ROM），版本依据见 [Git 里程碑追溯](docs/version-history.md)。
+当前代码发布为 **system v0.8.0**（RAM 零基址与 Flash XIP 启动），版本依据见 [Git 里程碑追溯](docs/version-history.md)。
 提交前按 [SOP](docs/pre-commit-sop.md) 保存范围和适用报告；仅代码发布更新 [changelog](CHANGELOG.md)，文档/流程提交另存范围记录。代码提交后从 clean Git hash 重建最终二进制并归档。
 构建与历史产物入口见 [目录说明](docs/build-artifacts.md)，本地 `build/README.md` 列出当前实板版本、基线和最新候选。
 
@@ -16,7 +16,7 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 K
 | 项目 | 配置 |
 | --- | --- |
 | CPU / 总线 | full 默认 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I/D-cache、Sv32、4 KiB 共享 writeback L2；可独立关闭 MMU/FPU |
-| 片上存储 | 8 KiB boot ROM、无独立工作 SRAM；软件初始化 DDR，bootloader 栈/data/BSS 复用 4 KiB L2 RAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
+| 片上存储 | Flash XIP 启动（ROM 模式可选 4/8 KiB boot ROM）、无独立工作 SRAM；软件初始化 DDR，bootloader 栈/data/BSS 复用 4 KiB L2 RAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |

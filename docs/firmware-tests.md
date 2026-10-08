@@ -7,7 +7,7 @@ boot ROM 只负责 DDR 软件初始化和 Flash/UART 装载，不链接这些测
 | 命令 | 自动检查 | 影响与验收边界 |
 | --- | --- | --- |
 | `test isa` | C 压缩指令与已启用 Zba/Zbb/Zbs 指令的数值检查 | 按构建能力条件编译；不是完整 ISA compliance |
-| `test l2` | L1 清空后的重复读、字节写及 L2 命中，比较 enable=0/1 的 ticks | L2 未启用时报告 UNSUPPORTED；暂时屏蔽 IRQ，使用 `0x40d00000` 的 256 字节 |
+| `test l2` | L1 清空后的重复读、字节写及 L2 命中，比较 enable=0/1 的 ticks | L2 未启用时报告 UNSUPPORTED；暂时屏蔽 IRQ，使用 `0x00d00000` 的 256 字节 |
 | `test fence` | 连续 store、字节写、fence 后清空 L1 再读回；有 A 扩展时检查 AMO；修改同一地址的代码后通过 fence.i 执行 | 使用测试 scratch，短时屏蔽 IRQ；不是完整内存模型 compliance |
 | `test uart` | 命令确实经 UART IRQ 接收，检查 RX drop 计数 | 不测物理波特率裕量；串口回显可直接观察 |
 | `test irq` | ECALL 保存/恢复、DDR 栈上计算、timer IRQ、deadline 回绕 | 只处理测试主动触发的 ECALL；其他异常仍报告 FAULT |

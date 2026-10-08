@@ -2,13 +2,13 @@
 
 ## 架构与职责
 
-CPU 的复位地址为片上 8 KiB ROM `0x00000000`。ROM 在 L2 固定的 4 KiB 启动 RAM 上建立栈，软件完成 DDR JEDEC 初始化与读训练，再从 Flash 或 UART 把应用装入 `0x40800000`，校验、同步指令缓存后跳转。没有独立工作 SRAM或额外的第二级装载器。
+CPU 的复位地址由启动模式决定：ROM 模式使用片上 ROM（`0xf3000000`），XIP 模式直接从 Flash 只读窗口执行（`0xf3100000`，对应物理 Flash 1 MiB 偏移，片内 ROM 为 0）。启动代码在 L2 固定的 4 KiB 启动 RAM（`0x007ff000..0x007fffff`）上建立栈，软件完成 DDR JEDEC 初始化与读训练，再从 Flash 或 UART 把应用装入 `0x00800000`，校验、同步指令缓存后跳转。没有独立工作 SRAM 或额外的第二级装载器。
 
-bootloader 链接 `start.S`、`uart.c`、`time.c`、`bootloader/ddr.c`、精简 `bootloader/flash.c` 和 `bootloader/main.c`，使用 `-Os -flto` 与 section GC。没有 SD/FatFs、LCD、音频、网络或 USB 驱动。DDR 软件扫描两个 lane 的 bitslip/tap 窗口并复验；具体协议与验证边界见 [DDR 启动](ddr-boot.md)。
+bootloader 链接 `start.S`、`uart.c`、`time.c`、`bootloader/ddr.c`、精简 `bootloader/flash.c`（XIP 模式使用 `bootloader/flash_xip.c`）和 `bootloader/main.c`，使用 `-Os -flto` 与 section GC。没有 SD/FatFs、LCD、音频、网络或 USB 驱动。DDR 软件扫描两个 lane 的 bitslip/tap 窗口并复验；具体协议与验证边界见 [DDR 启动](ddr-boot.md)。
 
 ROM 首行输出 `riscv-mini ROM <semver>+<commit7>.<config8>[.dirty] rtl<rtl8>`：`semver` 取 `bootloader` 组件在 `VERSIONS.yaml` 里的版本（ROM 即 bootloader，与 BIOS 版本分开），`commit7` 是构建时的 `git rev-parse HEAD` 前 7 位，`config8` 是 `source_identity()` 对构建输入（gateware/firmware 源码、`requirements.lock`、`VERSIONS.yaml`）算出的 SHA256 前 8 位——同一 `config8` 唯一对应一份构建配置，dirty 工作树追加 `.dirty`；`rtl8` 是本次生成的 `gateware/riscv_mini.v` + `rtl-manifest.json` + CPU RTL 输入的 SHA256 前 8 位，即 RTL 版本。这些宏由构建写入 `firmware/include/features.h`（ROM 用 `MINI_BUILD_VERSION`/`MINI_BUILD_ID`，BIOS 横幅用 `MINI_APP_VERSION`/`MINI_APP_ID`，共享 `MINI_BUILD_COMMIT`/`MINI_BUILD_CONFIG`/`MINI_BUILD_RTL`/`MINI_BUILD_RTL_ID`，以及各组件版本 `MINI_VERSION_*`），并同步记录在 `validation.json` 的 `build_id` / `component_versions` / `config_sha256` / `rtl_sha256`。ROM 不打印自身哈希（自引用会改变哈希），ROM 版本以 `validation.json` 的 `firmware_sha256` 为准。
 
-SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。应用代码、数据、BSS 与栈位于 DDR；启动工作区 `0x407ff000..0x407fffff` 在训练前由 L2 数据 RAM 提供，训练后通过 writeback 保留到 DDR。RGB LCD 初始化为黑色双缓冲，SPI LCD 显示基本状态。
+SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。应用代码、数据、BSS 与栈位于 DDR；启动工作区 `0x007ff000..0x007fffff` 在训练前由 L2 数据 RAM 提供，训练后通过 writeback 保留到 DDR。RGB LCD 初始化为黑色双缓冲，SPI LCD 显示基本状态。
 
 ## 固定硬件与内存
 
@@ -16,13 +16,13 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 
 | 地址 | 用途 |
 | --- | --- |
-| `0x00000000`，8 KiB | boot ROM，随 FPGA 配置更新 |
-| `0x407ff000`，4 KiB | bootloader L2/DDR 工作区，栈顶 `0x40800000` |
-| `0x40000000`，128 MiB | DDR 总范围 |
-| `0x40300000` | SPI LCD 的 DDR 工作帧 |
-| `0x40800000`–`0x40c00000` | 当前 DDR 应用 linker 区域；末尾留 64 KiB 栈 |
-| `0x47e00000` / `0x47e40000` | 两个 480×272 RGB565 帧，每帧 261120 字节 |
-| DDR 最后 2 MiB | 视频保留区 |
+| `0x00000000`–`0x07ffffff`，128 MiB | DDR 总范围 |
+| `0x007ff000`，4 KiB | bootloader L2/DDR 工作区，栈顶 `0x00800000` |
+| `0x00300000` | SPI LCD 的 DDR 工作帧 |
+| `0x00800000`–`0x00c00000` | 当前 DDR 应用 linker 区域；末尾留 64 KiB 栈 |
+| `0xf3000000` 起，4 MiB | Flash 只读 XIP 窗口；ROM 模式下亦为片上 ROM 映射基址 |
+| `0xf3100000` | XIP 启动入口（物理 Flash 1 MiB 偏移） |
+| base0/base1 CSR | RGB LCD 动态帧缓冲地址；每帧 261,120 字节，16 字节对齐 |
 
 ## Flash 分区和写入保护
 
@@ -44,7 +44,7 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 
 ## 镜像与 UART 协议
 
-镜像是 48 字节头加 payload。头为 12 个 little-endian uint32：magic `0x354d5652`、version 1、header 长度、CSR/内存/CPU ABI tag、payload 长度、固定 load `0x40800000`、entry、payload CRC32、flags 0、两个 reserved 0、头部前 44 字节 CRC32。ABI tag 随生成的 CSR、内存映射及 IRQ 编号计算；不是密码签名。
+镜像是 48 字节头加 payload。头为 12 个 little-endian uint32：magic `0x354d5652`、version 1、header 长度、CSR/内存/CPU ABI tag、payload 长度、固定 load `0x00800000`、entry、payload CRC32、flags 0、两个 reserved 0、头部前 44 字节 CRC32。ABI tag 随生成的 CSR、内存映射及 IRQ 编号计算；不是密码签名。
 
 payload 长度为 4 到 2097104 字节；entry 必须四字节对齐并落在 payload 中，完整指令不得跨过尾部。ROM、SRAM、LCD 保留区和任意其他 load 地址均被拒绝。应用本身可以通过正常 HAL 使用其他 DDR 工作区；装载地址限制仅针对镜像。
 

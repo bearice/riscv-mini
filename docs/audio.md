@@ -21,7 +21,7 @@ FIFO 共 512 stereo frames / 2 KiB，包含输出寄存器，约 10.7 ms 音频�
 
 DDR DMA 作为 32 位只读 Wishbone master，共用现有 DDR 桥、视频优先调度。每次只发一个 word 请求，响应后释放总线；FIFO 满或没有已提交数据时停止预取，不锁总线等待下一帧。DMA 错误会停止发新请求。没有新 DDR 物理端口、DMA IRQ 或音频 IRQ。
 
-DMA ring 容量为 1..65,535 帧、四字节对齐，必须完全位于 `[0x40000000,0x47e00000)` DDR，不能覆盖帧缓冲保留区。应用负责分配有效、独占的内存；HAL 的范围检查不替代应用的内存所有权管理。
+DMA ring 容量为 1..65,535 帧、四字节对齐，必须完全位于 `[0x00000000,0x07e00000)` DDR，不能覆盖帧缓冲保留区。应用负责分配有效、独占的内存；HAL 的范围检查不替代应用的内存所有权管理。
 
 producer 是已提交帧的 32 位累计计数，fetched 是已复制到 FIFO 的累计计数，二者相减得到 ring 中未取数据。`hal_audio_ring_write()` 只复制到空闲槽，执行 `fence rw,rw` 后更新 producer；DMA ACK 后更新 fetched，CPU 才可重用该槽。FIFO 中数据仍受硬件保护，不需要等到播放后才释放 ring 槽。计数按无符号回绕，差值不得超过容量；硬件拒绝错误的 producer。
 

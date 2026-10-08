@@ -24,7 +24,7 @@ RGB LCD 像素引脚不占用这两脚。依据：Dock 3713 原理图总图与 `
 
 ## 硬件与时钟
 
-MAC 为 32 位 CPU Wishbone 接口，接收/发送各两个 2 KiB 槽，合计 8 KiB 地址空间。RX `0xb0000000..0xb0000fff` 只读，TX `0xb0001000..0xb0001fff` 只写，均为 IO region。实际逻辑使用 LiteEth 1530 字节槽深度；HAL 限制不带 VLAN 的 14..1514 字节 Ethernet 帧。网络包缓存放在片上 RAM，网络控制器本身不增加 DDR DMA。
+MAC 为 32 位 CPU Wishbone 接口，接收/发送各两个 2 KiB 槽，合计 8 KiB 地址空间。RX `0xf1000000..0xf1000fff` 只读，TX `0xf1001000..0xf1001fff` 只写，均为 IO region。实际逻辑使用 LiteEth 1530 字节槽深度；HAL 限制不带 VLAN 的 14..1514 字节 Ethernet 帧。网络包缓存放在片上 RAM，网络控制器本身不增加 DDR DMA。
 
 TX 在 REF_CLK 上升沿输出；RX 输入寄存器在下降沿采样，内部 RX 逻辑在上升沿处理，相关半周期路径正常计时。收发固定 100M，避免 LiteEth 自动检测首个前导码前按 10M 运行而丢失首包。适配点针对锁定的 LiteEth 版本检查唯一的 speed selector；上游接口变化会明确停止构建。
 

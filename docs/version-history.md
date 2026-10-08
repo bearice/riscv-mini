@@ -65,6 +65,19 @@
 
 0.5.0 第一次上板时 boot ROM 报 `Hardware DDR initialization failed; reset required`，同一构建重试即通过，属于现场状态。0.6.0 的性能基线仍指向原来的 `f0892da-full-rv32imaf-rom8k-l24k-baseline-noc-rom8k-86b26cda` 测量，这些包不替换基线。
 
+## 独立组件版本时代（0.7.2 起）
+
+从 0.7.2 起版本按组件独立递增，系统发布以组合包形式管理并在 `RELEASES.yaml` 固定。
+
+| 系统 / 组件版本 | 发布提交 | 能力依据与关键改动 |
+| --- | --- | --- |
+| 0.7.2 (system) | `13ed5ec` | 组合 rtl/bootloader/hal 0.7.1、bios 0.7.2、opensbi 0.7.1、uboot 0.1.0；BIOS 增强与独立 U-Boot 验证 |
+| 0.8.0 (system) | `4e10424` | 组合 rtl/bootloader/hal/bios/opensbi 0.8.0、uboot 0.2.0；RAM 零基址（`0x00000000..0x07ffffff`），设备 MMIO 迁移到 `0xF0000000` 以上，Flash XIP 启动（`0xF3000000`，入口 `0xF3100000`，片内 ROM 0 KiB），base0/base1 动态 VRAM；关闭 C |
+| opensbi 0.9.0 | `2265ac7` | 运行时从所选 SoC CSR 提取并生成 `riscv-mini,rgb-lcd` 设备树节点及 U-Boot `bootph-all` 属性 |
+| uboot 0.3.0 | `a7daff7` | U-Boot RGB LCD 480×272 帧缓冲驱动与 vidconsole 控制台镜像 |
+
+system v0.8.0 性能与验收依据保存在 `reports/changes/release-v0.8.0.md` 与 `reports/performance/zero-ram-xip-vs-v0.7.1.md`，PnR setup/hold 为 0/0，完整 BIOS 命令、60 秒 soak、三轮 all/cache 及独立 OpenSBI/U-Boot 验收通过。
+
 c6c52d0、0b35dbd、9f1554f 是构建/提交管理设施，不构成新的产品代码发布；文档和测试报告整理也不递增版本。正式发布把该功能阶段的最终源码、工具/配置和验证结果绑定到一个 vMAJOR.MINOR.PATCH tag；历史阶段可以补建 tag 与构建包，但必须写明未做实板验收，不能当作历史上的发布验收。
 
 新功能或显著架构变化递增 MINOR；同一功能阶段的产品代码修复递增 PATCH；达到约定的稳定兼容接口后再递增 MAJOR。文档及流程变更不创建代码发布，仅在需要构建的代码提交后保留版本加 Git hash 的快照。版本已经发布后不能覆盖其 tag 或产物。

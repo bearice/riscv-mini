@@ -1,6 +1,6 @@
 # ROM 软件 DDR 初始化与 L2 启动 RAM
 
-CPU 从 8 KiB ROM 启动。复位时共享 L2 把现有数据 RAM 的 4 KiB 固定映射到 `0x407ff000..0x407fffff`，启动栈顶为 `0x40800000`；data/BSS 同样位于此窗口。没有独立的集成 SRAM。DDR 未就绪时只有该窗口的 CPU 访问能完成，其他地址与 LCD/SD streaming 请求被阻止，L2 不进行 DDR refill、替换或回写。
+CPU 从 8 KiB ROM 或 Flash XIP 启动。复位时共享 L2 把现有数据 RAM 的 4 KiB 固定映射到 `0x007ff000..0x007fffff`，启动栈顶为 `0x00800000`；data/BSS 同样位于此窗口。没有独立的集成 SRAM。DDR 未就绪时只有该窗口的 CPU 访问能完成，其他地址与 LCD/SD streaming 请求被阻止，L2 不进行 DDR refill、替换或回写。
 
 每个启动缓存行初始为零、valid、dirty。ROM 初始化 DDR 后，解除固定，继续使用同一个栈地址与 tag/data；第一次替换或维护会把脏行写回对应 DDR 地址，因此不需要搬运正在使用的 C 栈。复位会重新清零启动窗口，丢弃未写回数据，不能用作持久化操作。软件初始化依赖至少 4 KiB L2，构建不再提供 `--l2-size 0`。
 
