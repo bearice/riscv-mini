@@ -40,10 +40,27 @@ class BootSession:
                     return bytes(data)
         self.note(data)
         raise TimeoutError(f'Waiting for {marker!r}; received {bytes(data[-1000:])!r}')
-    def menu(self,reset=False):
+    def fresh_banner(self,timeout=120):
+        # A previous binary readback may still be draining from the UART FIFO.
+        # Log it, but do not interpret embedded firmware strings as status.
+        data=bytearray();lines=bytearray();deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            chunk=self.port.read(1)
+            if not chunk:continue
+            data.extend(chunk);lines.extend(chunk)
+            if chunk==b'\n':
+                match=re.search(rb'(?:^|\n)(riscv-mini (?:ROM|XIP) [\x20-\x7e]+\r*\nDDR INIT [0-9]+\r*\n)$',lines)
+                if match:
+                    self.note(data)
+                    return match.group(1)
+                lines=lines[-512:]
+        self.note(data)
+        raise TimeoutError('Waiting for fresh loader banner; received '+repr(bytes(data[-1000:])))
+    def menu(self,reset=False,fresh=False):
         if reset:
             self.port.reset_input_buffer();self.port.write(b'!');self.port.flush()
-        data=self.until(b'BOOT SELECT:')
+        banner=self.fresh_banner() if fresh else b''
+        data=banner+self.until(b'BOOT SELECT:')
         self.port.write(b'b');self.port.flush()
         return data+self.until(b'BL> ')
     def command(self,value,timeout=120):
@@ -71,24 +88,32 @@ class BootSession:
 
 def verified_output(output):
     validation=json.loads((output/'validation.json').read_text())
-    if not validation.get('synthesis_requested') or any(validation['timing_violated_endpoints'].values()):
+    if validation.get('synthesis_requested') is not True or validation.get('timing_violated_endpoints') != {'setup':0,'hold':0}:
         raise RuntimeError('Successful PnR and timing validation required')
     fs=output/'gateware/riscv_mini.fs'
     if hashlib.sha256(fs.read_bytes()).hexdigest()!=validation['bitstream_sha256']:
         raise RuntimeError('Bitstream changed since validation')
     return validation,fs
 
-def program(output,location,configuration=False):
+def require_install_supported(validation):
+    if validation.get('boot_mode','rom')=='xip':
+        raise ValueError('XIP loader cannot install through UART. Use scripts/mini.py board update --build <ID>; no hardware was touched.')
+    if not validation.get('features',{}).get('flash',True):
+        raise ValueError('Selected build has no Flash installation support')
+
+def program(output,location,configuration=False,log_dir=None):
     validation,fs=verified_output(output)
+    logs=Path(log_dir or output);logs.mkdir(parents=True,exist_ok=True)
     if configuration:
-        raw=output/'gateware/impl/pnr/project.bin'
-        if not raw.is_file() or raw.stat().st_size>=0x200000:
+        require_install_supported(validation)
+        from mini_ops.artifacts import configuration_bytes
+        if configuration_bytes(fs)>=0x200000:
             raise RuntimeError('Configuration image must fit below the firmware partition')
     tools=json.loads((ROOT/'.tools.local.json').read_text())
     command=[tools['programmer'],'--cable-index','4','--location',str(location),'--frequency','2MHz',
              '--device','GW2A-18C','--operation_index','8' if configuration else '2','--fsFile',str(fs)]
     if configuration: command+=['--spiaddr','0x000000']
-    log=output/('configuration-programmer.log' if configuration else 'programmer.log')
+    log=logs/('configuration-programmer.log' if configuration else 'programmer.log')
     # Preserve programmer output; Flash uses erase/program, without Verify.
     with log.open('w',encoding='utf-8') as stream:
         result=subprocess.run(command,stdout=stream,stderr=subprocess.STDOUT,timeout=120)
@@ -98,7 +123,7 @@ def program(output,location,configuration=False):
     if configuration:
         reload_command=command[:command.index('--operation_index')]+['--operation_index','1']
         result=subprocess.run(reload_command,capture_output=True,text=True,timeout=120)
-        (output/'configuration-reload.log').write_text(result.stdout+result.stderr,encoding='utf-8')
+        (logs/'configuration-reload.log').write_text(result.stdout+result.stderr,encoding='utf-8')
         if not programmer_succeeded(result):raise RuntimeError('FPGA Flash reload failed; inspect reload log')
     return validation
 
@@ -109,6 +134,7 @@ def main():
     p.add_argument('--location',default='107569')
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--image',type=Path)
+    p.add_argument('--log-dir',type=Path,help='Operation-specific logs; legacy default is output-dir')
     p.add_argument('--mode',choices=('uart','install','flash','info'),default='uart')
     p.add_argument('--program',action='store_true',help='Download FPGA SRAM before loading')
     p.add_argument('--configure-flash',action='store_true',help='Replace FPGA Flash configuration; requires --mode install')
@@ -117,11 +143,15 @@ def main():
     if a.configure_flash and (a.mode!='install' or a.program or a.reset):
         p.error('--configure-flash requires --mode install without --program/--reset; configuration is programmed first, firmware last')
     validation,fs=verified_output(output)
-    image=(a.image or output/'firmware/app.img').read_bytes()
-    unpack_image(image,validation['boot_image']['abi_tag'])
-    with (output/'boot-upload-uart.log').open('wb') as log, serial.Serial(a.port,115200,timeout=.1) as port:
+    if a.mode=='install':require_install_supported(validation)
+    image=None
+    if a.mode in ('uart','install'):
+        image=(a.image or output/'firmware/app.img').read_bytes()
+        unpack_image(image,validation['boot_image']['abi_tag'])
+    logs=(a.log_dir or output).resolve();logs.mkdir(parents=True,exist_ok=True)
+    with (logs/'boot-upload-uart.log').open('wb') as log, serial.Serial(a.port,115200,timeout=.1) as port:
         port.reset_input_buffer()
-        if a.program or a.configure_flash: program(output,a.location,a.configure_flash)
+        if a.program or a.configure_flash: program(output,a.location,a.configure_flash,logs)
         session=BootSession(port,log)
         print(session.menu(a.reset).decode(errors='replace'),end='',flush=True)
         if a.mode=='info': result=session.command('i')

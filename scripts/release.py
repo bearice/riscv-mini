@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from build_records import ROOT, artifact_identity, configuration_name, get_record, git, now, pin, register, source_identity, write_json
 from versions import COMPONENTS, bundle_external, bundle_versions, read_versions
+from mini_ops.build import configuration_arguments
 
 
 def release_version(value):
@@ -46,6 +47,8 @@ def package(run, destination, source):
         (destination/relative).mkdir(parents=True,exist_ok=True)
     (destination/'gateware').mkdir(exist_ok=True)
     shutil.copy2(run/'gateware/riscv_mini.fs',destination/'gateware/riscv_mini.fs')
+    # Board deployment needs CSR addresses to build its read-only DDR probe.
+    shutil.copy2(run/'csr.json',destination/'csr.json')
     for p in (run/'firmware').iterdir():
         if p.suffix in ('.bin','.img','.elf','.map'):shutil.copy2(p,destination/'firmware'/p.name)
     shutil.copytree(Path(source['recipe']),destination/'replay')
@@ -133,16 +136,8 @@ def main():
     if not app.is_file():p.error('Select --app explicitly for this template')
     run=ROOT/'build/runs'/f"{tag}-{source['commit'][:12]}-{config}-final-build"
     if run.exists():p.error('Final build run already exists; preserve it for diagnosis')
-    args=['--profile',v['profile'],'--purpose','final-build','--app',str(app.resolve()),
-          '--cpu-variant',v['cpu_variant'],'--cpu-verilog',str(inputs/cpu.name),
-          '--boot-mode',v.get('boot_mode','rom'),
-          '--rom-size',str(v['rom_size_bytes'] or 4096),'--l2-size',str(v['l2_size_bytes']),
-          '--sd-profile',v['sd_profile'],'--usb-backend',v['usb_backend'],'--audio-clock',v['audio_clock'],
-          '--place-option',str(v['place_option']),'--route-option',str(v['route_option']),
-          *['--'+('with-' if enabled else 'without-')+name.replace('_','-') for name,enabled in v['features'].items()],
-          '--synthesize','--output-dir',str(run)]
-    if v.get('verilog_mode')=='flat':args.append('--flat-verilog')
-    if v.get('rtl_hierarchy')=='deep':args.append('--deep-verilog')
+    args=configuration_arguments(v,app,inputs/cpu.name,'final-build',synthesize=True)
+    args+=['--output-dir',str(run)]
     write_json(final/'invocation.json',dict(commit=source['commit'],command=[sys.executable,'scripts/build.py',*args]))
     def execute(name,command):
         print('Running',name,flush=True)

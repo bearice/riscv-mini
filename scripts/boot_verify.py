@@ -10,7 +10,7 @@ import zlib
 from pathlib import Path
 import serial
 from boot_image import HEADER, LOAD, pack_image, packet, unpack_image
-from boot_upload import BootSession, program, verified_output
+from boot_upload import BootSession, program, verified_output, require_install_supported
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -18,6 +18,7 @@ def main():
     if hasattr(sys.stdout,'reconfigure'):sys.stdout.reconfigure(encoding='utf-8',errors='replace')
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
+    p.add_argument('--log-dir',type=Path,help='Operation-specific logs and evidence')
     p.add_argument('--port',default='COM4')
     p.add_argument('--location',default='107569')
     p.add_argument('--program',action='store_true')
@@ -27,6 +28,8 @@ def main():
     a=p.parse_args();output=a.output_dir.resolve()
     if not 0<=a.soak_seconds<=300:p.error('--soak-seconds must be between 0 and 300')
     validation,_=verified_output(output);image=(output/'firmware/app.img').read_bytes()
+    if a.install:require_install_supported(validation)
+    logs=(a.log_dir or output).resolve();logs.mkdir(parents=True,exist_ok=True)
     header,payload=unpack_image(image,validation['boot_image']['abi_tag'])
     report={'bitstream_sha256':validation['bitstream_sha256'],'image_sha256':hashlib.sha256(image).hexdigest(),
             'clock_hz':validation['clock_hz'],'flash_write_requested':a.install,'checks':{},'passed':False}
@@ -34,9 +37,9 @@ def main():
         report['checks'][name]=text.decode(errors='replace')
         print(name+': '+text.decode(errors='replace')[-180:].strip(),flush=True)
     try:
-        with (output/'boot-verification-uart.log').open('wb') as log, serial.Serial(a.port,115200,timeout=.05) as port:
+        with (logs/'boot-verification-uart.log').open('wb') as log, serial.Serial(a.port,115200,timeout=.05) as port:
             port.reset_input_buffer()
-            if a.program: program(output,a.location)
+            if a.program: program(output,a.location,log_dir=logs)
             s=BootSession(port,log);record('startup',s.menu(a.reset))
             info=s.command('i');record('flash_info',info)
             if b'READY' not in info: raise RuntimeError('Flash not recognized')
@@ -119,7 +122,7 @@ def main():
                 print('Soak passed: '+json.dumps(report['soak']),flush=True)
             report['passed']=True
     finally:
-        (output/'boot-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+        (logs/'boot-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print('Boot verification passed.',flush=True)
 
 if __name__=='__main__':main()

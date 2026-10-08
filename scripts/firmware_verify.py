@@ -18,6 +18,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     parser.add_argument('--image',type=Path)
+    parser.add_argument('--log-dir',type=Path,help='Operation-specific logs and evidence')
     parser.add_argument('--port',default='COM4');parser.add_argument('--location',default='107569')
     parser.add_argument('--program',action='store_true');parser.add_argument('--reset',action='store_true')
     parser.add_argument('--sd-write',action='store_true')
@@ -27,6 +28,7 @@ def main():
     if not 0<=args.soak_seconds<=300:parser.error('Use 0..300 seconds')
     if args.program and args.reset:parser.error('Use --program or --reset')
     output=args.output_dir.resolve();validation,_=verified_output(output)
+    logs=(args.log_dir or output).resolve();logs.mkdir(parents=True,exist_ok=True)
     features=validation.get('features',{})
     def enabled(name):return features.get(name,True)
     if args.sd_write and not enabled('filesystem'):parser.error('--sd-write requires filesystem')
@@ -38,9 +40,9 @@ def main():
         'image_sha256':hashlib.sha256(image).hexdigest(),'checks':{},'sd_write_requested':args.sd_write,
         'excluded':'physical keyboard/mouse/LEDs, screen observation, audible output, external Ethernet packets; RTL/PnR remain host checks'}
     try:
-        with serial.Serial(args.port,115200,timeout=.05) as port,(output/'firmware-verification-uart.log').open('wb') as log:
+        with serial.Serial(args.port,115200,timeout=.05) as port,(logs/'firmware-verification-uart.log').open('wb') as log:
             port.reset_input_buffer()
-            if args.program:program(output,args.location)
+            if args.program:program(output,args.location,log_dir=logs)
             session=BootSession(port,log);session.menu(args.reset)
             report['startup']=session.upload(image).decode(errors='replace')
             def command(name,expected=None,timeout=120):
@@ -88,7 +90,7 @@ def main():
             command('status','CPU/sys=60 MHz DDR=120 MHz')
             report['passed']=True
     finally:
-        (output/'firmware-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+        (logs/'firmware-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print('Firmware command verification PASS',flush=True)
 
 if __name__=='__main__':main()

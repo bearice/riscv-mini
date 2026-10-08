@@ -119,64 +119,32 @@ boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 
 构建失败。`board_test` 字段只表示构建脚本未做上板测试，实板结果记录在独立验收 JSON 和验证文档中。
 软件构建不产生新的 PnR 证据，建议使用不同输出目录保存 FPGA 构建与独立示例。
 
-## 启动和固件更新
+## 基本操作与固件更新
 
-bootloader 使用 L2 启动栈进行软件 DDR 初始化，然后从 Flash 自动装载应用。等待期间按 `b` 进入恢复菜单，
-或按 `u` 走 UART。无有效 Flash 镜像时也进入恢复菜单。CRC、地址或 ABI 不匹配的镜像不会执行。
-
-```powershell
-# 先下载 FPGA SRAM，再通过 UART 将应用装入 DDR 执行。
-& $MiniPython .\scripts\boot_upload.py --program --mode uart
-
-# 已运行基础应用时：软件复位，更新 Flash 的应用分区。
-& $MiniPython .\scripts\boot_upload.py --reset --mode install
-
-# 更新 FPGA 的持久配置，然后安装匹配的应用镜像。
-& $MiniPython .\scripts\boot_upload.py --configure-flash --mode install
-
-# Flash/UART 错误边界及启动验收；--install 会写应用分区。
-& $MiniPython .\scripts\boot_verify.py --program --install
-
-# 五分钟只读持续检查：状态、SD 根目录、DDR 视频扫描计数和欠载。
-& $MiniPython .\scripts\boot_verify.py --reset --soak-seconds 300
-```
-
-默认串口 `COM4`、调试器 location `107569`，其他连接使用 `--port` / `--location`。工具检查 PnR 和
-bitstream hash。普通应用更新只擦写 Flash `[2,4)` MiB，前 2 MiB FPGA 配置由 CPU 驱动的地址范围保护。
-Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 使用普通 exFlash Erase/Program，不执行 Verify。
-配置更新会替换 FPGA bitstream，应与匹配的 `app.img` 一起更新。
-
-### BIOS 迭代：RAM 装载与 Flash 刷写
-
-临时测试优先 RAM 装载（UART → DDR 执行，不写 Flash）；验收通过后再刷 Flash 应用分区：
+统一入口是 `./mini.ps1`（Python 实现 `scripts/mini.py`），按任务查 [操作指南](scripts/README.md)。它读取所选构建的身份和 ROM/XIP 模式，负责检查、步骤顺序、读回验证与独立日志。
 
 ```powershell
-# 仅重建固件（gateware 未变，不加 --synthesize）。参数必须与板端 bitstream 一致，
-# 从当前 run 的 validation.json 抄取 cpu-variant/cpu-verilog/sd-profile/usb-backend/rom-size/l2-size。
-& $MiniPython .\scripts\build.py --profile full --app firmware\bios\main.c --cpu-variant linux `
-    --cpu-verilog build\releases\v0.7.1\full-rv32imafc-rom4k-l24k\inputs\cpu\VexRiscv_MmuFpu.v `
-    --usb-backend ultra --sd-profile lite --audio-clock dds --rom-size 4096 --l2-size 4096 --purpose bios-iter
+# 找到已验收版本；按其配置编译当前源码（不编程板子）。
+./mini.ps1 builds show current
+./mini.ps1 build --from current
 
-# RAM 装载运行：'!' 软件复位 → 恢复菜单 → UART 传输 → DDR 执行，不触碰 Flash。
-& $MiniPython .\scripts\boot_upload.py --reset --mode uart --image <run>\firmware\app.img
+# 静默表示 unknown；恢复/临时运行均使用 SRAM 和 DDR。
+./mini.ps1 board status
+./mini.ps1 board recover --build current
+./mini.ps1 board run --build current
 
-# 验收后刷入 Flash 应用分区，并从 Flash 启动。
-& $MiniPython .\scripts\boot_upload.py --reset --mode install --image <run>\firmware\app.img
-& $MiniPython .\scripts\boot_upload.py --mode flash
+# 持久更新先检查完整计划；去掉 --dry-run 才写 Flash。
+./mini.ps1 board update --build current --dry-run
+
+# 固件验收不写 Flash；精确读回和外部断电启动是不同验收项目。
+./mini.ps1 board verify --build current --suite firmware --soak-seconds 60
+./mini.ps1 board verify --build current --suite flash
+./mini.ps1 board verify --build current --suite cold
 ```
 
-`--mode install` 要求目标 run 目录有通过 PnR/时序验证且 bitstream hash 未变的 `validation.json`；
-镜像 ABI 由 CSR 派生，仅改固件时不变，可直接刷入现役 bitstream 的板子。
+`--build` 接受 catalog ID、明确引用或产物目录。临时应用使用 `board run --image <app.img>`，入口检查 ABI；重建应用可用 `build --from current --app firmware/bios/main.c`。操作结果保存在 `build/operations/<时间>-<任务>/`，不覆盖发布包或上一轮日志。
 
-### FPGA 重启与卡死恢复
-
-| 状态 | 恢复方法 |
-| --- | --- |
-| BIOS/monitor 正常运行 | BIOS `reboot` 命令或 setup 菜单 `!`（软件复位，重入 ROM 装载器） |
-| 固件卡死（如 U-Boot `### ERROR ### Please RESET the board`） | 断电重启；ROM 装载器只在 FPGA 上电/复位时运行，卡死后串口无菜单 |
-| 免断电重跑 gateware | `boot_upload.py --program`（调试器把 bitstream 写入 SRAM，FPGA 立即运行新配置） |
-| 重新加载 Flash 中的配置 | 调试器 `--operation_index 1`（Flash reload），`--configure-flash` 写入后自动执行 |
-| 更新持久 gateware | `boot_upload.py --configure-flash --mode install`（bitstream 写 FPGA Flash + reload + 安装匹配 `app.img`） |
+XIP 持久更新包含 FPGA 配置、Flash 启动代码和应用三个产物。旧 `boot_upload.py --mode install` 与 `boot_verify.py --install` 仅支持 ROM，XIP 会在板端操作前拒绝。完整更新走 `board update`；不再手工拼接下载器调用。更新涉及单份 Flash，不是原子更新，失败时按本次 `result.json` 的恢复说明处理。
 
 ### TFTP 引导服务器
 
@@ -187,8 +155,8 @@ Flash 写入仅擦除和编程，不做写后读回或配置 CRC 比对；Gowin 
     --bind 169.254.25.153 --file build\uboot\firmware\UBOOT.OSB --name UBOOT.OSB
 ```
 
-板端 `boot net <file>` 的文件名必须与 `--name` 一致；payload 校验只接受 load=0x41000000 的 OS 载荷
-（OSB1/OSB2，如 `UBOOT.OSB`），BIOS 自身的 `app.img`（load=0x40800000）会被拒绝。
+板端 `boot net <file>` 的文件名必须与 `--name` 一致；payload 校验只接受匹配当前布局的 OS 载荷
+（OSB1/OSB2，如 `UBOOT.OSB`，当前默认 load=0x01000000），BIOS 自身的 `app.img`（load=0x00800000）会被拒绝。
 ARP 解析每 250 ms 重试一次，最长 10 秒；link 位由 HAL 每 250 ms 轮询刷新，首包 `HAL_NO_MEDIA` 属正常。
 
 详细启动流程、镜像格式、分区、恢复命令和验证范围见 [bootloader](docs/bootloader.md)。

@@ -1,0 +1,9 @@
+ Target Cable: USB Debugger A/0/107569/null@2MHz
+ Target Device: GW2A-18C(0x0000081B)
+ Operation "exFlash C Bin Erase,Program,Verify" for device#1...
+ Status Code is: 0x00000020
+ SPI flash detected: 0x0B4013!
+ Try to program spi flash: 0x0B4013!
+ The storage size of the target data stream is 2202112 bytes, and the actual flash storage size is 524288 bytes, exceeding the limit.
+ Finished.
+ Cost 0.67 second(s)

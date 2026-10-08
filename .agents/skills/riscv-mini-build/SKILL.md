@@ -9,6 +9,8 @@ description: 在 TangPrimer-20K/riscv-mini 创建最小或完整系统构建、�
 
 构建身份与参数读取 `docs/build-artifacts.md`。
 
+基本构建入口读取 `scripts/README.md`：`scripts/mini.py build --from current` 复用已验收配置并编译当前源码，`--minimal` 从零构建最小系统，`--synthesize` 才执行 PnR。硬件参数实验继续使用下面的专项工具。
+
 ```powershell
 .venv/Scripts/python.exe scripts/builds.py list
 .venv/Scripts/python.exe scripts/builds.py show current

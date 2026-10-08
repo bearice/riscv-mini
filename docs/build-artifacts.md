@@ -2,6 +2,8 @@
 
 入口是本地 **build/README.md**，由 `scripts/builds.py refresh` 生成。Git 里的报告保存关键摘要和哈希，忽略的 build/ 保留完整 RTL、工具日志、镜像和测量。
 
+日常操作统一从 `scripts/mini.py` 和 [任务指南](../scripts/README.md) 进入。`builds show current` 查询已验收身份；`build --from current` 用其配置编译当前源码；`board run/recover/update/verify --build <ID>` 执行完整板端流程。运行日志和结果保存在独立 `build/operations/<时间>-<操作>/`，不覆盖选定构建或发布包中的证据。
+
 ```text
 build/
   README.md             当前版本、性能基线、构建登记表
@@ -21,6 +23,7 @@ build/
     release.json       complete/failed、版本、tag、完整Git hash、归档文件哈希
     build-parameters.json
     toolchain.json     编译器/工具hash、Python依赖版本
+    csr.json           板端操作和只读探针所需的匹配CSR布局
     firmware/          boot/app bin、img、ELF/map
     gateware/          最终bitstream
     reports/           PnR、板测、性能、提交记录

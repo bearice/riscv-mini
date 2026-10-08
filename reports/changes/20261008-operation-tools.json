@@ -1,0 +1,105 @@
+{
+  "created_at": "2026-10-08T11:24:18+00:00",
+  "title": "Reusable build and board operation tools",
+  "changes": [
+    "Add mini.ps1 and task-oriented CLI workflows for artifact discovery, configuration reuse, SRAM recovery, RAM execution, persistent updates and verification, with per-operation receipts.",
+    "Update XIP and application regions through a DDR software SPI utility with fixed ranges, JEDEC checks, CRC framing, page readback and full independent verification before Flash boot; preserve a separately verified XIP repair operation.",
+    "Reject legacy UART installation for XIP before hardware access, package matching CSR metadata, preserve operation logs and document failure/recovery boundaries. Full update and subsequent independent Flash verification passed on the selected v0.8.0 build; physical cold boot was not tested."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 57,
+    "checks": [
+      {
+        "name": "mini",
+        "tests": 32,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "tests/mini_operations_test.py"
+        ],
+        "passed": true
+      },
+      {
+        "name": "workflow",
+        "tests": 18,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "tests/workflow_test.py",
+          "--report",
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\reports\\checks\\tool-commit\\workflow.json"
+        ],
+        "passed": true
+      },
+      {
+        "name": "programmer",
+        "tests": 2,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "sim/test_programmer_result.py"
+        ],
+        "passed": true
+      },
+      {
+        "name": "boot-image",
+        "tests": 5,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "sim/test_boot_image.py"
+        ],
+        "passed": true
+      },
+      {
+        "name": "help",
+        "tests": 0,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "scripts/mini.py",
+          "--help"
+        ],
+        "passed": true
+      },
+      {
+        "name": "build-plan",
+        "tests": 0,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "scripts/mini.py",
+          "build",
+          "--from",
+          "current",
+          "--dry-run"
+        ],
+        "passed": true
+      },
+      {
+        "name": "update-plan",
+        "tests": 0,
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+          "scripts/mini.py",
+          "board",
+          "update",
+          "--build",
+          "current",
+          "--dry-run"
+        ],
+        "passed": true
+      }
+    ],
+    "probe_compilation": [
+      "xip-readback",
+      "xip-writer",
+      "rom-readback"
+    ],
+    "board_evidence": [
+      "build/operations/20261008T111029678667Z-update/result.json",
+      "build/operations/20261008T111204304464Z-verify/result.json"
+    ],
+    "source_inputs_sha256": "02b5f1844a23e619cee2c469cdbfaea409e242dd08d75d503ab234a9a471b6eb"
+  },
+  "mode": "staged review",
+  "base_revision": "c1ab22997132062f3c46e069a486a625c4ebf334",
+  "source_revision": null
+}

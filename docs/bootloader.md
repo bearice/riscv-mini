@@ -34,9 +34,11 @@ CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟
 | `0x200000`–`0x400000` | 2 MiB | 单一应用镜像；CPU 可擦写 |
 | `0x400000`–`0x800000` | 4 MiB，仅本机 | 后续保留；首版 CPU 只读 |
 
-当前 Gowin 配置二进制小于 2 MiB，配置下载地址固定为零；上传工具执行此长度检查。CPU 更新不用 chip erase，只对应用覆盖到的 4 KiB 扇区擦除，按 256 字节页边界编程。先写 payload，最后写镜像头；按用户要求不做 Flash 写后读回校验。更新中断时旧镜像可能失效，启动检查失败后回到 UART 恢复；本版没有 A/B 回滚。
+配置下载地址固定为零；工具根据所选 ROM/XIP 布局检查配置空间与启动代码、应用分区不重叠。旧 ROM UART 安装实现不用 chip erase，只擦除应用覆盖到的 4 KiB 扇区，按 256 字节页边界编程，先写 payload、最后写镜像头，不自行做写后读回。正式更新入口另外执行完整独立读回。更新中断时旧镜像可能失效；本版没有 A/B 回滚。
 
-`--configure-flash` 是显式的 FPGA 持久配置更新。工具先执行 Gowin 普通 exFlash Erase/Program（operation 8），再执行 Reprogram 从 Flash 重新配置，最后通过 UART 安装应用。没有 Gowin Verify、独立配置读回或 CRC 比对步骤。不能把普通 `--mode install` 当作 FPGA 配置更新。修改 ROM/CSR/内存布局时需要构建并更新匹配的配置和镜像。
+完整持久更新使用 `scripts/mini.py board update --build <ID>`，前置检查与日志契约见 [任务指南](../scripts/README.md)。ROM 配置通过下载器写配置、reload、UART 安装；XIP 配置先由 DDR 工具关闭 XIP，通过片上软件 SPI 写启动代码和应用并逐页确认，再由下载器写匹配配置、reload。两种流程均 UART 加载只读 DDR 探针，精确读回目标应用（XIP 另读启动代码）后再从 Flash 启动。配置区不宣称独立读回验收。
+
+旧 `boot_upload.py --configure-flash --mode install` 仅适用于 ROM。XIP 的 bootloader 从 Flash 取指，擦除/编程函数明确不支持 UART 安装；工具现在在任何板端操作前拒绝该组合。普通 `--mode install` 只写应用区，也仅支持 ROM。修改启动代码/CSR/内存布局时必须更新完整匹配产物。
 
 `--program` 用于 SRAM 临时配置（operation 2），检查工具结果，不擦写 Flash。软件复位与重载的剩余边界见 [DDR 启动](ddr-boot.md)。
 
