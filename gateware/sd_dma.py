@@ -4,6 +4,7 @@ No loop mode, 64-bit addressing or unbounded length counters. Disable drains
 an outstanding bus request before returning idle. Stream byte order matches
 LiteX little-endian DMA used by the existing SD byte converters.
 """
+from gateware.memory_map import RAM_BASE, RAM_END
 from migen import Signal, If, FSM, NextState, NextValue
 from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
@@ -22,7 +23,7 @@ class SDTransfer(LiteXModule):
         address=Signal(bus.adr_width); remaining=Signal(11); offset=Signal(11)
         word=Signal(32)
         enable=self._enable.storage
-        valid_config=(self._base.storage[:2]==0)&(self._base.storage>=0x40000000)&(self._base.storage<0x48000000)&(self._length.storage[:2]==0)&(self._length.storage>0)&(self._length.storage<=4096)
+        valid_config=(self._base.storage[:2]==0)&(self._base.storage>=RAM_BASE)&(self._base.storage<RAM_END)&(self._length.storage[:2]==0)&(self._length.storage>0)&(self._length.storage<=4096)
         self.comb += [bus.adr.eq(address),bus.we.eq(write),bus.sel.eq(15),
             bus.dat_w.eq(word),self._offset.status.eq(offset)]
         # Original DMA swaps byte order before/after its stream converter.

@@ -6,8 +6,8 @@
 #include <string.h>
 
 /* Separate from BIOS image staging, payload, stack and framebuffer windows. */
-#define SOURCE ((volatile uint32_t *)0x46000000u)
-#define DEST ((volatile uint32_t *)0x46200000u)
+#define SOURCE ((volatile uint32_t *)0x06000000u)
+#define DEST ((volatile uint32_t *)0x06200000u)
 #define MAX_BYTES (1024u*1024u)
 static volatile uint32_t sink;
 static unsigned failures;

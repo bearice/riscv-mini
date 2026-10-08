@@ -20,7 +20,7 @@ wire ready,done,error,cmd_valid,wvalid;
 wire [127:0] wdata;
 wire [15:0] mask;
 integer i;
-packer dut(.sys_clk(sys_clk),.sys_rst(sys_rst),.base(32'h40810000),
+packer dut(.sys_clk(sys_clk),.sys_rst(sys_rst),.base(32'h00810000),
  .length(13'd16),.enable(enable),.valid(valid),.data(data),.ready(ready),
  .done(done),.error(error),.cmd_valid(cmd_valid),.cmd_ready(1'b1),
  .wvalid(wvalid),.wready(1'b1),.wdata(wdata),.mask(mask));

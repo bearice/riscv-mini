@@ -5,7 +5,12 @@
 static unsigned capacity;
 static uint32_t jedec;
 unsigned flash_size(void) { return capacity; }
-static void select_flash(unsigned active) { flash_spi_cs_write(0x10000u|!!active); }
+static void select_flash(unsigned active) {
+#ifdef CSR_FLASH_XIP_BUSY_ADDR
+    if(active)while(flash_xip_busy_read()) {}
+#endif
+    flash_spi_cs_write(0x10000u|!!active);
+}
 static int transfer(unsigned value, unsigned bits, unsigned *received) {
     flash_spi_mosi_write(value); flash_spi_control_write((bits<<8)|1);
     uint32_t start=io_ticks();

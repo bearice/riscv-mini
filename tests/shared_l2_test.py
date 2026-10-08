@@ -40,7 +40,7 @@ def memory():
         cycle+=1;yield
 
 def cpu(a,data=None,sel=15):
-    yield wb.adr.eq((0x40000000>>2)+a//4);yield wb.we.eq(data is not None)
+    yield wb.adr.eq((0x00000000>>2)+a//4);yield wb.we.eq(data is not None)
     yield wb.dat_w.eq(data or 0);yield wb.sel.eq(sel);yield wb.cyc.eq(1);yield wb.stb.eq(1)
     for n in range(2000):
         yield
@@ -152,7 +152,7 @@ def test():
     for _ in range(100):yield
     yield from maintenance(True)
     # Cancelled accepted read must drain without acknowledging a new owner.
-    yield wb.adr.eq((0x40000000>>2)+0x10000//4);yield wb.we.eq(0)
+    yield wb.adr.eq((0x00000000>>2)+0x10000//4);yield wb.we.eq(0)
     yield wb.cyc.eq(1);yield wb.stb.eq(1)
     for _ in range(3):yield
     yield wb.cyc.eq(0);yield wb.stb.eq(0)

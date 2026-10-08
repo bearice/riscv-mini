@@ -61,11 +61,14 @@ def main():
                 future=pool.submit(server.serve_once) if server else None
                 port.write(('boot net '+name+'\r').encode())
                 result=bytearray();deadline=time.monotonic()+a.timeout
+                autoboot_stopped=False
                 while time.monotonic()<deadline:
                     chunk=port.read(port.in_waiting or 1)
                     if chunk:
                         result.extend(chunk);session.note(chunk)
                         print(chunk.decode(errors='replace'),end='',flush=True)
+                        if not autoboot_stopped and b'Hit any key to stop autoboot' in result:
+                            port.write(b' ');port.flush();autoboot_stopped=True
                         if b'riscv-mini> ' in result:break
                         for fail in (b'TFTP unavailable',b'failed',b'ERR '):
                             if fail in result:

@@ -49,7 +49,7 @@ def exercise(size):
             yield cache.video.cmd.valid.eq(1);yield cache.video.cmd.addr.eq(0)
             yield cache.dma.cmd.valid.eq(1);yield cache.dma.cmd.addr.eq(0)
             for i in range(64):
-                a=0x407ff000+i*64
+                a=0x007ff000+i*64
                 assert (yield from cpu(a))==0
                 yield from cpu(a,0x87654321+i)
                 yield from cpu(a,0x0000aa00,2)
@@ -58,16 +58,16 @@ def exercise(size):
             assert not traffic
             yield cache.video.cmd.valid.eq(0);yield cache.dma.cmd.valid.eq(0)
             # Out-of-window requests stall instead of allocating/refilling.
-            yield wb.adr.eq(0x40800000>>2);yield wb.cyc.eq(1);yield wb.stb.eq(1)
+            yield wb.adr.eq(0x00800000>>2);yield wb.cyc.eq(1);yield wb.stb.eq(1)
             for _ in range(30):
                 yield;assert not (yield wb.ack) and not (yield port.cmd.valid)
             yield wb.cyc.eq(0);yield wb.stb.eq(0);yield;yield
             yield ready.eq(1);yield;yield
             for i in range(64):
-                a=0x407ff000+i*64;expected=((0x87654321+i)&~0xff00)|0xaa00
+                a=0x007ff000+i*64;expected=((0x87654321+i)&~0xff00)|0xaa00
                 assert (yield from cpu(a))==expected,'handoff lost stack'
                 yield from cpu(a+size,0x12345678)
-                assert ram[(a-0x40000000)//16]&0xffffffff==expected,'dirty boot line not preserved'
+                assert ram[(a-0x00000000)//16]&0xffffffff==expected,'dirty boot line not preserved'
                 assert (yield from cpu(a))==expected,'DDR readback after eviction failed'
             yield cache.reset.eq(1);yield ready.eq(0)
             for _ in range(4):yield

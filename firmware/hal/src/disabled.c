@@ -99,6 +99,7 @@ hal_result_t hal_spi_lcd_link(unsigned up) {(void)up;return HAL_UNSUPPORTED;}
 #endif
 #if !MINI_FEATURE_VIDEO
 hal_result_t hal_video_init(void) {return HAL_UNSUPPORTED;}
+hal_result_t hal_video_set_buffers(uint16_t *first,uint16_t *second) {(void)first;(void)second;return HAL_UNSUPPORTED;}
 #endif
 #if !MINI_FEATURE_VIDEO
 volatile uint16_t * hal_video_frame(unsigned slot) {(void)slot;return 0;}

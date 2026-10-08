@@ -1,6 +1,6 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
-MEMORY { DDR (rwx) : ORIGIN = 0x40800000, LENGTH = 4M }
+MEMORY { DDR (rwx) : ORIGIN = 0x00800000, LENGTH = 4M }
 SECTIONS {
     .text : { KEEP(*(.text.start)) *(.text .text.*) } > DDR
     .rodata : { *(.rodata .rodata.*) . = ALIGN(4); } > DDR

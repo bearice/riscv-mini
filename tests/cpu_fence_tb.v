@@ -38,12 +38,12 @@ always @(negedge clk)begin
  iack=0;dack=0;
  if(!reset)begin
   if(ic && istb)begin
-   idr=ia>=30'h10000000 ? mem[ia & 255] : rom[ia & 4095];iack=1;
+   idr=ia>=30'h00200000 ? mem[ia & 255] : rom[ia & 4095];iack=1;
   end
   if(dc && dstb)begin
    wait_d=wait_d+1;
    if(wait_d==ACK_DELAY)begin
-    if(da>=30'h20000000)begin
+    if(da>=30'h3c000000)begin
      if(ddw==255)$fatal(1,"Guest check failed");
      if(ddw!=phase+1)$fatal(1,"MMIO phase ordering");
      phase=ddw;

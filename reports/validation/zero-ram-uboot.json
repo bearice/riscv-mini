@@ -1,0 +1,49 @@
+{
+  "passed": true,
+  "checks": {
+    "uboot_console": true,
+    "ram_zero_128m": true,
+    "lmb_available": true,
+    "sd_32_blocks": true,
+    "fat_directory": true,
+    "fat_4k_crc": true,
+    "fat_64k": true,
+    "fat_boot_json": true,
+    "usb_receiver": true,
+    "ethernet_ping": true,
+    "sbi_probe": true,
+    "sbi_reset_bios": true,
+    "no_command_errors": true,
+    "no_compressed_instructions": true,
+    "final_bios_restored": true
+  },
+  "soc_dir": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\noc-flash-xip\\build\\runs\\20261008T014335542590Z-da9a3d8-dirty-full-rv32imaf-rom0k-l24k-zero-ram-dynamic-vram-default",
+  "bitstream_sha256": "1d7c8a1743be11e5d4ed5557d4be39d8895bc42c584e6cd55ac9186c84580b31",
+  "bios_sha256": "fc9daef778802929fc302d4938c13b29621fcc55b2eb68aea71a3641b6fe4487",
+  "source": {
+    "commit": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+    "dirty": true,
+    "inputs_sha256": "071d959eeb6243b1f996b48b65e9495b07705027bd9b72cad95ad25bcaa6206d"
+  },
+  "payloads": {
+    "build\\uboot-zero\\firmware\\u-boot.bin": {
+      "bytes": 395067,
+      "sha256": "3d4628ddb1b0c695187803b3f61a6fc3fb1a2c56d70ada7c82b00076a5ed3a89"
+    },
+    "build\\uboot-zero\\firmware\\u-boot.elf": {
+      "bytes": 7299920,
+      "sha256": "a4b1b66daa068e4f1c03456fcf9e7844b309b7d703b5d1145e8418488b111e46"
+    },
+    "build\\uboot-zero\\opensbi\\UBOOT.OSB": {
+      "bytes": 1443680,
+      "sha256": "b3a2a019d17d781030da2c3795757b47279edb549b81cbbe2314240eb9bcf0be"
+    },
+    "build\\opensbi-zero\\firmware\\OPENSBI.OSB": {
+      "bytes": 1051784,
+      "sha256": "760b462a9e385fbf02262a5d6b6d2a8046463152c355a24b3d6f619ec3077882"
+    }
+  },
+  "limits": [
+    "No kernel boot, SD writes, USB storage, or physical keyboard input tested; DMA remains 4 KiB per transaction."
+  ]
+}

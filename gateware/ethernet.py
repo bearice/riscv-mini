@@ -1,4 +1,5 @@
 """RMII pads omit F10: the shared PHY reset GPIO is its sole owner."""
+from gateware.memory_map import ETHMAC_BASE
 from migen import ClockDomain, ClockDomainsRenamer, ResetInserter
 from migen.fhdl.structure import _Assign
 from migen.genlib.cdc import GrayCounter, MultiReg
@@ -56,7 +57,7 @@ def add_ethernet(soc):
     soc.ethphy=DockRMII(clocks,platform.request('rmii'))
     soc.eth_clock=EthernetClock(clocks.ref_clk,soc.crg.cd_sys.rst)
     # 8 selects the byte datapath in the PHY domain with 32-bit CPU packet SRAM.
-    soc.mem_map['ethmac']=0xb0000000
+    soc.mem_map['ethmac']=ETHMAC_BASE
     soc.add_ethernet(phy=soc.ethphy,data_width=8,nrxslots=2,ntxslots=2,
         rxslots_read_only=True,txslots_write_only=True,with_timing_constraints=False)
     platform.add_period_constraint(clocks.ref_clk,20)

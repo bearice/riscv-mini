@@ -30,7 +30,8 @@ DISTRO = "archlinux"
 WSL_SRC = "$HOME/uboot-port"
 WSL_OBJ = "$HOME/uboot-port-obj"
 CROSS = "riscv64-elf-"
-LIBGCC = "-L /usr/lib/gcc/riscv64-elf/16.2.0/rv32imac/ilp32 -lgcc"
+LIBGCC = "-L /usr/lib/gcc/riscv64-elf/16.2.0/rv32im/ilp32 -lgcc"
+# LLD supports PIE; runtime relocation must also move command/data pointers.
 ARCH_FLAGS = "-march=rv32ima_zicsr_zifencei -mabi=ilp32"
 
 # (path under firmware/uboot/, destination under the U-Boot tree)
@@ -58,10 +59,13 @@ def main():
                         help="WSL-native build output path (default $HOME/uboot-port-obj)")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "build/uboot/firmware",
                         help="Windows dir to receive u-boot.bin")
+    parser.add_argument("--prepare-only", action="store_true", help="Write build.sh for direct WSL execution")
     a = parser.parse_args()
     out = a.output_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
     port_wsl = to_wsl(ROOT / "firmware/uboot")
     out_wsl = to_wsl(out)
+    patch = out / "uboot-port.patch"
+    patch.write_bytes((ROOT / "firmware/uboot/uboot-port.patch").read_bytes().replace(b'\r\n', b'\n'))
 
     copy_cmds = []
     for rel_src, rel_dst in COPIES:
@@ -74,6 +78,7 @@ def main():
     script = f"""
 set -euo pipefail
 SRC="{a.source}"; OBJ="{a.obj}"; PORT="{port_wsl}"; OUT="{out_wsl}"
+PATCH="$OUT/uboot-port.patch"
 if [ ! -d "$SRC" ]; then
   git clone --depth 1 --branch {REV} https://github.com/u-boot/u-boot.git "$SRC"
 fi
@@ -81,22 +86,28 @@ cd "$SRC"
 tag=$(git describe --tags --abbrev=0)
 [ "$tag" = "{REV}" ] || {{ echo "U-Boot source tag $tag differs from pinned {REV}" >&2; exit 1; }}
 {chr(10).join(copy_cmds)}
-if git apply --reverse --check "$PORT/uboot-port.patch" 2>/dev/null; then
+if git apply --reverse --check "$PATCH" 2>/dev/null; then
   echo "uboot-port.patch already applied"
 else
-  git apply --reverse "$PORT/uboot-port.patch" 2>/dev/null || true
-  git apply "$PORT/uboot-port.patch"
+  git apply --reverse "$PATCH" 2>/dev/null || true
+  git apply "$PATCH"
   echo "uboot-port.patch applied"
 fi
 if ! grep -q RISCV-MINI MAINTAINERS; then
   printf 'RISCV-MINI\\nM:\\tbearice\\nS:\\tgithub.com/bearice/riscv-mini\\nF:\\tboard/riscv-mini/\\n\\n' >> MAINTAINERS
 fi
 make O="$OBJ" riscv_mini_defconfig
-make -j8 O="$OBJ" CROSS_COMPILE={CROSS} PLATFORM_LIBGCC="{LIBGCC}" PLATFORM_CFLAGS='{ARCH_FLAGS}'
+make -j8 O="$OBJ" CROSS_COMPILE={CROSS} LD=ld.lld LDFLAGS_u-boot='--gc-sections -static -pie -Ttext=$(CONFIG_TEXT_BASE)' PLATFORM_LIBGCC="{LIBGCC}" PLATFORM_CFLAGS='{ARCH_FLAGS}'
 mkdir -p "$OUT"
 cp "$OBJ/u-boot.bin" "$OUT/u-boot.bin"
+cp "$OBJ/u-boot" "$OUT/u-boot.elf"
+cp "$OBJ/.config" "$OUT/config"
 echo "U-Boot payload: $OUT/u-boot.bin $(stat -c%s "$OUT/u-boot.bin") bytes"
 """
+    (out / "build.sh").write_text(script, newline="\n")
+    if a.prepare_only:
+        print("Prepared", out / "build.sh")
+        return
     subprocess.run(["wsl", "-d", DISTRO, "-e", "bash", "-lc", script], check=True)
 
 if __name__ == "__main__":

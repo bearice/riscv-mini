@@ -1,4 +1,5 @@
 """PT8211: sys clock enables, stereo FIFO and bounded single-word DDR DMA."""
+from gateware.memory_map import PAYLOAD_LIMIT, RAM_BASE
 from gateware.csr_layout import packed_status
 from migen import Signal, If, Cat, Mux, ResetInserter, Constant
 from migen.genlib.fifo import SyncFIFOBuffered
@@ -38,9 +39,9 @@ class Audio(LiteXModule):
             pads.pa_en.eq(run & ~mute & ~clear), self._amplifier.status.eq(pads.pa_en),
             self._busy.status.eq(busy), self._level.status.eq(fifo.level),
             fifo.reset.eq(clear), available.eq(self._producer.storage-self._fetched.status),
-            valid_config.eq((self._base.storage[:2] == 0) & (self._base.storage >= 0x40000000)
+            valid_config.eq((self._base.storage[:2] == 0) & (self._base.storage >= RAM_BASE)
                 & (self._capacity.storage != 0)
-                & ((Cat(self._base.storage, Constant(0, 1)) + (self._capacity.storage << 2)) <= 0x47e00000)),
+                & ((Cat(self._base.storage, Constant(0, 1)) + (self._capacity.storage << 2)) <= PAYLOAD_LIMIT)),
             bus.cyc.eq(busy), bus.stb.eq(busy), bus.adr.eq(address), bus.we.eq(0), bus.sel.eq(15),
             dma_result.eq(busy & bus.ack & ~bus.err & ~aborted & dma & ~clear),
             pio.eq(self._sample.wr_stb & ~dma & ~clear),

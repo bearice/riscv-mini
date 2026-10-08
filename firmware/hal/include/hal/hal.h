@@ -92,6 +92,7 @@ hal_result_t hal_spi_lcd_network(const uint8_t mac[6],const uint8_t ip[4]); /* N
 hal_result_t hal_spi_lcd_link(unsigned up);
 hal_result_t hal_video_init(void);
 volatile uint16_t *hal_video_frame(unsigned slot);
+hal_result_t hal_video_set_buffers(uint16_t *first,uint16_t *second);
 hal_result_t hal_video_present(unsigned slot);
 hal_result_t hal_video_stop(void);
 void hal_video_status(void);

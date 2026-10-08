@@ -1,12 +1,13 @@
 #pragma once
 #include <stdint.h>
+#include "../../common/memory_layout.h"
 /* ILP32 M-mode ecall interface. a7=magic, a6=function; a0..a5 arguments.
  * Negative return values are errors. Firmware retains mtvec and device ownership.
  * Payloads must poll; this cooperative interface is not SBI or a security boundary. */
 #define BIOS_ABI_VERSION 1u
 #define BIOS_ECALL_MAGIC 0x42494f53u
-#define BIOS_PAYLOAD_BASE 0x41000000u
-#define BIOS_PAYLOAD_LIMIT 0x47e00000u
+#define BIOS_PAYLOAD_BASE 0x01000000u
+#define BIOS_PAYLOAD_LIMIT 0x07e00000u
 enum bios_function {BIOS_INFO=0,BIOS_WRITE,BIOS_GETC,BIOS_TIME,BIOS_POLL,
     BIOS_VIDEO_MODE,BIOS_VIDEO_PRESENT,BIOS_SD_READ,BIOS_SD_WRITE,
     BIOS_FILE_READ,BIOS_IO_READ,BIOS_LEDS,BIOS_REBOOT,

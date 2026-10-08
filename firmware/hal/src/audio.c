@@ -26,8 +26,8 @@ hal_result_t hal_audio_write(const uint32_t *pcm,unsigned frames,unsigned *writt
 }
 hal_result_t hal_audio_ring_begin(uint32_t *ring,unsigned frames) {
     uintptr_t base=(uintptr_t)ring;
-    if(!frames || frames>65535 || (base&3u) || base<0x40000000u || base>=0x47e00000u
-        || frames>(0x47e00000u-base)/4u)return HAL_INVALID;
+    if(!frames || frames>65535 || (base&3u) || !ring || base>=0x07e00000u
+        || frames>(0x07e00000u-base)/4u)return HAL_INVALID;
     hal_result_t result=hal_audio_stop();if(result!=HAL_OK)return result;
     dma_ring=ring;capacity=frames;
     audio_base_write(base);audio_capacity_write(frames);audio_producer_write(0);

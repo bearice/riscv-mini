@@ -1,4 +1,5 @@
 """60/120 MHz boot kernel with independently selected peripheral modules."""
+from gateware.memory_map import RAM_BASE, RAM_SIZE
 import json
 from pathlib import Path
 from migen import ClockDomain, Signal, Instance, Cat, Mux
@@ -27,6 +28,7 @@ from gateware.ethernet import add_ethernet
 from gateware.usb import add_usb
 from gateware.features import Features
 from gateware.config import cpu_capabilities
+from gateware.flash_xip import FLASH_BASE, FLASH_SIZE, XIP_OFFSET
 from gateware.audio_clock import AudioDDS
 
 class ClockResetGenerator(LiteXModule):
@@ -72,6 +74,7 @@ class SDControl(LiteXModule):
         self.comb += reset.eq(self._reset.storage)
 
 class MiniSoC(SoCCore):
+    mem_map = {**SoCCore.mem_map, "rom": FLASH_BASE, "main_ram": RAM_BASE}
     def __init__(
         self,
         rom_data=None,
@@ -84,11 +87,14 @@ class MiniSoC(SoCCore):
         audio_clock='dds',
         l2_size=4096,
         rom_size=8192,
+        boot_mode='rom',
     ):
         if l2_size not in (4096,8192):raise ValueError('Software DDR boot requires at least 4 KiB L2 boot RAM')
         if rom_size not in (4096,8192):raise ValueError('Boot ROM size must be 4 or 8 KiB')
+        if boot_mode not in ('rom','xip'):raise ValueError('Invalid boot mode')
         # Validate feature selections and select matching CPU RTL.
         features = features or Features()
+        if boot_mode=='xip' and not features.flash:raise ValueError('XIP requires Flash')
         if cpu_verilog is None and (features.mmu or features.fpu):
             from gateware.config import cpu_filename
             cpu_verilog = (
@@ -118,20 +124,35 @@ class MiniSoC(SoCCore):
         self.crg=ClockResetGenerator(platform,features,usb_backend)
         # SUG1220: prioritize timing over compilation speed at high utilization.
         platform.toolchain.options.update(timing_driven=1,place_option=2,route_option=2)
-        SoCCore.__init__(
-            self, platform, clk_freq=60e6, ident='riscv-mini',
-            cpu_type='vexriscv', cpu_variant=cpu_variant,
-            integrated_rom_size=rom_size, integrated_rom_init=rom_data or [],
-            integrated_sram_size=0, integrated_main_ram_size=0,
-            uart_name='serial', uart_baudrate=115200,
-            with_timer=True, with_ctrl=True,
-        )
+        from litex.soc.cores.cpu.vexriscv.core import VexRiscv
+        io_regions={0xf0000000:0x02000000,0xf2000000:0x01000000,
+                    0xf3400000:0x00400000,0xf3800000:0x00800000,
+                    0xf4000000:0x04000000,0xf8000000:0x08000000}
+        previous_io_regions=VexRiscv.io_regions
+        VexRiscv.io_regions=io_regions
+        try:
+            SoCCore.__init__(
+                self, platform, clk_freq=60e6, ident='riscv-mini',
+                cpu_type='vexriscv', cpu_variant=cpu_variant,
+                integrated_rom_size=rom_size if boot_mode=='rom' else 0,
+                integrated_rom_init=rom_data or [],
+                cpu_reset_address=FLASH_BASE if boot_mode=='rom' else FLASH_BASE+XIP_OFFSET,
+                integrated_sram_size=0, integrated_main_ram_size=0,
+                uart_name='serial', uart_baudrate=115200,
+                with_timer=True, with_ctrl=True,
+            )
+        finally:
+            VexRiscv.io_regions=previous_io_regions
+        # Device MMIO is high; the XIP window remains cacheable.
+        self.cpu.io_regions=io_regions
         if cpu_verilog is not None:
             self.cpu.use_external_variant(str(Path(cpu_verilog).resolve()))
         # Independent machine timer for SBI TIME; peripheral IRQ timers remain.
         if features.mmu:
             self.cpu.add_timer()
         capabilities=cpu_capabilities(cpu_verilog) if cpu_verilog else {}
+        if cpu_verilog and not capabilities.get('high_mmio_xip'):
+            raise ValueError('Regenerate CPU RTL for the default RAM-zero/high-MMIO memory map')
         self.add_constant('CONFIG_CPU_COMPRESSED',int(capabilities.get('compressed',False)))
         self.add_constant('CONFIG_CPU_BITMANIP',sum(1<<i for i,name in enumerate(('Zba','Zbb','Zbs'))
             if name in capabilities.get('bitmanip',[])))
@@ -165,7 +186,7 @@ class MiniSoC(SoCCore):
             self.comb += [self.memory_port.video.cmd.valid.eq(0),self.memory_port.video.rdata.ready.eq(1)]
         wb_ram=wishbone.Interface(data_width=32,address_width=32,addressing='word')
         self.bus.add_slave(name='main_ram',slave=wb_ram,
-            region=SoCRegion(origin=0x40000000,size=128*1024*1024))
+            region=SoCRegion(origin=RAM_BASE,size=RAM_SIZE))
         ram_request=wishbone.Interface(data_width=32,address_width=32,addressing='word')
         self.add_constant('CONFIG_L2_SIZE',l2_size)
         self.add_constant('CONFIG_L2_MODE',2)
@@ -194,9 +215,16 @@ class MiniSoC(SoCCore):
         platform.add_extension([
             ('sd_detect',0,Pins('D15'),IOStandard('LVCMOS33'))])
         if features.flash:
-            self.flash_spi=SPIMaster(platform.request('spiflash'),32,60e6,10e6,with_csr=False,mode='aligned')
+            flash_pads=platform.request('spiflash')
+            self.flash_spi=SPIMaster(flash_pads if boot_mode=='rom' else None,32,60e6,10e6,with_csr=False,mode='aligned')
             self.flash_spi.add_csr(with_loopback=False)
             self.flash_spi.add_clk_divider()
+            if boot_mode=='xip':
+                from gateware.flash_xip import FlashXIP
+                self.flash_xip=FlashXIP(flash_pads,self.flash_spi.pads)
+                self.bus.add_slave(name='spiflash',slave=self.flash_xip.bus,
+                    region=SoCRegion(origin=FLASH_BASE,size=FLASH_SIZE,mode='r',cached=True))
+        self.add_constant('CONFIG_BOOT_XIP',int(boot_mode=='xip'))
         self.add_constant('CONFIG_SD_NATIVE',int(sd_backend=='native'))
         self.add_constant('CONFIG_SD_LITE',int(sd_profile=='lite'))
         self.add_constant('CONFIG_SD_PROFILE',('none','spi','lite','full').index(sd_profile))

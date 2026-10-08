@@ -11,7 +11,7 @@ int payload_main(const struct bios_info *info) {
     if(initialized!=0x12345678)ok=0;
     zeroed[0]=1;initialized=0; /* Next boot must reload .data and zero .bss. */
     if(bios_call(BIOS_INFO,(uintptr_t)&queried,0,0,0) || queried.version!=info->version)ok=0;
-    if(bios_call(BIOS_INFO,0x40800000,0,0,0)!=-1 || bios_call(999,0,0,0,0)!=-1)ok=0;
+    if(bios_call(BIOS_INFO,0x00800000,0,0,0)!=-1 || bios_call(999,0,0,0,0)!=-1)ok=0;
     struct bios_io io;if(bios_call(BIOS_IO_READ,(uintptr_t)&io,0,0,0))ok=0;
     uint8_t buffer[512];static const char filename[64]="RVTEST00.BIN";
     if(queried.features&1u) {

@@ -5,7 +5,7 @@
 #define IMAGE_VERSION 1u
 #define FLASH_BYTES 0x400000u
 #define IMAGE_OFFSET 0x200000u
-#define APP_BASE 0x40800000u
+#define APP_BASE 0x00800000u
 #define IMAGE_CHUNK 128u
 struct image_header {
     uint32_t magic, version, header_bytes, abi, length, load, entry, crc;

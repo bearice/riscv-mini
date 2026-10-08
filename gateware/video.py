@@ -1,6 +1,7 @@
 """480x272 RGB565 LCD scanout. One bounded DMA frame per scan period."""
+from gateware.memory_map import RAM_BASE, RAM_SIZE
 from gateware.csr_layout import packed_status
-from migen import Signal, If, Cat, ClockSignal, ClockDomainsRenamer
+from migen import Signal, If, Cat, Mux, ClockSignal, ClockDomainsRenamer
 from migen.genlib.cdc import MultiReg, PulseSynchronizer
 from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
@@ -9,7 +10,6 @@ from litex.build.io import DDROutput, SDROutput
 from litedram.frontend.dma import LiteDRAMDMAReader
 
 WIDTH, HEIGHT = 480, 272
-BASES = (0x47e00000, 0x47e40000)
 FRAME_BYTES = WIDTH*HEIGHT*2
 
 
@@ -65,6 +65,9 @@ class RGBLCD(LiteXModule):
         if FRAME_BYTES%word_bytes: raise ValueError('Frame must contain complete native words')
         self._enable = CSRStorage(name='enable')
         self._select = CSRStorage(name='select')
+        self._base0 = CSRStorage(32,name='base0')
+        self._base1 = CSRStorage(32,name='base1')
+        self._address_error = CSRStatus(name='address_error')
         packed_status(self, 'rgb_lcd')
         self._frames = CSRStatus(32,name='frames')
         self._completed = CSRStatus(32,name='completed')
@@ -88,19 +91,28 @@ class RGBLCD(LiteXModule):
         self.comb += [start.i.eq(scan.frame_start),done.i.eq(scan.frame_done),error.i.eq(scan.underflow)]
         busy = Signal()
         issuing = Signal()
-        pending = Signal()
+        pending = self.pending = Signal()
         selected = Signal()
+        frame_base = self.frame_base = Signal(32)
+        requested_base = Signal(32)
+        valid_base = self.valid_base = Signal()
+        self.comb += [requested_base.eq(Mux(self._select.storage,self._base1.storage,self._base0.storage)),
+            valid_base.eq((requested_base[:shift] == 0) & (requested_base >= RAM_BASE+4096)
+                & (requested_base <= RAM_BASE+RAM_SIZE-FRAME_BYTES))]
         offset = Signal(max=words)
         self.comb += [self._active.status.eq(selected),self._busy.status.eq(busy),
             dma.sink.valid.eq(issuing),dma.sink.last.eq(offset==words-1),
-            dma.sink.address.eq((BASES[0]-0x40000000)//word_bytes + (selected<<(18-shift)) + offset)]
+            dma.sink.address.eq(((frame_base-RAM_BASE) >> shift) + offset)]
         self.sync += [
             If(start.o,self._frames.status.eq(self._frames.status+1),pending.eq(self._enable.storage)),
             If(error.o,self._underflows.status.eq(self._underflows.status+1)),
             If(done.o,busy.eq(0),self._completed.status.eq(self._completed.status+1)),
             If(pending & ~busy,
                 pending.eq(0),
-                If(self._enable.storage,busy.eq(1),issuing.eq(1),offset.eq(0),selected.eq(self._select.storage))),
+                If(self._enable.storage,
+                    self._address_error.status.eq(~valid_base),
+                    If(valid_base,busy.eq(1),issuing.eq(1),offset.eq(0),
+                        selected.eq(self._select.storage),frame_base.eq(requested_base)))),
             If(dma.sink.valid & dma.sink.ready,
                 If(dma.sink.last,issuing.eq(0)).Else(offset.eq(offset+1))),
         ]

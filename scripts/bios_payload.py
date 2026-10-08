@@ -22,7 +22,7 @@ def main():
     subprocess.run([str(bin/'riscv-none-elf-objcopy.exe'),'-O','binary',str(elf),str(raw)],check=True)
     text=subprocess.check_output([str(bin/'riscv-none-elf-nm.exe'),str(elf)],text=True)
     symbols={parts[2]:int(parts[0],16) for line in text.splitlines() if len(parts:=line.split())==3}
-    image=pack(raw.read_bytes(),symbols['_memory_end']-0x41000000,symbols['_payload_start'])
+    image=pack(raw.read_bytes(),symbols['_memory_end']-0x01000000,symbols['_payload_start'])
     (out/'BOOT.RPB').write_bytes(image)
     print('BIOS payload:',len(image),'bytes; entry',hex(symbols['_payload_start']))
 if __name__=='__main__':main()

@@ -3,7 +3,7 @@
  * U-Boot's own device tree (S-mode payload view). The kernel receives
  * the OpenSBI DTB (build/opensbi/firmware/riscv_mini.dts) via booti,
  * not this file. Memory matches the OpenSBI DTB so dram_init sizes the
- * bank from the same description; the firmware region 0x41000000..0x410fffff
+ * bank from the same description; the firmware region 0x01000000..0x010fffff
  * is deliberately outside this bank.
  */
 /dts-v1/;
@@ -32,9 +32,9 @@
 		};
 	};
 
-	memory@40000000 {
+	memory@0 {
 		device_type = "memory";
-		reg = <0x40000000 0x07e00000>;
+		reg = <0x00000000 0x07e00000>;
 	};
 
 	clk12345: clock {
@@ -60,9 +60,9 @@
 			interrupts-extended = <&cpu_intc 5>;
 		};
 
-		serial@f000a000 {
+		serial@f000a800 {
 			compatible = "riscv-mini,liteuart32";
-			reg = <0xf000a000 0x800>;
+			reg = <0xf000a800 0x800>;
 		};
 	};
 };

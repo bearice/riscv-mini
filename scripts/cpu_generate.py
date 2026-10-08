@@ -77,6 +77,10 @@ def main():
             if source.count(anchor) != 1:
                 raise ValueError('Unsupported upstream fetch pipeline: '+anchor)
             source = source.replace(anchor, replacement)
+    source=source.replace('ioRange = _.msb',
+        'ioRange = a => (a(31 downto 28) === U(15, 4 bits)) && (a(31 downto 22) =/= U(0x3cc, 10 bits))')
+    source=source.replace('ioRange      = _.msb',
+        'ioRange = a => (a(31 downto 28) === U(15, 4 bits)) && (a(31 downto 22) =/= U(0x3cc, 10 bits))')
     target.write_text(source)
     repositories = output/'repositories'
     repositories.write_text('[repositories]\nlocal\nmaven-central: https://repo.maven.apache.org/maven2/\n')
@@ -102,7 +106,7 @@ def main():
                         '-jar', str(args.sbt_launch.resolve()), *commands],
                        cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True,
                        env={**os.environ, 'TMP':str(java_tmp), 'TEMP':str(java_tmp)})
-    report = {'commands': commands, 'pipeline': {
+    report = {'commands': commands, 'high_mmio_xip': True, 'pipeline': {
                   'relaxed_pc_calculation': args.relaxed_pc_calculation,
                   'extra_fetch_stage': args.relaxed_pc_calculation},
               'cpu_rtls': {},
