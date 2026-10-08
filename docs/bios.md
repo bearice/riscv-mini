@@ -38,15 +38,53 @@ BIOS 的命令、POST、驱动诊断及 `test ...` 文本统一镜像到 LCD TTY
 
 POST 检查 1 KiB DDR scratch、定时器进度、Flash JEDEC、SD 挂载、Ethernet/USB PHY、HID 枚举和 BIOS ECALL。它检查设备是否可用，不覆盖全部 DDR，也不证明物理音频、网络对端或屏幕颜色正确。缺失可选设备会报告 unavailable/FAIL，但 setup 仍可使用。完整硬件检查通过现有 `test ...` 命令显式运行，boot ROM 不链接这些测试。
 
-TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大 LCD 的 **80×34、6×8 字符格**。支持 US ASCII、Shift、Caps Lock、换行、制表符、Backspace 和滚屏。字符队列容量 128，满时丢弃新字符；无 ANSI escape、Unicode、键盘自动重复和编辑历史。LCD 根据脏字符更新后换帧。图形模式使用两个 480×272 RGB565 帧槽，stride=960 B，写完后显式 present；`tty` 恢复文字画面。
+TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大 LCD 的 **80×34、6×8 字符格**。支持 US ASCII、Shift、Caps Lock、换行、制表符、Backspace 和滚屏。字符队列容量 128，满时丢弃新字符；无 Unicode 和编辑历史。LCD 根据脏字符更新后换帧，字符属性（前景/背景/粗体/反显）参与脏判定。图形模式使用两个 480×272 RGB565 帧槽，stride=960 B，写完后显式 present；`tty` 恢复文字画面。
+
+USB 键盘按 HID usage page 0x07 解码：字母/数字/标点/空格/Enter/Backspace/Tab，以及导航键 73-82（Insert、Home、PageUp、Delete、End、PageDown、方向键）。按住不放的**自动重复（typematic）由 BIOS 生成**——HID 启动协议键盘只在按键状态变化时上报，主机必须自己做重复：首次延迟 500 ms，之后每 60 ms 重发一次，松开即停。Caps Lock 与 ESC 不重复。方向键在 `?1h`（DECCKM）下发 `ESC O x`，否则发 `ESC [ x`。
+
+### VT100/ANSI 终端
+
+`firmware/bios/vt.c` 实现 UART 与 LCD 共用的同一个终端状态机（`vt.h`/`vt.c`，不依赖 HAL，可在主机单独编译）。UART 端看到的是字节流，LCD 端看到的是同一个网格，两者语义一致；`\r \n \b \t` 与可打印字符之外的字节按序列解析，未知或被截断的序列被吞掉而不是打印出来。
+
+| 类别 | 支持 |
+| --- | --- |
+| 光标定位 | `CUU/CUD/CUF/CUB`(A-D)、`CNL/CPL`(E/F)、`CHA`(G)、`VPA`(d)、`CUP/HVP`(H/f)，均按 1 基坐标并夹紧 |
+| 擦除 | `ED`(J 0/1/2)、`EL`(K 0/1/2，含光标列)、`ECH`(X) |
+| 插入/删除 | `IL/DL`(L/M)、`ICH/DCH`(@/P) |
+| 滚动区域 | `DECSTBM`(r)，区域内滚屏，`RI`(ESC M)、`IND`(ESC D)、`NEL`(ESC E) |
+| 属性 SGR | 0、1/2/22（粗体）、7/27（反显）、30-37/90-97（前景）、39、40-47/100-107（背景）、49 |
+| 模式 | `?1h/l` DECCKM、`?25h/l` 光标可见、`?47h/l`、`?1047h/l`、`?1049h/l` 备用屏 |
+| 其他 | `ESC 7/8` 与 `CSI s/u` 存复光标、`CSI n` DSR(5/6) 与 `CSI > c`/`CSI c` DA 回显进输入队列、`RIS`(ESC c)、制表位 `HT`/`HTS`(ESC H)/`TBC`(CSI g)、`DECXTR`(CSI !p) 软复位 |
+
+每个单元保存 **字符 + 属性**（16 位：反显、粗体、4 位前景、4 位背景），经 `vt_rgb` 的 16 色 RGB565 调色板绘制；粗体会把 1-7 的浅色提亮到 9-15。换行采用延迟换行（DECAWM 语义）：写满第 80 列后光标停在最后一列，下一个可打印字符才真正换行，因此恰好 80 列的输出不会多滚一行。光标在 LCD 上以反显块叠加绘制，不修改网格内容。
+
+BIOS 命令行带行编辑：方向键、Home/End、Insert 切换、Delete、Ctrl-A/E/K/U/W。**行尾追加与行尾退格保持逐字节回显**（不重发提示符），只有行中间编辑才用 `\r` + `EL` + 整行 + `CSI n D` 重绘；因此现有脚本依赖的 `> ` 明文提示符仍然只出现在真正的提示符处。
+
+边界：不实现 DEC 图形/特殊字符集（`ESC ( ) * +` 被吞掉）、DECOM 原点模式、回滚历史、Unicode/宽字符、鼠标上报、DECAWM 关闭（`?7l`）。CSI 序列的解析跨字节增量进行，未结束的序列不会阻塞后续输入。
+
+`tests/vt_console_test.c` 在主机直接跑解析核心（73 项断言，覆盖光标/擦除/插入删除/滚动区域/备用屏/SGR/DSR/畸形序列），`tests/console_output_test.c` 覆盖驱动与 TTY 镜像只输出一次。两者都不涉及真实硬件。
 
 ### PC/AT 兼容边界
 
-这里的 BIOS 表示本机基础固件服务，TTY 不兼容 PC/AT 的二进制调用接口。PC/AT 使用 x86 实模式的 INT 10h 视频服务和 INT 16h 键盘服务；本机使用 RISC-V ECALL。没有实现 PC 的中断向量、BIOS Data Area、字符/属性文本显存、显示页、光标位置/形状服务或 BIOS 扫描码键盘队列。当前显示是固定布局、白字黑底的软件栅格化文字，底层为 RGB565 帧缓冲，不是 VGA 文本模式，也不提供 ANSI/VT 终端协议。
+这里的 BIOS 表示本机基础固件服务，TTY 不兼容 PC/AT 的二进制调用接口。PC/AT 使用 x86 实模式的 INT 10h 视频服务和 INT 16h 键盘服务；本机使用 RISC-V ECALL。没有实现 PC 的中断向量、BIOS Data Area、字符/属性文本显存、显示页、光标位置/形状服务或 BIOS 扫描码键盘队列。当前显示是软件栅格化文字（每单元带前景/背景属性），底层为 RGB565 帧缓冲，不是 VGA 文本模式；上面那套 VT100/ANSI 序列是字节流协议，不等同于 INT 10h 的服务语义。
 
 可在 RISC-V 服务接口中逐步提供类似 INT 10h 的光标、字符属性和区域滚屏语义，但这只提供功能映射；执行原有 PC/AT 软件还需要 x86 与相应机器环境的模拟。本版没有增加这些兼容层。PC/AT 接口参考 [IBM PC AT Technical Reference, September 1985](https://bitsavers.trailing-edge.com/pdf/ibm/pc/at/6139362_PC_AT_Technical_Reference_Sep85.pdf)。
 
 输入由 BIOS 统一消费，`test usb input` 观察同一事件流，不抢占 TTY 的键盘队列。鼠标服务返回累计相对位移、滚轮、最新按钮和时间，累计量限幅 ±32767。`test lcd ...` / `test soak ...` 切换到图形模式保留测试画面，结束后用 `tty` 返回文字画面。
+
+### 渲染与内存诊断
+
+文字画面每帧整屏重绘。双缓冲的 `present` 只是切换扫描槽，两个帧槽是相互独立的显存——只要某帧漏画一部分，那一部分就会露出该槽上一次留下的旧像素，所以这里不做增量重绘。
+
+`status` 多打印一行 `FB0=… FB1=… TTY=…`，给出两个 RGB565 帧槽和当前 TTY 网格的基址，配合 `md` / `mdb` 可以离线核对渲染结果：
+
+- TTY 网格每个单元 4 字节：字节 0 是字符，字节 2-3 是小端 16 位属性（bit15 反显、bit14 粗体、bit13-10 前景索引、bit9-6 背景索引）。`md TTY 8` 就能看到前 8 格的字符与属性。
+- 帧缓冲是 480×272 RGB565，两个字节约一个像素、两个像素打包在一个 32 位字里。第 r 行第 0 列的像素在 `FB + r*8*480*2` 处。
+- 颜色索引是 ANSI 顺序：0 黑、1 红、2 绿、3 黄、4 蓝、5 品红、6 青、7 浅灰、8 暗灰、9-14 亮色、15 白。**默认前景是 15（白）**，不是 1。
+
+`md` / `mdb` 只允许读 RAM 窗口 `0x00000000-0x07ffffff` 和 `0x40000000-0x47ffffff`：CSR（`0xf0000000` 起）读取有副作用，未映射地址会触发 load fault 让 BIOS 重启。一次最多 256 项（字 dump 1 KiB、字节 dump 256 B）。
+
+输出默认同时进文字画面，几十行 dump 会把 LCD 上的原有内容滚掉。加尾随 `u`（例如 `md 00902afc 240 u`）可让这次 dump **只走 UART**：字节照常写到串口，但不进 TTY 网格，所以 LCD 上正在显示的画面保持不变——用它读回网格属性时不会把自己的证据滚掉。实现上只是临时静默控制台镜像回调（`bios_console_uart_only`），dump 结束即恢复。
 
 ## Setup 命令与持久设置
 
@@ -54,6 +92,7 @@ TTY 将 UART 115200 8N1 与 USB 键盘合并为输入流，输出到 UART 和大
 | --- | --- |
 | `help` / `status` / `post` | 帮助、当前配置与扫描/音频/IRQ 状态、重复 POST |
 | `io` / `led HH` / `rgb RRGGBB` | 按键/DIP 状态、六个单色 LED、WS2812 |
+| `md ADDR [COUNT] [u]` / `mdb ADDR [COUNT] [u]` | 按 32 位字 / 按字节读内存，用于读回帧缓冲和 TTY 网格；ADDR 十六进制、COUNT 十进制，尾随 `u` 表示只写 UART 不动文字画面 |
 | `ls` | SD 根目录 |
 | `tty` / `graphics` | 文字 / RGB565 图形模式 |
 | `boot sd [file]` / `boot net [file]` | 从 SD / TFTP 下载、校验并执行程序 |

@@ -5,6 +5,8 @@
 struct bios_settings {uint32_t magic,version,boot,delay_ms;uint8_t ip[4],server[4];char file[64];};
 extern struct bios_settings bios_settings;
 void bios_console_init(unsigned lcd_ok);
+uintptr_t bios_console_grid(void);   /* 当前活动 TTY 网格基址，供 `md` 诊断读取 */
+void bios_console_uart_only(int on); /* 临时静默 LCD 镜像，让诊断 dump 只走 UART */
 void bios_putc(char c);
 void bios_puts(const char *s);
 void bios_hex(uint32_t value);

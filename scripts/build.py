@@ -245,7 +245,7 @@ def main():
         if name=='boot' and a.boot_mode=='xip':compact += [f'-Wl,--defsym,BOOT_XIP_ORIGIN={FLASH_BASE+XIP_OFFSET}',f'-Wl,--defsym,BOOT_XIP_SIZE={XIP_SIZE}']
         if name=='app' and main==ROOT/'firmware/examples/monitor.c':sources=[*sources,ROOT/'firmware/diagnostics/tests.c']
         if name=='app' and main==ROOT/'firmware/bios/main.c':
-            sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','settings.c','boot.c','network.c','benchmark.c','enter.S')]]
+            sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','vt.c','settings.c','boot.c','network.c','benchmark.c','enter.S')]]
             compact+=['-DMINI_BIOS=1']
         checked([gcc,*flags,*compact,*common,flash_source,main,*sources,'-T',linker,'-Wl,--gc-sections',f'-Wl,-Map,{firmware/f"{name}.map"}','-lgcc','-o',elf])
         checked([toolbin/'riscv-none-elf-objcopy.exe','-O','binary',elf,firmware/f'{name}.bin'])

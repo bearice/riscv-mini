@@ -48,7 +48,9 @@ Ok
 SYSTEM
 ```
 
-输入来自 BIOS 的 UART/USB 键盘合并队列，行编辑只有退格（BIOS TTY 无 ANSI 转义、无方向键）。Ctrl-Break（`0x1C`）在语句之间生效，报 `Break in <line>`，可用 `CONT`/`CONT` 续跑。
+输入来自 BIOS 的 UART/USB 键盘合并队列。payload 拿到的是**原始字节流**，所以解释器自己的行编辑仍然只有退格：BIOS setup 提示符下那套解码（方向键、Home/End、Ctrl-A/E/K/U/W）属于 BIOS 命令行的行编辑，不作用于 payload。Ctrl-Break（`0x1C`）在语句之间生效，报 `Break in <line>`，可用 `CONT`/`CONT` 续跑。
+
+输出侧则相反：从 v0.8.0 起 BIOS TTY 会解析 VT100/ANSI 序列而不是把转义字节当字符画出来（见 [BIOS](bios.md) 的「VT100/ANSI 终端」一节）。因此 `CLS` 在文字模式下发的 `ESC [ 2 J ESC [ H` 现在是真正的清屏加归位；在更早的固件上它会被逐字节栅格化成 `[2J[ H` 之类的可见垃圾。
 
 ### 已实现的语句
 
@@ -67,7 +69,7 @@ SYSTEM
 
 这些是硬件或 ABI 决定的边界，不是未实现的敷衍：
 
-- **屏幕**：本机只有一种图形模式（480×272 RGB565 面板）。`SCREEN 1` 与 `SCREEN 2` 都切到这块面板，坐标就是面板坐标，颜色取 CGA 16 色映射；图形模式下文字由解释器用共享的 5×7 字模直接画进帧缓冲（`firmware/common/font5x7.h`），`CLS`/`LOCATE`/`COLOR` 生效于该画布。文字模式（`SCREEN 0`）下 `LOCATE` 无法控制 BIOS TTY 光标，按无操作处理，`CLS` 用清页方式实现。
+- **屏幕**：本机只有一种图形模式（480×272 RGB565 面板）。`SCREEN 1` 与 `SCREEN 2` 都切到这块面板，坐标就是面板坐标，颜色取 CGA 16 色映射；图形模式下文字由解释器用共享的 5×7 字模直接画进帧缓冲（`firmware/common/font5x7.h`），`CLS`/`LOCATE`/`COLOR` 生效于该画布。文字模式（`SCREEN 0`）下 `LOCATE` 无法控制 BIOS TTY 光标，按无操作处理（`COLOR` 同理只改解释器自己记的前景/背景，没有向控制台发 SGR），`CLS` 发 `ESC [ 2 J ESC [ H` 交给 BIOS 的 VT 解析器执行。
 - **`SAVE` 不可用**：BIOS 的 ecall 服务只有 `FILE_READ`，没有文件写服务，所以解释器只能 `LOAD`（按 4 KiB 分块读 SD 根目录下的文本程序），不能存盘；`SAVE` 会给出明确提示。往 SD 写文件需要 FatFs，超出本 ABI。
 - **文件语句**：`OPEN/CLOSE/PRINT#/INPUT#/FIELD/GET/PUT` 未实现（`OPEN` 等关键字被识别但按无操作跳过）。
 - **`PRINT USING`** 支持 `# . , + - $ $$ * ! & \...\ _ ^` 的常用子集：`#` 位数、`.` 小数点、`,` 字面逗号、`$$` 浮动美元号、`*` 星号填充、前导 `+` 强制符号、`!`/`&`/`\...\` 字符串域、`_` 转义下一个字符；放不下时按 GW-BASIC 习惯打 `%`。不支持区域设置（`SET`）、货币/日期掩码等扩展。
