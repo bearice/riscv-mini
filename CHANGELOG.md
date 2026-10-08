@@ -1,5 +1,24 @@
 # Changelog
 
+## opensbi v0.9.0 — Runtime RGB LCD device-tree description
+
+- Generate the `riscv-mini,rgb-lcd` node from the selected SoC's programmable LCD CSR ABI, including the runtime register offsets and `bootph-all` reservation metadata used by U-Boot.
+- Reject incomplete or incompatible LCD CSR descriptions instead of emitting a device tree with guessed register addresses.
+
+提交检查：18 tests，PASS（源码输入指纹匹配）。
+
+发布二进制、Git hash、构建参数和逐文件 SHA256 见对应版本的 release.json；完整改动以 Git 记录为准，已知失败和未验收项保留在性能/验收报告中。
+
+## uboot v0.3.0 — U-Boot RGB LCD framebuffer console
+
+- Add a DM video driver for the 480x272 RGB565 LCD using the programmable base0/base1 DMA interface.
+- Generate the matching LCD CSR device-tree node from the selected SoC ABI and mirror U-Boot output to serial and vidconsole.
+- Add host and board verification for framebuffer pixels, DMA progress, address errors, and underflows.
+
+提交检查：18 tests，PASS（源码输入指纹匹配）。
+
+发布二进制、Git hash、构建参数和逐文件 SHA256 见对应版本的 release.json；完整改动以 Git 记录为准，已知失败和未验收项保留在性能/验收报告中。
+
 版本与功能阶段的对应关系见 [docs/version-history.md](docs/version-history.md)。0.7.1 及之前所有组件共享一个版本号（条目形如 `## v0.7.1`）。从 0.7.2 起版本按组件独立递增，条目形如 `## <组件> v<版本>`（如 `## bios v0.7.2`、`## uboot v0.1.0`），系统包条目形如 `## system v<版本>`；组件版本见 `VERSIONS.yaml`，已验收的组件组合见 `RELEASES.yaml`。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/lab-environment.md](docs/lab-environment.md)。v0.7.1 是合并版本时代的最后一次正式发布。
 
 ## system v0.8.0 — RAM 零基址与 Flash XIP 启动

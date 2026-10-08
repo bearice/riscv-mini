@@ -11,7 +11,9 @@ DDR → 单个 LiteDRAM native 128-bit DMA → 8 KiB 数据 FIFO → RGB565 转�
 LCD DCLK 转发相位使数据/控制在外部时钟上升沿前稳定；面板实际显示仍需用户目视验收。
 
 单帧 261,120 字节（255 KiB），stride 960，双帧有效像素 510 KiB。
-帧地址为 0x47E00000 与 0x47E40000，间距 256 KiB；保留区沿用 DDR 尾部 2 MiB。
+帧地址由软件通过 `base0/base1` CSR 配置，要求 16 字节对齐，完整一帧位于
+DDR `0x00001000..0x07ffffff` 范围内。BIOS 使用链接器分配的双缓冲，
+[U-Boot framebuffer](uboot-framebuffer.md) 使用 VIDEO uclass 预留的单缓冲。
 显示读取平均约 15.652 MB/s，active 消费 18 MB/s；CPU 60 Hz 全屏重绘加显示读取约 31.3344 MB/s，未含总线/DDR开销。
 
 ## 换帧和故障行为
@@ -19,7 +21,8 @@ LCD DCLK 转发相位使数据/控制在外部时钟上升沿前稳定；面板�
 扫描进入垂直消隐时请求一帧，DMA 每帧只生成一次有边界的读取，不提前循环预取下一帧。
 只有上一帧末尾像素已消费/丢弃后才启动下一帧；在此处锁存 select，并更新 active。
 软件先写后台帧并执行屏障，再改 select；active 确认后旧帧才能重新绘制。
-帧地址仅能选择固定两槽，无法用 CSR 读取任意 DDR 区域。
+选择槽位时锁存对应的 `base0/base1`；非法地址不启动 DMA，并置 `address_error`。
+软件只在关闭显示且 DMA 已排空时修改两个 base。
 
 消隐期不消耗正常帧像素。FIFO 缺像素时记一次 underflow，当前帧剩余部分输出黑色；
 持续丢弃旧帧直到 last 标志，再在下一扫描边界重同步。时钟、DE、HS/VS 始终运行。

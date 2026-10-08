@@ -9,6 +9,22 @@ REV="6ad246a1494807ee91e36ffcf60e4c30bb309d45"
 def linux(p):
     p=Path(p).resolve().as_posix();return '/mnt/'+p[0].lower()+p[2:]
 COMMANDS=[]
+
+def lcd_node(csr):
+    """Describe only the programmable-base LCD ABI used by this driver."""
+    base=csr['csr_bases'].get('rgb_lcd')
+    if base is None:return ''
+    names=('enable','select','base0','base1','state','address_error')
+    offsets=[]
+    for name in names:
+        reg=csr['csr_registers'].get('rgb_lcd_'+name)
+        if reg is None or reg['size']!=1:
+            raise ValueError('U-Boot LCD requires programmable-base, packed-state CSR ABI')
+        offsets.append(reg['addr']-base)
+    size=max(offsets)+4
+    return (f'lcd@{base:x} {{ compatible="riscv-mini,rgb-lcd"; '
+            f'reg=<0x{base:x} 0x{size:x}>; bootph-all; '
+            'riscv-mini,csr-offsets=<'+' '.join(hex(o) for o in offsets)+'>; }; ')
 def wsl(args,log=None):
     command=shlex.join([str(a) for a in args])
     if log:command+=' > '+shlex.quote(linux(log))+' 2>&1'
@@ -75,7 +91,8 @@ def main():
         # Custom Ultraembedded PIO full-speed USB host (drivers/usb/liteusb.c).
         # reg order: PIO transaction block, usb_host enable/reset/ready CSR block.
         'usb@f2000000 { compatible="riscv-mini,liteusb"; '
-        f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<6>; }}; }}; }};\n')
+        f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<6>; }}; '
+        +lcd_node(csr)+'}; };\n')
     wsl(['dtc','-I','dts','-O','dtb','-o',linux(dtb),linux(dts)])
     probe=ROOT/'firmware/opensbi/probe';elf=out/'probe.elf';raw=out/'probe.bin'
     wsl(['clang','--target=riscv32-unknown-elf','-march=rv32ima_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror',

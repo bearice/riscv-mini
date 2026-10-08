@@ -223,6 +223,28 @@ index 9cac53f0..8188b107 100644
  # designware
  obj-$(CONFIG_USB_DWC2) += dwc2.o
 +obj-$(CONFIG_USB_LITEUSB) += liteusb.o
+diff --git a/drivers/video/Kconfig b/drivers/video/Kconfig
+--- a/drivers/video/Kconfig
++++ b/drivers/video/Kconfig
+@@ -23,3 +23,10 @@
+ if VIDEO
+-
++
++config VIDEO_RISCV_MINI_LCD
++	bool "riscv-mini coherent RGB LCD DMA"
++	depends on RISCV && OF_CONTROL
++	help
++	  Enable the TangPrimer-20K 480x272 RGB565 framebuffer and text
++	  console using the programmable-base riscv-mini RGB LCD CSRs.
++
+ config VIDEO_FONT_4X6
+diff --git a/drivers/video/Makefile b/drivers/video/Makefile
+--- a/drivers/video/Makefile
++++ b/drivers/video/Makefile
+@@ -6,2 +6,3 @@
+ ifdef CONFIG_DM
++obj-$(CONFIG_VIDEO_RISCV_MINI_LCD) += riscv_mini_lcd.o
+ obj-$(CONFIG_$(PHASE_)BACKLIGHT) += backlight-uclass.o
 diff --git a/tools/prelink-riscv.inc b/tools/prelink-riscv.inc
 index 57c0f655..ebe0c84e 100644
 --- a/tools/prelink-riscv.inc

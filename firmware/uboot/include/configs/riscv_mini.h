@@ -14,4 +14,9 @@
 /* S-mode timer runs from the 60 MHz SoC clock (SBI emulates rdtime). */
 #define RISCV_SMODE_TIMER_FREQ		60000000
 
+#define CFG_EXTRA_ENV_SETTINGS \
+	"stdin=serial\0" \
+	"stdout=serial,vidconsole\0" \
+	"stderr=serial,vidconsole\0"
+
 #endif /* _CONFIG_RISCV_MINI_H */

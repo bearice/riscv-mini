@@ -44,6 +44,7 @@ COPIES = [
     ("drivers/net/liteeth.c", "drivers/net/liteeth.c"),
     ("drivers/mmc/litesd.c", "drivers/mmc/litesd.c"),
     ("drivers/usb/host/liteusb.c", "drivers/usb/host/liteusb.c"),
+    ("drivers/video/riscv_mini_lcd.c", "drivers/video/riscv_mini_lcd.c"),
 ]
 
 def to_wsl(p):

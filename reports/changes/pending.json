@@ -1,0 +1,26 @@
+{
+  "created_at": "2026-10-08T03:36:26+00:00",
+  "title": "U-Boot RGB LCD framebuffer console",
+  "changes": [
+    "Add a DM video driver for the 480x272 RGB565 LCD using the programmable base0/base1 DMA interface.",
+    "Generate the matching LCD CSR device-tree node from the selected SoC ABI and mirror U-Boot output to serial and vidconsole.",
+    "Add host and board verification for framebuffer pixels, DMA progress, address errors, and underflows."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/uboot/framebuffer/commit-workflow.json"
+    ],
+    "source_inputs_sha256": "883b78f102f42773c9938619a04f6f258ec8aeda1ddb5954a1cb83ad57cc683d"
+  },
+  "mode": "staged review",
+  "release_version": "0.3.0",
+  "base_revision": "4e10424c367400f077167b5454fc3efc8a710d2c",
+  "source_revision": null
+}
