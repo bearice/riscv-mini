@@ -2,6 +2,46 @@
 
 版本与功能阶段的对应关系见 [docs/version-history.md](docs/version-history.md)。0.7.1 及之前所有组件共享一个版本号（条目形如 `## v0.7.1`）。从 0.7.2 起版本按组件独立递增，条目形如 `## <组件> v<版本>`（如 `## bios v0.7.2`、`## uboot v0.1.0`），系统包条目形如 `## system v<版本>`；组件版本见 `VERSIONS.yaml`，已验收的组件组合见 `RELEASES.yaml`。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/lab-environment.md](docs/lab-environment.md)。v0.7.1 是合并版本时代的最后一次正式发布。
 
+## system v0.8.0 — RAM 零基址与 Flash XIP 启动
+
+- 组合 rtl/bootloader/hal/bios/opensbi 0.8.0、uboot 0.2.0；full RV32IMAF，CPU/sys 60 MHz、DDR 120 MHz、4 KiB shared writeback L2，关闭 C，使用 Flash XIP 启动、片内 ROM 为 0。
+- RAM 从 0 开始，设备 CSR/MMIO 位于 0xF0000000 以上，XIP 位于 0xF3000000，复位入口 0xF3100000 对应 Flash 物理 1 MiB；VRAM 由 CSR 指定 DDR 地址。本次布局不增加兼容模式 flag。
+- 功能阶段已通过 PnR 0/0、完整 BIOS 板测和 60 秒 soak、三轮 all/cache，及独立 OpenSBI/U-Boot 验收；正式提交的镜像、时序、资源、板测、性能与 SHA256 以发布包 release.json 和 reports 为准。
+- OpenSBI/U-Boot 在系统包中仍声明为 external，由独立构建与板测流程发布。FPGA 仅加载 SRAM，BIOS 通过 UART 加载 DDR；未验证持久 gateware 断电冷启动、内核启动、USB 存储及物理输入。
+
+## rtl v0.8.0 — 高地址设备空间与动态帧缓冲
+
+- RAM 零基址，Ethernet/USB/XIP 分别迁移到 0xF1000000/0xF2000000/0xF3000000；CPU 生成器默认匹配新 IO/cache 属性并拒绝旧属性 CPU 输入。
+- 添加只读 NOR XIP、上电 ABh 唤醒、软件 SPI 引脚仲裁及 enable/busy CSR；关闭禁止新读取，在途请求正常结束。
+- LCD base0/base1 CSR 指定 DDR 帧缓冲；地址与槽选择按帧锁存，校验对齐、零页和完整帧边界；CPU 帧缓冲访问可进入共享 L2。
+
+## bootloader v0.8.0 — 从 Flash 1 MiB 直接执行
+
+- 添加 XIP linker 与映射读取驱动，取消此配置的片内启动 ROM；在 0x007FF000 pinned L2 页使用数据/栈完成 DDR 初始化。
+- BIOS 装载入口迁移到 0x00800000，保留 UART 恢复与镜像 ABI/CRC 检查。XIP 启动期间拒绝软件 Flash 安装，防止执行期间占用 SPI 引脚。
+- bootloader 与 BIOS 仍为两个镜像。
+
+## hal v0.8.0 — 动态 VRAM 与零基址 DMA
+
+- 添加 hal_video_set_buffers，要求显示关闭、DMA 空闲、缓冲对齐且不重叠；默认帧缓冲由链接器分配，不占用固定顶端 VRAM 窗口。
+- 同步音频、Ethernet、USB 和 SD DMA 的零基址内存检查；DDR Flash 驱动等待 XIP busy 释放引脚。
+
+## bios v0.8.0 — 零基址 payload 和实际帧缓冲描述
+
+- BIOS/payload/暂存区迁移到零基址 RAM，BIOS_INFO 返回实际 CSR 帧缓冲地址；同步自检、benchmark 和镜像装载范围。
+- payload/audio 上限仍为既有软件预算 0x07E00000。SD 硬件 DMA 单次仍为 4 KiB，较大请求采用分段。
+
+## opensbi v0.8.0 — 零基址 RAM 与当前 CSR 设备树
+
+- FW_TEXT_START 迁移到 0x01000000，probe 的地址、页表索引与用户权限测试同步迁移。
+- SD/USB 控制地址从实际 csr.json 提取，设备树使用新 RAM/MMIO 地址；保留 SBI Base/time/atomic/timer/external/U ECALL/Sv32 与 warm reset 验收。
+
+## uboot v0.2.0 — 无 C、正确搬移和有界 SD DMA
+
+- U-Boot 入口迁移到 0x01100000，同步 RAM、装载、栈和控制台地址；关闭 ISA_C，并使用 RV32IM/ILP32 libgcc。
+- GCC 编译、LLD PIE 链接并明确 TEXT_BASE，保留动态重定位，修复搬移后命令访问不同 LMB 实例导致 FAT 装载被拒绝的问题。
+- SD b_max 限制为 8 扇区，检查 4 KiB bounce buffer 边界，补充 DMA cache 同步和错误状态。已验证原始 32 扇区分段读取、FAT 4 KiB/64 KiB 装载、USB receiver 和 Ethernet ping。
+
 ## system v0.7.2 — 首个按组件独立版本的系统包
 
 - 这是第一个用组件版本机制（`VERSIONS.yaml` + `RELEASES.yaml`）发布的系统包：`rtl 0.7.1`、`bootloader 0.7.1`、`hal 0.7.1`、`bios 0.7.2`、`opensbi 0.7.1`、`uboot 0.1.0`。RTL 未改动，沿用 v0.7.1 已验收的 bitstream，不重跑 PnR 与性能。

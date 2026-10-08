@@ -1,0 +1,132 @@
+{
+  "created_at": "2026-10-08T03:02:47+00:00",
+  "title": "发布 RAM 零基址与 Flash XIP 系统 0.8.0",
+  "changes": [
+    "为已合入且验收的 XIP/内存布局功能分配组件版本 rtl/bootloader/hal/bios/opensbi 0.8.0、uboot 0.2.0，并在 RELEASES.yaml 固定系统组合；OpenSBI/U-Boot 继续独立构建验收。",
+    "正式包由本提交后的干净源码重建，先前提交快照仅为功能阶段验证依据；不继承 dirty 镜像作为发布二进制。"
+  ],
+  "build": {
+    "id": "v0.7.2-full-rv32imaf-rom0k-l24k-commit-snapshot-af56ef98-7b2d9f6c",
+    "label": "提交后快照",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.7.2-0c54070bc194\\full-rv32imaf-rom0k-l24k",
+    "purpose": "commit-snapshot",
+    "registered_at": "2026-10-08T02:58:28+00:00",
+    "source": {
+      "commit": "0c54070bc194d514200545b31951910c1df23f89",
+      "dirty": false,
+      "inputs_sha256": "8e43a7ad63f4584f85d334620a54ed61deab195f8e3ce3a7ecb79129f3b1330d",
+      "kind": "captured",
+      "created_at": "2026-10-08T02:52:50+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "final-build",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.7.2-0c54070bc194\\full-rv32imaf-rom0k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--boot-mode",
+        "xip",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "3",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--with-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\v0.7.2-0c54070bc194-full-rv32imaf-rom0k-l24k-final-build"
+      ],
+      "cpu_rtl_sha256": "d8a525f4eed08fcd7a8f198885849343f0531559946805108e06bff348b55f70",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.7.2-0c54070bc194\\full-rv32imaf-rom0k-l24k\\replay",
+      "version": "0.7.2",
+      "components": null,
+      "external": null
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imaf_zicsr_zifencei",
+      "rom_size_bytes": 0,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 3,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "6f0ef4e9340cfb4c1d721d648505a94f3987f7837b78f4e83b5e3aa438e63813",
+    "bitstream_sha256": "af56ef9812da0b35c4b57a136e7da233b6a8b31c8660a279e0d73c9c18ec1ffe",
+    "abi": "038c2988",
+    "component_versions": {
+      "rtl": "0.7.1",
+      "bootloader": "0.7.1",
+      "hal": "0.7.1",
+      "bios": "0.7.2",
+      "opensbi": "0.7.1",
+      "uboot": "0.1.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.7.2-0c54070bc194\\full-rv32imaf-rom0k-l24k\\reports\\firmware-verification.json",
+        "sha256": "5d8f803aa974133fff4c311bebf233025269017c76be160172ca883ab2fe552d"
+      }
+    ]
+  },
+  "performance_report": "build\\archives\\v0.7.2-0c54070bc194\\full-rv32imaf-rom0k-l24k\\reports\\performance\\comparison.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/release080-workflow.json"
+    ],
+    "source_inputs_sha256": "64a6c05537c8f99a12a63e11935c8b09acb3b968d54a970c2408713c57fbccb0"
+  },
+  "mode": "staged review",
+  "base_revision": "0c54070bc194d514200545b31951910c1df23f89",
+  "source_revision": null
+}
