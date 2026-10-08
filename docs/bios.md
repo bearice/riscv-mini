@@ -8,15 +8,15 @@
 
 | 区域 | 地址 / 限制 | 所有者 |
 | --- | --- | --- |
-| ROM 的 L2/DDR 工作区 | `0x407ff000..0x407fffff` | ROM |
-| BIOS 代码、data、BSS、栈 | `0x40800000..0x40bfffff` | BIOS，沿用 ROM 应用窗口 |
-| 裸机程序入口 | `0x41000000` | 二级程序 |
-| 二级程序内存 | `0x41000000..0x47deffff` | 代码、data、BSS；文件载荷最多 4 MiB |
-| 二级程序栈 | `0x47df0000..0x47dfffff`，初始 SP=`0x47e00000` | 二级程序及 BIOS trap 临时栈 |
-| 装载暂存区 | `0x47000000`，最多 4 MiB + 32 B | BIOS 装载阶段使用，进入程序前释放 |
-| RGB565 双帧槽 | `0x47e00000`、`0x47e40000` | BIOS 扫描器 / 图形程序；DDR 尾部 2 MiB 保留 |
+| ROM 的 L2/DDR 工作区 | `0x007ff000..0x007fffff` | ROM |
+| BIOS 代码、data、BSS、栈 | `0x00800000..0x00bfffff` | BIOS，沿用 ROM 应用窗口 |
+| 裸机程序入口 | `0x01000000` | 二级程序 |
+| 二级程序内存 | `0x01000000..0x07deffff` | 代码、data、BSS；文件载荷最多 4 MiB |
+| 二级程序栈 | `0x07df0000..0x07dfffff`，初始 SP=`0x07e00000` | 二级程序及 BIOS trap 临时栈 |
+| 装载暂存区 | `0x07000000`，最多 4 MiB + 32 B | BIOS 装载阶段使用，进入程序前释放 |
+| RGB565 双帧槽 | BIOS 链接区内 `video.c` 的 `frames[2][480*272]`，地址经 `rgb_lcd_base0/1` CSR 报告 | BIOS 扫描器 / 图形程序 |
 
-其他 HAL 固定工作区仍由 BIOS 使用，例如 SPI LCD 工作区 `0x40300000`。程序只能使用上表分配的程序内存、栈和两个帧槽，不能把其余 DDR 当成可用堆。
+地址与 `firmware/common/memory_layout.h` 一致（RAM 基址为零）；双帧槽不再固定在 DDR 尾部，而是 BIOS 链接时分配并通过 CSR 公布。其他 HAL 固定工作区仍由 BIOS 使用，例如 SPI LCD 工作区 `0x00300000`。程序只能使用上表分配的程序内存、栈和两个帧槽，不能把其余 DDR 当成可用堆。
 
 BIOS 装载完成后先初始化 HAL、显示和设置，执行有界 POST，然后进入 setup。默认 `boot=none`；配置为 SD/net 时，倒计时内任意 UART/USB 键盘输入可取消自动引导。引导失败返回 setup。程序入口为 `int payload_main(const struct bios_info *info)`；可以正常返回 BIOS，`info` 指向 BIOS 只读信息，程序可以用 `BIOS_INFO` 获取自己的副本。
 
@@ -110,7 +110,7 @@ BEGIN 停止旧播放并设置程序拥有的环形缓冲区，WRITE 部分接�
 先预填数据，再 PLAY 和 UNMUTE；PAUSE 保留队列，STOP 清空 DMA 状态。程序返回时 BIOS
 停止并静音音频，再恢复 TTY。实际示例见 [Nyan Cat](nyancat-demo.md)。
 
-RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version、load、file_bytes、memory_bytes、entry、数据 CRC32、头前 28 B 的 CRC32。load 必须为 `0x41000000`，entry 四字节对齐且在文件范围内，memory_bytes 包含 BSS 且保留顶端 64 KiB 栈。文件总长度必须精确匹配头和载荷；两个 CRC、版本和范围均检查后才执行。它与 ROM 使用的 CSR ABI app.img 格式分离，不是 ELF 或 PC BIOS 兼容格式。OSB1 使用相同头字段、CRC 和范围限制，magic=`0x3142534f`，只允许 MMU 配置，入口按 OpenSBI 契约传参且不返回 BIOS。
+RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version、load、file_bytes、memory_bytes、entry、数据 CRC32、头前 28 B 的 CRC32。load 必须为 `0x01000000`，entry 四字节对齐且在文件范围内，memory_bytes 包含 BSS 且保留顶端 64 KiB 栈。文件总长度必须精确匹配头和载荷；两个 CRC、版本和范围均检查后才执行。它与 ROM 使用的 CSR ABI app.img 格式分离，不是 ELF 或 PC BIOS 兼容格式。OSB1 使用相同头字段、CRC 和范围限制，magic=`0x3142534f`，只允许 MMU 配置，入口按 OpenSBI 契约传参且不返回 BIOS。
 
 ## 构建与使用
 
@@ -129,6 +129,6 @@ RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version�
 
 [端到端验证工具](../scripts/bios_verify.py) 调用相同固件命令，覆盖网络重试/重复块/零长度结束、坏 CRC、SD 重复启动、缺失文件、设置往返和非法参数。运行示例：`scripts/bios_verify.py --host-ip 169.254.25.153 --sd-file BIOSDEM.RPB`；需要 SD 上不存在这个目标文件，会显式保存 `BIOS.CFG`。Python 格式测试位于 [bios_image_test.py](../tests/bios_image_test.py)，板端格式/ECALL 测试为 `test bios`。
 
-默认 full BIOS 已在实际板卡验证 SD/TFTP 执行与返回，并确认 LCD TTY/USB 键盘输入。minimal 仅构建检查，不代表被裁剪的硬件已上板验收。BIOS 不包含 OS 引导、动态装载重定位、DHCP 或图形窗口系统；SDK 示例演示 `.data`/`.bss`、IO、服务调用、RGB565 换帧和返回 BIOS。
+默认 full BIOS 已在实际板卡验证 SD/TFTP 执行与返回，并确认 LCD TTY/USB 键盘输入。minimal 仅构建检查，不代表被裁剪的硬件已上板验收。BIOS 不包含 OS 引导、动态装载重定位、DHCP 或图形窗口系统；SDK 示例演示 `.data`/`.bss`、IO、服务调用、RGB565 换帧和返回 BIOS。[GW-BASIC 解释器](gwbasic.md) 是这套 ABI 上较大的一个应用：约 95 KiB 的 RPB1 程序，使用文字/图形服务、时钟和 SD 读文件，可在 QEMU 上跑真实产物做回归。
 
 USB 键盘/鼠标可直连，也可通过全速 Hub 接入；`test usb tree` 显示配置成功的 Hub、下游端口及设备。当前容量为 2 个 Hub、4 个普通设备、总计 8 个 HID 接口；默认 PIO 后端只支持全速传输，低速设备和超过 7 个下游端口的 Hub 不在支持范围内。详见 [USB Host](usb-light.md)。

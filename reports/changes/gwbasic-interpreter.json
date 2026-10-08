@@ -1,0 +1,147 @@
+{
+  "created_at": "2026-10-08T11:21:56+00:00",
+  "title": "新增可由 BIOS 装载的 GW-BASIC 解释器",
+  "changes": [
+    "新增 `firmware/apps/gwbasic/`：可由常驻 BIOS 装载的 RPB1 二级程序（约 95 KiB，入口 `0x01000000`，声明 4 MiB 堆），只通过 BIOS 的 ecall 服务使用串口/LCD、时钟、SD 与帧缓冲，正常返回时 BIOS 打印 `PAYLOAD RETURNED`。",
+    "覆盖 GW-BASIC 常用语句与内建函数（PRINT/USING 子集、INPUT、IF/ELSE、FOR/NEXT、WHILE/WEND、GOSUB、ON ... GOTO/GOSUB、ON ERROR、DATA/READ、DIM/DEFtype、DEF FN、图形语句、`TESTS` 自检）；类型规则、溢出与数值显示按 GW-BASIC 归一，SAVE/OPEN 等因 BIOS 无文件写服务不可用或明确报错。",
+    "`scripts/bios_payload.py` 增加 `--source-dir`（整目录编译）、`--helper string`（复用仓库既有的 freestanding memcpy/memset/strlen）与 `--soft-float` 回退；默认改用 rv32imaf/ilp32f 以利用板上单精度 FPU（无 F 的配置用 --soft-float）。",
+    "把 5x7 字模抽到 `firmware/common/font5x7.h` 共用，`firmware/common/rgb_canvas.h` 只保留绘制助手，图形模式文字与既有画布使用同一份字模。",
+    "新增 `scripts/gwbasic_image.py`（打包 BOOT.RPB）、`scripts/gwbasic_sim.py`（在 QEMU 上运行真实目标产物，含 mstatus.FS 使能与 ecall shim）、`scripts/gwbasic_verify.py`（板端 TFTP 装载与交互验收，不写 Flash、不改主机网络）、`tests/gwbasic_test.py`（4 项镜像断言 + 4 项 QEMU 回归）。",
+    "文档：新增 `docs/gwbasic.md`；`docs/bios.md` 的内存表改为与 `firmware/common/memory_layout.h` 一致的零基址并补 GW-BASIC 交叉引用；`firmware/README.md` 增加 `apps/` 分类与构建入口；`docs/system-design.md` 补文档索引。",
+    "验证：主机 8 项 GW-BASIC 回归与 18 项 workflow 检查通过；实板在 v0.8.0 full 配置上、由 Flash 启动的 BIOS（`romf0bea070`）经 `boot net BASIC.RPB` 装载本次 98984 B 产物（sha256 745dc18c…，重新构建后字节一致），`TESTS` 报 `ALL TESTS PASSED (77 checks)`、`PRINT 1+1` 显示 ` 2 `、`LIST`/`RUN` 输出 ` 1  2  3 BOARD OK`、`SYSTEM` 回到 BIOS。未验收项：物理断电冷启动、SD 路径 `boot sd`、真实 LCD/键盘与 SD `LOAD`。"
+  ],
+  "build": {
+    "id": "v0.8.0-full-rv32imaf-rom0k-l24k-code-release-d136d881-a96557c0",
+    "label": "正式代码发布",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\system\\v0.8.0\\full-rv32imaf-rom0k-l24k",
+    "purpose": "code-release",
+    "registered_at": "2026-10-08T03:08:49+00:00",
+    "source": {
+      "commit": "4e10424c367400f077167b5454fc3efc8a710d2c",
+      "dirty": false,
+      "inputs_sha256": "64a6c05537c8f99a12a63e11935c8b09acb3b968d54a970c2408713c57fbccb0",
+      "kind": "captured",
+      "created_at": "2026-10-08T03:02:48+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "final-build",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\system\\v0.8.0\\full-rv32imaf-rom0k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--boot-mode",
+        "xip",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "3",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--with-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\system\\v0.8.0-4e10424c3674-full-rv32imaf-rom0k-l24k-final-build"
+      ],
+      "cpu_rtl_sha256": "d8a525f4eed08fcd7a8f198885849343f0531559946805108e06bff348b55f70",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\system\\v0.8.0\\full-rv32imaf-rom0k-l24k\\replay",
+      "version": "0.8.0",
+      "components": {
+        "rtl": "0.8.0",
+        "bootloader": "0.8.0",
+        "hal": "0.8.0",
+        "bios": "0.8.0",
+        "opensbi": "0.8.0",
+        "uboot": "0.2.0"
+      },
+      "external": [
+        "opensbi",
+        "uboot"
+      ]
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imaf_zicsr_zifencei",
+      "rom_size_bytes": 0,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 3,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "6e04fe312d728b713c3f597c6f937ca3f7831f6c22cb289406567475c28eeac4",
+    "bitstream_sha256": "d136d88180aaab016e5c0bb42fcf6cf503f7a5301f3416661a44606aacccc03e",
+    "abi": "038c2988",
+    "component_versions": {
+      "rtl": "0.8.0",
+      "bootloader": "0.8.0",
+      "hal": "0.8.0",
+      "bios": "0.8.0",
+      "opensbi": "0.8.0",
+      "uboot": "0.2.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\system\\v0.8.0\\full-rv32imaf-rom0k-l24k\\reports\\firmware-verification.json",
+        "sha256": "772684cdd55e8580b37d3b406666e55d3c37d6369e929f2417cfe49c745019e9"
+      }
+    ]
+  },
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests\\workflow_test.py",
+      "--report",
+      "build\\reports\\checks\\workflow.json"
+    ],
+    "source_inputs_sha256": "02b5f1844a23e619cee2c469cdbfaea409e242dd08d75d503ab234a9a471b6eb"
+  },
+  "mode": "staged review",
+  "base_revision": "61b6f9ea423f8f1aeec499fe2b084b6adc75122f",
+  "source_revision": null
+}
