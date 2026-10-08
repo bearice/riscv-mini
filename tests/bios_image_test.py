@@ -29,6 +29,6 @@ class ImageTest(unittest.TestCase):
         with self.assertRaises(ValueError):image.unpack(valid+b'x')
     def test_crc_does_not_authorize_reserved_memory(self):
         data=image.pack(b'abcd')
-        w=list(image.HEADER.unpack_from(data));w[2]=0x40800000;w[-1]=zlib.crc32(struct.pack('<7I',*w[:-1]))
+        w=list(image.HEADER.unpack_from(data));w[2]=0x00800000;w[-1]=zlib.crc32(struct.pack('<7I',*w[:-1]))
         with self.assertRaises(ValueError):image.unpack(image.HEADER.pack(*w)+data[32:])
 if __name__=='__main__':unittest.main()

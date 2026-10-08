@@ -4,7 +4,7 @@
  * (TangPrimer 20K, VexRiscv RV32IMAF(C), S-mode under OpenSBI FW_PAYLOAD).
  *
  * CONFIG_OF_BOARD=y: at runtime U-Boot uses the DTB handed over by OpenSBI
- * (gd->arch.firmware_fdt_addr, 0x41080000). This file only satisfies the
+ * (gd->arch.firmware_fdt_addr, 0x01080000). This file only satisfies the
  * build-time dtbs target.
  */
 
@@ -39,9 +39,9 @@
 		};
 	};
 
-	memory@40000000 {
+	memory@0 {
 		device_type = "memory";
-		reg = <0x40000000 0x07e00000>;
+		reg = <0x00000000 0x07e00000>;
 	};
 
 	aliases {
@@ -59,9 +59,9 @@
 		ranges;
 		bootph-all;
 
-		uart0: serial@f000a000 {
+		uart0: serial@f000a800 {
 			compatible = "riscv-mini,liteuart32";
-			reg = <0xf000a000 0x100>;
+			reg = <0xf000a800 0x100>;
 			current-speed = <115200>;
 			bootph-all;
 		};

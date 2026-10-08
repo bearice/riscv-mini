@@ -46,7 +46,7 @@ def main():
                 if b'ERR HEADER' not in result: raise RuntimeError(name+' not rejected')
                 record(name,result)
             changed=bytearray(image[:HEADER.size]);changed[0]^=1;bad_header('header_crc',changed)
-            for name,index,value in [('abi',3,header[3]^1),('load_rom',5,0),('load_framebuffer',5,0x47e00000),
+            for name,index,value in [('abi',3,header[3]^1),('load_rom',5,0),('load_framebuffer',5,0x07e00000),
                     ('zero_length',4,0),('oversized',4,0xffffffff),('entry_unaligned',6,LOAD+1),('entry_outside',6,LOAD+len(payload)),('flags',8,1)]:
                 words=list(header);words[index]=value;words[-1]=zlib.crc32(HEADER.pack(*words)[:-4])
                 bad_header(name,HEADER.pack(*words))

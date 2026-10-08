@@ -135,7 +135,8 @@ def main():
     if run.exists():p.error('Final build run already exists; preserve it for diagnosis')
     args=['--profile',v['profile'],'--purpose','final-build','--app',str(app.resolve()),
           '--cpu-variant',v['cpu_variant'],'--cpu-verilog',str(inputs/cpu.name),
-          '--rom-size',str(v['rom_size_bytes']),'--l2-size',str(v['l2_size_bytes']),
+          '--boot-mode',v.get('boot_mode','rom'),
+          '--rom-size',str(v['rom_size_bytes'] or 4096),'--l2-size',str(v['l2_size_bytes']),
           '--sd-profile',v['sd_profile'],'--usb-backend',v['usb_backend'],'--audio-clock',v['audio_clock'],
           '--place-option',str(v['place_option']),'--route-option',str(v['route_option']),
           *['--'+('with-' if enabled else 'without-')+name.replace('_','-') for name,enabled in v['features'].items()],

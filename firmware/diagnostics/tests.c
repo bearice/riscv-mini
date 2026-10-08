@@ -216,7 +216,7 @@ static unsigned audio_check(void) {
 #endif
 static unsigned l2_check(void) {
 #if CONFIG_L2_SIZE
-    volatile uint32_t *words=(volatile uint32_t *)0x40d00000u;
+    volatile uint32_t *words=(volatile uint32_t *)0x00d00000u;
     unsigned state=hal_irq_save(),ok=1;
     uint32_t ticks[2],stats[2];
     for(unsigned mode=0;mode<2;++mode) {
@@ -455,11 +455,11 @@ static unsigned usb_schedule_ok(unsigned hcca,unsigned interfaces) {
     unsigned state=hal_irq_save(),seen[32],count=0,endpoints=0,ok=1;
     unsigned address=*(volatile unsigned *)hcca;
     for(unsigned budget=0;address && budget<16;++budget) {
-        if(address<0x40800000u || address>0x40bffff0u || (address&15u)) {ok=0;break;}
+        if(address<0x00800000u || address>0x00bffff0u || (address&15u)) {ok=0;break;}
         volatile unsigned *ed=(volatile unsigned *)address;
         if(!(ed[0]&(1u<<14))) {
             unsigned head=ed[2]&~15u,tail=ed[1]&~15u;
-            if(head<0x40800000u || head>0x40bffff0u || tail<0x40800000u || tail>0x40bffff0u) {ok=0;break;}
+            if(head<0x00800000u || head>0x00bffff0u || tail<0x00800000u || tail>0x00bffff0u) {ok=0;break;}
             for(unsigned i=0;i<count;++i)if(seen[i]==head || seen[i]==tail)ok=0;
             if(!ok)break;
             seen[count++]=head;seen[count++]=tail;++endpoints;
@@ -483,7 +483,7 @@ static unsigned usb_check(void) {
         after.phy_id==0x60424 && !after.phy_error && !after.errors && !after.key_drops && !after.mouse_drops && !after.report_drops &&
         after.frame!=before.frame &&
 #if !CONFIG_USB_ULTRA
-        after.hcca>=0x40800000 && after.hcca<0x40c00000 && !(after.hcca&255) &&
+        after.hcca>=0x00800000 && after.hcca<0x00c00000 && !(after.hcca&255) &&
 #endif
         usb_schedule_ok(after.hcca,after.hid_interfaces);
 }
@@ -639,8 +639,8 @@ static unsigned dma_check(void) {
 #endif
 #ifdef CSR_ETH_DMA_CONTROL_ADDR
     /* Invalid alignment must fail without acquiring SRAM or DDR ownership. */
-    eth_dma_control_write(0);eth_dma_memory_write(0x40000001);
-    eth_dma_slot_write(0xb0001000);eth_dma_length_write(64);eth_dma_control_write(1);
+    eth_dma_control_write(0);eth_dma_memory_write(0x00000001);
+    eth_dma_slot_write(0xf1001000);eth_dma_length_write(64);eth_dma_control_write(1);
     uint32_t started=hal_time_ms();
     while(!eth_dma_done_read())if((uint32_t)(hal_time_ms()-started)>100) {ok=0;break;}
     ok=ok && eth_dma_error_read() && !eth_dma_busy_read();eth_dma_control_write(0);
@@ -763,10 +763,10 @@ static _Alignas(4096) uint32_t mmu_root[1024];
 static unsigned mmu_check(void) {
     unsigned irq=hal_irq_save();
     for(unsigned i=0;i<1024;++i)mmu_root[i]=0;
-    const uint32_t physical=0x47001000u,virtual_address=0x20001000u;
+    const uint32_t physical=0x07001000u,virtual_address=0x20001000u;
     volatile uint32_t *target=(volatile uint32_t *)physical;
     uint32_t saved=*target;*target=0x53563332u;
-    mmu_root[virtual_address>>22]=((0x47000000u>>12)<<10)|0xcfu; /* V R W X A D */
+    mmu_root[virtual_address>>22]=((0x07000000u>>12)<<10)|0xcfu; /* V R W X A D */
     __asm__ volatile("fence rw,rw\n.word 0x0000500f":::"memory");
     unsigned satp=0x80000000u|((uintptr_t)mmu_root>>12),loaded,old_status;
     __asm__ volatile("csrr %1,mstatus\ncsrw satp,%2\nsfence.vma zero,zero\n"

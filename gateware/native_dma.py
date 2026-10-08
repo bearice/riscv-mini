@@ -56,7 +56,7 @@ class NativeSDTransfer(LiteXModule):
         data = Signal(128)
         mask = Signal(16)
         offset = Signal(11)
-        valid = ((self._base.storage[:4] == 0) & (self._base.storage[27:] == 8)
+        valid = ((self._base.storage[:4] == 0) & (self._base.storage[27:] == 0)
             & (self._base.storage[12:27] != 0x7fff)
             & (self._length.storage[:2] == 0) & (self._length.storage > 0) & (self._length.storage <= 4096))
         def swap(word):

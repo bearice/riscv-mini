@@ -4,8 +4,8 @@ HEADER=struct.Struct('<8I')
 MAGIC=0x31425052
 OS_MAGIC=0x3142534f
 VERSION=1
-LOAD=0x41000000
-LIMIT=0x47e00000
+LOAD=0x01000000
+LIMIT=0x07e00000
 MAX_FILE=4*1024*1024
 def pack(payload,memory_bytes=None,entry=LOAD,*,os_image=False):
     n=len(payload);memory_bytes=n if memory_bytes is None else memory_bytes

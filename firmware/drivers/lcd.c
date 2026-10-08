@@ -4,7 +4,7 @@
 
 #define WIDTH 240u
 #define HEIGHT 135u
-static uint16_t *const frame=(uint16_t *)0x40300000u;
+static uint16_t *const frame=(uint16_t *)0x00300000u;
 static unsigned pins=6; /* bit0 DC, bit1 RESET_N, bit2 BL_N (active low). */
 static int byte(unsigned dc, unsigned value) {
     pins=(pins&~1u)|dc;

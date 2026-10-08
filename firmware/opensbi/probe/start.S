@@ -96,7 +96,7 @@ probe_user_code:
     sw t1,0(t0)
     rdtime t1
     sw t1,4(t0)
-    li t0,0x41100000
+    li t0,0x01100000
     lw t1,0(t0)
     li t0,0xf0000000
     lw t1,0(t0)

@@ -87,6 +87,7 @@ hal_result_t hal_spi_lcd_link(unsigned up) {return result(lcd_link(!!up));}
 #endif
 #if MINI_FEATURE_VIDEO
 hal_result_t hal_video_init(void) {return result(video_init());}
+hal_result_t hal_video_set_buffers(uint16_t *first,uint16_t *second) {return result(video_set_buffers(first,second));}
 #endif
 #if MINI_FEATURE_VIDEO
 volatile uint16_t *hal_video_frame(unsigned slot) {return video_frame(slot);}

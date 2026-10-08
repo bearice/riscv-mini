@@ -24,7 +24,7 @@ static hal_result_t packet_dma(void *memory,uintptr_t slot,unsigned length,unsig
 }
 static unsigned dma_pointer(const void *p,unsigned length) {
     uintptr_t address=(uintptr_t)p;
-    return !(address&15u) && address>=0x40000000u && address<0x47fff000u && address<=0x48000000u-length;
+    return !(address&15u) && address>=4096u && address<0x07fff000u && address<=0x08000000u-length;
 }
 #endif
 static void half_cycle(void) {

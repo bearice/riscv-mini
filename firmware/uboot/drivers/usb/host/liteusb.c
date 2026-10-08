@@ -45,7 +45,7 @@ enum { FS_CTRL = 0xe9, RESET_CTRL = 0xc4, RUN_CTRL = 0xe9 | 256,
        PID_DATA0 = 0xc3, PID_DATA1 = 0x4b };
 
 struct liteusb_plat {
-	void __iomem *regs;	/* PIO transaction block (0xb1000000) */
+	void __iomem *regs;	/* PIO transaction block (0xf2000000) */
 	void __iomem *ctrl;	/* usb_host enable/reset/ready CSR block (0xf000a800) */
 	void __iomem *phyreset;	/* shared PHY reset (F10, 0xf0006800); resets BOTH
 				 * the USB and Ethernet external PHYs (hal.h:54).

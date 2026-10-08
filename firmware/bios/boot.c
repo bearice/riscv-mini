@@ -3,10 +3,10 @@
 #include "ff.h"
 #include <generated/csr.h>
 #include <string.h>
-#define STAGING ((uint8_t *)0x47000000u)
+#define STAGING ((uint8_t *)0x07000000u)
 extern void bios_os_enter(uint32_t entry) __attribute__((noreturn));
-static const struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),0x40000000,128u*1024*1024,
-    BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0x47e00000,0x47e40000},480,272,960,565,
+static struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),MINI_RAM_BASE,MINI_RAM_SIZE,
+    BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0,0},480,272,960,565,
     MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4),60000000};
 void bios_sd_list(void) {
 #if MINI_FEATURE_FILESYSTEM
@@ -58,15 +58,16 @@ int bios_self_test(void) {
     v.h.crc=bios_crc(v.data,sizeof(v.data));v.h.header_crc=bios_crc(&v.h,sizeof(v.h)-4);
     if(!bios_payload_check(&v,sizeof(v)) || bios_payload_check(&v,sizeof(v)-1))return 0;
     v.data[0]^=1;if(bios_payload_check(&v,sizeof(v)))return 0;v.data[0]^=1;
-    v.h.load=0x40800000;v.h.header_crc=bios_crc(&v.h,sizeof(v.h)-4);
+    v.h.load=0x00800000;v.h.header_crc=bios_crc(&v.h,sizeof(v.h)-4);
     if(bios_payload_check(&v,sizeof(v)))return 0;
-    return bios_call(BIOS_INFO,0x40800000,0,0,0)==-1 && bios_call(999,0,0,0,0)==-1 &&
-        bios_call(BIOS_AUDIO_BEGIN,0x40800000,1024,0,0)==-1 &&
+    return bios_call(BIOS_INFO,0x00800000,0,0,0)==-1 && bios_call(999,0,0,0,0)==-1 &&
+        bios_call(BIOS_AUDIO_BEGIN,0x00800000,1024,0,0)==-1 &&
         bios_call(BIOS_AUDIO_BEGIN,BIOS_PAYLOAD_BASE+1,1024,0,0)==-1 &&
         bios_call(BIOS_AUDIO_WRITE,BIOS_PAYLOAD_BASE,1025,0,0)==-1 &&
         bios_call(BIOS_AUDIO_CONTROL,99,0,0,0)==-1;
 }
 int bios_payload_run(const void *image,unsigned length) {
+    info.framebuffer[0]=(uintptr_t)hal_video_frame(0);info.framebuffer[1]=(uintptr_t)hal_video_frame(1);
     unsigned start=hal_time_ms();
     bios_puts("BOOT checking image...\r\n");
     if(!bios_payload_check(image,length)) {bios_puts("BOOT rejected: format/range/version/CRC\r\n");return -1;}
@@ -150,7 +151,7 @@ int bios_exception_hook(hal_trap_frame_t *f) {
     if(f->cause!=11 || f->gpr[17]!=BIOS_ECALL_MAGIC)return 0;
     uint32_t *a=&f->gpr[10];int result=-1;
     switch(f->gpr[16]) {
-    case BIOS_INFO:if(pointer_ok(a[0],sizeof(info))) {memcpy((void *)a[0],&info,sizeof(info));result=0;}break;
+    case BIOS_INFO:if(pointer_ok(a[0],sizeof(info))) {info.framebuffer[0]=(uintptr_t)hal_video_frame(0);info.framebuffer[1]=(uintptr_t)hal_video_frame(1);memcpy((void *)a[0],&info,sizeof(info));result=0;}break;
     case BIOS_WRITE:if(a[1]<=4096 && pointer_ok(a[0],a[1])) {for(unsigned i=0;i<a[1];++i)bios_putc(((char *)a[0])[i]);result=a[1];}break;
     case BIOS_GETC:result=bios_getc();break;
     case BIOS_TIME:result=hal_time_ms();break;

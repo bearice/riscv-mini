@@ -4,7 +4,7 @@
  * OpenSBI platform (firmware/opensbi). OpenSBI enters with a0=hartid,
  * a1=DTB; start.S stores a1 into gd->arch.firmware_fdt_addr and the
  * same DTB is handed to the kernel by booti. No SPL: the payload is
- * entered directly at CONFIG_TEXT_BASE (0x41100000 = FW_PAYLOAD_OFFSET).
+ * entered directly at CONFIG_TEXT_BASE (0x01100000 = FW_PAYLOAD_OFFSET).
  */
 #include <init.h>
 #include <asm/global_data.h>
@@ -30,5 +30,5 @@ int dram_init_banksize(void)
 
 int board_late_init(void)
 {
-	return 0;
+    return 0;
 }

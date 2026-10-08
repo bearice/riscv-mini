@@ -1,0 +1,102 @@
+{
+  "created_at": "2026-10-08T02:51:37+00:00",
+  "title": "RAM 零基址、动态 VRAM 与无 C Flash XIP 启动",
+  "changes": [
+    "将 RAM 迁移到零基址，CSR/Ethernet/USB/XIP 放入高地址设备区域；CPU 地址属性同步更新，不增加布局 flag。",
+    "添加 Flash 只读 XIP 与 enable/busy CSR，从物理 1 MiB 启动，保留 DDR BIOS 和 UART 恢复；VRAM 改为 CSR 指定、按帧锁存的 DDR 缓冲区。",
+    "迁移 OpenSBI/U-Boot 地址和运行时 CSR 描述，关闭 U-Boot C 指令，修复 PIE 搬移与 4 KiB SD DMA 请求边界和缓存同步；SD 硬件 buffer 未扩大。",
+    "启动页、L2、SD DMA、XIP、VRAM、CPU fence 回归通过；新 captured PnR 0/0 与匹配镜像完整板测、60 秒 soak、三轮 all/cache 通过。独立 OpenSBI/U-Boot 15 项验收及原始镜像哈希保留。cache 压力测试期间 LCD underflow 26，旧基线 27；普通 soak 为 0。"
+  ],
+  "build": {
+    "id": "da9a3d8-full-rv32imaf-rom0k-l24k-merge-reviewed-f86edd8b-7d944190",
+    "label": "merge-reviewed",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\noc-flash-xip\\build\\runs\\20261008T024452065729Z-da9a3d8-dirty-full-rv32imaf-rom0k-l24k-merge-reviewed",
+    "purpose": "merge-reviewed",
+    "registered_at": "2026-10-08T02:48:10+00:00",
+    "source": {
+      "commit": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+      "dirty": true,
+      "inputs_sha256": "b0d6b2b408859a55e791a773c93067ab20cba6a7bddd9d918f9ab0c10665991f",
+      "kind": "captured",
+      "created_at": "2026-10-08T02:44:52+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--cpu-rtl-dir",
+        "build/cpu-zero",
+        "--without-compressed",
+        "--boot-mode",
+        "xip",
+        "--place-option",
+        "3",
+        "--route-option",
+        "2",
+        "--purpose",
+        "merge-reviewed",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "d8a525f4eed08fcd7a8f198885849343f0531559946805108e06bff348b55f70",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\noc-flash-xip\\build\\recipes\\20261008T024452065729Z-da9a3d8-dirty-full-rv32imaf-rom0k-l24k-merge-reviewed-7d944190"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imaf_zicsr_zifencei",
+      "rom_size_bytes": 0,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 3,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "07e02047401cab04ddb4360c7cfb2ad8dbe1542242eb5002f110b849abc18226",
+    "bitstream_sha256": "f86edd8bf68049e8ca119df0d27c70f649722e30554fd337b7f713c7eb3e29d6",
+    "abi": "038c2988",
+    "component_versions": {
+      "rtl": "0.7.1",
+      "bootloader": "0.7.1",
+      "hal": "0.7.1",
+      "bios": "0.7.2",
+      "opensbi": "0.7.1",
+      "uboot": "0.1.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\noc-flash-xip\\build\\runs\\20261008T024452065729Z-da9a3d8-dirty-full-rv32imaf-rom0k-l24k-merge-reviewed\\firmware-verification.json",
+        "sha256": "0ab8b2c2033b9d2796abdec4768abc2aa81babbde6419bfdc6e4063783dc36b7"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\zero-ram-xip-vs-v0.7.1.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "b0d6b2b408859a55e791a773c93067ab20cba6a7bddd9d918f9ab0c10665991f"
+  },
+  "mode": "staged review",
+  "base_revision": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+  "source_revision": null
+}

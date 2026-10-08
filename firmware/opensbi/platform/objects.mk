@@ -5,7 +5,7 @@ PLATFORM_RISCV_ISA = rv32ima_zicsr_zifencei
 FW_DYNAMIC = y
 FW_JUMP = n
 FW_PAYLOAD = y
-FW_TEXT_START = 0x41000000
+FW_TEXT_START = 0x01000000
 FW_PAYLOAD_OFFSET = 0x100000
 FW_PAYLOAD_ALIGN = 0x1000
 platform-cflags-y += -Wno-error=sometimes-uninitialized

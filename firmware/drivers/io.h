@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "../common/memory_layout.h"
 #include <generated/soc.h>
 void puts_uart(const char *text);
 void putchar_uart(char ch);
@@ -18,6 +19,7 @@ int sd_mount(void);
 int sd_list(void);
 
 int video_init(void);
+int video_set_buffers(uint16_t *first,uint16_t *second);
 volatile uint16_t *video_frame(unsigned slot);
 int video_present(unsigned slot);
 void video_status(void);

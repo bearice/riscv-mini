@@ -10,8 +10,8 @@ _start:
     li t0, 9
     bne a0, t0, fail
 #endif
-    li s0, 0x40000000
-    li s1, 0x80000000
+    li s0, 0x00800000
+    li s1, 0xf0000000
     li t0, 0x11223344
     sw t0, 0(s0)
     sw t0, 4(s0)
@@ -42,7 +42,7 @@ _start:
     sc.w.rl t2, t1, (s0)
     bnez t2, fail
     fence rw, rw
-    li s2, 0x40000080
+    li s2, 0x00800080
     li t0, 0x00700513
     sw t0, 0(s2)
     li t0, 0x00008067
@@ -61,7 +61,7 @@ _start:
     sw t2, 0(s1)
 1:  j 1b
 fail:
-    li s1, 0x80000000
+    li s1, 0xf0000000
     li t2, 255
     sw t2, 0(s1)
     j fail

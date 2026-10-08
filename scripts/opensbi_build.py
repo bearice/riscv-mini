@@ -35,7 +35,8 @@ def main():
         script.write_bytes(script.read_bytes().replace(b'\r\n',b'\n'))
     for config in src.rglob('*.carray'):
         config.write_bytes(config.read_bytes().replace(b'\r\n',b'\n'))
-    patch=ROOT/'firmware/opensbi/patches/no-mdt.patch'
+    patch=out/'no-mdt.patch'
+    patch.write_bytes((ROOT/'firmware/opensbi/patches/no-mdt.patch').read_bytes().replace(b'\r\n',b'\n'))
     # Idempotent: refuse a changed upstream source rather than guessing a patch.
     if subprocess.run(['git','-C',str(src),'apply','--reverse','--check',str(patch)],capture_output=True).returncode:
         subprocess.run(['git','-C',str(src),'apply',str(patch)],check=True)
@@ -50,29 +51,31 @@ def main():
     (out/'mini_csr.h').write_text(header)
     dts=out/'riscv_mini.dts';dtb=out/'riscv_mini.dtb'
     uart=csr['csr_bases']['uart']
+    sd=csr['csr_bases']['sdcard'];sd_control=csr['csr_bases']['sd_control']
+    usb_control=csr['csr_bases']['usb_host'];phy_reset=csr['csr_bases']['phy_reset']
     dts.write_text('/dts-v1/;\n/ { #address-cells=<1>; #size-cells=<1>; compatible="riscv-mini,tangprimer20k"; model="riscv-mini"; '
         f'chosen {{ stdout-path="/soc/serial@{uart:x}"; }}; timer {{ compatible="riscv,timer"; }}; '
         'cpus { #address-cells=<1>; #size-cells=<0>; timebase-frequency=<60000000>; '
         'cpu@0 { device_type="cpu"; reg=<0>; compatible="riscv"; riscv,isa="rv32imaf_zicsr_zifencei"; mmu-type="riscv,sv32"; cpu_intc: interrupt-controller { #interrupt-cells=<1>; interrupt-controller; compatible="riscv,cpu-intc"; }; }; }; '
         'irq: interrupt-controller { compatible="riscv-mini,vexriscv-supervisor-irq"; #interrupt-cells=<1>; interrupt-controller; interrupts-extended=<&cpu_intc 9>; riscv-mini,mask-csr=<0x9c0>; riscv-mini,pending-csr=<0xdc0>; }; '
-        'memory@40000000 { device_type="memory"; reg=<0x40000000 0x08000000>; }; '
+        'memory@0 { device_type="memory"; reg=<0x00000000 0x08000000>; }; '
         'reserved-memory { #address-cells=<1>; #size-cells=<1>; ranges; '
-        'opensbi@41000000 { reg=<0x41000000 0x100000>; no-map; }; }; '
+        'opensbi@1000000 { reg=<0x01000000 0x100000>; no-map; }; }; '
         'soc { #address-cells=<1>; #size-cells=<1>; compatible="simple-bus"; ranges; '
         f'serial@{uart:x} {{ compatible="riscv-mini,liteuart32"; reg=<0x{uart:x} 0x800>; interrupt-parent=<&irq>; interrupts=<0>; }}; '
         # LiteEth EtherMAC + RMII PHY (drivers/net/liteeth.c). reg order:
         # MAC CSR, PHY MDIO CSR, RX packet slots, TX packet slots.
         'ethernet@f0002800 { compatible="riscv-mini,liteeth"; '
-        'reg=<0xf0002800 0x40>,<0xf0003000 0x10>,<0xb0000000 0x1000>,<0xb0001000 0x1000>; '
+        'reg=<0xf0002800 0x40>,<0xf0003000 0x10>,<0xf1000000 0x1000>,<0xf1001000 0x1000>; '
         'local-mac-address=[20 12 03 14 05 06]; interrupt-parent=<&irq>; interrupts=<5>; }; '
         # LiteSDCard native SD host (drivers/mmc/litesd.c). reg order:
         # sdcard CSR block, sd_control reset block.
-        'mmc@f0008000 { compatible="riscv-mini,litesd"; '
-        'reg=<0xf0008000 0x100>,<0xf0007800 0x4>; interrupt-parent=<&irq>; interrupts=<4>; }; '
+        f'mmc@{sd:x} {{ compatible="riscv-mini,litesd"; '
+        f'reg=<0x{sd:x} 0x100>,<0x{sd_control:x} 0x4>; interrupt-parent=<&irq>; interrupts=<4>; }}; '
         # Custom Ultraembedded PIO full-speed USB host (drivers/usb/liteusb.c).
         # reg order: PIO transaction block, usb_host enable/reset/ready CSR block.
-        'usb@b1000000 { compatible="riscv-mini,liteusb"; '
-        'reg=<0xb1000000 0x1000>,<0xf000a800 0x20>,<0xf0006800 0x4>; interrupt-parent=<&irq>; interrupts=<6>; }; }; };\n')
+        'usb@f2000000 { compatible="riscv-mini,liteusb"; '
+        f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<6>; }}; }}; }};\n')
     wsl(['dtc','-I','dts','-O','dtb','-o',linux(dtb),linux(dts)])
     probe=ROOT/'firmware/opensbi/probe';elf=out/'probe.elf';raw=out/'probe.bin'
     wsl(['clang','--target=riscv32-unknown-elf','-march=rv32ima_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror',

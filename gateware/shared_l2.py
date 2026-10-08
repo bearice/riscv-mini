@@ -4,6 +4,7 @@ Streaming reads do not allocate, but hit dirty CPU lines. All accepted writes
 complete in cache or DDR before acknowledging their producer. One transaction
 owns the synchronous RAM and DDR port through completion, including cancellation.
 """
+from gateware.memory_map import BIOS_BASE, BOOT_RAM_BASE, RAM_BASE, RAM_END
 from migen import Signal, Memory, Cat, Constant, Replicate, Mux, If, Case, FSM, NextState, NextValue
 from litex.gen import LiteXModule
 from litex.soc.interconnect.csr import CSR, CSRStorage, CSRStatus
@@ -67,21 +68,21 @@ class SharedL2(LiteXModule):
             tp.we.eq(1),
             *([If(~boot_index,tp.dat_w.eq(0)),dp.we.eq(1),dp.dat_w.eq(0)] if boot_ram else []),
             If(cursor==size//16-1,NextValue(cursor,0),NextValue(cleaning,0),NextState('IDLE')).Else(NextValue(cursor,cursor+1)))
-        cpu_capture=[NextValue(owner,0),NextValue(address,master.adr[2:]-(0x40000000>>4)),
+        cpu_capture=[NextValue(owner,0),NextValue(address,master.adr[2:]-(RAM_BASE>>4)),
             NextValue(payload,Replicate(master.dat_w,4)),
             # Concatenation preserves all four shift bits in generated Verilog.
             # A 2-bit lane * 3-bit constant has only a 3-bit self-determined
             # result as a shift operand, aliasing lanes 2/3 onto lanes 0/1.
             NextValue(mask,master.sel << Cat(0,0,master.adr[:2])),NextValue(write,master.we),
             NextValue(lane,master.adr[:2]),NextValue(abandoned,0),
-            NextValue(allocate,active & (master.adr < (0x47e00000>>2))),NextState('RAM')]
+            NextValue(allocate,active & (master.adr < (RAM_END>>2))),NextState('RAM')]
         fsm.act('IDLE',
             If((request | (active != self._enable.storage)) & (enabled if boot_ram else 1),
                 NextValue(cleaning,1),NextValue(cursor,0),
                 NextValue(invalidate,invalidate_request | ~self._enable.storage),
                 NextValue(request,0),NextValue(invalidate_request,0),NextState('SCAN_RAM')
             ).Elif((~enabled if boot_ram else 0),
-                If(pending[0] & (master.adr >= (0x407ff000>>2)) & (master.adr < (0x40800000>>2)),
+                If(pending[0] & (master.adr >= (BOOT_RAM_BASE>>2)) & (master.adr < (BIOS_BASE>>2)),
                     *cpu_capture)
             ).Elif(enabled,
                 Case(choice,{

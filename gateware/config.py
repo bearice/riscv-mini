@@ -33,11 +33,13 @@ def cpu_capabilities(path):
                     'dcache':'module DataCache' in rtl, 'compressed':False, 'bitmanip':[]}
     metadata = Path(path).parent/'generator.json'
     if metadata.is_file():
-        record = json.loads(metadata.read_text()).get('cpu_rtls', {}).get(Path(path).stem)
+        generator = json.loads(metadata.read_text())
+        record = generator.get('cpu_rtls', {}).get(Path(path).stem)
         if record:
             if record['sha256'] != hashlib.sha256(Path(path).read_bytes()).hexdigest():
                 raise ValueError('CPU RTL no longer matches generator metadata')
             capabilities.update(compressed=record.get('compressed', False), bitmanip=record.get('bitmanip', []))
+            capabilities['high_mmio_xip'] = generator.get('high_mmio_xip', False)
     return capabilities
 
 

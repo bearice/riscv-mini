@@ -1,4 +1,5 @@
 """USB3317 initialization and selectable serial full-speed Host backends."""
+from gateware.memory_map import USB_BASE
 from pathlib import Path
 from migen import *
 from migen.fhdl.specials import Tristate
@@ -136,7 +137,7 @@ def add_usb(soc,backend='ultra',compact_serial_outputs=False):
         from gateware.usb_ultra import USBHostUltra
         soc.usb_host=USBHostUltra(soc,pads,compact_serial_outputs=compact_serial_outputs)
         soc.bus.add_slave(name='usb_pio',slave=soc.usb_host.wb_ctrl,
-            region=SoCRegion(origin=0xb1000000,size=4096,cached=False))
+            region=SoCRegion(origin=USB_BASE,size=4096,cached=False))
         soc.add_constant('CONFIG_USB_ULTRA',1)
         soc.irq.add('usb_host',use_loc_if_exists=True)
         soc.platform.add_period_constraint(pads.clk,1e9/60e6)
@@ -145,7 +146,7 @@ def add_usb(soc,backend='ultra',compact_serial_outputs=False):
     ohci_bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
     soc.usb_pipeline=WishbonePipeline(ohci_bus,soc.usb_host.wb_ctrl)
     soc.bus.add_slave(name='usb_ohci',slave=ohci_bus,
-        region=SoCRegion(origin=0xb1000000,size=4096,cached=False))
+        region=SoCRegion(origin=USB_BASE,size=4096,cached=False))
     soc.bus.add_master(name='usb_dma',master=soc.usb_host.wb_dma)
     soc.irq.add('usb_host',use_loc_if_exists=True)
     soc.platform.add_period_constraint(pads.clk,1e9/60e6)

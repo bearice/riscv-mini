@@ -72,26 +72,26 @@ initial begin
  // Four stores to the exact boot-stack line that exposed the hardware bug.
  for(lane=0;lane<4;lane=lane+1) begin
   expected[lane]=32'h11223344+lane;
-  access(32'h407ffff0+4*lane,1,expected[lane],15);
+  access(32'h007ffff0+4*lane,1,expected[lane],15);
  end
  for(lane=0;lane<4;lane=lane+1) begin
-  access(32'h407ffff0+4*lane,0,0,15);
+  access(32'h007ffff0+4*lane,0,0,15);
   if(result!==expected[lane]) $fatal(1,"word lane %0d: %08x != %08x",lane,result,expected[lane]);
  end
  // All sixteen byte enables must preserve neighbouring bytes and words.
  for(lane=0;lane<4;lane=lane+1)
   for(b=0;b<4;b=b+1) begin
-   access(32'h407ffff0+4*lane,1,(32'h80+4*lane+b)<<(8*b),1<<b);
+   access(32'h007ffff0+4*lane,1,(32'h80+4*lane+b)<<(8*b),1<<b);
    expected[lane]=(expected[lane]&~(32'hff<<(8*b)))|((32'h80+4*lane+b)<<(8*b));
   end
  for(lane=0;lane<4;lane=lane+1) begin
-  access(32'h407ffff0+4*lane,0,0,15);
+  access(32'h007ffff0+4*lane,0,0,15);
   if(result!==expected[lane]) $fatal(1,"byte lane %0d: %08x != %08x",lane,result,expected[lane]);
  end
  // A conflicting CPU line forces dirty writeback, then reload the old line.
- access(32'h407ffef0,0,0,15);
+ access(32'h007ffef0,0,0,15);
  for(lane=0;lane<4;lane=lane+1) begin
-  access(32'h407ffff0+4*lane,0,0,15);
+  access(32'h007ffff0+4*lane,0,0,15);
   if(result!==expected[lane]) $fatal(1,"eviction lane %0d: %08x != %08x",lane,result,expected[lane]);
  end
  $display("Shared L2 emitted Verilog PASS: four words, sixteen bytes, eviction");
@@ -139,7 +139,7 @@ def main():
                 bench=bench.replace('cache dut(.sys_clk', 'cache dut(.ddr_ready(ddr_ready),.sys_clk')
                 bench=bench.replace('if(cmd_valid) begin', 'if(cmd_valid && !ddr_ready) $fatal(1,"DDR request before ready");\n if(cmd_valid) begin')
                 bench=bench.replace('// A conflicting CPU line', 'ddr_ready=1; repeat(2) @(negedge sys_clk);\n // A conflicting CPU line')
-                bench=bench.replace("32'h407ffef0","32'h407feff0")
+                bench=bench.replace("32'h007ffef0","32'h007feff0")
                 bench=bench.replace('repeat(300)', 'repeat(600)')
             (output/'tb.v').write_text(bench)
             subprocess.run([str(compiler), '-g2012', '-s', 'tb', '-o', (output/'sim').as_posix(),

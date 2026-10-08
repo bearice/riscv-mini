@@ -152,7 +152,9 @@ static void litesd_stop_dma(struct litesd_priv *priv)
 
 static void litesd_start_dma(struct litesd_priv *priv, int write, unsigned bytes)
 {
-	wmb();
+    wmb();
+    if (write)
+        asm volatile("fence rw,rw\n.word 0x0000500f" ::: "memory");
 	if (write) {
 		out_le32(priv->regs + M2B_EN, 0);
 		out_le32(priv->regs + M2B_BASE, (uintptr_t)priv->bounce);
@@ -219,8 +221,12 @@ static int litesd_send_cmd(struct udevice *dev, struct mmc_cmd *cmd,
 		return -ENOMEDIUM;
 
 	if (data) {
-		blocks = data->blocks;
-		bytes = blocks * data->blocksize;
+        blocks = data->blocks;
+        if (!blocks || !data->blocksize || blocks > BOUNCE_BYTES / data->blocksize)
+            return -EINVAL;
+        bytes = blocks * data->blocksize;
+        if (bytes & 3u)
+            return -EINVAL;
 		write = (data->flags & MMC_DATA_WRITE) ? 1 : 0;
 		flags |= write ? DATA_WRITE : DATA_READ;
 		out_le32(priv->regs + BLK_LEN, data->blocksize);
@@ -234,7 +240,9 @@ static int litesd_send_cmd(struct udevice *dev, struct mmc_cmd *cmd,
 	out_le32(priv->regs + CMD_CMD, (cmd->cmdidx << 8) | flags);
 	out_le32(priv->regs + CMD_SEND, 1);
 
-	if (!litesd_wait_event(priv, 0)) {
+    if (!litesd_wait_event(priv, 0)) {
+        printf("litesd: CMD%u event=%x\n", cmd->cmdidx,
+               in_le32(priv->regs + CMD_EVENT));
 		litesd_stop_dma(priv);
 		return -EIO;
 	}
@@ -255,13 +263,21 @@ static int litesd_send_cmd(struct udevice *dev, struct mmc_cmd *cmd,
 	}
 
 	if (data) {
-		if (!litesd_wait_event(priv, 1) || !litesd_wait_dma(priv, write)) {
+        if (!litesd_wait_event(priv, 1) || !litesd_wait_dma(priv, write)) {
+            printf("litesd: CMD%u data=%x DMA base=%x done=%x error=%x\n",
+                   cmd->cmdidx, in_le32(priv->regs + DATA_EVENT),
+                   in_le32(priv->regs + (write ? M2B_BASE : B2M_BASE)),
+                   in_le32(priv->regs + (write ? M2B_DONE : B2M_DONE)),
+                   in_le32(priv->regs + (write ? M2B_ERR : B2M_ERR)));
 			litesd_stop_dma(priv);
 			return -EIO;
 		}
 		litesd_stop_dma(priv);
-		if (!write)
-			memcpy(data->dest, priv->bounce, bytes);
+        if (!write) {
+            /* DMA updates shared L2; discard stale CPU L1 bounce-buffer lines. */
+            asm volatile("fence rw,rw\n.word 0x0000500f" ::: "memory");
+            memcpy(data->dest, priv->bounce, bytes);
+        }
 	}
 
 	/* A busy (R1b) response — CMD7/CMD12 with no data, or CMD6 after its data
@@ -365,7 +381,7 @@ static int litesd_bind(struct udevice *dev)
 	plat->cfg.voltages = MMC_VDD_32_33 | MMC_VDD_33_34;
 	plat->cfg.f_min = 400000;
 	plat->cfg.f_max = 7500000;
-	plat->cfg.b_max = CONFIG_SYS_MMC_MAX_BLK_COUNT;
+    plat->cfg.b_max = MAX_BLOCKS;
 
 	ret = mmc_bind(dev, &plat->mmc, &plat->cfg);
 	if (ret)
