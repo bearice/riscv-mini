@@ -1,8 +1,8 @@
 # Gateware 系统框图
 
-检查日期：2026-10-07。源码基线：主分支 `main` 的 `da9a3d8`，工作树 gateware 无修改。图以当前 full 配置和 `build/refs/current.json` 登记的 v0.7.1 实板验收构建为依据：RV32IMAFC、4 KiB ROM、4 KiB shared writeback L2、SD lite、USB ultra、DDS audio。`ce277e0..da9a3d8` 的 gateware 和 CPU 生成脚本无差异。此处没有重新读回 FPGA 配置或执行板测。
+检查日期：2026-10-08。图已同步合入 main 的 RAM 零基址/XIP 实验代码（e50809b），以已验收的 full 配置为依据：RV32IMAF、无片内 ROM、Flash 1 MiB 启动、4 KiB shared writeback L2、SD lite、USB ultra、DDS audio。匹配镜像 PnR、完整 BIOS 实板验收与三轮 all/cache 已通过，详见 [XIP 实验记录](xip-experiment.md) 和 [性能报告](../reports/performance/zero-ram-xip-vs-v0.7.1.md)。
 
-注意：`MiniSoC` 和 `scripts/build.py` 的 ROM 参数默认仍为 8 KiB；图中的 4 KiB 来自已登记配置。C 扩展由输入 CPU RTL 决定，不由 full 功能开关自动保证。
+RAM 零基址与高地址设备 MMIO 是默认布局，不增加布局 flag。启动方式仍可选 ROM/XIP；本图描述 --boot-mode xip 配置。C 扩展由输入 CPU RTL 决定，旧地址属性的 CPU 必须重新生成。
 
 ## 系统数据路径
 
@@ -11,9 +11,9 @@
 ```mermaid
 flowchart TB
   subgraph FPGA["Tang Primer 20K · GW2A · full 配置"]
-    CPU["VexRiscv · 60 MHz<br/>RV32IMAFC · Sv32 MMU · 单精度 FPU<br/>私有 I-cache / D-cache：各 2 KiB"]
+    CPU["VexRiscv · 60 MHz<br/>RV32IMAF · Sv32 MMU · 单精度 FPU<br/>私有 I-cache / D-cache：各 2 KiB"]
     WB["32-bit Wishbone<br/>I-bus / D-bus / audio DMA 仲裁与地址译码"]
-    ROM["Boot ROM · 4 KiB<br/>复位入口 0x00000000"]
+    ROM["Flash XIP · 4 MiB 窗口<br/>0xF3000000 · enable/busy CSR<br/>复位入口 0xF3100000 · 无片内 ROM"]
     CSR["Wishbone → CSR bridge<br/>0xF0000000 起"]
     BASIC["UART · timer0 / timer1<br/>LED / 按键 / 拨码 · WS2812<br/>Flash SPI · SPI LCD / GPIO"]
     TIMER["64-bit machine timer<br/>CSR 控制 · MTIP"]
@@ -28,16 +28,17 @@ flowchart TB
     AUDIO["Audio · Wishbone read DMA<br/>512 帧 FIFO · PT8211 serializer"]
     DDS["AudioDDS · sys clock enable<br/>平均采样率 48 kHz"]
     MIC["双 I2S 麦克风接收<br/>PCM24 · 512 帧 snapshot FIFO<br/>CPU 经 CSR 读取，无 DDR DMA"]
-    ETH["LiteEth MAC · packet SRAM<br/>2 RX slots / 2 TX slots<br/>0xB0000000"]
+    ETH["LiteEth MAC · packet SRAM<br/>2 RX slots / 2 TX slots<br/>0xF1000000"]
     RMII["DockRMII · MDIO<br/>sys ↔ eth RX / TX CDC"]
-    USB["WB → AXI-Lite bridge<br/>Ultraembedded PIO Host<br/>0xB1000000 · IRQ · 无 DDR DMA"]
+    USB["WB → AXI-Lite bridge<br/>Ultraembedded PIO Host<br/>0xF2000000 · IRQ · 无 DDR DMA"]
     USBPHY["usb_fs_phy · sys 60 MHz<br/>UTMI ↔ FS serial · 12 Mbit/s"]
     ULPI["USBPHYInit · ulpi 域<br/>读 PHY ID / 写配置 / 切串行模式"]
     CPU <-->|"I / D · 32 bit"| WB
     AUDIO -->|"read master · 32 bit"| WB
     WB --> ROM
+    CSR -.-> ROM
     WB <--> CSR
-    WB <-->|"main_ram · 0x40000000"| L2
+    WB <-->|"main_ram · 0x00000000"| L2
     WB <--> ETH
     WB <--> USB
     CSR <--> BASIC
@@ -103,10 +104,10 @@ flowchart LR
 
 ## 关键设计结论
 
-- 启动时没有独立工作 SRAM：ROM 使用 L2 中固定的 `0x407ff000..0x407fffff` 4 KiB 窗口保存栈/data/BSS，软件经 DDRBoot 初始化与训练 DDR。handover 后由 LiteDRAM controller 接管 DFI，解除缓存固定；dirty tag 保留启动数据，后续替换时写回 DDR，不需要搬栈。
-- L2 是三入口的共同可见性点：CPU 和音频共享 Wishbone 入口，LCD 使用只读 native 入口，SD 的两个方向先仲裁后使用 DMA 入口。一次只有一个完整事务拥有 L2 RAM/DDR 后端。流式请求不分配缓存行，但可命中 dirty 行；CPU 帧缓冲访问也不分配 L2 行。
+- 启动时没有独立工作 SRAM：XIP 启动程序使用 L2 中固定的 `0x007ff000..0x007fffff` 4 KiB 窗口保存栈/data/BSS，软件经 DDRBoot 初始化与训练 DDR。handover 后由 LiteDRAM controller 接管 DFI，解除缓存固定；dirty tag 保留启动数据，后续替换时写回 DDR，不需要搬栈。
+- L2 是三入口的共同可见性点：CPU 和音频共享 Wishbone 入口，LCD 使用只读 native 入口，SD 的两个方向先仲裁后使用 DMA 入口。一次只有一个完整事务拥有 L2 RAM/DDR 后端。流式请求不分配缓存行，但可命中 dirty 行；CPU RAM 访问（包括帧缓冲）可以分配 L2 行。
 - L2 coherent 不等于整个缓存层级硬件一致：它不会 snoop CPU 私有 L1。软件仍需执行 DMA buffer 的 fence / D-cache 维护；不能据此推导 CPU/DMA 并发原子读改写保证。
-- RGB LCD 是 DDR 帧缓冲扫描输出，固定两槽 `0x47e00000` / `0x47e40000`。当前 gateware 没有图形栅格化或 2D/3D 绘制引擎，像素由软件生成。
+- RGB LCD 是 DDR 帧缓冲扫描输出，两块 DDR 缓冲区由 base0/base1 CSR 指定，地址与槽选择在帧开始时锁存。当前 gateware 没有图形栅格化或 2D/3D 绘制引擎，像素由软件生成。
 - 音频是 DDR 环形缓冲读 DMA，也支持 CSR PIO；麦克风是有限长度 snapshot capture，CPU 从 CSR FIFO 读出，尚无连续录音到 DDR 的 DMA。
 - Ethernet 使用 MAC packet SRAM，CPU 负责 SRAM 与 DDR 之间的搬运；默认 USB 使用 PIO/FIFO，PHY 通过 ULPI 初始化后切到 serial FS，不能把 USB3317 的 HS 能力当成当前 Host 的 HS 支持。
 - `full` 是功能组合，SD `lite` 是该外设内部的实现 profile；`filesystem` 是固件功能，不对应硬件文件系统引擎。可选 SD full / SPI、USB OHCI 不属于本图实例。
@@ -115,22 +116,22 @@ flowchart LR
 
 | 区域 | 地址 | 路径 |
 | --- | --- | --- |
-| ROM | `0x00000000` | Wishbone，当前配置 4 KiB |
-| DDR | `0x40000000..0x47ffffff` | SharedL2 → LiteDRAM → PHY |
-| 启动栈/data/BSS | `0x407ff000..0x407fffff` | 训练前 L2 boot RAM，训练后普通 writeback |
-| DDR 应用入口 | `0x40800000` | 固件链接约定 |
-| LCD frame slots | `0x47e00000` / `0x47e40000` | 两个固定 RGB565 槽，每帧 261,120 B |
-| Ethernet packet SRAM | `0xb0000000` 起 | Wishbone MMIO |
-| USB Host | `0xb1000000` 起 | Wishbone → AXI-Lite，4 KiB 窗口 |
+| Flash XIP | `0xf3000000..0xf33fffff` | Wishbone，只读、可缓存；Flash 物理 1 MiB 对应复位入口 0xf3100000 |
+| DDR | `0x00000000..0x07ffffff` | SharedL2 → LiteDRAM → PHY |
+| 启动栈/data/BSS | `0x007ff000..0x007fffff` | 训练前 L2 boot RAM，训练后普通 writeback |
+| DDR 应用入口 | `0x00800000` | 固件链接约定 |
+| LCD frame slots | base0/base1 CSR 指定 DDR 地址 | 每帧 261,120 B，16 B 对齐，完整帧必须位于 RAM 中 |
+| Ethernet packet SRAM | `0xf1000000` 起 | Wishbone MMIO |
+| USB Host | `0xf2000000` 起 | Wishbone → AXI-Lite，4 KiB 窗口 |
 | CSR | `0xf0000000` 起 | 寄存器控制与状态 |
 
 外设 IRQ 位：UART=0、timer0=1、timer1=2、board_io=3、SD=4、Ethernet=5、USB=6。machine timer 直接走 MTIP，是独立的 CPU timer interrupt。
 
 ## 资源与分析边界
 
-登记的 current 构建报告：Logic 19,797/20,736（95.47%），CLS 10,295/10,368（99.30%），BSRAM 42/46，rPLL 3/4，PRIMARY 8/8，LW 8/8；setup/hold violated endpoints 为 0/0。该布局剩余 CLS 很少，时钟网络也已占满，不能仅凭 LUT/PLL 的剩余数量判断新增模块可容纳性。这里引用已有构建记录，没有重新综合或重新验收。
+已验收的 XIP 候选构建报告：Logic 19,562/20,736（94.34%），CLS 10,180/10,368（98.19%），BSRAM 40/46，rPLL 3/4，PRIMARY 8/8，LW 8/8；setup/hold violated endpoints 为 0/0。该布局剩余 CLS 很少，时钟网络也已占满，不能仅凭 LUT/PLL 的剩余数量判断新增模块可容纳性。数字取自本轮 merge-reviewed 构建；提交后的最终镜像和哈希通过构建 catalog 单独登记。
 
-主要依据：`gateware/soc.py`、`shared_l2.py`、`ddr_boot.py`、`native_dma.py`、`sd.py`、`video.py`、`audio.py`、`microphone.py`、`ethernet.py`、`usb_ultra.py`，以及当前构建参数、validation 和 `build/runs/bios072-netboot/gateware/rtl-manifest.json` / 顶层生成 RTL。
+主要依据：`gateware/soc.py`、`shared_l2.py`、`ddr_boot.py`、`native_dma.py`、`sd.py`、`video.py`、`audio.py`、`microphone.py`、`ethernet.py`、`usb_ultra.py`，以及 gateware/memory_map.py、flash_xip.py 和合格构建的参数、validation、rtl-manifest.json / 顶层生成 RTL。
 
 ## 独立分支中的端口缓冲实验
 
