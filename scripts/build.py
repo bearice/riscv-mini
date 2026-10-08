@@ -32,14 +32,14 @@ def checked(command,log=None):
             raise SystemExit(f'Command failed; full log: {log}')
     else: subprocess.run(command,cwd=ROOT,check=True)
 
-def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=2,route_option=2,l2_size=4096,rom_size=8192,boot_mode='rom'):
+def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=2,route_option=2,l2_size=4096,rom_size=8192,boot_mode='rom',debug_mode='none'):
     from gateware.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
         raw=binary.read_bytes();raw+=bytes((-len(raw))%4)
         data=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size,rom_size=rom_size,boot_mode=boot_mode)
+    soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size,rom_size=rom_size,boot_mode=boot_mode,debug_mode=debug_mode)
     soc.platform.toolchain.options.update(place_option=place_option,route_option=route_option)
     if hierarchical:
         from gateware.rtl import split_verilog
@@ -120,6 +120,7 @@ def main():
         flag=name.replace('_','-')
         group.add_argument('--with-'+flag,dest=name,action='store_true',default=None)
         group.add_argument('--without-'+flag,dest=name,action='store_false')
+    p.add_argument('--debug-mode',choices=('none','transport','cpu'),default='none',help='Experimental Gowin JTAGBone / CPU debug resource comparison')
     p.add_argument('--synthesize',action='store_true')
     p.add_argument('--l2-size',type=int,choices=(4096,8192),default=4096,help='Shared writeback cache bytes; >=4 KiB required for boot RAM')
     p.add_argument('--rom-size',type=int,choices=(4096,8192),default=8192,help='Boot ROM address window in bytes; linker rejects overflow')
@@ -159,6 +160,7 @@ def main():
     config_args+=['--place-option',str(a.place_option),'--route-option',str(a.route_option)]
     config_args+=['--l2-size',str(a.l2_size)]
     config_args+=['--rom-size',str(a.rom_size)]
+    config_args+=['--debug-mode',a.debug_mode]
     config_args+=['--boot-mode',a.boot_mode]+(['--without-compressed'] if a.without_compressed else [])
     requirements={'microphone_demo.c':('mic','video'),
                   'microphone_stereo_demo.c':('mic','mic_stereo','video'),
@@ -167,7 +169,7 @@ def main():
     if a.app.resolve().parent==ROOT/'firmware/examples':
         missing=[name for name in requirements.get(a.app.name,()) if not getattr(features,name)]
         if missing:p.error(f'{a.app.name} requires enabled modules: {", ".join(missing)}')
-    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size,a.rom_size,a.boot_mode);return
+    if a.generate_only:generate(output,a.rom,a.synthesize,a.sd_backend,features,not a.flat_verilog,a.usb_backend,a.cpu_variant,a.cpu_verilog,a.sd_profile,a.audio_clock,a.deep_verilog,a.place_option,a.route_option,a.l2_size,a.rom_size,a.boot_mode,a.debug_mode);return
     output.mkdir(parents=True,exist_ok=True)
     source.update(kind='captured',created_at=now(),arguments=sys.argv[1:],
                   cpu_rtl_sha256=hashlib.sha256(a.cpu_verilog.read_bytes()).hexdigest() if a.cpu_verilog else None)
@@ -296,7 +298,7 @@ def main():
         'netlist_hierarchy':None if a.flat_verilog else 0,
         'rtl_hierarchy':'flat' if a.flat_verilog else 'deep' if a.deep_verilog else 'blocks',
         'place_option':a.place_option,'route_option':a.route_option,
-        'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
+        'debug_mode':a.debug_mode,'synthesis_requested':a.synthesize,'board_test':'not performed','sd_backend':a.sd_backend,
         'application_source':str(a.app.resolve()),
         'build_id':f'{app_component or "app"}-{app_version}+{source["commit"][:7]}.{source["inputs_sha256"][:8]}' + ('.dirty' if source['dirty'] else ''),
         'component_versions':component_versions,'app_component':app_component,

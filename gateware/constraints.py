@@ -172,8 +172,8 @@ def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
                 stream.write(f'set_false_path -hold -from [get_pins {{{tx_pins}}}] -to [get_ports {{usb_ulpi_data[*]}}]\n')
             eth_stages=[dest for dest,src in pairs if re.fullmatch(
                 r'(?:eth_ref_gray|eth_mdio_in|'
-                r'minisoc_core_(?:rx|tx)_cdc_cdc_graycounter[01]_q|'
-                r'minisoc_core_pulsesynchronizer[01]_toggle_i)',src)]
+                r'(?:minisoc_)?core_(?:rx|tx)_cdc_cdc_graycounter[01]_q|'
+                r'(?:minisoc_)?core_pulsesynchronizer[01]_toggle_i)',src)]
             if eth_stages:
                 if len(eth_stages)!=8: raise ValueError(f'Unexpected Ethernet CDC stages: {eth_stages}')
                 stream.write('# Ethernet CDC: only first synchronizer stages.\n')

@@ -30,6 +30,7 @@ def storage_profile(profile, backend, features, overrides=None):
 def cpu_capabilities(path):
     rtl = Path(path).read_text(encoding='utf-8')
     capabilities = {'mmu':'MmuPlugin' in rtl, 'fpu':'FpuPlugin' in rtl,
+                    'debug':'debug_bus_cmd_valid' in rtl,
                     'dcache':'module DataCache' in rtl, 'compressed':False, 'bitmanip':[]}
     metadata = Path(path).parent/'generator.json'
     if metadata.is_file():

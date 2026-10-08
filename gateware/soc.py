@@ -88,10 +88,12 @@ class MiniSoC(SoCCore):
         l2_size=4096,
         rom_size=8192,
         boot_mode='rom',
+        debug_mode='none',
     ):
         if l2_size not in (4096,8192):raise ValueError('Software DDR boot requires at least 4 KiB L2 boot RAM')
         if rom_size not in (4096,8192):raise ValueError('Boot ROM size must be 4 or 8 KiB')
         if boot_mode not in ('rom','xip'):raise ValueError('Invalid boot mode')
+        if debug_mode not in ('none','transport','cpu'):raise ValueError('Invalid debug mode')
         # Validate feature selections and select matching CPU RTL.
         features = features or Features()
         if boot_mode=='xip' and not features.flash:raise ValueError('XIP requires Flash')
@@ -104,6 +106,8 @@ class MiniSoC(SoCCore):
             if not cpu_verilog.is_file():
                 raise ValueError('Generate matching CPU RTL with scripts/cpu_generate.py first')
             cpu_variant='linux' if features.mmu else 'full'
+        if cpu_verilog and cpu_capabilities(cpu_verilog)['debug'] != (debug_mode=='cpu'):
+            raise ValueError('CPU debug RTL must match --debug-mode cpu')
         self.features=features
         sd_profile=sd_profile or ('lite' if sd_backend=='native' else sd_backend)
         if sd_profile not in ('none','spi','lite','full'):
@@ -133,7 +137,7 @@ class MiniSoC(SoCCore):
         try:
             SoCCore.__init__(
                 self, platform, clk_freq=60e6, ident='riscv-mini',
-                cpu_type='vexriscv', cpu_variant=cpu_variant,
+                cpu_type='vexriscv', cpu_variant=cpu_variant+('+debug' if debug_mode=='cpu' else ''),
                 integrated_rom_size=rom_size if boot_mode=='rom' else 0,
                 integrated_rom_init=rom_data or [],
                 cpu_reset_address=FLASH_BASE if boot_mode=='rom' else FLASH_BASE+XIP_OFFSET,
@@ -147,6 +151,20 @@ class MiniSoC(SoCCore):
         self.cpu.io_regions=io_regions
         if cpu_verilog is not None:
             self.cpu.use_external_variant(str(Path(cpu_verilog).resolve()))
+        if debug_mode != 'none':
+            self.add_jtagbone()
+            # LiteX GowinJTAG passes Hz to an API expecting nanoseconds.
+            # Constrain a 6 MHz diagnostic link instead of a 30 ms period.
+            tck_pad = platform.lookup_request('tck_pad_i')
+            del platform.toolchain.clocks[tck_pad]
+            platform.add_period_constraint(tck_pad, 1e9/6e6)
+            # Hierarchical emission places GW_JTAG in the JTAGBone module;
+            # LiteX's integration hook only scans the top-level file.
+            from shutil import which
+            gowin_shell = which('gw_sh')
+            if gowin_shell is None:raise ValueError('Gowin shell must be on PATH for JTAG IP')
+            platform.add_source(str(Path(gowin_shell).resolve().parent.parent/'data/ipcores/gw_jtag.v'))
+            platform.toolchain.apply_gw_jtag_integration = lambda _: None
         # Independent machine timer for SBI TIME; peripheral IRQ timers remain.
         if features.mmu:
             self.cpu.add_timer()

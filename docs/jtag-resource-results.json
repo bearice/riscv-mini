@@ -1,0 +1,167 @@
+{
+  "source_commit": "61b6f9ea423f8f1aeec499fe2b084b6adc75122f",
+  "configuration": {
+    "profile": "full",
+    "isa": "rv32imaf",
+    "boot_mode": "xip",
+    "rom_bytes": 0,
+    "l2_bytes": 4096,
+    "sys_hz": 60000000,
+    "icache_bytes": 2048,
+    "dcache_bytes": 2048,
+    "hardware_breakpoints": 0,
+    "jtag_hz": 6000000,
+    "place_option": 3,
+    "route_option": 2
+  },
+  "board_test": "not performed",
+  "source_dirty": true,
+  "purpose": "Archived resource experiment; debug candidates failed routing, not a qualified release",
+  "variants": {
+    "baseline": {
+      "synthesis": {
+        "Register": 11366,
+        "LUT": 16175,
+        "ALU": 2439,
+        "SSRAM": 107,
+        "BSRAM": 40
+      },
+      "pnr_resources": {
+        "Logic": {
+          "used": 19562,
+          "available": 20736
+        },
+        "Register": {
+          "used": 11398,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10180,
+          "available": 10368
+        },
+        "BSRAM": {
+          "used": 40,
+          "available": 46
+        }
+      },
+      "pnr_errors": [],
+      "pnr_clock_warnings": [
+        "WARN  (TA1132) :  'CLKDIV/CLKOUT.default_gen_clk' was determined to be a clock but was not created."
+      ],
+      "timing_violations": {
+        "setup": 0,
+        "hold": 0
+      },
+      "bitstream_generated": true,
+      "synthesis_report_sha256": "acfe6acff1bbe40c443ae75af58cf0d1b78d29f96ed03604971fffc16aa3eb9e",
+      "pnr_report_sha256": "0f9348a9a013363f1c466ae33c5ba129869bf162849f2a6868dc05d9a2cdd996",
+      "constraints_sha256": "b006648eb579712f8582a1e1ea72c9926ba93c87c70c6fcaff6a49416dd0126d"
+    },
+    "transport": {
+      "synthesis": {
+        "Register": 11584,
+        "LUT": 16470,
+        "ALU": 2466,
+        "SSRAM": 111,
+        "BSRAM": 40
+      },
+      "synthesis_delta": {
+        "Register": 218,
+        "LUT": 295,
+        "ALU": 27,
+        "SSRAM": 4,
+        "BSRAM": 0
+      },
+      "pnr_resources": {
+        "Logic": {
+          "used": 19916,
+          "available": 20736
+        },
+        "Register": {
+          "used": 11616,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10284,
+          "available": 10368
+        },
+        "BSRAM": {
+          "used": 40,
+          "available": 46
+        }
+      },
+      "pnr_delta": {
+        "Logic": 354,
+        "Register": 218,
+        "CLS": 104,
+        "BSRAM": 0
+      },
+      "pnr_errors": [
+        "ERROR  (PR0004) : There are total 334 unrouted nets"
+      ],
+      "pnr_clock_warnings": [
+        "WARN  (TA1132) :  'jtagbone_jtagbone_phy_gowinjtag_new_tck7' was determined to be a clock but was not created.",
+        "WARN  (TA1132) :  'CLKDIV/CLKOUT.default_gen_clk' was determined to be a clock but was not created."
+      ],
+      "bitstream_generated": false,
+      "synthesis_report_sha256": "a76aee671c9345d83a3e79d20a82038750113df288a3c135af224885d36d9ebe",
+      "pnr_report_sha256": "b07f9c75fccb803d4364fa5f5351f9ab0b0ac46ec83e7e3faa9af27917925fe6",
+      "constraints_sha256": "c27ef628aa39262372c09cccf1f5e67464d61a4bd48185bd3a37abafbe07fa87"
+    },
+    "debug": {
+      "synthesis": {
+        "Register": 11708,
+        "LUT": 17045,
+        "ALU": 2468,
+        "SSRAM": 111,
+        "BSRAM": 40
+      },
+      "synthesis_delta": {
+        "Register": 342,
+        "LUT": 870,
+        "ALU": 29,
+        "SSRAM": 4,
+        "BSRAM": 0
+      },
+      "pnr_resources": {
+        "Logic": {
+          "used": 20497,
+          "available": 20736
+        },
+        "Register": {
+          "used": 11740,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10347,
+          "available": 10368
+        },
+        "BSRAM": {
+          "used": 40,
+          "available": 46
+        }
+      },
+      "pnr_delta": {
+        "Logic": 935,
+        "Register": 342,
+        "CLS": 167,
+        "BSRAM": 0
+      },
+      "pnr_errors": [
+        "ERROR  (PR0004) : There are total 273 unrouted nets"
+      ],
+      "pnr_clock_warnings": [
+        "WARN  (TA1132) :  'jtagbone_jtagbone_phy_gowinjtag_new_tck7' was determined to be a clock but was not created.",
+        "WARN  (TA1132) :  'CLKDIV/CLKOUT.default_gen_clk' was determined to be a clock but was not created."
+      ],
+      "bitstream_generated": false,
+      "synthesis_report_sha256": "ad59b9a97f560af980cc00aaa2ddf3c90f1a6758b99a4687ea3bbd1f77624d4d",
+      "pnr_report_sha256": "4083aa54a368a0c89f0204779a1ace5ee5b2ca9f0d21dcc15572ef4634be9d34",
+      "constraints_sha256": "c27ef628aa39262372c09cccf1f5e67464d61a4bd48185bd3a37abafbe07fa87"
+    }
+  },
+  "cpu_sha256": {
+    "baseline": "d8a525f4eed08fcd7a8f198885849343f0531559946805108e06bff348b55f70",
+    "debug": "be8090cd7395de947f33bdb3689a9e0988ad22026b24538e9b26d80b7c2a4d2b"
+  }
+}

@@ -27,6 +27,7 @@ def main():
                         help='Enable the RISC-V C compressed instruction extension')
     parser.add_argument('--pipelined-fetch', action='store_true',
                         help='Use a two-cycle I-cache and an instruction injector register')
+    parser.add_argument('--debug', action='store_true', help='Enable VexRiscv DebugPlugin (no hardware breakpoints)')
     args = parser.parse_args()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -85,6 +86,7 @@ def main():
     repositories = output/'repositories'
     repositories.write_text('[repositories]\nlocal\nmaven-central: https://repo.maven.apache.org/maven2/\n')
     pipeline = ' --relaxedPcCalculation true' if args.relaxed_pc_calculation else ''
+    if args.debug: pipeline += ' --debug'
     variants = [('all','false','VexRiscv_Base'), ('all','true','VexRiscv_Fpu'),
                 ('linux','false','VexRiscv_Mmu'), ('linux','true','VexRiscv_MmuFpu')]
     commands = [
@@ -119,7 +121,7 @@ def main():
         path = output/(name+'.v')
         report['cpu_rtls'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                                   'mmu':csr=='linux','fpu':fpu=='true','dcache':True,
-                                  'compressed':args.compressed,'bitmanip':[]}
+                                  'compressed':args.compressed,'bitmanip':[], 'debug':args.debug}
     (output/'generator.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 
