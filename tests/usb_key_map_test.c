@@ -149,8 +149,18 @@ int main(void) {
     check("shift '/' -> '?'",one(56,0x02,'?'));
     check("usage 50 (Non-US #) is dropped",one(50,0,0)==0 && 1);
 
-    /* Ctrl/Alt 组合必须被吞掉，不能当普通字符 */
-    check("Ctrl+'a' is dropped",one(4,0x01,0)==0 && 1);
+    /* Ctrl letters must reach the editor as C0 control bytes, not be dropped. */
+    check("Left Ctrl-W -> 0x17",one(26,0x01,23));
+    check("Right Ctrl-W -> 0x17",one(26,0x10,23));
+    check("Ctrl-Shift-W -> 0x17",one(26,0x23,23));
+    check("Ctrl-A -> 0x01",one(4,0x01,1));
+    check("Ctrl-E -> 0x05",one(8,0x01,5));
+    check("Ctrl-K -> 0x0b",one(14,0x01,11));
+    check("Ctrl-U -> 0x15",one(24,0x01,21));
+    {unsigned char b[8];
+     check("Alt-W remains suppressed",bytes_for(26,0x04,b,sizeof b)==0);
+     check("GUI-W remains suppressed",bytes_for(26,0x08,b,sizeof b)==0);
+     check("Ctrl-Alt-W remains suppressed",bytes_for(26,0x05,b,sizeof b)==0);}
 
     /* 导航键：79..82 是方向键 */
     check("Up -> ESC [ A",seq(82,0,"\033[A"));
@@ -223,6 +233,33 @@ int main(void) {
     fake_ms=40000;
     check("repeat: navigation stops after release",poll_bytes()==0);
 
+    drain();fake_ms=50000;
+    press(0xe0,0x01);
+    check("Ctrl modifier alone produces no bytes",bios_getc()==-1);
+    press(26,0x01);drain();
+    fake_ms=50500;bios_console_poll();
+    check("held Ctrl-W repeats control byte",bios_getc()==23 && bios_getc()==-1);
+    release(0xe0);  /* W remains held, but Ctrl is now released. */
+    fake_ms=50560;bios_console_poll();
+    check("repeat uses released Ctrl state",bios_getc()==(caps?'W':'w') && bios_getc()==-1);
+    release(26);
+
+    /* BIOS_MOUSE returns accumulated deltas and the latest event metadata. */
+    {
+        struct bios_mouse out;
+        memset(&out,0xa5,sizeof out);
+        hal_usb_mouse_t a={.time_ms=1234,.buttons=1,.x=2,.y=3,.wheel=4};
+        hal_usb_mouse_t b={.time_ms=1250,.buttons=2,.x=-1,.y=5,.wheel=-2};
+        mouseq[mhead++&7]=a;mouseq[mhead++&7]=b;
+        bios_console_poll();
+        check("mouse event available",bios_mouse_take(&out)==0);
+        check("mouse accumulates all axes",out.x==1 && out.y==8 && out.wheel==2);
+        check("mouse returns latest metadata",out.buttons==2 && out.time_ms==1250);
+        check("mouse consume clears pending",bios_mouse_take(&out)==-1);
+        a.time_ms=1300;a.buttons=2;a.x=a.y=a.wheel=0;
+        mouseq[mhead++&7]=a;bios_console_poll();
+        check("mouse deltas reset after consume",bios_mouse_take(&out)==0 && out.x==0 && out.y==0 && out.wheel==0 && out.buttons==2 && out.time_ms==1300);
+    }
     printf("%u checks, %u failures\n",checks,failures);
     return failures!=0;
 }

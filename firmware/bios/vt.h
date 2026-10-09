@@ -34,6 +34,8 @@ typedef struct {
   unsigned top, bottom; // 滚动区域（DECSTBM，0 基，含端点）
   vt_attr_t attr, saved_attr;
   unsigned saved_cx, saved_cy;
+  unsigned main_cx, main_cy, main_wrap;
+  vt_attr_t main_attr;   // ?1049 保存独立于备用屏 ESC 7/8 的主屏状态
   unsigned wrap_pending; // 光标已停在最后一列，下一个可打印字符才真正换行（DECAWM 延迟换行）
   unsigned state;
   unsigned params[VT_MAXPARAM], nparams;

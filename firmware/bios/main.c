@@ -223,8 +223,9 @@ int main(void) {
                 if(c==';')continue;              // 参数分隔：本编辑器只用第一个参数
             }
             esc_state=0;
-            if(c=='A'||c=='B') {if(caret)--caret;}
-            else if(c=='C'||c=='D') {if(caret<n)++caret;}
+            if(c=='D') {if(caret)--caret;}
+            else if(c=='C') {if(caret<n)++caret;}
+            else if(c=='A'||c=='B')continue;      // 没有编辑历史，忽略上下键
             else if(c=='H')caret=0;
             else if(c=='F')caret=n;
             else if(c=='~') {
@@ -245,18 +246,21 @@ int main(void) {
         if(c==8 || c==127) {                     // 退格/Delete
             if(!caret)continue;
             if(caret==n) {--n;--caret;bios_puts("\b \b");continue;}  // 行尾：原样回显
+            --caret;
             for(unsigned i=caret;i+1<n;++i)line[i]=line[i+1];
-            --n;--caret;
+            --n;
         }
         else if(c==1)caret=0;                    // Ctrl-A
         else if(c==5)caret=n;                    // Ctrl-E
         else if(c==11) {for(unsigned i=caret;i<n;++i)line[i]=line[i+1];n=caret;}  // Ctrl-K
         else if(c==21) {n=caret=0;}              // Ctrl-U
         else if(c==23) {                         // Ctrl-W：删前一个词
+            unsigned end=caret;
             while(caret && line[caret-1]==' ')--caret;
             while(caret && line[caret-1]!=' ')--caret;
-            for(unsigned i=caret;i<n;++i)line[i]=line[i+1];
-            n=caret;
+            unsigned removed=end-caret;
+            for(unsigned i=end;i<n;++i)line[i-removed]=line[i];
+            n-=removed;
         }
         else if(c>=32 && c<127) {
             if(n>=sizeof(line)-1) {overflow=1;continue;}

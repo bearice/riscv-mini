@@ -9,6 +9,7 @@ void vt_reset(vt_t *t) {
   t->top = 0; t->bottom = VT_ROWS - 1;
   t->attr = attr_default();
   t->saved_cx = t->saved_cy = 0; t->saved_attr = attr_default();
+  t->main_cx = t->main_cy = t->main_wrap = 0; t->main_attr = attr_default();
   t->state = VT_GROUND; t->mode = 0; t->nparams = 0; t->sub = 0; t->charset = 0;
   t->wrap_pending = 0;
   t->report = 0; t->report_ctx = 0;
@@ -55,8 +56,16 @@ static void erase_region(vt_t *t, unsigned r0, unsigned c0, unsigned r1, unsigne
 }
 
 static void erase_display(vt_t *t, unsigned mode) {
-  if (mode == 0) { erase_region(t, t->cy, t->cx, VT_ROWS - 1, VT_COLS - 1); return; }
-  if (mode == 1) { erase_region(t, 0, 0, t->cy, t->cx); return; }
+  if (mode == 0) {
+    erase_region(t, t->cy, t->cx, t->cy, VT_COLS - 1);
+    if (t->cy + 1 < VT_ROWS) erase_region(t, t->cy + 1, 0, VT_ROWS - 1, VT_COLS - 1);
+    return;
+  }
+  if (mode == 1) {
+    if (t->cy) erase_region(t, 0, 0, t->cy - 1, VT_COLS - 1);
+    erase_region(t, t->cy, 0, t->cy, t->cx);
+    return;
+  }
   erase_region(t, 0, 0, VT_ROWS - 1, VT_COLS - 1);
 }
 
@@ -121,11 +130,20 @@ static void set_mode(vt_t *t, unsigned final) {
     if (final == 'h') m |= bit; else m &= ~bit;
     if (bit == VT_MODE_ALT) {
       if ((m & VT_MODE_ALT) && !(t->mode & VT_MODE_ALT)) {
+        if (t->params[0] == 1049) {
+          t->main_cx = t->cx; t->main_cy = t->cy;
+          t->main_attr = t->attr; t->main_wrap = t->wrap_pending;
+        }
         t->grid = t->alt;
         erase_region(t, 0, 0, VT_ROWS - 1, VT_COLS - 1);
         t->cx = 0; t->cy = 0;
+        t->wrap_pending = 0;
       } else if (!(m & VT_MODE_ALT) && (t->mode & VT_MODE_ALT)) {
         t->grid = t->main;
+        if (t->params[0] == 1049) {
+          t->cx = t->main_cx; t->cy = t->main_cy;
+          t->attr = t->main_attr; t->wrap_pending = t->main_wrap;
+        }
       }
     }
     t->mode = m;
@@ -163,7 +181,14 @@ static void vt_report(vt_t *t, const char *text) {
 }
 
 static void csi(vt_t *t, unsigned final) {
-  t->wrap_pending = 0;   // 任何光标移动/编辑都取消待换行状态
+  // 只在光标移动或编辑时取消待换行；SGR、报告和模式查询不移动光标。
+  switch (final) {
+    case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
+    case 'G': case '`': case 'H': case 'f': case 'J': case 'K':
+    case 'L': case 'M': case '@': case 'P': case 'd': case 'r':
+    case 'X': case 'Z': case 'u': t->wrap_pending = 0; break;
+    default: break;
+  }
   switch (final) {
     case 'A': { unsigned n = def(t, 0, 1); t->cy = t->cy >= n ? t->cy - n : 0; if (t->cy < t->top) t->cy = t->top; break; }
     case 'B': { unsigned n = def(t, 0, 1); t->cy += n; if (t->cy > t->bottom) t->cy = t->bottom; break; }
@@ -253,7 +278,7 @@ static void csi(vt_t *t, unsigned final) {
 }
 
 static void esc(vt_t *t, unsigned ch) {
-  t->wrap_pending = 0;
+  if (ch == '8' || ch == 'D' || ch == 'E' || ch == 'M') t->wrap_pending = 0;
   switch (ch) {
     case '[': t->state = VT_CSI; t->nparams = 0; t->sub = 0; for (unsigned i = 0; i < VT_MAXPARAM; ++i) t->params[i] = 0; return;
     case '7': t->saved_cx = t->cx; t->saved_cy = t->cy; t->saved_attr = t->attr; t->state = VT_GROUND; return;
@@ -288,7 +313,7 @@ void vt_putc(vt_t *t, unsigned char ch) {
       return;
     default: break;
   }
-  if (ch == 0x1b) { t->state = VT_ESC; t->charset = 0; t->wrap_pending = 0; return; }
+  if (ch == 0x1b) { t->state = VT_ESC; t->charset = 0; return; }
   if (t->charset) { t->charset = 0; return; }  // 字符集选择字节（B/0 等）：吞掉
   switch (ch) {
     case '\r': t->cx = 0; t->wrap_pending = 0; return;

@@ -93,14 +93,23 @@ int main(void) {
     /* --- ED / EL --- */
     reset();
     for(unsigned r=0;r<3;++r) {feed("AAAA\r\n");}
-    feed("\033[1;3H\033[J");
-    check_blank("ED 0 erases from cursor",1,2,2,VT_COLS-1);
+    feed("\033[2;3H\033[J");
+    check_blank("ED 0 erases from cursor",1,2,1,VT_COLS-1);
+    check_blank("ED 0 erases complete following rows",2,0,VT_ROWS-1,VT_COLS-1);
+    check_row("ED 0 keeps preceding row",0,"AAAA");
     check_row("ED 0 keeps the head",1,"AA");
     reset();
     for(unsigned r=0;r<3;++r) {feed("AAAA\r\n");}
     feed("\033[2;3H\033[1J");
     check_blank("ED 1 erases up to cursor",0,0,1,2);
     check_row("ED 1 keeps the tail",1,"   A");
+    check_blank("ED 1 erases complete preceding rows",0,0,0,VT_COLS-1);
+    check_row("ED 1 keeps following row",2,"AAAA");
+    reset();
+    feed("\033[34;80HX\033[J");
+    check_blank("ED 0 at last cell",VT_ROWS-1,VT_COLS-1,VT_ROWS-1,VT_COLS-1);
+    feed("\033[1;1HX\033[1J");
+    check_blank("ED 1 at first cell",0,0,0,0);
     reset();
     feed("hello\033[2J");
     check_blank("ED 2 erases the whole screen",0,0,VT_ROWS-1,VT_COLS-1);
@@ -204,6 +213,28 @@ int main(void) {
     feed("\033[?1049l");
     check("main screen restored",t.grid==t.main);
     check_row("main screen content survives",0,"main");
+    check_cur("1049 restores main cursor",4,0);
+    reset();
+    feed("\033[5;10H\033[31m\033[?1049h\033[2;3H\033[32m\0337\033[?1049h\033[?1049l");
+    check_cur("1049 survives alt save and repeated entry",9,4);
+    check("1049 restores main attributes",((t.attr>>ATTR_FG_SHIFT)&15u)==1);
+    feed("X");
+    check("1049 writes at restored cursor",t.main[4][9].ch=='X');
+
+    /* SGR and reports must preserve deferred wrap, including across alt screen. */
+    reset();
+    for(unsigned i=0;i<VT_COLS;++i)vt_putc(&t,'X');
+    feed("\033[31m\033[6nY");
+    check("SGR preserves final column",t.grid[0][VT_COLS-1].ch=='X');
+    check("SGR wraps next printable",t.grid[1][0].ch=='Y' && ((t.grid[1][0].attr>>ATTR_FG_SHIFT)&15u)==1);
+    reset();
+    for(unsigned i=0;i<VT_COLS;++i)vt_putc(&t,'X');
+    feed("\033[?1049hALT\033[?1049lY");
+    check("1049 restores pending wrap",t.grid[0][VT_COLS-1].ch=='X' && t.grid[1][0].ch=='Y');
+    reset();
+    for(unsigned i=0;i<VT_COLS;++i)vt_putc(&t,'X');
+    feed("\033[1;1HY");
+    check("cursor move still cancels wrap",t.grid[0][0].ch=='Y' && t.cy==0);
 
     /* --- modes and reports --- */
     reset();

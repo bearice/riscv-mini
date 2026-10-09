@@ -87,6 +87,10 @@ def main():
             if args.soak_seconds:command(f'test soak {args.soak_seconds}',timeout=args.soak_seconds+90)
             for name,feature in [('lcd clear','video'),('audio stop','audio'),('eth stop','eth')]:
                 if enabled(feature):command('test '+name)
+            # LCD diagnostics select BIOS graphics mode. Restore the text
+            # console after the final clear; the monitor has no tty command.
+            if enabled('video') and 'RISCV MINI BIOS' in report['startup']:
+                command('tty','tty\r\n')
             command('status','CPU/sys=60 MHz DDR=120 MHz')
             report['passed']=True
     finally:
