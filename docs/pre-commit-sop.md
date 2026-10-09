@@ -24,7 +24,7 @@
 
 RTL（gateware）不变时，先前硬件验收仍然成立：纯软件改动（bootloader、BIOS、驱动、HAL、编译参数）跳过所有硬件相关测试——不重跑 PnR/时序、不要求 captured board-qualified 构建、不做性能基准，只做主机回归与功能实板验证。只有 RTL 改变才重新做硬件验收（captured board-qualified 构建 + PnR + 性能基线），因为 RTL 影响时序与资源。
 
-记录测试命令、源码输入指纹和实际报告路径。PnR 与实板验收分开，板测必须同时匹配 FS 和 app image hash。新增硬件/固件不能继承旧板测。失败、未跑项和物理观察限制保留。默认 storage benchmark 只读，常规程序只写 FPGA SRAM/UART。
+记录测试命令、源码输入指纹和实际报告路径。PnR 与实板验收分开，板测必须同时匹配 FS 和 app image hash。新增硬件/固件不能继承旧板测。失败、未跑项和物理观察限制保留。默认 storage benchmark 只读，常规程序只写 FPGA SRAM/UART。断电冷启动（`--suite cold`）不属于默认验收或发布流程，只在用户主动要求时执行。
 
 all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测量避免覆盖。performance_report.py 显式指定双方结果；不同工作量/时钟、失败或零字节不计算降幅。旧无身份测量仅在有下载/UART 证据时显式 --allow-legacy-results。保存 Markdown/JSON、原始数据 hash、样本/范围/中位数、LCD/音频状态和限制；结束后 BIOS/音频恢复检查。
 

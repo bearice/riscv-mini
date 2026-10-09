@@ -49,7 +49,7 @@ SD lite 与 LCD 分别使用 32-bit / 16-bit 客户端接口，由 [共享内存
 ./mini.ps1 board update --build current --dry-run                # 持久更新预检
 ./mini.ps1 board verify --build current --suite firmware         # 固件功能验收
 ./mini.ps1 board verify --build current --suite flash            # 精确 Flash 读回比较
-./mini.ps1 board verify --build current --suite cold             # 外部断电冷启动观察
+./mini.ps1 board verify --build current --suite cold             # 外部断电冷启动观察（非默认，仅主动要求时）
 ```
 
 ## 功能开关与 profile

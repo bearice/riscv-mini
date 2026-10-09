@@ -28,7 +28,7 @@
 | 验收启动协议与错误边界 | `./mini.ps1 board verify --build current --suite boot` | SRAM/UART 执行协议测试，不安装 Flash |
 | 确认 Flash 中是目标文件 | `./mini.ps1 board verify --build current --suite flash` | SRAM gateware，DDR 只读探针，应用/XIP 逐字节比较，然后 Flash 启动 |
 | 验证 XIP 关闭及软件 SPI 交接 | `./mini.ps1 board verify --build current --suite spi` | SRAM/DDR 程序关闭 XIP、等待 busy=0、确认软件 SPI CS 空闲，再恢复 loader；不写 Flash，仅适用 XIP |
-| 观察断电冷启动 | `./mini.ps1 board verify --build current --suite cold` | 等待用户外部断电重启；不发送复位，默认等待 300 秒 |
+| 观察断电冷启动 | `./mini.ps1 board verify --build current --suite cold` | 等待用户外部断电重启；不发送复位，默认等待 300 秒。不属于默认流程，仅在用户主动要求时执行 |
 
 表中命令可直接在 PowerShell 运行。板端默认 `COM4`、Gowin location `107569`；换板或下载器时使用 `--port` / `--location`。冷启动和 Flash 验收要求已经安装目标应用；它们不会替你安装。
 
@@ -58,7 +58,7 @@ SRAM 下载和复位后先同步完整的新启动横幅，再判断 DDR 状态�
 
 探针从所选构建的 `csr.json` 生成地址。新发布包包含该文件；旧包只有在原始 run 的 bitstream/app hash 和 CSR ABI 全部匹配时才使用其 CSR。原始 run 丢失则更新预检失败，不从其他配置猜地址。
 
-`board verify --suite firmware/boot/cold` 调用现有专项验收实现，将日志写入本次操作目录。固件验收支持当前 BIOS/monitor；物理屏幕、听音、键鼠输入等观察仍按各专项验收说明执行。冷启动检查是外部断电后的启动和状态检查，不替代精确 Flash 读回。
+`board verify --suite firmware/boot/cold` 调用现有专项验收实现，将日志写入本次操作目录。固件验收支持当前 BIOS/monitor；物理屏幕、听音、键鼠输入等观察仍按各专项验收说明执行。冷启动检查是外部断电后的启动和状态检查，不替代精确 Flash 读回；冷启动不属于默认验收或发布流程，只在用户主动要求时执行。
 
 boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验收。firmware 的 `--mic` 明确测试已连接的麦克风；`--soak-seconds` 要求文件系统、视频、USB、音频全部启用。不满足条件在板端操作前失败。
 
