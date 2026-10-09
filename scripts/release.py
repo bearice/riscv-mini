@@ -94,6 +94,8 @@ def main():
     p.add_argument('--feature',action='append',default=[],metavar='NAME=on|off',
                    help='Override a template feature for this release (repeatable), e.g. --feature audio=on')
     p.add_argument('--boot-mode',choices=('rom','xip'),help='Override the template boot mode (rom boots from SRAM/ROM, xip runs resident in Flash)')
+    p.add_argument('--place-option',type=int,choices=range(0,4),help='Override the template placer option (0-3)')
+    p.add_argument('--route-option',type=int,choices=range(0,4),help='Override the template router option (0-3)')
     p.add_argument('--board-check',action='store_true',help='Program the board, run firmware checks and 60 s soak')
     p.add_argument('--baseline',help='Explicit baseline ID/reference; enables final all/cache measurements')
     p.add_argument('--baseline-results',type=Path,action='append',default=[])
@@ -132,7 +134,9 @@ def main():
         v['features'][name]=value=='on'
     if a.boot_mode:v['boot_mode']=a.boot_mode
     source=source_identity();source.update(kind='captured',created_at=now(),version=version,components=components,external=external)
-    if a.boot_mode=='xip':v['rom_size_bytes']=0
+    if a.boot_mode=='xip':v['boot_mode']=a.boot_mode;v['rom_size_bytes']=0
+    if a.place_option is not None:v['place_option']=a.place_option
+    if a.route_option is not None:v['route_option']=a.route_option
     config=configuration_name(v['profile'],v['isa'],v['rom_size_bytes'],v['l2_size_bytes'])
     final=(ROOT/'build/archives'/f"{tag}-{source['commit'][:12]}" if a.snapshot else ROOT/'build/releases'/tag)/config
     receipt=dict(version=version,tag=None if a.snapshot else tag,release_kind='commit-snapshot' if a.snapshot else 'code-release')
