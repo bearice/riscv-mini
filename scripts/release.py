@@ -91,7 +91,10 @@ def main():
     p.add_argument('--version',help='System bundle version to release; must be pinned in RELEASES.yaml and tagged system/v<version>')
     p.add_argument('--snapshot',action='store_true',help='Archive a code commit without creating a new code release; retain version plus Git hash')
     p.add_argument('--app',type=Path,help='Explicit application for legacy templates without application_source')
-    p.add_argument('--board-check',action='store_true',help='SRAM/UART only; run firmware checks and 60 s soak')
+    p.add_argument('--feature',action='append',default=[],metavar='NAME=on|off',
+                   help='Override a template feature for this release (repeatable), e.g. --feature audio=on')
+    p.add_argument('--boot-mode',choices=('rom','xip'),help='Override the template boot mode (rom boots from SRAM/ROM, xip runs resident in Flash)')
+    p.add_argument('--board-check',action='store_true',help='Program the board, run firmware checks and 60 s soak')
     p.add_argument('--baseline',help='Explicit baseline ID/reference; enables final all/cache measurements')
     p.add_argument('--baseline-results',type=Path,action='append',default=[])
     p.add_argument('--allow-legacy-results',action='store_true')
@@ -121,7 +124,15 @@ def main():
         except subprocess.CalledProcessError:p.error('Create the local release tag '+tag+' after committing code first')
         if tag_commit!=git('rev-parse','HEAD').decode().strip():p.error('Release tag must point to the clean checkout being built')
     template=get_record(a.build);v=artifact_identity(template['path'])
+    for item in a.feature:
+        name,_,value=item.partition('=')
+        name=name.replace('-','_')
+        if name not in v['features']:p.error(f'Unknown feature: {name}')
+        if value not in ('on','off'):p.error(f'Feature value must be on or off: {item}')
+        v['features'][name]=value=='on'
+    if a.boot_mode:v['boot_mode']=a.boot_mode
     source=source_identity();source.update(kind='captured',created_at=now(),version=version,components=components,external=external)
+    if a.boot_mode=='xip':v['rom_size_bytes']=0
     config=configuration_name(v['profile'],v['isa'],v['rom_size_bytes'],v['l2_size_bytes'])
     final=(ROOT/'build/archives'/f"{tag}-{source['commit'][:12]}" if a.snapshot else ROOT/'build/releases'/tag)/config
     receipt=dict(version=version,tag=None if a.snapshot else tag,release_kind='commit-snapshot' if a.snapshot else 'code-release')
