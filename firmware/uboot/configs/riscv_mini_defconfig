@@ -2,7 +2,7 @@ CONFIG_RISCV=y
 CONFIG_TARGET_RISCV_MINI=y
 CONFIG_RISCV_SMODE=y
 CONFIG_RISCV_ISA_C=n
-# Board CPU is rv32imaf (no D): keep U-Boot soft-float so -mabi=ilp32
+# Default board CPU is rv32ima: keep U-Boot integer-only so -mabi=ilp32
 # matches the rv32im/ilp32 multilib libgcc (linked via PLATFORM_LIBGCC).
 CONFIG_RISCV_ISA_F=n
 CONFIG_RISCV_ISA_D=n

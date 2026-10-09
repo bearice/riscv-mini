@@ -51,6 +51,13 @@ hal_result_t hal_eth_mdio_read(unsigned address,unsigned reg,uint16_t *value);
 hal_result_t hal_eth_mdio_write(unsigned address,unsigned reg,uint16_t value);
 hal_result_t hal_eth_send(const void *frame,unsigned length); /* BUSY while one TX is owned */
 hal_result_t hal_eth_receive(void *frame,unsigned capacity,unsigned *length); /* BUSY: empty; INVALID: dropped oversized frame */
+/* Native ring borrowing: at most one RX/TX borrow per caller. RX must be
+ * released exactly once; TX commit transfers ownership until hardware completion.
+ * Stop invalidates all outstanding borrows. PIO builds return UNSUPPORTED. */
+hal_result_t hal_eth_rx_acquire(const void **frame,unsigned *length);
+hal_result_t hal_eth_rx_release(const void *frame);
+hal_result_t hal_eth_tx_acquire(void **frame,unsigned *capacity);
+hal_result_t hal_eth_tx_commit(const void *frame,unsigned length);
 hal_result_t hal_phys_reset(unsigned hold_ms); /* F10 resets BOTH Ethernet/USB PHYs */
 typedef struct {uint32_t initialized,connected,phy_ready,phy_error,phy_id,lines,device,
     speed,hid_interfaces,mounts,unmounts,reports,key_events,key_drops,report_drops,rollovers,

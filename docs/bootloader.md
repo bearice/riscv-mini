@@ -12,7 +12,7 @@ SD/FatFs 和两块 LCD 驱动仅存在于独立链接的 DDR 应用中。应用�
 
 ## 固定硬件与内存
 
-CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 15 MHz 读 / 7.5 MHz 写（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU+FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享 writeback L2；minimal 使用 lite 核，仅有 2 KiB I-cache。CPU/音频使用 32-bit L2 入口，LCD/SD lite 使用 128-bit coherent 入口；L2 轮转仲裁并直接连接 LiteDRAM native 后端，不插入固定额外事务间隔。
+CPU/sys/Wishbone 60 MHz；DDR CK 120 MHz DLL-off CL6/CWL6；RGB LCD 像素时钟 9 MHz；Flash SPI 10 MHz；SD 原生四位 400 kHz 初始化 / 15 MHz 读 / 7.5 MHz 写（SPI 回退 400 kHz / 6 MHz）；SPI LCD 6 MHz；PT8211 平均 BCK 1.536 MHz / stereo 48,000 Hz，共用 DDS clock-enable。音频仅在 DDR 应用侧驱动，默认静音。默认 CPU 为 MMU、无 FPU 核，I/D cache 各 2 KiB，并启用 4 KiB 共享 writeback L2；minimal 使用 lite 核，仅有 2 KiB I-cache。CPU/音频使用 32-bit L2 入口，LCD 16-bit / SD lite 32-bit 端口经内存控制器缓冲后进入 128-bit coherent 入口；L2 轮转仲裁并直接连接 LiteDRAM native 后端，不插入固定额外事务间隔。
 
 | 地址 | 用途 |
 | --- | --- |

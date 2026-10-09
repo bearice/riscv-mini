@@ -12,7 +12,9 @@ def rejected(function,*args):
     raise AssertionError('Invalid configuration accepted')
 
 full=Features.resolve('full')
-assert full.mmu and full.fpu
+assert full.mmu and not full.fpu
+assert not Features().fpu
+assert Features.resolve('full', {'fpu': True}).fpu
 assert not full.eth_dma
 assert Features.resolve('full',{'eth_dma':True}).eth_dma
 rejected(Features.resolve,'full',{'eth_dma':True,'eth':False})
@@ -27,8 +29,8 @@ rejected(cpu_configuration,Features.resolve('full',{'fpu':True}),{},None)
 assert pll_count(full,'ultra','dds')==3
 assert pll_count(full,'ohci','dds')==4
 assert pll_count(Features.resolve('minimal'),'ultra','dds')==1
-assert cpu_isa(full,{'compressed':True,'bitmanip':['Zba','Zbb','Zbs']})=='rv32imafc_zba_zbb_zbs_zicsr_zifencei'
-assert cpu_isa(full,{'compressed':True,'bitmanip':[]})=='rv32imafc_zicsr_zifencei'
+assert cpu_isa(Features.resolve('full', {'fpu': True}),{'compressed':True,'bitmanip':['Zba','Zbb','Zbs']})=='rv32imafc_zba_zbb_zbs_zicsr_zifencei'
+assert cpu_isa(Features.resolve('full', {'fpu': True}),{'compressed':True,'bitmanip':[]})=='rv32imafc_zicsr_zifencei'
 from scripts.boot_image import abi_tag
 base={'csr_registers':{},'memories':{},'constants':{}}
 small={**base,'constants':{'config_l2_size':4096}}

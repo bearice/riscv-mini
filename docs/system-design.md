@@ -6,7 +6,7 @@
 
 Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 8 KiB boot ROM 或 4 MiB Flash XIP 启动（v0.8.0 默认 XIP，复位入口 0xf3100000 对应物理 Flash 1 MiB，无片内 ROM），在 L2 启动 RAM 上运行软件 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
-- CPU：默认 full 配置 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
+- CPU：默认 full 配置 VexRiscv MMU、无 FPU，RV32IMA，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
 - 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，启动代码负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。

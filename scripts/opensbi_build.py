@@ -25,6 +25,43 @@ def lcd_node(csr):
     return (f'lcd@{base:x} {{ compatible="riscv-mini,rgb-lcd"; '
             f'reg=<0x{base:x} 0x{size:x}>; bootph-all; '
             'riscv-mini,csr-offsets=<'+' '.join(hex(o) for o in offsets)+'>; }; ')
+ETH_RING_REGISTERS = ('control', 'rx_base', 'tx_base', 'mask', 'rx_consumer',
+    'tx_producer', 'rx_producer', 'tx_consumer', 'busy', 'error', 'rx_packets',
+    'tx_packets', 'ev_pending', 'ev_enable')
+
+
+def ethernet_node(csr):
+    bases, constants = csr['csr_bases'], csr.get('constants', {})
+    dma = bool(constants.get('mini_feature_eth_dma', 0))
+    if dma != bool(constants.get('config_eth_ring_dma', 0)):
+        raise ValueError('Ethernet DMA requires the exclusive ring ABI')
+    if dma:
+        base, phy = bases['eth_dma'], bases['ethphy']
+        offsets = []
+        for name in ETH_RING_REGISTERS:
+            register = csr['csr_registers'].get('eth_dma_' + name)
+            if register is None or register['size'] != 1:
+                raise ValueError('Ethernet ring CSR missing or incompatible: ' + name)
+            offsets.append(register['addr'] - base)
+        if any(offset < 0 or offset & 3 for offset in offsets):
+            raise ValueError('Invalid Ethernet ring CSR offset')
+        irq = constants['eth_dma_interrupt']
+        return (f'ethernet@{base:x} {{ compatible="riscv-mini,liteeth-ring"; '
+            f'reg=<0x{base:x} 0x{max(offsets)+4:x}>,<0x{phy:x} 0x10>; '
+            'reg-names="dma","phy"; riscv-mini,csr-offsets=<'
+            + ' '.join(hex(offset) for offset in offsets) + '>; '
+            f'interrupt-parent=<&irq>; interrupts=<{irq}>; '
+            'local-mac-address=[20 12 03 14 05 06]; }; ')
+    if 'ethmac' not in bases:
+        return ''
+    base, phy = bases['ethmac'], bases['ethphy']
+    rx, tx = csr['memories']['ethmac_rx'], csr['memories']['ethmac_tx']
+    return (f'ethernet@{base:x} {{ compatible="riscv-mini,liteeth"; '
+        f'reg=<0x{base:x} 0x40>,<0x{phy:x} 0x10>,'
+        f'<0x{rx["base"]:x} 0x{rx["size"]:x}>,<0x{tx["base"]:x} 0x{tx["size"]:x}>; '
+        f'interrupt-parent=<&irq>; interrupts=<{constants["ethmac_interrupt"]}>; '
+        'local-mac-address=[20 12 03 14 05 06]; }; ')
+
 def wsl(args,log=None):
     command=shlex.join([str(a) for a in args])
     if log:command+=' > '+shlex.quote(linux(log))+' 2>&1'
@@ -66,24 +103,22 @@ def main():
     (plat/'mini_csr.h').write_text(header.replace('#include <stdint.h>', '#include <sbi/sbi_types.h>'))
     (out/'mini_csr.h').write_text(header)
     dts=out/'riscv_mini.dts';dtb=out/'riscv_mini.dtb'
+    validation=json.loads((a.soc_dir/'validation.json').read_text())
+    isa=validation['isa']
     uart=csr['csr_bases']['uart']
     sd=csr['csr_bases']['sdcard'];sd_control=csr['csr_bases']['sd_control']
     usb_control=csr['csr_bases']['usb_host'];phy_reset=csr['csr_bases']['phy_reset']
     dts.write_text('/dts-v1/;\n/ { #address-cells=<1>; #size-cells=<1>; compatible="riscv-mini,tangprimer20k"; model="riscv-mini"; '
         f'chosen {{ stdout-path="/soc/serial@{uart:x}"; }}; timer {{ compatible="riscv,timer"; }}; '
         'cpus { #address-cells=<1>; #size-cells=<0>; timebase-frequency=<60000000>; '
-        'cpu@0 { device_type="cpu"; reg=<0>; compatible="riscv"; riscv,isa="rv32imaf_zicsr_zifencei"; mmu-type="riscv,sv32"; cpu_intc: interrupt-controller { #interrupt-cells=<1>; interrupt-controller; compatible="riscv,cpu-intc"; }; }; }; '
+        f'cpu@0 {{ device_type="cpu"; reg=<0>; compatible="riscv"; riscv,isa="{isa}"; mmu-type="riscv,sv32"; cpu_intc: interrupt-controller {{ #interrupt-cells=<1>; interrupt-controller; compatible="riscv,cpu-intc"; }}; }}; }}; '
         'irq: interrupt-controller { compatible="riscv-mini,vexriscv-supervisor-irq"; #interrupt-cells=<1>; interrupt-controller; interrupts-extended=<&cpu_intc 9>; riscv-mini,mask-csr=<0x9c0>; riscv-mini,pending-csr=<0xdc0>; }; '
         'memory@0 { device_type="memory"; reg=<0x00000000 0x08000000>; }; '
         'reserved-memory { #address-cells=<1>; #size-cells=<1>; ranges; '
         'opensbi@1000000 { reg=<0x01000000 0x100000>; no-map; }; }; '
         'soc { #address-cells=<1>; #size-cells=<1>; compatible="simple-bus"; ranges; '
         f'serial@{uart:x} {{ compatible="riscv-mini,liteuart32"; reg=<0x{uart:x} 0x800>; interrupt-parent=<&irq>; interrupts=<0>; }}; '
-        # LiteEth EtherMAC + RMII PHY (drivers/net/liteeth.c). reg order:
-        # MAC CSR, PHY MDIO CSR, RX packet slots, TX packet slots.
-        'ethernet@f0002800 { compatible="riscv-mini,liteeth"; '
-        'reg=<0xf0002800 0x40>,<0xf0003000 0x10>,<0xf1000000 0x1000>,<0xf1001000 0x1000>; '
-        'local-mac-address=[20 12 03 14 05 06]; interrupt-parent=<&irq>; interrupts=<5>; }; '
+        +ethernet_node(csr)+
         # LiteSDCard native SD host (drivers/mmc/litesd.c). reg order:
         # sdcard CSR block, sd_control reset block.
         f'mmc@{sd:x} {{ compatible="riscv-mini,litesd"; '
@@ -91,7 +126,7 @@ def main():
         # Custom Ultraembedded PIO full-speed USB host (drivers/usb/liteusb.c).
         # reg order: PIO transaction block, usb_host enable/reset/ready CSR block.
         'usb@f2000000 { compatible="riscv-mini,liteusb"; '
-        f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<6>; }}; '
+        f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<{csr["constants"]["usb_host_interrupt"]}>; }}; '
         +lcd_node(csr)+'}; };\n')
     wsl(['dtc','-I','dts','-O','dtb','-o',linux(dtb),linux(dts)])
     probe=ROOT/'firmware/opensbi/probe';elf=out/'probe.elf';raw=out/'probe.bin'

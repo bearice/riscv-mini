@@ -1,8 +1,8 @@
 # CPU、SD 和音频配置
 
-本实验分支额外提供 `--with-eth-dma` / `--without-eth-dma`，默认关闭，依赖 `eth`。实验构建使用 `--without-audio --without-mic --with-eth-dma`，DDR 侧为 native 端口，MAC 侧仍为 Wishbone packet SRAM；该组合尚未通过实板验收，见 [Ethernet DMA 实验](ethernet-dma-experiment.md)。
+Ethernet ring DMA 通过 `--with-eth-dma` 启用，默认关闭，依赖 `eth`。DMA 构建使用 native DDR descriptor ring，移除 CPU packet SRAM 和旧 PIO 命令映射；HAL/U-Boot 使用相同的独占 ring ABI。无 FPU、全音频/麦克风组合的验收见 [Ethernet ring](ethernet-ring-exclusive.md)。
 
-CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--profile full` 选择全部外设、MMU+FPU、SD lite、音频 DDS。MMU 和 FPU 仍可独立关闭；`--profile minimal` 默认不启用 MMU/FPU。
+CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-09 起，默认 `--profile full` 选择全部外设、MMU、无 FPU、SD lite、音频 DDS。MMU 和 FPU 仍可独立关闭；`--profile minimal` 默认不启用 MMU/FPU。
 默认内存路径为 4 KiB shared writeback L2，CPU/音频通过 32-bit Wishbone，LCD 16-bit / SD lite 32-bit 端口经内存侧 buffer 进入 128-bit coherent 入口，后端直连 LiteDRAM crossbar；CPU 使用原生 cache/fence 实现，不导出额外 fence/atomic 信号。
 默认输出 SoC 块模块层级，Gowin place=2 / route=2，DDR bank command queue 深度为 1；完整当前实板验收见
 [系统设计](system-design.md)。当前资源见该页。
@@ -11,8 +11,8 @@ CPU/总线保持 60 MHz，DDR CK 保持 120 MHz。2026-10-03 起，默认 `--pro
 | --- | --- | --- |
 | `--without-mmu --without-fpu` | lite，RV32IM | 无需额外生成 |
 | `--without-mmu --with-fpu` | 单精度 FPU、2 KiB I/D cache | VexRiscv_Fpu.v |
-| `--with-mmu --without-fpu` | Sv32、M/S/U、2 KiB I/D cache | VexRiscv_Mmu.v |
-| `--with-mmu --with-fpu`（full 默认） | Sv32、M/S/U、单精度 FPU、2 KiB I/D cache | VexRiscv_MmuFpu.v |
+| `--with-mmu --without-fpu`（full 默认） | Sv32、M/S/U、2 KiB I/D cache | VexRiscv_Mmu.v |
+| `--with-mmu --with-fpu` | Sv32、M/S/U、单精度 FPU、2 KiB I/D cache | VexRiscv_MmuFpu.v |
 
 裸机应用使用 ilp32 ABI；FPU 构建启用 `af` 指令扩展。bootloader 按实际能力分别初始化 satp、浮点状态和 D-cache，不把 MMU/FPU 绑定在一起。显式 `--cpu-verilog` 会检查 RTL 中的实际 MMU/FPU 能力；与显式 flag 不一致时拒绝构建。MMU 支持并不意味着已有内核、进程隔离或 RTOS。
 

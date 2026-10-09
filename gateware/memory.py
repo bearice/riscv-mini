@@ -32,6 +32,7 @@ class MemoryPort:
         self.rdata = stream.Endpoint([('data', data_width)])
         self.done = stream.Endpoint([])
         self.cancel = Signal()
+        self.idle = Signal(reset=1)
 
 
 class PortBuffer(LiteXModule):
@@ -57,6 +58,7 @@ class PortBuffer(LiteXModule):
             port.rdata.data.eq(Array(payload[i*width:(i+1)*width] for i in range(words))[lane]),
             port.rdata.last.eq(lane == count - 1),
         ]
+        self.comb += port.idle.eq(~self.busy)
         self.sync += If(stop & self.busy, abandoned.eq(1))
         valid_command = (port.cmd.count != 0) & (port.cmd.count <= words)
         if port.mode != 'both':

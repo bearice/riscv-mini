@@ -5,9 +5,9 @@
 # these numbers. They are human-facing labels, and each component bumps them
 # independently: an unchanged RTL keeps its version while BIOS or U-Boot moves.
 # New components start at 0.1.0; existing ones inherit the last combined release.
-rtl: 0.8.0
+rtl: 0.9.0
 bootloader: 0.8.0
-hal: 0.8.0
-bios: 0.8.0
-opensbi: 0.9.0
-uboot: 0.3.0
+hal: 0.9.0
+bios: 0.9.0
+opensbi: 0.10.0
+uboot: 0.4.0

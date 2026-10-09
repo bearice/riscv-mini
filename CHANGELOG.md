@@ -1,5 +1,32 @@
 # Changelog
 
+## rtl v0.9.0 — Buffered native memory ports and exclusive Ethernet rings
+
+- Buffer narrow SD/LCD/native DMA clients at the memory controller and drain cancelled memory transactions before reusing a port.
+- Add autonomous RX/TX descriptor rings over coherent native DDR ports; remove CPU packet SRAM mappings, legacy TX commands and MAC interrupt ownership from DMA builds.
+- Default full profile to MMU without FPU; retain explicit `--with-fpu` builds.
+
+## hal v0.9.0 — Exclusive Ethernet descriptor-ring backend
+
+- Initialize DDR descriptors and buffers, publish TX work and recycle borrowed RX buffers with explicit ownership and cache ordering.
+- Exclude legacy PIO code and IRQ handlers from DMA builds and reject mismatched DMA CSR ABIs at compile time.
+
+## bios v0.9.0 — Autonomous Ethernet ring diagnostics
+
+- Exercise direct RX-buffer borrowing, descriptor-backed echo and reception while CPU packet processing is paused.
+- Report ring state and DMA packet progress for external verification.
+
+## opensbi v0.10.0 — Runtime Ethernet ring device tree
+
+- Generate the exclusive ring node and register offsets from the selected SoC CSR ABI; reject incomplete or incompatible descriptions.
+- Describe the actual CPU ISA and USB interrupt instead of hardcoded FPU capabilities and interrupt numbers.
+
+## uboot v0.4.0 — Native DDR Ethernet descriptor rings
+
+- Add the exclusive ring network backend with DDR RX/TX buffers, bounded TX completion and DMA shutdown before freeing device memory.
+- Select the backend and early UART address from the matching SoC; ring builds exclude the PIO driver path.
+- Use integer-only fallback CPU descriptions and identify the riscv-mini component version in the U-Boot banner.
+
 ## opensbi v0.9.0 — Runtime RGB LCD device-tree description
 
 - Generate the `riscv-mini,rgb-lcd` node from the selected SoC's programmable LCD CSR ABI, including the runtime register offsets and `bootph-all` reservation metadata used by U-Boot.

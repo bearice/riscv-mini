@@ -20,7 +20,7 @@ boot sd BASIC.RPB
 
 ### 硬浮点前提
 
-默认构建使用单精度 FPU（`-march=rv32imaf -mabi=ilp32f`）。RISC-V 上 `mstatus.FS=0` 时任何浮点指令（含 `frrm`）都会触发非法指令，而本机固件只在带 FPU 的构建里置位 `mstatus.FS`：
+GW-BASIC payload 默认构建使用单精度 FPU，SoC 必须显式启用 `--with-fpu`（`-march=rv32imaf -mabi=ilp32f`）。RISC-V 上 `mstatus.FS=0` 时任何浮点指令（含 `frrm`）都会触发非法指令，而本机固件只在带 FPU 的构建里置位 `mstatus.FS`：
 
 ```asm
 /* firmware/boot/start.S */

@@ -1,0 +1,116 @@
+{
+  "created_at": "2026-10-09T08:55:13+00:00",
+  "title": "Exclusive native Ethernet rings, U-Boot integration and no-FPU defaults",
+  "changes": [
+    "RTL buffers native memory clients and gives autonomous Ethernet RX/TX rings exclusive MAC queue ownership; full defaults to MMU without FPU.",
+    "HAL and BIOS use DDR descriptor ownership and borrowing, with PIO excluded from DMA builds and autonomous-ring diagnostics.",
+    "OpenSBI describes runtime ring CSR addresses, actual CPU ISA and USB IRQ; U-Boot uses the exclusive native DDR ring backend and matching early UART address."
+  ],
+  "build": {
+    "id": "5865db4-full-rv32ima-rom8k-l24k-eth-ring-uboot-qualified-7165e5fc-a764a0ef",
+    "label": "eth-ring-uboot-qualified",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\build\\ring-uboot-qualified",
+    "purpose": "eth-ring-uboot-qualified",
+    "registered_at": "2026-10-09T08:49:23+00:00",
+    "source": {
+      "commit": "5865db46eabe5e344648454a1228f6a87cddf5d4",
+      "dirty": true,
+      "inputs_sha256": "1ae7edaf2cbd7695408542c73b7ec18701df4d6752304e6bd21ff26ee7ace4be",
+      "kind": "captured",
+      "created_at": "2026-10-09T08:45:50+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--with-eth-dma",
+        "--without-compressed",
+        "--cpu-verilog",
+        "build/cpu-no-fpu/VexRiscv_Mmu.v",
+        "--boot-mode",
+        "rom",
+        "--rom-size",
+        "8192",
+        "--l2-size",
+        "4096",
+        "--synthesize",
+        "--purpose",
+        "eth-ring-uboot-qualified",
+        "--output-dir",
+        "build/ring-uboot-qualified"
+      ],
+      "cpu_rtl_sha256": "80b9ad665be1c30dfd0180671d5c4138b423e3df47dc76e67c450d99664bbcd9",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\build\\recipes\\ring-uboot-qualified-a764a0ef"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32ima_zicsr_zifencei",
+      "rom_size_bytes": 8192,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": false,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "eth_dma": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "ed566ce339ecef11aee568130095cc1fa0c7819b86cce63d5e025e7cc9dad13a",
+    "bitstream_sha256": "7165e5fcf5791324b19b6d0f599b766f4eaec875cc5effc5992639517fc333d1",
+    "abi": "4e9d42fa",
+    "component_versions": {
+      "rtl": "0.9.0",
+      "bootloader": "0.8.0",
+      "hal": "0.9.0",
+      "bios": "0.9.0",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\build\\operations\\20261009T084949110476Z-verify\\firmware-verification.json",
+        "sha256": "a6fe6b8ea251b507503fd9b01f1da45313757057bc1452725dc789b3c8d310b1"
+      }
+    ]
+  },
+  "performance_report": "build\\ring-uboot-performance\\comparison.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow-ring-uboot-final.json"
+    ],
+    "source_inputs_sha256": "1ae7edaf2cbd7695408542c73b7ec18701df4d6752304e6bd21ff26ee7ace4be"
+  },
+  "mode": "staged review",
+  "release_version": "0.9.0",
+  "base_revision": "5865db46eabe5e344648454a1228f6a87cddf5d4",
+  "source_revision": null,
+  "additional_evidence": [
+    {
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\build\\uboot-ring-candidate\\verify-prompt-fixed2-uart.json",
+      "sha256": "b4c6386e4b4725d6f741a98c275c1119b3b49864190cf966aefe6eb1ee4cc875"
+    },
+    {
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\build\\ring-uboot-qualified\\external-verification.json",
+      "sha256": "b92650822b77977f1195ef938b0480a3d1b351ccd220214038b6ae3e81c81683"
+    }
+  ]
+}

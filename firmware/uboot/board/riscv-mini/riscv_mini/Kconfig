@@ -9,4 +9,11 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
 	default "riscv_mini"
 
+config RISCV_MINI_ETH_RING_DMA
+	bool "Exclusive native descriptor ring Ethernet DMA"
+	depends on LITEETH
+	help
+	  Build the ring backend for riscv-mini,liteeth-ring. PIO packet
+	  access is excluded; select this to match a DMA-enabled SoC.
+
 endif

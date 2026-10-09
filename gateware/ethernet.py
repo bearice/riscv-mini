@@ -67,7 +67,19 @@ def add_ethernet(soc):
     ResetInserter(['sys'])(soc.ethmac)
     soc.comb += soc.ethmac.reset_sys.eq(soc.ethphy.crg.reset)
     if soc.features.eth_dma:
-        from gateware.ethernet_dma import EthernetDMA
+        from gateware.ethernet_ring import EthernetRingDMA, attach_ring_to_mac
         bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-        soc.eth_dma=EthernetDMA(bus,soc.memory.eth_read,soc.memory.eth_write)
-        soc.bus.add_master(name='eth_dma',master=bus)
+        soc.eth_dma=EthernetRingDMA(bus,soc.memory.eth_read,soc.memory.eth_write)
+        attach_ring_to_mac(soc.eth_dma,soc.ethmac)
+        soc.irq.add('eth_dma',use_loc_if_exists=True)
+        soc.add_constant('CONFIG_ETH_RING_DMA',1)
+        # Packet SRAM belongs exclusively to the ring engine. Keep its local
+        # Wishbone ports, but remove them from the CPU/system interconnect.
+        for name in ('ethmac_rx', 'ethmac_tx'):
+            soc.bus.slaves.pop(name)
+            soc.bus.regions.pop(name)
+        soc.bus.regions.pop('ethmac')
+        soc.irq.locs.pop('ethmac')
+        soc.eth_packet_bus=wishbone.Decoder(bus, [
+            (lambda address: ~address[10], soc.ethmac.bus_rx),
+            (lambda address: address[10], soc.ethmac.bus_tx)])

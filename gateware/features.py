@@ -5,7 +5,7 @@ from dataclasses import dataclass, fields
 @dataclass(frozen=True)
 class Features:
     mmu: bool = True
-    fpu: bool = True
+    fpu: bool = False
     flash: bool = True
     spi_lcd: bool = True
     sd: bool = True
@@ -27,6 +27,7 @@ class Features:
     @classmethod
     def resolve(cls, profile='full', overrides=None):
         values={name: profile=='full' or name=='flash' for name in cls.names()}
+        values['fpu']=False
         values['eth_dma']=False
         values.update({k:v for k,v in (overrides or {}).items() if v is not None})
         for child,parent in [('filesystem','sd'),('mic_stereo','mic'),('eth','flash'),('eth_dma','eth')]:
