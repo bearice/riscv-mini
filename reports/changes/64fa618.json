@@ -102,7 +102,7 @@
   "mode": "staged review",
   "release_version": "0.9.0",
   "base_revision": "5865db46eabe5e344648454a1228f6a87cddf5d4",
-  "source_revision": null,
+  "source_revision": "64fa618e3293e08040cb80bcbda892f1940a30b9",
   "additional_evidence": [
     {
       "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma-no-fpu\\build\\uboot-ring-candidate\\verify-prompt-fixed2-uart.json",
