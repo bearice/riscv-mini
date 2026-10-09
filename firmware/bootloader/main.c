@@ -38,6 +38,7 @@ static int receive_image(struct image_header *h) {
 }
 static void execute(const struct image_header *h, const char *source) {
     puts_uart("BOOT ");puts_uart(source);puts_uart("\r\n");
+    puts_uart("STATE=booting stage=bootloader abi=" MINI_IMAGE_ABI_HEX " id=" MINI_BUILD_ID "\r\n");
     while(uart_txfull_read()) {}
     __asm__ volatile("csrw mie,zero\ncsrci mstatus,8\nfence rw,rw\n.word 0x0000100f" ::: "memory");
     ((void(*)(void))h->entry)();
@@ -76,6 +77,7 @@ int main(void) {
     uint32_t id=0;unsigned available=flash_init(&id);
     puts_uart(available?"FLASH READY\r\n":"FLASH UNAVAILABLE\r\n");
     puts_uart("BOOT SELECT: b=menu, u=UART; Flash auto in 2s\r\n");
+    puts_uart("STATE=loader stage=bootloader abi=" MINI_IMAGE_ABI_HEX " id=" MINI_BUILD_ID "\r\n");
     uint8_t choice=0;
     if(!uart_byte(&choice,2000)) from_flash(available);
     for(;;) {

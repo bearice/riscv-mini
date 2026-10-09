@@ -17,7 +17,7 @@ class Features:
     mic: bool = True
     mic_stereo: bool = True
     eth: bool = True
-    eth_dma: bool = False
+    eth_dma: bool = True
     usb: bool = True
 
     @classmethod
@@ -28,7 +28,7 @@ class Features:
     def resolve(cls, profile='full', overrides=None):
         values={name: profile=='full' or name=='flash' for name in cls.names()}
         values['fpu']=False
-        values['eth_dma']=False
+        values['eth_dma']=True
         values.update({k:v for k,v in (overrides or {}).items() if v is not None})
         for child,parent in [('filesystem','sd'),('mic_stereo','mic'),('eth','flash'),('eth_dma','eth')]:
             if values[child] and not values[parent]:

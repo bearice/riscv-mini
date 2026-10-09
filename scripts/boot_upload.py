@@ -40,6 +40,11 @@ class BootSession:
                     return bytes(data)
         self.note(data)
         raise TimeoutError(f'Waiting for {marker!r}; received {bytes(data[-1000:])!r}')
+    def wait_state(self,expected,timeout=120,abi=None):
+        """Canonical state wait: fails immediately on a FAILED classification."""
+        from uart_state import wait_for
+        data,detail=wait_for(self.port,expected,timeout,abi,self.log)
+        return data,detail
     def fresh_banner(self,timeout=120):
         # A previous binary readback may still be draining from the UART FIFO.
         # Log it, but do not interpret embedded firmware strings as status.

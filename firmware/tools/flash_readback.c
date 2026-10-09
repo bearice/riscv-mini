@@ -3,6 +3,7 @@
  */
 #include <stdint.h>
 #include "probe_config.h"
+#include "../bootloader/image_abi.h"
 
 static uint32_t read_reg(uint32_t address) { return *(volatile uint32_t *)address; }
 static void write_reg(uint32_t address, uint32_t value) { *(volatile uint32_t *)address=value; }
@@ -133,7 +134,8 @@ static void dump(unsigned offset,unsigned count) {
 #endif
 }
 int main(void) {
-    text("SYSTEM READY - FLASH READBACK\r\n> ");
+    text("SYSTEM READY - FLASH READBACK\r\n");
+    text("STATE=app_ready stage=probe abi=" MINI_IMAGE_ABI_HEX " id=probe\r\n> ");
     for(;;) {
         unsigned command=get();
 #if PROBE_WRITE

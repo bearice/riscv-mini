@@ -15,7 +15,7 @@ def parser():
         ('recover','SRAM load selected gateware, enter loader and query Flash header'),
         ('repair-xip','Restore selected XIP boot region, then SRAM load and exact readback; writes Flash'),
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
-        ('update','Persist complete system, exact Flash readback, then Flash boot'),
+        ('update','Persist complete system, exact Flash readback, then Flash boot (--method programmer for a bricked board)'),
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--port',default='COM4')
@@ -27,6 +27,9 @@ def parser():
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')
         if name in ('run','update','verify'):
             op.add_argument('--image',type=Path,help='Compatible app.img override; default selected build image')
+        if name=='update':
+            op.add_argument('--method',choices=('auto','programmer'),default='auto',
+                            help='auto: DDR software SPI (needs a booting loader). programmer: full Flash write via Gowin programmer only; use when the board cannot boot')
         if name=='verify':
             op.add_argument('--suite',choices=('firmware','boot','flash','spi','cold'),default='firmware')
             op.add_argument('--soak-seconds',type=int,default=0)

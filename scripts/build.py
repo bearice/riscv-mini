@@ -123,7 +123,7 @@ def main():
     p.add_argument('--synthesize',action='store_true')
     p.add_argument('--l2-size',type=int,choices=(4096,8192),default=4096,help='Shared writeback cache bytes; >=4 KiB required for boot RAM')
     p.add_argument('--rom-size',type=int,choices=(4096,8192),default=8192,help='Boot ROM address window in bytes; linker rejects overflow')
-    p.add_argument('--boot-mode',choices=('rom','xip'),default='rom',help='Execute boot code from ROM or mapped Flash')
+    p.add_argument('--boot-mode',choices=('rom','xip'),default='xip',help='Execute boot code from ROM or mapped Flash')
     p.add_argument('--without-compressed',action='store_true',help='Reject CPU RTL with the C extension')
     p.add_argument('--place-option',type=int,choices=range(5),default=2)
     p.add_argument('--route-option',type=int,choices=range(3),default=2)
@@ -213,7 +213,7 @@ def main():
         '#define MINI_BUILD_ID MINI_BUILD_VERSION "+" MINI_BUILD_COMMIT "." MINI_BUILD_CONFIG MINI_BUILD_SUFFIX\n'
         '#define MINI_APP_ID MINI_APP_VERSION "+" MINI_BUILD_COMMIT "." MINI_BUILD_CONFIG MINI_BUILD_SUFFIX\n'
         '#define MINI_BUILD_RTL_ID "rtl" MINI_BUILD_RTL\n',encoding='utf-8')
-    abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n',encoding='utf-8')
+    abi=abi_tag(csr);(firmware/'image_abi.h').write_text(f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n#define MINI_IMAGE_ABI_HEX "{abi:08x}"\n',encoding='utf-8')
     loader=ROOT/'firmware/bootloader';drivers=ROOT/'firmware/drivers';vendor=ROOT/'firmware/vendor/fatfs';hal=ROOT/'firmware/hal'
     usb=ROOT/'firmware/vendor/tinyusb/src'
     flags=['-DMINI_CPU_DCACHE='+str(int(cpu_dcache)), '-DMINI_SD_LITE='+str(int(a.sd_profile=='lite')), '-march='+isa,'-mabi=ilp32','-Os','-Wall','-Wextra','-Werror','-ffreestanding',

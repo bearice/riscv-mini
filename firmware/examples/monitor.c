@@ -1,6 +1,7 @@
 /* Optional UART monitor example; the default DDR firmware is bios/main.c. */
 #include <hal/hal.h>
 #include <generated/soc.h>
+#include "../../bootloader/image_abi.h"
 #include <string.h>
 #include "../diagnostics/tests.h"
 static int parse_hex(const char *p,unsigned digits,unsigned *value) {
@@ -60,6 +61,7 @@ int main(void) {
     hal_uart_puts("\r\nriscv-mini | RV32IM | DDR application at 40800000\r\n");
     hal_uart_puts("SYSTEM READY sd=");hal_uart_hex(sd_ready);hal_uart_puts(" spi_lcd=");hal_uart_hex(spi_lcd_ready);
     hal_uart_puts(" rgb_lcd=");hal_uart_hex(rgb_ready);hal_uart_puts("\r\n");
+    hal_uart_puts("STATE=app_ready stage=monitor abi=" MINI_IMAGE_ABI_HEX " id=" MINI_APP_ID "\r\n");
     hal_eth_info_t identity;hal_eth_get_info(&identity);
     if(spi_lcd_ready && identity.uid_length)hal_spi_lcd_network(identity.mac,0);
     unsigned last_link=0;

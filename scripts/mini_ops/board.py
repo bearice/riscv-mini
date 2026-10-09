@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from boot_upload import BootSession, programmer_succeeded
+from uart_state import State
 from boot_image import CHUNK, packet
 from build_records import ROOT, write_json
 from mini_ops.artifacts import Build, sha256
@@ -75,6 +76,9 @@ class Board:
         if raw:
             starts = re.findall(r'SPI start of address:\s*(0x[0-9a-fA-F]+)',output)
             ends = re.findall(r'SPI end of address:\s*(0x[0-9a-fA-F]+)',output)
+            # The programmer rejects a stream whose padded size exceeds the
+            # Flash; that failure prints no address extent, so treat a missing
+            # extent as invalid rather than silently skipping the check.
             extent_valid = (len(starts)==len(ends)==1 and int(starts[0],16)==offset
                             and offset <= int(ends[0],16) < offset+Path(path).stat().st_size)
             if not extent_valid:
@@ -98,12 +102,47 @@ class Board:
         self.op.record('loader', output=startup.decode(errors='replace'))
         return startup
 
+    def enter_loader(self, session):
+        """Get the bootloader menu from any board state. A board already at
+        the menu or in the application is asked to reboot ('!'); a silent or
+        failed board escalates through the recovery ladder (query, reset,
+        SRAM reload) until the menu answers. Replaces the old fresh-banner
+        requirement, which failed whenever the boot banner had already
+        drained from the UART FIFO."""
+        from uart_state import BoardFSM
+        fsm=BoardFSM(session.port,self.op.path/'uart.log',
+                     self.build.validation['boot_image']['abi_tag'])
+        fsm.observe()
+        if fsm.state is State.APP_READY:
+            session.port.write(b'!');session.port.flush()
+            fsm.observe(timeout=8.0)
+            if fsm.state is not State.LOADER:
+                # The running application did not hand the console back; the
+                # only reliable boundary is reloading the complete design.
+                fsm.state=State.UNKNOWN
+        if fsm.state is State.BOOTING:
+            try:
+                session.until(b'BOOT SELECT:',10);session.port.write(b'b');session.port.flush()
+                session.until(b'BL> ',10)
+                fsm.state=State.LOADER
+            except (TimeoutError,RuntimeError):
+                fsm.state=State.UNKNOWN
+        if fsm.state is not State.LOADER:
+            fsm.recover(program=lambda:self.program('recover-sram',2,self.build.fs),
+                        allowed=(State.LOADER,))
+        self.op.record('board_state',state=fsm.state.value,detail=fsm.detail,ladder=fsm.history)
+        if fsm.state is not State.LOADER:
+            raise RuntimeError(f'cannot reach loader menu (state {fsm.state.value}); ladder: '+
+                               repr(fsm.history))
+        self.op.record('loader',output=fsm.data.decode(errors='replace'))
+        return fsm.data
+
     def run(self):
         with self.connect() as port, (self.op.path/'uart.log').open('wb') as log:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session = BootSession(port,log)
-            self.menu(session)
+            self.enter_loader(session)
             startup = session.upload(self.build.image)
             self.op.record('uart_run',output=startup.decode(errors='replace'))
 
@@ -112,7 +151,7 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session = BootSession(port,log)
-            self.menu(session)
+            self.enter_loader(session)
             info = session.command('i')
             self.op.record('flash_header',output=info.decode(errors='replace'),
                            checks_payload=False)
@@ -186,7 +225,7 @@ class Board:
         # reset after a DDR utility is not a reliable SPI/DDR recovery boundary.
         session.port.reset_input_buffer()
         self.program('restore-sram',2,self.build.fs)
-        self.menu(session)
+        self.enter_loader(session)
 
     def quiesce_xip(self, session, probe_image):
         startup=session.upload(probe_image)
@@ -231,7 +270,7 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session=BootSession(port,log)
-            self.menu(session)
+            self.enter_loader(session)
             try:
                 self.quiesce_xip(session,probe_image)
             finally:
@@ -252,10 +291,67 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session = BootSession(port,log)
-            self.menu(session)
+            self.enter_loader(session)
             self.checked_readback(session,probe_image)
             self.restore_loader(session)
             self.flash_boot(session)
+
+    def update_flash(self, plan):
+        """Full Flash write through the Gowin programmer only; needs no running
+        loader, so it works when the board cannot boot and software SPI is
+        unavailable. The FPGA configuration must be programmed before the Flash
+        regions it addresses, so the XIP boot code is never fetched by a design
+        that does not provide the XIP window.
+
+        The programmer's raw Flash operation (index 32) sizes its stream from
+        the file itself, so each region is staged as a file padded to the
+        region's end; the extent check in program() still proves the written
+        range starts at the requested offset."""
+        staged=[]
+        fs=self.op.path/'configuration.fs'
+        fs.write_bytes(self.build.fs.read_bytes())
+        if sha256(fs)!=self.build.validation['bitstream_sha256']:
+            raise ValueError('Configuration changed during preflight')
+        for write in plan['writes']:
+            source=Path(write['path'])
+            if sha256(source)!=write['sha256']:
+                raise ValueError('Artifact changed during preflight: '+write['name'])
+            data=source.read_bytes()
+            staged_path=self.op.path/(write['name']+'.bin')
+            staged_path.write_bytes(data)
+            staged.append((write,staged_path))
+        self.program('configuration',8,fs,0)
+        for write,path in staged:
+            self.program('flash-'+write['name'],32,path,write['offset'],True)
+        self.program('reload',1)
+        with self.connect() as port,(self.op.path/'uart.log').open('wb') as log:
+            session=BootSession(port,log)
+            # Canonical state wait: the loader auto-boot takes 2 s, so wait for
+            # the application to reach APP_READY; a FAILED classification
+            # (any ERR line) raises immediately instead of burning the timeout.
+            startup,detail=session.wait_state(State.APP_READY,180,
+                                              self.build.validation['boot_image']['abi_tag'])
+            if b'BOOT FLASH' not in startup:
+                raise RuntimeError('Programmer-written Flash boot did not boot from Flash: '+startup[-400:].decode(errors='replace'))
+            self.op.record('flash_boot',output=startup.decode(errors='replace'),state=detail)
+
+    def ensure_state(self,session,allowed=(State.LOADER,State.APP_READY)):
+        """Drive the board to a known state before any operation that needs a
+        live console. UNKNOWN/FAILED escalate: query, CPU reset, SRAM reload.
+        Returns the FSM; raise with the walked ladder when it is exhausted."""
+        from uart_state import BoardFSM
+        fsm=BoardFSM(session.port,self.op.path/'uart.log',
+                     self.build.validation['boot_image']['abi_tag'])
+        fsm.observe()
+        if not fsm.known(allowed):
+            fsm.recover(program=lambda:self.program('recover-sram',2,self.build.fs),
+                        allowed=allowed)
+        self.op.record('board_state',state=fsm.state.value,
+                       detail=fsm.detail,ladder=fsm.history)
+        if not fsm.known(allowed):
+            raise RuntimeError(f'board state {fsm.state.value}; recovery ladder exhausted: '+
+                               repr(fsm.history))
+        return fsm
 
     def update(self, plan, probe_image):
         # Stage raw inputs with absolute .bin paths: do not give Gowin relative
@@ -279,14 +375,14 @@ class Board:
             if staged_writes:
                 port.reset_input_buffer()
                 self.program('quiesce-sram',2,fs)
-                self.menu(session)
+                self.enter_loader(session)
                 self.quiesce_xip(session,probe_image)
             for write,staged in staged_writes:
                 self.write_spi(session,write,staged)
             port.reset_input_buffer()
             self.program('configuration',8,fs,0)
             self.program('reload',1)
-            self.menu(session)
+            self.enter_loader(session)
             if self.build.mode == 'rom':
                 installed = session.upload(self.build.image,install=True)
                 self.op.record('uart_install',output=installed.decode(errors='replace'))
@@ -343,6 +439,9 @@ def perform(args):
                 args.operation=='verify' and args.suite in ('flash','spi')) else None
             if plan:
                 operation.report['plan']=plan
+            if getattr(args,'method','auto')=='programmer':
+                operation.report['method']='gowin-programmer'
+                operation.report['verification']='programmer SPI verify per region, then Flash boot; no DDR software SPI, no independent readback'
             if args.dry_run:
                 if plan:
                     _,csr_path=build.csr()
@@ -354,16 +453,19 @@ def perform(args):
                 return operation
             board = Board(build,operation,args.port,args.location)
             probe = None
-            if plan:
+            if plan and not (args.operation=='update' and getattr(args,'method','auto')=='programmer'):
                 probe,csr_path=compile_probe(build,operation.path/'probe',board.tools,
-                                            writable=args.operation=='update')
+                                             writable=args.operation=='update')
                 operation.record('probe_compiled',csr_metadata=csr_path)
             if args.operation=='run':
                 board.run()
             elif args.operation=='recover':
                 board.recover()
             elif args.operation=='update':
-                board.update(plan,probe)
+                if getattr(args,'method','auto')=='programmer':
+                    board.update_flash(plan)
+                else:
+                    board.update(plan,probe)
             elif args.operation=='repair-xip':
                 board.repair_xip(plan,probe)
             elif args.suite=='flash':

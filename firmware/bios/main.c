@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "../diagnostics/tests.h"
+#include "image_abi.h"
 #include <string.h>
 static void network_display(void) {
     uint8_t mac[6];if(hal_eth_get_mac(mac)==HAL_OK)hal_spi_lcd_network(mac,bios_settings.ip);
@@ -196,6 +197,7 @@ int main(void) {
     unsigned sd_ok=hal_sd_mount()==HAL_OK;hal_spi_lcd_show(sd_ok);
     network_display();
     bios_post();bios_puts("SYSTEM READY - BIOS\r\n");
+    bios_puts("STATE=app_ready stage=bios abi=" MINI_IMAGE_ABI_HEX " id=" MINI_APP_ID "\r\n");
     if(bios_settings.boot) {
         bios_puts("Press any key to enter setup\r\n");unsigned end=hal_time_ms()+bios_settings.delay_ms,skip=0;
         while(!hal_deadline_reached(hal_time_ms(),end)) {bios_poll();if(bios_getc()>=0) {skip=1;break;}}
