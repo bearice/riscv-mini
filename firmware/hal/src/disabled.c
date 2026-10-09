@@ -158,3 +158,10 @@ hal_result_t hal_audio_ring_begin(uint32_t *ring,unsigned capacity_frames) {(voi
 #if !MINI_FEATURE_AUDIO
 hal_result_t hal_audio_ring_write(const uint32_t *pcm,unsigned frames,unsigned *written) {(void)pcm;(void)frames;(void)written;if(written)*written=0;return HAL_UNSUPPORTED;}
 #endif
+
+#if !MINI_FEATURE_ETH
+hal_result_t hal_eth_rx_acquire(const void **frame,unsigned *length) {(void)frame;(void)length;return HAL_UNSUPPORTED;}
+hal_result_t hal_eth_rx_release(const void *frame) {(void)frame;return HAL_UNSUPPORTED;}
+hal_result_t hal_eth_tx_acquire(void **frame,unsigned *capacity) {(void)frame;(void)capacity;return HAL_UNSUPPORTED;}
+hal_result_t hal_eth_tx_commit(const void *frame,unsigned length) {(void)frame;(void)length;return HAL_UNSUPPORTED;}
+#endif

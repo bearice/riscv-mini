@@ -1,38 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0+
-/*
- * LiteEth EtherMAC (LiteX) + RMII PHY driver for the riscv-mini TangPrimer 20K
- * SoC. This is the same core the BIOS HAL drives (firmware/hal/src/ethernet.c):
- * a LiteEth MAC with two RX and two TX packet slots in a private SRAM window,
- * plus a bit-banged clause-22 MDIO to an RTL8201F PHY. The IP is a modified
- * LiteEth, so no mainline U-Boot driver matches it; this mirrors the HAL.
- *
- * Register map (byte offsets, native-endian 32-bit accesses), relative to the
- * ethmac CSR base (reg index 0):
- *   writer: slot 0x00 length 0x04 errors 0x08 ev_status 0x0c ev_pending 0x10
- *           ev_enable 0x14
- *   reader: start 0x18 ready 0x1c level 0x20 slot 0x24 length 0x28
- *           ev_status 0x2c ev_pending 0x30 ev_enable 0x34
- * PHY MDIO block (reg index 1): crg_reset 0x00 mdio_w 0x04 mdio_r 0x08
- *   mdio_w bits: 0 MDC, 1 OE, 2 W ; mdio_r bit 0 = R
- * Packet slots (reg index 2 = RX, reg index 3 = TX): 2 slots x 0x800 bytes,
- *   frame bytes packed little-endian into 32-bit words.
- *
- * The RX event-pending bit releases the slot; like the LiteUART RX path it must
- * be written back as 1 (write-to-clear) after the frame is copied, otherwise the
- * slot is never handed back.
+/* riscv-mini LiteEth + RTL8201F. DMA builds exclusively own packet queues
+ * through native DDR descriptor rings; PIO is a separate compile-time backend.
+ * Ring register offsets are supplied by the selected SoC's device tree.
  */
 #include <dm.h>
 #include <dm/device_compat.h>
 #include <log.h>
 #include <mapmem.h>
 #include <net.h>
+#include <string.h>
 #include <asm/io.h>
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/ioport.h>
 #include <linux/types.h>
 
-/* ethmac CSR offsets */
+#ifndef CONFIG_RISCV_MINI_ETH_RING_DMA
+/* PIO ethmac CSR offsets */
 #define WR_SLOT		0x00
 #define WR_LEN		0x04
 #define WR_ERR		0x08
@@ -44,6 +28,8 @@
 #define RD_LEN		0x28
 #define RD_EV_PENDING	0x30
 #define RD_EV_ENABLE	0x34
+
+#endif
 
 /* PHY MDIO CSR offsets */
 #define PHY_CRG_RESET	0x00
@@ -63,17 +49,96 @@
 #define PHY_ID2_MASK	0xfff0
 #define PHY_ID2_VAL	0xc810
 
-struct liteeth_priv {
-	void __iomem *mac;	/* ethmac CSR base */
-	void __iomem *phy;	/* ethphy MDIO CSR base */
-	void __iomem *rx_base;	/* RX packet slots */
-	void __iomem *tx_base;	/* TX packet slots */
-	int phy_addr;
-	int tx_slot;
-	int holding;		/* a received frame is buffered, not yet freed */
-	int rx_len;
-	uchar rx_buf[ETH_MAX_FRAME];
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+#define RING_COUNT 4
+#define RING_BUFFER_SIZE 1536
+#define RING_OWN BIT(31)
+#define RING_DONE BIT(30)
+#define RING_ERROR BIT(29)
+enum {
+	DMA_CONTROL, DMA_RX_BASE, DMA_TX_BASE, DMA_MASK, DMA_RX_CONSUMER,
+	DMA_TX_PRODUCER, DMA_RX_PRODUCER, DMA_TX_CONSUMER, DMA_BUSY,
+	DMA_ERROR, DMA_RX_PACKETS, DMA_TX_PACKETS, DMA_EV_PENDING,
+	DMA_EV_ENABLE, DMA_REG_COUNT
 };
+struct liteeth_descriptor { u32 buffer, capacity, status, cookie; };
+#endif
+
+struct liteeth_priv {
+	void __iomem *phy;
+	int phy_addr;
+	int holding;
+	int rx_len;
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	void __iomem *dma;
+	u32 offsets[DMA_REG_COUNT];
+	u16 rx_consumer, tx_producer;
+	volatile struct liteeth_descriptor rx_ring[RING_COUNT] __aligned(16);
+	volatile struct liteeth_descriptor tx_ring[RING_COUNT] __aligned(16);
+	u8 rx_pool[RING_COUNT][RING_BUFFER_SIZE] __aligned(16);
+	u8 tx_pool[RING_COUNT][RING_BUFFER_SIZE] __aligned(16);
+#else
+	void __iomem *mac, *rx_base, *tx_base;
+	int tx_slot;
+	uchar rx_buf[ETH_MAX_FRAME];
+#endif
+};
+
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+static u32 ring_read(struct liteeth_priv *p, unsigned reg)
+{
+	return in_le32(p->dma + p->offsets[reg]);
+}
+static void ring_write(struct liteeth_priv *p, unsigned reg, u32 value)
+{
+	out_le32(p->dma + p->offsets[reg], value);
+}
+static void ring_invalidate(void)
+{
+	/* Coherent shared L2; invalidate the VexRiscv private L1 before reads. */
+	asm volatile("fence rw,rw\n.word 0x0000500f" ::: "memory");
+}
+static int ring_stop(struct liteeth_priv *p)
+{
+	ring_write(p, DMA_CONTROL, 0);
+	ring_write(p, DMA_EV_ENABLE, 0);
+	for (int i = 0; i < 10000; i++) {
+		if (!ring_read(p, DMA_BUSY)) {
+			p->holding = 0;
+			return 0;
+		}
+		udelay(10);
+	}
+	return -ETIMEDOUT;
+}
+static void ring_init(struct liteeth_priv *p)
+{
+	p->rx_consumer = p->tx_producer = 0;
+	p->holding = 0;
+	for (int i = 0; i < RING_COUNT; i++) {
+		p->rx_ring[i] = (struct liteeth_descriptor){
+			(uintptr_t)p->rx_pool[i], RING_BUFFER_SIZE, RING_OWN, i};
+		p->tx_ring[i] = (struct liteeth_descriptor){
+			(uintptr_t)p->tx_pool[i], 0, 0, i};
+	}
+	wmb();
+	ring_write(p, DMA_RX_BASE, (uintptr_t)p->rx_ring);
+	ring_write(p, DMA_TX_BASE, (uintptr_t)p->tx_ring);
+	ring_write(p, DMA_MASK, RING_COUNT - 1);
+	ring_write(p, DMA_RX_CONSUMER, 0);
+	ring_write(p, DMA_TX_PRODUCER, 0);
+	ring_write(p, DMA_EV_PENDING, 3);
+	ring_write(p, DMA_EV_ENABLE, 0); /* U-Boot polls; no interrupt handler. */
+	ring_write(p, DMA_CONTROL, 1);
+}
+static void ring_release(struct liteeth_priv *p)
+{
+	p->rx_ring[p->rx_consumer & (RING_COUNT - 1)].status = RING_OWN;
+	wmb();
+	ring_write(p, DMA_RX_CONSUMER, ++p->rx_consumer);
+	p->holding = 0;
+}
+#endif
 
 /* ---- bit-banged clause-22 MDIO (mirrors the BIOS HAL) ---- */
 static void mdio_half_cycle(void)
@@ -227,6 +292,11 @@ static int liteeth_start(struct udevice *dev)
 	struct liteeth_priv *priv = dev_get_priv(dev);
 	int ret;
 
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	ret = ring_stop(priv);
+	if (ret)
+		return ret;
+#endif
 	ret = liteeth_phy_init(priv);
 	if (ret)
 		return ret;
@@ -242,6 +312,9 @@ static int liteeth_start(struct udevice *dev)
 		return -ENOLINK;
 	}
 
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	ring_init(priv);
+#else
 	/* Arm the RX slot-released event and the TX-complete event. */
 	out_le32(priv->mac + WR_EV_PENDING, 1);
 	out_le32(priv->mac + WR_EV_ENABLE, 1);
@@ -249,6 +322,7 @@ static int liteeth_start(struct udevice *dev)
 	out_le32(priv->mac + RD_EV_ENABLE, 1);
 	priv->tx_slot = 0;
 	priv->holding = 0;
+#endif
 	return 0;
 }
 
@@ -256,10 +330,79 @@ static void liteeth_stop(struct udevice *dev)
 {
 	struct liteeth_priv *priv = dev_get_priv(dev);
 
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	if (ring_stop(priv)) {
+		dev_err(dev, "DMA stop timed out\n");
+		return;
+	}
+	out_le32(priv->phy + PHY_CRG_RESET, 1);
+#else
 	out_le32(priv->mac + WR_EV_ENABLE, 0);
 	out_le32(priv->mac + RD_EV_ENABLE, 0);
+#endif
 }
 
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+static int liteeth_send(struct udevice *dev, void *packet, int length)
+{
+	struct liteeth_priv *p = dev_get_priv(dev);
+	u16 target;
+	unsigned slot;
+
+	if (length < 14 || length > ETH_MAX_FRAME)
+		return -EINVAL;
+	if ((u16)(p->tx_producer - (u16)ring_read(p, DMA_TX_CONSUMER)) >= RING_COUNT)
+		return -EBUSY;
+	slot = p->tx_producer & (RING_COUNT - 1);
+	memcpy(p->tx_pool[slot], packet, length);
+	p->tx_ring[slot].capacity = length;
+	p->tx_ring[slot].status = RING_OWN;
+	wmb();
+	target = ++p->tx_producer;
+	ring_write(p, DMA_TX_PRODUCER, target);
+	for (int i = 0; i < 10000; i++) {
+		if ((u16)ring_read(p, DMA_TX_CONSUMER) == target) {
+			ring_invalidate();
+			return (p->tx_ring[slot].status & RING_ERROR) ? -EIO : 0;
+		}
+		udelay(10);
+	}
+	return -ETIMEDOUT;
+}
+static int liteeth_recv(struct udevice *dev, int flags, uchar **packetp)
+{
+	struct liteeth_priv *p = dev_get_priv(dev);
+	u32 status;
+	unsigned slot, length;
+
+	if (p->holding || (u16)ring_read(p, DMA_RX_PRODUCER) == p->rx_consumer)
+		return -EAGAIN;
+	ring_invalidate();
+	slot = p->rx_consumer & (RING_COUNT - 1);
+	status = p->rx_ring[slot].status;
+	if ((status & RING_OWN) || !(status & RING_DONE))
+		return -EIO;
+	length = status & 0xfff;
+	if ((status & RING_ERROR) || length < 14 || length > ETH_MAX_FRAME) {
+		ring_release(p);
+		return -EAGAIN;
+	}
+	p->holding = 1;
+	p->rx_len = length;
+	*packetp = p->rx_pool[slot];
+	return length;
+}
+static int liteeth_free_pkt(struct udevice *dev, uchar *packet, int length)
+{
+	struct liteeth_priv *p = dev_get_priv(dev);
+
+	if (!p->holding || packet != p->rx_pool[p->rx_consumer & (RING_COUNT - 1)] ||
+	    length != p->rx_len)
+		return -EINVAL;
+	ring_release(p);
+	return 0;
+}
+#else
 static int liteeth_send(struct udevice *dev, void *packet, int length)
 {
 	struct liteeth_priv *priv = dev_get_priv(dev);
@@ -349,6 +492,8 @@ static int liteeth_free_pkt(struct udevice *dev, uchar *packet, int length)
 	return 0;
 }
 
+#endif
+
 static const struct eth_ops liteeth_ops = {
 	.start		= liteeth_start,
 	.send		= liteeth_send,
@@ -361,10 +506,21 @@ static int liteeth_of_to_plat(struct udevice *dev)
 {
 	struct liteeth_priv *priv = dev_get_priv(dev);
 	struct resource res;
-	int i;
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	if (dev_read_resource(dev, 0, &res))
+		return -EINVAL;
+	priv->dma = map_sysmem(res.start, 0);
+	if (dev_read_u32_array(dev, "riscv-mini,csr-offsets", priv->offsets, DMA_REG_COUNT))
+		return -EINVAL;
+	for (unsigned i = 0; i < DMA_REG_COUNT; i++)
+		if ((priv->offsets[i] & 3) || priv->offsets[i] + 4 > resource_size(&res))
+			return -EINVAL;
+	if (dev_read_resource(dev, 1, &res))
+		return -EINVAL;
+	priv->phy = map_sysmem(res.start, 0);
+#else
 	void __iomem *maps[4];
-
-	for (i = 0; i < 4; i++) {
+	for (int i = 0; i < 4; i++) {
 		if (dev_read_resource(dev, i, &res))
 			return -EINVAL;
 		maps[i] = map_sysmem(res.start, 0);
@@ -373,13 +529,32 @@ static int liteeth_of_to_plat(struct udevice *dev)
 	priv->phy = maps[1];
 	priv->rx_base = maps[2];
 	priv->tx_base = maps[3];
+#endif
 	return 0;
 }
 
 static const struct udevice_id liteeth_ids[] = {
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	{ .compatible = "riscv-mini,liteeth-ring" },
+#else
 	{ .compatible = "riscv-mini,liteeth" },
+#endif
 	{ }
 };
+
+static int liteeth_remove(struct udevice *dev)
+{
+#ifdef CONFIG_RISCV_MINI_ETH_RING_DMA
+	struct liteeth_priv *p = dev_get_priv(dev);
+	int ret = ring_stop(p);
+	if (ret)
+		return ret;
+	out_le32(p->phy + PHY_CRG_RESET, 1);
+#else
+	liteeth_stop(dev);
+#endif
+	return 0;
+}
 
 U_BOOT_DRIVER(liteeth) = {
 	.name		= "liteeth",
@@ -387,6 +562,8 @@ U_BOOT_DRIVER(liteeth) = {
 	.of_match	= liteeth_ids,
 	.of_to_plat	= liteeth_of_to_plat,
 	.ops		= &liteeth_ops,
+	.remove		= liteeth_remove,
+	.flags		= DM_FLAG_ALLOC_PRIV_DMA | DM_FLAG_OS_PREPARE,
 	.priv_auto	= sizeof(struct liteeth_priv),
 	.plat_auto	= sizeof(struct eth_pdata),
 };

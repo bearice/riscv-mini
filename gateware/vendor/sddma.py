@@ -13,7 +13,7 @@ from litex.soc.interconnect import stream
 
 from gateware.sd_dma import SDReader, SDWriter
 from gateware.native_dma import NativeSDTransfer
-from litedram.common import LiteDRAMNativePort
+from gateware.memory import MemoryPort
 from litex.soc.cores.dma import WishboneDMAReader, WishboneDMAWriter
 
 # SD Block2Mem DMA ---------------------------------------------------------------------------------
@@ -32,9 +32,9 @@ class SDBlock2MemDMA(LiteXModule):
 
         # Submodules
         fifo      = stream.SyncFIFO([("data", 8)], fifo_depth, buffered=True)
-        converter = stream.Converter(8, 32 if isinstance(bus,LiteDRAMNativePort) else bus.data_width, reverse=True)
+        converter = stream.Converter(8, 32 if isinstance(bus,MemoryPort) else bus.data_width, reverse=True)
         self.submodules += fifo, converter
-        self.dma = NativeSDTransfer(bus,True,endianness) if isinstance(bus,LiteDRAMNativePort) else (SDWriter if bounded else WishboneDMAWriter)(bus, with_csr=True, endianness=endianness)
+        self.dma = NativeSDTransfer(bus,True,endianness) if isinstance(bus,MemoryPort) else (SDWriter if bounded else WishboneDMAWriter)(bus, with_csr=True, endianness=endianness)
 
         # Flow
         start   = Signal()
@@ -77,8 +77,8 @@ class SDMem2BlockDMA(LiteXModule):
         # # #
 
         # Submodules
-        self.dma = NativeSDTransfer(bus,False,endianness) if isinstance(bus,LiteDRAMNativePort) else (SDReader if bounded else WishboneDMAReader)(bus, with_csr=True, endianness=endianness)
-        converter = stream.Converter(32 if isinstance(bus,LiteDRAMNativePort) else bus.data_width, 8, reverse=True)
+        self.dma = NativeSDTransfer(bus,False,endianness) if isinstance(bus,MemoryPort) else (SDReader if bounded else WishboneDMAReader)(bus, with_csr=True, endianness=endianness)
+        converter = stream.Converter(32 if isinstance(bus,MemoryPort) else bus.data_width, 8, reverse=True)
         fifo      = stream.SyncFIFO([("data", 8)], fifo_depth, buffered=True)
         self.submodules += converter, fifo
 

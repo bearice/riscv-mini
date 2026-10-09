@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Minimal build-time fallback DTB for the riscv-mini board
- * (TangPrimer 20K, VexRiscv RV32IMAF(C), S-mode under OpenSBI FW_PAYLOAD).
+ * (TangPrimer 20K, VexRiscv RV32IMA, S-mode under OpenSBI FW_PAYLOAD).
  *
  * CONFIG_OF_BOARD=y: at runtime U-Boot uses the DTB handed over by OpenSBI
  * (gd->arch.firmware_fdt_addr, 0x01080000). This file only satisfies the
@@ -25,9 +25,9 @@
 			device_type = "cpu";
 			compatible = "riscv";
 			reg = <0>;
-			riscv,isa = "rv32imafc";
+			riscv,isa = "rv32ima";
 			riscv,isa-base = "rv32i";
-			riscv,isa-extensions = "i", "m", "a", "f", "c";
+			riscv,isa-extensions = "i", "m", "a";
 			mmu-type = "riscv,none";
 			i-cache-size = <16384>;
 			d-cache-size = <16384>;

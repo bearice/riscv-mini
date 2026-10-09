@@ -21,7 +21,11 @@ static uint32_t ring[RING_FRAMES],pcm[256];
 static unsigned streaming,producer,audible_until;
 #endif
 #if MINI_FEATURE_ETH
+#ifdef CONFIG_ETH_RING_DMA
+static uint8_t *packet;
+#else
 static _Alignas(16) uint8_t packet[HAL_ETH_MAX_FRAME];
+#endif
 static unsigned network,pending_reply,network_replies,network_ignored;
 #endif
 #if MINI_FEATURE_VIDEO
@@ -106,11 +110,26 @@ void tests_poll(void) {
         if(pending_reply) {
             hal_result_t sent=hal_eth_send(packet,pending_reply);
             if(sent==HAL_BUSY || sent==HAL_NO_MEDIA)break;
+#ifdef CONFIG_ETH_RING_DMA
+            hal_eth_rx_release(packet);packet=0;
+#endif
             pending_reply=0;if(sent!=HAL_OK)++network_ignored;
         }
-        unsigned size;if(hal_eth_receive(packet,sizeof(packet),&size)!=HAL_OK)break;
+        unsigned size;
+#ifdef CONFIG_ETH_RING_DMA
+        const void *borrowed;
+        if(hal_eth_rx_acquire(&borrowed,&size)!=HAL_OK)break;
+        packet=(uint8_t *)borrowed;
+#else
+        if(hal_eth_receive(packet,sizeof(packet),&size)!=HAL_OK)break;
+#endif
         pending_reply=packet_reply(packet,size);
-        if(pending_reply)++network_replies;else ++network_ignored;
+        if(pending_reply)++network_replies;else {
+            ++network_ignored;
+#ifdef CONFIG_ETH_RING_DMA
+            hal_eth_rx_release(packet);packet=0;
+#endif
+        }
     }
 #endif
 #if MINI_FEATURE_AUDIO
@@ -549,6 +568,9 @@ static unsigned eth_check(void) {
 #if MINI_FEATURE_ETH
 static unsigned eth_start(void) {
     if(!eth_check() || hal_eth_get_mac(echo_mac)!=HAL_OK)return 0;
+#ifdef CONFIG_ETH_RING_DMA
+    if(packet) {hal_eth_rx_release(packet);packet=0;}
+#endif
     network=1;pending_reply=network_replies=network_ignored=0;
     hal_spi_lcd_network(echo_mac,echo_ip);
     hal_uart_puts("ETH echo active IP=169.254.20.20 UDP=1234; host ARP/ping/UDP required\r\n");return 1;
@@ -567,6 +589,9 @@ void hal_exception_handler(hal_trap_frame_t *f) {
 static unsigned phys_check(void) {
 #if MINI_FEATURE_ETH
     pending_reply=0;
+#ifdef CONFIG_ETH_RING_DMA
+    if(packet) {hal_eth_rx_release(packet);packet=0;}
+#endif
 #endif
     unsigned ok=hal_phys_reset(10)==HAL_OK;
 #if MINI_FEATURE_USB
@@ -637,14 +662,9 @@ static unsigned dma_check(void) {
 #if MINI_FEATURE_AUDIO
     if(ok)ok=audio_check();
 #endif
-#ifdef CSR_ETH_DMA_CONTROL_ADDR
-    /* Invalid alignment must fail without acquiring SRAM or DDR ownership. */
-    eth_dma_control_write(0);eth_dma_memory_write(0x00000001);
-    eth_dma_slot_write(0xf1001000);eth_dma_length_write(64);eth_dma_control_write(1);
-    uint32_t started=hal_time_ms();
-    while(!eth_dma_done_read())if((uint32_t)(hal_time_ms()-started)>100) {ok=0;break;}
-    ok=ok && eth_dma_error_read() && !eth_dma_busy_read();eth_dma_control_write(0);
-    hal_uart_puts("DMA network payload requires external echo; test eth reports completed RX/TX copies\r\n");
+#ifdef CONFIG_ETH_RING_DMA
+    ok=ok && !eth_dma_error_read();
+    hal_uart_puts("DMA autonomous rings enabled; external echo validates RX/TX completions\r\n");
 #endif
     return ok;
 #else
@@ -882,7 +902,23 @@ int tests_command(const char *command) {
     else if(!strcmp(name,"eth start"))ok=eth_start();
 #endif
 #if MINI_FEATURE_ETH
-    else if(!strcmp(name,"eth stop")) {network=pending_reply=0;hal_eth_info_t e;hal_eth_get_info(&e);hal_spi_lcd_network(e.mac,0);ok=1;}
+#ifdef CONFIG_ETH_RING_DMA
+    else if(!strcmp(name,"eth ring hold")) {
+        unsigned producer=eth_dma_rx_producer_read(),consumer=eth_dma_rx_consumer_read();
+        value("RING HOLD READY producer=",producer);value(" consumer=",consumer);hal_uart_puts("\r\n");
+        uint32_t until=hal_time_ms()+1000;
+        /* Deliberately no cooperate/tests_poll: hardware receives independently. */
+        while(!hal_deadline_reached(hal_time_ms(),until))__asm__ volatile("nop");
+        unsigned completed=eth_dma_rx_producer_read();
+        value("RING HOLD completed=",completed);value(" consumer=",eth_dma_rx_consumer_read());hal_uart_puts("\r\n");
+        ok=(uint16_t)(completed-producer)==4 && eth_dma_rx_consumer_read()==consumer && !eth_dma_error_read();
+    }
+#endif
+    else if(!strcmp(name,"eth stop")) {
+#ifdef CONFIG_ETH_RING_DMA
+        if(packet) {hal_eth_rx_release(packet);packet=0;}
+#endif
+        network=pending_reply=0;hal_eth_info_t e;hal_eth_get_info(&e);hal_spi_lcd_network(e.mac,0);ok=1;}
 #endif
 #if MINI_FEATURE_USB
     else if(!strcmp(name,"usb tree")) {

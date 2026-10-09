@@ -6,7 +6,7 @@ resident BIOS, serve the payload over TFTP in-process, `boot net`, then type
 commands at the U-Boot prompt. Prefer extending this over writing one-off
 build/*.py scripts. --tftp-stats prints per-block DATA->ACK latency from the
 shared PayloadServer so transfer timing needs no bespoke server."""
-import argparse,concurrent.futures,json,re,sys,time
+import argparse,concurrent.futures,json,re,sys,time,zlib,hashlib
 from pathlib import Path
 import serial
 from bios_tftp import PayloadServer
@@ -60,6 +60,36 @@ def verify_video(command, csr, boot_output):
     if not any(pixels):raise AssertionError('Console did not draw framebuffer pixels')
     print('UBOOT VIDEO PASS '+json.dumps({'before':before,'after':after,'nonzero_words':sum(bool(p) for p in pixels)}),flush=True)
 
+def verify_network(command, host_ip):
+    payload = bytes(range(256))*1024 + b'\xa5'
+    address = 0x02000000
+    command('setenv ipaddr 169.254.20.20')
+    command('setenv serverip ' + host_ip)
+    command('setenv netmask 255.255.0.0')
+    if ('host ' + host_ip + ' is alive').encode() not in command('ping ' + host_ip):
+        raise AssertionError('U-Boot ping failed')
+    transfers = []
+    for blocksize in (512, 1428):
+        command('setenv tftpblocksize ' + str(blocksize))
+        server = PayloadServer(host_ip, payload, 'RINGTEST.BIN')
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(server.serve_once)
+                reply = command('tftpboot %x RINGTEST.BIN' % address)
+                if not future.result(timeout=5) or ('Bytes transferred = %d' % len(payload)).encode() not in reply:
+                    raise AssertionError('U-Boot TFTP length/transfer failed')
+            checksum = command('crc32 %x %x' % (address, len(payload)))
+            expected = '%08x' % zlib.crc32(payload)
+            if ('==> ' + expected).encode() not in checksum.lower():
+                raise AssertionError('U-Boot TFTP data CRC mismatch')
+            transfers.append(dict(bytes=len(payload), blocksize=blocksize,
+                crc32=expected, stats=server.stats))
+        finally:
+            server.close()
+    result = dict(passed=True, ping=True, transfers=transfers)
+    print('UBOOT NETWORK PASS ' + json.dumps(result), flush=True)
+    return result
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     p=argparse.ArgumentParser(description=__doc__)
@@ -75,6 +105,7 @@ def main():
     p.add_argument('--soc-dir',type=Path,default=Path('build/runs/v0.7.1-ce277e099275-full-rv32imafc-rom4k-l24k-final-build'))
     p.add_argument('--location',default='107569')
     p.add_argument('--tftp-stats',action='store_true',help='Print per-block DATA->ACK latency after the transfer')
+    p.add_argument('--network-check', action='store_true', help='Verify ping and two TFTP transfers with CRC after entering U-Boot')
     p.add_argument('--video',action='store_true',help='Check LCD console, framebuffer stores and DMA counters (requires --soc-dir csr.json)')
     a=p.parse_args();data=a.image.read_bytes();h,_=unpack(data)
     if h[0]!=OS_MAGIC:raise ValueError('Expected OSB1')
@@ -84,12 +115,13 @@ def main():
     a.log.parent.mkdir(parents=True,exist_ok=True)
     with a.log.open('wb') as log,serial.Serial(a.port,115200,timeout=.1) as port:
         session=BootSession(port,log)
+        uboot_ready=False
         def command(s):
             # The polled UART has a small RX FIFO. LCD echo/scrolling can
             # stall command input long enough to lose a pasted burst.
             for byte in (s+'\r').encode():
                 port.write(bytes([byte]));time.sleep(.01)
-            return session.until(b'> ',30)
+            return session.until(b'riscv-mini> ' if uboot_ready else b'> ',30)
         if a.program and a.app:
             # Fresh SRAM reset: enter the loader menu and UART-load the BIOS app.
             session.menu(reset=True);session.upload(a.app.read_bytes())
@@ -128,9 +160,16 @@ def main():
                 else:raise TimeoutError('U-Boot prompt timed out; see UART log')
                 if future and not future.result():raise AssertionError('TFTP failed')
                 if b'U-Boot 20' not in result:raise AssertionError('U-Boot banner missing')
+                uboot_ready=True
                 for c in a.cmd:
                     reply=command(c)
                     result.extend(reply);print(reply.decode(errors='replace'),flush=True)
+                network = None
+                if a.network_check:
+                    if server:
+                        server.close()
+                        server = None
+                    network = verify_network(command, a.host_ip)
                 if a.video:
                     verify_video(command,json.loads((a.soc_dir/'csr.json').read_text()),result)
                 if a.tftp_stats and server and server.stats:
@@ -139,6 +178,10 @@ def main():
                     if n:
                         pct=lambda q:lat[min(n-1,int(n*q))]
                         print(f"DATA->ACK ms: min={lat[0]:.1f} p50={pct(.5):.1f} p90={pct(.9):.1f} p99={pct(.99):.1f} max={lat[-1]:.1f}",flush=True)
+                receipt = dict(passed=True, image_sha256=hashlib.sha256(data).hexdigest(),
+                    network=network, video_checked=a.video,
+                    soc_dir=str(a.soc_dir.resolve()), uart_log=str(a.log.resolve()))
+                a.log.with_suffix('.json').write_text(json.dumps(receipt, indent=2)+'\n')
                 print('UBOOT CONSOLE PASS',flush=True)
         finally:
             if server:server.close()

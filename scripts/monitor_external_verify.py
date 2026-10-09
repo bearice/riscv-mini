@@ -27,6 +27,7 @@ def main():
     p.add_argument('--host-ip')
     p.add_argument('--interface-index',type=int)
     p.add_argument('--seconds',type=int,default=30)
+    p.add_argument('--ring-hold',action='store_true',help='Prove RX progresses while CPU suspends packet processing for one second')
     a=p.parse_args()
     if bool(a.host_ip)!=bool(a.interface_index):p.error('Supply both host IP and interface index')
     if not 0<=a.seconds<=300:p.error('Use 0..300 seconds')
@@ -103,6 +104,27 @@ def main():
                         from raw_icmp import probe
                         report['icmp']=probe(a.interface_index,a.host_ip,'169.254.20.20',expected_mac)
                     else:report['icmp']={'transport':'Windows ping','passed':True}
+                    if a.ring_hold:
+                        if validation.get('ethernet_dma_backend')!='native-descriptor-ring':
+                            raise RuntimeError('Ring hold requires descriptor ring gateware')
+                        port.write(b'test eth ring hold\r');port.flush()
+                        ready=session.until(b'\r\n',5)
+                        while b'RING HOLD READY' not in ready:
+                            ready+=session.until(b'\r\n',5)
+                        with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as hold_udp:
+                            hold_udp.setsockopt(socket.IPPROTO_IP,31,struct.pack('!I',a.interface_index))
+                            hold_udp.bind((a.host_ip,0));hold_udp.settimeout(3)
+                            payloads=[bytes((i*37+n*11)&255 for i in range(size)) for n,size in enumerate((1,31,511,1472))]
+                            for payload in payloads:
+                                hold_udp.sendto(payload,('169.254.20.20',1234));time.sleep(.05)
+                            text=ready+session.until(b'> ',5)
+                            if b'TEST eth ring hold PASS' not in text:raise RuntimeError(text.decode(errors='replace'))
+                            received=[hold_udp.recvfrom(2048) for _ in payloads]
+                            if [packet for packet,_ in received]!=payloads or any(peer!=('169.254.20.20',1234) for _,peer in received):
+                                raise RuntimeError('Ring hold payload/order mismatch')
+                        report['ring_hold']={'passed':True,'udp_packets':4,'sizes':[len(p) for p in payloads],
+                            'output':text.decode(errors='replace'),'cpu_packet_processing_suspended_ms':1000}
+                        print('Autonomous RX ring hold PASS: four frames queued without CPU packet processing',flush=True)
                     if enabled('audio'):command('test audio start')
                     if enabled('video'):command('test lcd start')
                     sizes=[0,1,31,32,63,64,255,511,1024,1472]

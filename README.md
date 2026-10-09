@@ -15,12 +15,12 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 K
 
 | 项目 | 配置 |
 | --- | --- |
-| CPU / 总线 | full 默认 VexRiscv MMU+FPU，RV32IMAF，60 MHz，2 KiB I/D-cache、Sv32、4 KiB 共享 writeback L2；可独立关闭 MMU/FPU |
+| CPU / 总线 | full 默认 VexRiscv MMU、无 FPU，RV32IMA，60 MHz，2 KiB I/D-cache、Sv32、4 KiB 共享 writeback L2；可独立关闭 MMU/FPU |
 | 片上存储 | Flash XIP 启动（ROM 模式可选 4/8 KiB boot ROM）、无独立工作 SRAM；软件初始化 DDR，bootloader 栈/data/BSS 复用 4 KiB L2 RAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
 | DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
 | Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
 | UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
-| SD | 原生四位 SD lite + 128-bit coherent DMA，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
+| SD | 原生四位 SD lite + 32-bit DMA 端口 / 内存侧 burst buffer，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
 | SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
 | RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
 | 音频 | PT8211 PCM16 stereo，48,000 Hz 共用 DDS；512 帧 FIFO、DDR ring DMA；默认静音 |
@@ -33,11 +33,11 @@ Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 K
 [USB Host](docs/usb.md)。PRIMARY 和 LW 仍为 8/8，扩展前需重新评估时钟布线。
 
 MMU/FPU 独立开关、SD none/spi/lite/full 四种 profile 及 48 kHz 共用 DDS 见
-[功能配置](docs/configuration-profiles.md)。full 默认 MMU+FPU、SD lite；minimal 默认关闭
+[功能配置](docs/configuration-profiles.md)。full 默认启用 MMU、关闭 FPU、SD lite；minimal 默认关闭
 MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/rtl-defaults.md)。
 
 软件 DDR 启动、L2 启动 RAM和函数大小见 [DDR 启动](docs/ddr-boot.md)。
-默认包含 4 KiB 共享 writeback L2（`--l2-size 4096`）：CPU/音频 32-bit，LCD/SD lite 128-bit coherent，帧缓冲不分配缓存行，
+默认包含 4 KiB 共享 writeback L2（`--l2-size 4096`）：CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent，帧缓冲不分配缓存行，
 后端直接连接 LiteDRAM native crossbar；启动 RAM 要求 L2 至少 4 KiB。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 
@@ -109,8 +109,8 @@ boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 
 否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败
 （`Filename too long` → `invalid index-pack output`）；若全局 uv 缓存不可用
 （`Failed to initialize cache ... sdists-v9\.git`），把 `UV_CACHE_DIR` 指到短路径，例如
-`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。默认 full profile（MMU+FPU）还需要先生成 CPU RTL
-`build/cpu-features/VexRiscv_MmuFpu.v`，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)；
+`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。默认 full profile（MMU、无 FPU）还需要先生成 CPU RTL
+`build/cpu-features/VexRiscv_Mmu.v`，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)；
 未生成时 `build.py` 会直接报 `Missing CPU RTL`。构建把编译器临时目录重定向到 `build/.tmp`，
 `%TEMP%` 不可写时也不会失败。
 

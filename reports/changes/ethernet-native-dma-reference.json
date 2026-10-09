@@ -1,0 +1,271 @@
+{
+  "created_at": "2026-10-07T09:46:59+00:00",
+  "title": "关闭音频后的 native Ethernet DMA 参考实验",
+  "mode": "experimental reference at explicit user request; not board-qualified",
+  "base_revision": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+  "source_revision": null,
+  "changes": [
+    "Ethernet DDR side uses SD-compatible 32-bit buffered native ports; packet SRAM side remains Wishbone.",
+    "Audio and microphone disabled for the measured candidate; feature eth_dma remains opt-in.",
+    "Host/RTL regression and PnR passed, native board SD initialization failed; preserve diagnostic evidence without claiming root cause.",
+    "User requested independent branch commits for future reference, no merge and no release."
+  ],
+  "checks": {
+    "passed": true,
+    "tests_run": 25,
+    "checks": [
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "tests/config_test.py"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\config_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "tests/memory_ports_test.py"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\memory_ports_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "sim/test_native_dma.py"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\test_native_dma.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "tests/native_sd_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\native_sd_verilog_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "tests/memory_controller_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\memory_controller_verilog_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "tests/lcd_memory_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\lcd_memory_verilog_test.log"
+      },
+      {
+        "command": [
+          "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+          "tests/ethernet_dma_verilog_test.py",
+          "--iverilog",
+          "C:/msys64/ucrt64/bin/iverilog.exe"
+        ],
+        "passed": true,
+        "log": "build\\reports\\checks\\ethernet_dma_verilog_test.log"
+      }
+    ],
+    "workflow": {
+      "passed": true,
+      "tests_run": 18,
+      "command": [
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\.venv\\Scripts\\python.exe",
+        "tests/workflow_test.py",
+        "--report",
+        "build/reports/checks/commit-workflow.json"
+      ],
+      "source_inputs_sha256": "261c12105c3123d5aed99ee2042fb216007f1be873cd5d86bba4acd94e05fda6"
+    },
+    "source_inputs_sha256": "261c12105c3123d5aed99ee2042fb216007f1be873cd5d86bba4acd94e05fda6"
+  },
+  "build": {
+    "id": "da9a3d8-full-rv32imafc-rom4k-l24k-eth-native-dma-no-audio-f8eb895d-24d8e937",
+    "label": "eth-native-dma-no-audio",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\build\\eth-native-final",
+    "purpose": "eth-native-dma-no-audio",
+    "registered_at": "2026-10-07T09:09:45+00:00",
+    "source": {
+      "commit": "da9a3d8eb041b4ae8c369901d45ff1b8a42fb637",
+      "dirty": true,
+      "inputs_sha256": "261c12105c3123d5aed99ee2042fb216007f1be873cd5d86bba4acd94e05fda6",
+      "kind": "captured",
+      "created_at": "2026-10-07T09:06:31+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--without-audio",
+        "--without-mic",
+        "--with-eth-dma",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\v0.7.1\\full-rv32imafc-rom4k-l24k\\inputs\\cpu\\VexRiscv_MmuFpu.v",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--purpose",
+        "eth-native-dma-no-audio",
+        "--output-dir",
+        "build\\eth-native-final",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "70f7f7a9c37da74b34dadc1b3b332c46fcdee3a68f50fb8827ed119ec19367eb",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\worktrees\\eth-dma\\build\\recipes\\eth-native-final-24d8e937"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32imafc_zicsr_zifencei",
+      "rom_size_bytes": 4096,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": true,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": false,
+        "mic": false,
+        "mic_stereo": false,
+        "eth": true,
+        "eth_dma": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "a98715c19f92a7475df9bc5c55873e3e90f4aa21ba87e31617f60eeab62b282d",
+    "bitstream_sha256": "f8eb895db1af26d9653db4a61caff2fa9d00e64b5357f505113db81d3240de85",
+    "abi": "0e0b5dbc",
+    "component_versions": {
+      "rtl": "0.7.1",
+      "bootloader": "0.7.1",
+      "hal": "0.7.1",
+      "bios": "0.7.2",
+      "opensbi": "0.7.1",
+      "uboot": "0.1.0"
+    },
+    "status": "pnr-pass",
+    "evidence": []
+  },
+  "board_verification": {
+    "passed": false,
+    "bitstream_sha256": "f8eb895db1af26d9653db4a61caff2fa9d00e64b5357f505113db81d3240de85",
+    "image_sha256": "a98715c19f92a7475df9bc5c55873e3e90f4aa21ba87e31617f60eeab62b282d",
+    "checks": {
+      "test fpu": [
+        {
+          "seconds": 0.14000000000032742,
+          "expected": "TEST fpu PASS",
+          "matched": true,
+          "output": "test fpu\r\nFPU 2+3 bits=40a00000 flags=00000000\r\nTEST fpu PASS\r\n> "
+        }
+      ],
+      "test mmu": [
+        {
+          "seconds": 0.0,
+          "expected": "TEST mmu PASS",
+          "matched": true,
+          "output": "test mmu\r\nSv32 translated read=53563332\r\nTEST mmu PASS\r\n> "
+        }
+      ],
+      "test isa": [
+        {
+          "seconds": 0.03099999999994907,
+          "expected": "TEST isa PASS",
+          "matched": true,
+          "output": "test isa\r\nCPU C=00000001 B=00000000\r\nTEST isa PASS\r\n> "
+        }
+      ],
+      "test l2": [
+        {
+          "seconds": 0.01599999999962165,
+          "expected": "TEST l2 PASS",
+          "matched": true,
+          "output": "test l2\r\nL2 bytes=00001000 bypass ticks=00006819 cached ticks=00002c2e hit/miss counters=fc808b58 (L1 flushed between passes)\r\nTEST l2 PASS\r\n> "
+        }
+      ],
+      "test fence": [
+        {
+          "seconds": 0.15599999999994907,
+          "expected": "TEST fence PASS",
+          "matched": true,
+          "output": "test fence\r\nTEST fence PASS\r\n> "
+        }
+      ],
+      "test uart": [
+        {
+          "seconds": 0.016000000000531145,
+          "expected": "TEST uart PASS",
+          "matched": true,
+          "output": "test uart\r\nUART irqs=00000038 drops=00000000 (received test uart command)\r\nTEST uart PASS\r\n> "
+        }
+      ],
+      "test irq": [
+        {
+          "seconds": 0.2029999999995198,
+          "expected": "TEST irq PASS",
+          "matched": true,
+          "output": "test irq\r\nTEST irq PASS\r\n> "
+        }
+      ],
+      "test ddr": [
+        {
+          "seconds": 0.125,
+          "expected": "TEST ddr PASS",
+          "matched": true,
+          "output": "test ddr\r\nDDR software status=000000c5 lane0=009a024d lane1=009b024d\r\nDDR scratch bytes=00002000 (not a full 128MiB test)\r\nTEST ddr PASS\r\n> "
+        }
+      ],
+      "test flash": [
+        {
+          "seconds": 0.07800000000042928,
+          "expected": "TEST flash PASS",
+          "matched": true,
+          "output": "test flash\r\nFLASH JEDEC=000b4017 bytes=00800000 UID=41503446333236000000000200280050 (read-only, no write verification)\r\nTEST flash PASS\r\n> "
+        }
+      ],
+      "test sd": [
+        {
+          "seconds": 0.09400000000005093,
+          "expected": "TEST sd PASS",
+          "matched": false,
+          "output": "test sd\r\nSD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096\r\nSD unavailable: native timeout/protocol/no-media; UART remains available\r\nSD mount failed FatFs=00000003\r\nTEST sd FAIL\r\n> "
+        }
+      ]
+    },
+    "sd_write_requested": false,
+    "excluded": "physical keyboard/mouse/LEDs, screen observation, audible output, external Ethernet packets; RTL/PnR remain host checks",
+    "startup": "BOOT UART\r\n\r\nRISCV MINI BIOS 0.7.2+da9a3d8.261c1210.dirty rom8dc3347f\r\nPOST RGB LCD PASS\r\nSD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096\r\nSD unavailable: native timeout/protocol/no-media; UART remains available\r\nSD mount failed FatFs=00000003\r\nSD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096\r\nSD unavailable: native timeout/protocol/no-media; UART remains available\r\nSD mount failed FatFs=00000003\r\nPOST DDR scratch PASS\r\nPOST TIMER PASS\r\nPOST FLASH PASS\r\nSD init FAIL command=00003325 cmd_event=00000001 data_event=00000001 dma_error=00000001 dma_done=00000001 dma_offset=00000000 response=00000920 argument=00000000 divider=00000096\r\nSD unavailable: native timeout/protocol/no-media; UART remains available\r\nSD mount failed FatFs=00000003\r\nPOST SD unavailable/FAIL\r\nPOST ETH PHY PASS\r\nPOST USB PHY PASS\r\nPOST USB HID PASS\r\nPOST BIOS ecall PASS\r\nSYSTEM READY - BIOS\r\n> "
+  },
+  "board_qualified": false,
+  "performance_report": null,
+  "comparison_performance_report": "reports/performance/eth-wishbone-vs-no-audio-control.md",
+  "experiment_report": "docs/ethernet-dma-experiment.md",
+  "workflow_exception": "Standard staged RTL prepare requires board-qualified candidate and its performance report. User explicitly requested preserving an unqualified experiment; scope receipt and successful host regression are recorded, failed hardware acceptance is retained. No qualification gate result is falsified."
+}

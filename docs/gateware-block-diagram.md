@@ -1,5 +1,7 @@
 # Gateware 系统框图
 
+本页保留 main 的已验收基线；本实验分支已接入 buffered memory ports 和可选 Ethernet native DMA，尚未重新验收，接口见 [Ethernet DMA](ethernet-dma.md)。旧分支验收记录仅作历史参考。
+
 检查日期：2026-10-08。图已同步合入 main 的 RAM 零基址/XIP 实验代码（e50809b），以已验收的 full 配置为依据：RV32IMAF、无片内 ROM、Flash 1 MiB 启动、4 KiB shared writeback L2、SD lite、USB ultra、DDS audio。匹配镜像 PnR、完整 BIOS 实板验收与三轮 all/cache 已通过，详见 [XIP 实验记录](xip-experiment.md) 和 [性能报告](../reports/performance/zero-ram-xip-vs-v0.7.1.md)。
 
 RAM 零基址与高地址设备 MMIO 是默认布局，不增加布局 flag。启动方式仍可选 ROM/XIP；本图描述 --boot-mode xip 配置。C 扩展由输入 CPU RTL 决定，旧地址属性的 CPU 必须重新生成。

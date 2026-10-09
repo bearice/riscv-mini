@@ -1,31 +1,92 @@
 /* RTL8201F clause-22 MDIO + LiteEth packet slots. All packet work is deferred. */
 #include <hal/hal.h>
 #include <hal/dma.h>
+#include <string.h>
 #include <generated/csr.h>
 #include <generated/soc.h>
 #include <generated/mem.h>
 static hal_eth_info_t info;
+static unsigned next_poll;
+#if MINI_FEATURE_ETH_DMA != defined(CONFIG_ETH_RING_DMA)
+#error "Ethernet DMA builds require the ring backend"
+#endif
+#ifndef CONFIG_ETH_RING_DMA
 static volatile unsigned tx_busy;
-static unsigned tx_slot,next_poll;
-#ifdef CSR_ETH_DMA_CONTROL_ADDR
-static hal_result_t packet_dma(void *memory,uintptr_t slot,unsigned length,unsigned receive) {
-    eth_dma_control_write(0);
-    eth_dma_memory_write((uintptr_t)memory);eth_dma_slot_write(slot);eth_dma_length_write(length);
-    __asm__ volatile("fence rw,rw":::"memory");
-    eth_dma_control_write(1|(receive<<1));
-    uint32_t start=hal_time_ms();
-    while(!eth_dma_done_read()) {
-        if((uint32_t)(hal_time_ms()-start)>=100) {eth_dma_control_write(0);return HAL_TIMEOUT;}
+static unsigned tx_slot;
+#endif
+#ifdef CONFIG_ETH_RING_DMA
+#define RING_COUNT 4u
+#define RING_OWN (1u<<31)
+#define RING_DONE (1u<<30)
+#define RING_ERROR (1u<<29)
+typedef struct {uint32_t buffer,capacity,status,cookie;} ring_descriptor_t;
+static _Alignas(16) volatile ring_descriptor_t rx_ring[RING_COUNT],tx_ring[RING_COUNT];
+static _Alignas(16) uint8_t rx_pool[RING_COUNT][1536],tx_pool[RING_COUNT][1536];
+static uint16_t rx_consumer,tx_producer;
+static unsigned rx_borrowed,tx_borrowed;
+static void ring_irq(void *unused) {
+    (void)unused;++info.irqs;
+    /* The RX level remains asserted until the consumer releases the frame.
+       Disable its notification while the main loop owns the queued buffers. */
+    unsigned pending=eth_dma_ev_pending_read();
+    eth_dma_ev_pending_write(2);if(pending&1u)eth_dma_ev_enable_write(2);
+}
+static void ring_init(void) {
+    rx_consumer=tx_producer=0;rx_borrowed=tx_borrowed=0;
+    for(unsigned i=0;i<RING_COUNT;++i) {
+        rx_ring[i]=(ring_descriptor_t){(uintptr_t)rx_pool[i],1536,RING_OWN,i};
+        tx_ring[i]=(ring_descriptor_t){(uintptr_t)tx_pool[i],0,0,i};
     }
-    unsigned error=eth_dma_error_read();eth_dma_control_write(0);
-    if(error)return HAL_IO;
-    if(receive) {hal_dma_invalidate();++info.dma_rx;} else ++info.dma_tx;
-    return HAL_OK;
+    __asm__ volatile("fence rw,rw":::"memory");
+    eth_dma_rx_base_write((uintptr_t)rx_ring);eth_dma_tx_base_write((uintptr_t)tx_ring);
+    eth_dma_mask_write(RING_COUNT-1);eth_dma_rx_consumer_write(0);eth_dma_tx_producer_write(0);
+    eth_dma_ev_pending_write(3);eth_dma_ev_enable_write(3);
+    hal_irq_attach(ETH_DMA_INTERRUPT,ring_irq,0);hal_irq_enable(ETH_DMA_INTERRUPT,1);
+    eth_dma_control_write(1);
 }
-static unsigned dma_pointer(const void *p,unsigned length) {
-    uintptr_t address=(uintptr_t)p;
-    return !(address&15u) && address>=4096u && address<0x07fff000u && address<=0x08000000u-length;
+hal_result_t hal_eth_rx_acquire(const void **frame,unsigned *length) {
+    if(!frame || !length)return HAL_INVALID;
+    *frame=0;*length=0;
+    if(!info.initialized)return HAL_NO_MEDIA;
+    if(rx_borrowed)return HAL_BUSY;
+    if((uint16_t)eth_dma_rx_producer_read()==rx_consumer)return HAL_BUSY;
+    hal_dma_invalidate();
+    volatile ring_descriptor_t *d=&rx_ring[rx_consumer&(RING_COUNT-1)];
+    unsigned status=d->status;
+    if((status&RING_OWN) || !(status&RING_DONE))return HAL_IO;
+    rx_borrowed=1;*frame=rx_pool[rx_consumer&(RING_COUNT-1)];*length=status&0xfffu;
+    if((status&RING_ERROR) || *length<14 || *length>HAL_ETH_MAX_FRAME) {
+        hal_eth_rx_release(*frame);*frame=0;*length=0;return HAL_INVALID;
+    }
+    ++info.rx_frames;return HAL_OK;
 }
+hal_result_t hal_eth_rx_release(const void *frame) {
+    if(!rx_borrowed || frame!=rx_pool[rx_consumer&(RING_COUNT-1)])return HAL_INVALID;
+    rx_ring[rx_consumer&(RING_COUNT-1)].status=RING_OWN;
+    __asm__ volatile("fence rw,rw":::"memory");
+    rx_consumer++;rx_borrowed=0;eth_dma_rx_consumer_write(rx_consumer);
+    eth_dma_ev_enable_write(3);return HAL_OK;
+}
+hal_result_t hal_eth_tx_acquire(void **frame,unsigned *capacity) {
+    if(!frame || !capacity)return HAL_INVALID;
+    *frame=0;*capacity=0;
+    if(!info.initialized || !info.link)return HAL_NO_MEDIA;
+    if(tx_borrowed || (uint16_t)(tx_producer-(uint16_t)eth_dma_tx_consumer_read())>=RING_COUNT)return HAL_BUSY;
+    tx_borrowed=1;*frame=tx_pool[tx_producer&(RING_COUNT-1)];*capacity=HAL_ETH_MAX_FRAME;return HAL_OK;
+}
+hal_result_t hal_eth_tx_commit(const void *frame,unsigned length) {
+    if(!tx_borrowed || frame!=tx_pool[tx_producer&(RING_COUNT-1)])return HAL_INVALID;
+    if(length<14 || length>HAL_ETH_MAX_FRAME) {tx_borrowed=0;return HAL_INVALID;}
+    volatile ring_descriptor_t *d=&tx_ring[tx_producer&(RING_COUNT-1)];
+    d->capacity=length;d->status=RING_OWN;
+    __asm__ volatile("fence rw,rw":::"memory");
+    tx_producer++;tx_borrowed=0;eth_dma_tx_producer_write(tx_producer);++info.tx_frames;return HAL_OK;
+}
+#else
+hal_result_t hal_eth_rx_acquire(const void **frame,unsigned *length) {(void)frame;(void)length;return HAL_UNSUPPORTED;}
+hal_result_t hal_eth_rx_release(const void *frame) {(void)frame;return HAL_UNSUPPORTED;}
+hal_result_t hal_eth_tx_acquire(void **frame,unsigned *capacity) {(void)frame;(void)capacity;return HAL_UNSUPPORTED;}
+hal_result_t hal_eth_tx_commit(const void *frame,unsigned length) {(void)frame;(void)length;return HAL_UNSUPPORTED;}
 #endif
 static void half_cycle(void) {
     unsigned start=hal_ticks();while((unsigned)(hal_ticks()-start)<CONFIG_CLOCK_FREQUENCY/1000000u) {}
@@ -57,6 +118,7 @@ hal_result_t hal_eth_mdio_write(unsigned address,unsigned reg,uint16_t value) {
 }
 static hal_result_t read_reg(unsigned reg,uint16_t *value) {return hal_eth_mdio_read(info.phy_address,reg,value);}
 static void write_reg(unsigned reg,uint16_t value) {hal_eth_mdio_write(info.phy_address,reg,value);}
+#ifndef CONFIG_ETH_RING_DMA
 static void irq(void *unused) {
     (void)unused;++info.irqs;
     /* RX W1C releases the slot: keep ownership until receive has copied it. */
@@ -65,17 +127,30 @@ static void irq(void *unused) {
         ethmac_sram_reader_ev_pending_write(1);tx_busy=0;
     }
 }
+#endif
 void hal_eth_stop(void) {
+#ifdef CONFIG_ETH_RING_DMA
+    eth_dma_control_write(0);eth_dma_ev_enable_write(0);hal_irq_enable(ETH_DMA_INTERRUPT,0);
+    uint32_t deadline=hal_time_ms()+100;
+    while(eth_dma_busy_read() && !hal_deadline_reached(hal_time_ms(),deadline)) {}
+    rx_borrowed=tx_borrowed=0;
+#endif
     info.initialized=info.link=info.speed_mbps=info.full_duplex=0;
     ethmac_sram_writer_ev_enable_write(0);ethmac_sram_reader_ev_enable_write(0);
-    hal_irq_enable(ETHMAC_INTERRUPT,0);ethphy_crg_reset_write(1);tx_busy=0;
+#ifndef CONFIG_ETH_RING_DMA
+    hal_irq_enable(ETHMAC_INTERRUPT,0);tx_busy=0;
+#endif
+    ethphy_crg_reset_write(1);
 }
 static uint32_t ref_count(void) {
     uint32_t value=eth_clock_gray_read();value^=value>>16;value^=value>>8;
     value^=value>>4;value^=value>>2;return value^(value>>1);
 }
 hal_result_t hal_eth_init(void) {
-    hal_eth_stop();info=(hal_eth_info_t){0};tx_slot=0;
+    hal_eth_stop();info=(hal_eth_info_t){0};
+#ifndef CONFIG_ETH_RING_DMA
+    tx_slot=0;
+#endif
     uint32_t flash_id;unsigned uid_length;
     if(hal_flash_probe(&flash_id,0)!=HAL_OK || hal_flash_uid(info.flash_uid,&uid_length)!=HAL_OK)return HAL_IO;
     info.uid_length=uid_length;
@@ -113,9 +188,14 @@ hal_result_t hal_eth_init(void) {
     info.ref_clock_hz=(uint32_t)(((uint64_t)delta*CONFIG_CLOCK_FREQUENCY)/elapsed);
     if(info.ref_clock_hz<49000000u || info.ref_clock_hz>51000000u)return HAL_IO;
     ethphy_crg_reset_write(0);
+#ifdef CONFIG_ETH_RING_DMA
+    ethmac_sram_reader_ev_enable_write(0);ethmac_sram_writer_ev_enable_write(0);ring_init();
+#else
     hal_irq_attach(ETHMAC_INTERRUPT,irq,0);hal_irq_enable(ETHMAC_INTERRUPT,1);
-    ethmac_sram_reader_ev_pending_write(1);ethmac_sram_reader_ev_enable_write(1);
-    ethmac_sram_writer_ev_enable_write(1);info.initialized=1;next_poll=hal_time_ms();hal_eth_poll();return HAL_OK;
+    ethmac_sram_reader_ev_pending_write(1);
+    ethmac_sram_reader_ev_enable_write(1);ethmac_sram_writer_ev_enable_write(1);
+#endif
+    info.initialized=1;next_poll=hal_time_ms();hal_eth_poll();return HAL_OK;
 }
 void hal_eth_poll(void) {
     if(!info.initialized || !hal_deadline_reached(hal_time_ms(),next_poll))return;
@@ -129,7 +209,15 @@ void hal_eth_poll(void) {
 }
 void hal_eth_get_info(hal_eth_info_t *out) {
     if(!out)return;
-    unsigned state=hal_irq_save();*out=info;out->tx_busy=tx_busy;hal_irq_restore(state);
+    unsigned state=hal_irq_save();*out=info;
+#ifndef CONFIG_ETH_RING_DMA
+    out->tx_busy=tx_busy;
+#endif
+    hal_irq_restore(state);
+#ifdef CONFIG_ETH_RING_DMA
+    out->dma_rx=eth_dma_rx_packets_read();out->dma_tx=eth_dma_tx_packets_read();
+    out->tx_busy=(uint16_t)(tx_producer-(uint16_t)eth_dma_tx_consumer_read())!=0;
+#endif
     out->rx_drops=ethmac_sram_writer_errors_read();out->crc_errors=ethmac_rx_datapath_crc_errors_read();
     out->preamble_errors=ethmac_rx_datapath_preamble_errors_read();
 }
@@ -142,47 +230,46 @@ hal_result_t hal_eth_get_mac(uint8_t mac[6]) {
 hal_result_t hal_eth_send(const void *frame,unsigned length) {
     if(!frame || length<14 || length>HAL_ETH_MAX_FRAME)return HAL_INVALID;
     if(!info.initialized || !info.link)return HAL_NO_MEDIA;
+#ifdef CONFIG_ETH_RING_DMA
+    void *destination;unsigned capacity;
+    hal_result_t result=hal_eth_tx_acquire(&destination,&capacity);
+    if(result!=HAL_OK)return result;
+    memcpy(destination,frame,length);return hal_eth_tx_commit(destination,length);
+#else
     if(tx_busy || !ethmac_sram_reader_ready_read())return HAL_BUSY;
     volatile uint32_t *slot=(volatile uint32_t *)(ETHMAC_TX_BASE+tx_slot*ETHMAC_SLOT_SIZE);
-#ifdef CSR_ETH_DMA_CONTROL_ADDR
-    if(length>=64 && dma_pointer(frame,length)) {
-        hal_result_t result=packet_dma((void *)frame,(uintptr_t)slot,length,0);
-        if(result!=HAL_OK)return result;
-    } else
-#endif
-    {
     const uint8_t *bytes=frame;
     for(unsigned offset=0;offset<length;offset+=4) {
         unsigned word=0;for(unsigned b=0;b<4 && offset+b<length;++b)word|=(unsigned)bytes[offset+b]<<(8*b);
         slot[offset/4]=word;
     }
-    }
     unsigned state=hal_irq_save();tx_busy=1;
     ethmac_sram_reader_slot_write(tx_slot);ethmac_sram_reader_length_write(length);
     __asm__ volatile("fence iorw,iorw":::"memory");ethmac_sram_reader_start_write(1);
     tx_slot^=1;++info.tx_frames;hal_irq_restore(state);return HAL_OK;
+#endif
 }
 hal_result_t hal_eth_receive(void *frame,unsigned capacity,unsigned *length) {
     if(!frame || !length)return HAL_INVALID;
     *length=0;if(!info.initialized)return HAL_NO_MEDIA;
+#ifdef CONFIG_ETH_RING_DMA
+    const void *source;unsigned size;
+    hal_result_t result=hal_eth_rx_acquire(&source,&size);
+    if(result!=HAL_OK)return result;
+    if(size>capacity) {hal_eth_rx_release(source);return HAL_INVALID;}
+    memcpy(frame,source,size);*length=size;return hal_eth_rx_release(source);
+#else
     if(!(ethmac_sram_writer_ev_pending_read()&1u))return HAL_BUSY;
     unsigned size=ethmac_sram_writer_length_read(),index=ethmac_sram_writer_slot_read();
     hal_result_t result=HAL_INVALID;
     if(size<=capacity && size>=14 && size<=HAL_ETH_MAX_FRAME && index<ETHMAC_RX_SLOTS) {
         volatile const uint32_t *slot=(volatile const uint32_t *)(ETHMAC_RX_BASE+index*ETHMAC_SLOT_SIZE);
-#ifdef CSR_ETH_DMA_CONTROL_ADDR
-        if(size>=64 && dma_pointer(frame,size)) {
-            result=packet_dma(frame,(uintptr_t)slot,size,1);
-            if(result==HAL_OK) {*length=size;++info.rx_frames;}
-        } else
-#endif
-        {
         uint8_t *bytes=frame;
         for(unsigned offset=0;offset<size;offset+=4) {
             unsigned word=slot[offset/4];for(unsigned b=0;b<4 && offset+b<size;++b)bytes[offset+b]=word>>(8*b);
         }
         *length=size;++info.rx_frames;result=HAL_OK;
-        }
     }
     ethmac_sram_writer_ev_pending_write(1);ethmac_sram_writer_ev_enable_write(1);return result;
+#endif
 }

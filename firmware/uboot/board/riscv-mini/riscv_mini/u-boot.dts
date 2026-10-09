@@ -22,7 +22,7 @@
 			device_type = "cpu";
 			reg = <0>;
 			compatible = "riscv";
-			riscv,isa = "rv32imaf_zicsr_zifencei";
+			riscv,isa = "rv32ima_zicsr_zifencei";
 			mmu-type = "riscv,sv32";
 			cpu_intc: interrupt-controller {
 				#interrupt-cells = <1>;
