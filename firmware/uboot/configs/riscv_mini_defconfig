@@ -49,7 +49,9 @@ CONFIG_AUTOBOOT=y
 CONFIG_BOOTDELAY=3
 # The OpenSBI-embedded DTB is handed to the kernel unchanged; the kernel
 # linear map covers it (no-map only skips 0x01000000..0x010fffff).
-CONFIG_BOOT="fatload mmc 0:1 0x02000000 Image; booti 0x02000000 - 0x01080000"
+CONFIG_USE_BOOTCOMMAND=y
+CONFIG_SUPPORT_RAW_INITRD=y
+CONFIG_BOOTCOMMAND="fatload mmc 0:1 0x02000000 Image; booti 0x02000000 - 0x01080000"
 CONFIG_LOG=y
 CONFIG_SPL=n
 CONFIG_LTO=n

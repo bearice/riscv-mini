@@ -441,30 +441,22 @@ assign bit_edge_w = rxd_last_q ^ in_j_w;
 localparam FS_RATIO = USB_CLK_FREQ / 12000000;
 localparam SAMPLE_W = $clog2(FS_RATIO);
 reg [SAMPLE_W-1:0] sample_cnt_q;
-reg       adjust_delayed_q;
 
 always @ (posedge clk_i or posedge rst_i)
 if (rst_i)
 begin
     sample_cnt_q        <= 2'd0;
-    adjust_delayed_q    <= 1'b0;
 end
-// Delayed adjustment
-else if (adjust_delayed_q)
-    adjust_delayed_q    <= 1'b0;
-else if (bit_edge_w && (sample_cnt_q != 2'd0) && (state_q < STATE_TX_SYNC))
-    sample_cnt_q        <= 2'd0;
-// Can't adjust sampling point now?
-else if (bit_edge_w && (sample_cnt_q == 2'd0) && (state_q < STATE_TX_SYNC))
-begin
-    // Want to reset sampling point but need to delay adjustment by 1 cycle!
-    adjust_delayed_q    <= 1'b1;
-    sample_cnt_q        <= (sample_cnt_q == FS_RATIO-1) ? 0 : sample_cnt_q + 1'b1;
-end
+// Track receive transitions, then sample in the middle of the bit cell.
+// Sampling one clock after an edge can duplicate a bit when a hub adds
+// jitter at the SYNC/PID boundary. TX keeps its fixed bit-period cadence.
+else if (bit_edge_w && (state_q < STATE_TX_SYNC))
+    sample_cnt_q        <= 0;
 else
     sample_cnt_q        <= (sample_cnt_q == FS_RATIO-1) ? 0 : sample_cnt_q + 1'b1;
 
-assign sample_w = (sample_cnt_q == 2'd0);
+assign sample_w = (state_q < STATE_TX_SYNC) ?
+                  (sample_cnt_q == (FS_RATIO-1)/2) : (sample_cnt_q == 0);
 
 //-----------------------------------------------------------------
 // NRZI Receiver

@@ -102,15 +102,19 @@ class Board:
         self.op.record('loader', output=startup.decode(errors='replace'))
         return startup
 
-    def enter_loader(self, session):
+    def enter_loader(self, session, fresh=False):
         """Get the bootloader menu from any board state. A board already at
         the menu or in the application is asked to reboot ('!'); a silent or
         failed board escalates through the recovery ladder (query, reset,
         SRAM reload) until the menu answers. Replaces the old fresh-banner
         requirement, which failed whenever the boot banner had already
         drained from the UART FIFO."""
+        if fresh:
+            # The caller just programmed/reloaded SRAM: stop the automatic
+            # boot while BOOT SELECT is live, before any passive FSM drain.
+            return self.menu(session)
         from uart_state import BoardFSM
-        fsm=BoardFSM(session.port,self.op.path/'uart.log',
+        fsm=BoardFSM(session.port,session.log,
                      self.build.validation['boot_image']['abi_tag'])
         fsm.observe()
         if fsm.state is State.APP_READY:
@@ -142,7 +146,7 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session = BootSession(port,log)
-            self.enter_loader(session)
+            self.enter_loader(session,fresh=True)
             startup = session.upload(self.build.image)
             self.op.record('uart_run',output=startup.decode(errors='replace'))
 
@@ -151,7 +155,7 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session = BootSession(port,log)
-            self.enter_loader(session)
+            self.enter_loader(session,fresh=True)
             info = session.command('i')
             self.op.record('flash_header',output=info.decode(errors='replace'),
                            checks_payload=False)
@@ -225,7 +229,7 @@ class Board:
         # reset after a DDR utility is not a reliable SPI/DDR recovery boundary.
         session.port.reset_input_buffer()
         self.program('restore-sram',2,self.build.fs)
-        self.enter_loader(session)
+        self.enter_loader(session,fresh=True)
 
     def quiesce_xip(self, session, probe_image):
         startup=session.upload(probe_image)
@@ -270,7 +274,7 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session=BootSession(port,log)
-            self.enter_loader(session)
+            self.enter_loader(session,fresh=True)
             try:
                 self.quiesce_xip(session,probe_image)
             finally:
@@ -291,7 +295,7 @@ class Board:
             port.reset_input_buffer()
             self.program('sram',2,self.build.fs)
             session = BootSession(port,log)
-            self.enter_loader(session)
+            self.enter_loader(session,fresh=True)
             self.checked_readback(session,probe_image)
             self.restore_loader(session)
             self.flash_boot(session)
@@ -340,7 +344,7 @@ class Board:
         live console. UNKNOWN/FAILED escalate: query, CPU reset, SRAM reload.
         Returns the FSM; raise with the walked ladder when it is exhausted."""
         from uart_state import BoardFSM
-        fsm=BoardFSM(session.port,self.op.path/'uart.log',
+        fsm=BoardFSM(session.port,session.log,
                      self.build.validation['boot_image']['abi_tag'])
         fsm.observe()
         if not fsm.known(allowed):
@@ -375,14 +379,14 @@ class Board:
             if staged_writes:
                 port.reset_input_buffer()
                 self.program('quiesce-sram',2,fs)
-                self.enter_loader(session)
+                self.enter_loader(session,fresh=True)
                 self.quiesce_xip(session,probe_image)
             for write,staged in staged_writes:
                 self.write_spi(session,write,staged)
             port.reset_input_buffer()
             self.program('configuration',8,fs,0)
             self.program('reload',1)
-            self.enter_loader(session)
+            self.enter_loader(session,fresh=True)
             if self.build.mode == 'rom':
                 installed = session.upload(self.build.image,install=True)
                 self.op.record('uart_install',output=installed.decode(errors='replace'))
@@ -423,6 +427,11 @@ def perform(args):
             operation.report['selected_build']=build.describe()
             operation.save()
             print('Selected build:',build.id,'boot='+build.mode,flush=True)
+            if args.operation=='linux':
+                from mini_ops.linux import preflight
+                if not build.validation.get('features',{}).get('mmu'):
+                    raise ValueError('Linux requires the MMU configuration')
+                operation.record('linux_preflight',**preflight(args))
             if args.operation=='verify':
                 features=build.validation.get('features',{})
                 if args.suite in ('boot','cold') and not all(
@@ -461,6 +470,10 @@ def perform(args):
                 board.run()
             elif args.operation=='recover':
                 board.recover()
+            elif args.operation=='linux':
+                from mini_ops.linux import verify
+                board.run()
+                verify(board,args)
             elif args.operation=='update':
                 if getattr(args,'method','auto')=='programmer':
                     board.update_flash(plan)

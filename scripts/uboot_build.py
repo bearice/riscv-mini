@@ -65,6 +65,7 @@ def main():
                         help="Windows dir to receive u-boot.bin")
     parser.add_argument("--soc-dir", type=Path, help="Select the SoC Ethernet backend from csr.json")
     parser.add_argument("--prepare-only", action="store_true", help="Write build.sh for direct WSL execution")
+    parser.add_argument("--without-video", action="store_true", help="Build a serial-only bootstrap (Linux bring-up)")
     a = parser.parse_args()
     out = a.output_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
     csr = json.loads((a.soc_dir/'csr.json').read_text()) if a.soc_dir else None
@@ -111,6 +112,7 @@ fi
 make O="$OBJ" riscv_mini_defconfig
 scripts/config --file "$OBJ/.config" --{'enable' if ring else 'disable'} RISCV_MINI_ETH_RING_DMA
 scripts/config --file "$OBJ/.config" --set-val DEBUG_UART_BASE 0x{uart_base:x}
+{'scripts/config --file "$OBJ/.config" --disable VIDEO' if a.without_video else ''}
 make O="$OBJ" olddefconfig
 make -j8 O="$OBJ" CROSS_COMPILE={CROSS} LD=ld.lld LDFLAGS_u-boot='--gc-sections -static -pie -Ttext=$(CONFIG_TEXT_BASE)' PLATFORM_LIBGCC="{LIBGCC}" PLATFORM_CFLAGS='{ARCH_FLAGS}' LOCALVERSION='-riscv-mini-{version}'
 mkdir -p "$OUT"

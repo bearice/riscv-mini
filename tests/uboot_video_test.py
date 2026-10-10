@@ -26,4 +26,14 @@ class VideoTest(unittest.TestCase):
         self.assertEqual(read_words(reply,0x7fc0400,5),[1,0xffffffff,0xffff,0x12345678,0xaabbccdd])
         with self.assertRaises(AssertionError):read_words(reply,0x7fc0404,5)
 
+    def test_linux_dma_binding_extends_uboot_abi(self):
+        names=('enable','select','base0','base1','address_error','state','frames','completed','underflows')
+        csr={'csr_bases':{'rgb_lcd':0xf0008000},'csr_registers':{
+            'rgb_lcd_'+n:{'addr':0xf0008000+4*i,'size':1} for i,n in enumerate(names)}}
+        node=lcd_node(csr)
+        self.assertIn('reg=<0xf0008000 0x24>',node)
+        self.assertIn('linux-csr-offsets=<0x0 0x4 0x8 0xc 0x14 0x10 0x18 0x1c 0x20>',node)
+        self.assertIn('dma-coherent',node)
+        self.assertIn('csr-offsets=<0x0 0x4 0x8 0xc 0x14 0x10>',node)
+
 if __name__=='__main__':unittest.main()

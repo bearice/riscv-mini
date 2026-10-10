@@ -21,10 +21,21 @@ def lcd_node(csr):
         if reg is None or reg['size']!=1:
             raise ValueError('U-Boot LCD requires programmable-base, packed-state CSR ABI')
         offsets.append(reg['addr']-base)
-    size=max(offsets)+4
+    linux_names=names+('frames','completed','underflows')
+    linux_offsets=[]
+    # Older U-Boot-only CSR descriptions remain valid without DMA counters.
+    if all('rgb_lcd_'+name in csr['csr_registers'] for name in linux_names):
+        for name in linux_names:
+            reg=csr['csr_registers']['rgb_lcd_'+name]
+            if reg['size']!=1:
+                raise ValueError('Linux LCD needs single-word scanout counters')
+            linux_offsets.append(reg['addr']-base)
+    size=max(linux_offsets or offsets)+4
+    linux_props=('riscv-mini,linux-csr-offsets=<'+' '.join(hex(o) for o in linux_offsets)+'>; dma-coherent; ') if linux_offsets else ''
     return (f'lcd@{base:x} {{ compatible="riscv-mini,rgb-lcd"; '
             f'reg=<0x{base:x} 0x{size:x}>; bootph-all; '
-            'riscv-mini,csr-offsets=<'+' '.join(hex(o) for o in offsets)+'>; }; ')
+            'riscv-mini,csr-offsets=<'+' '.join(hex(o) for o in offsets)+'>; '
+            +linux_props+'}; ')
 ETH_RING_REGISTERS = ('control', 'rx_base', 'tx_base', 'mask', 'rx_consumer',
     'tx_producer', 'rx_producer', 'tx_consumer', 'busy', 'error', 'rx_packets',
     'tx_packets', 'ev_pending', 'ev_enable')
@@ -51,7 +62,7 @@ def ethernet_node(csr):
             'reg-names="dma","phy"; riscv-mini,csr-offsets=<'
             + ' '.join(hex(offset) for offset in offsets) + '>; '
             f'interrupt-parent=<&irq>; interrupts=<{irq}>; '
-            'local-mac-address=[20 12 03 14 05 06]; }; ')
+            'dma-coherent; local-mac-address=[20 12 03 14 05 06]; }; ')
     if 'ethmac' not in bases:
         return ''
     base, phy = bases['ethmac'], bases['ethphy']
@@ -66,6 +77,25 @@ def wsl(args,log=None):
     command=shlex.join([str(a) for a in args])
     if log:command+=' > '+shlex.quote(linux(log))+' 2>&1'
     COMMANDS.append(command)
+
+def peripheral_nodes(csr):
+    """Linux native drivers consume the currently selected packed 32-bit ABI."""
+    bases=csr['csr_bases']; nodes=[]
+    for bank, compatible, size in [('board_io','board-io',24),('ws2812','ws2812',16)]:
+        if bank in bases:
+            base=bases[bank]
+            irq='interrupt-parent=<&irq>; interrupts=<3>; ' if bank=='board_io' else ''
+            nodes.append(f'{bank}@{base:x} {{ compatible="riscv-mini,{compatible}"; reg=<0x{base:x} 0x{size:x}>; '+irq+'}; ')
+    if 'audio' in bases and 'mic' in bases:
+        nodes.append(f'audio@{bases["audio"]:x} {{ compatible="riscv-mini,audio"; reg=<0x{bases["audio"]:x} 0x38>,<0x{bases["mic"]:x} 0x30>; dma-coherent; }}; ')
+    if 'lcd_spi' in bases:
+        nodes.append(f'lcd_gpio: gpio@{bases["lcd_gpio"]:x} {{ compatible="riscv-mini,lcd-gpio"; reg=<0x{bases["lcd_gpio"]:x} 0x4>; gpio-controller; #gpio-cells=<2>; }}; ')
+        nodes.append(f'spi@{bases["lcd_spi"]:x} {{ compatible="riscv-mini,litespi32"; reg=<0x{bases["lcd_spi"]:x} 0x18>; #address-cells=<1>; #size-cells=<0>; '
+                     'panel@0 { compatible="riscv-mini,st7789-dock"; reg=<0>; spi-max-frequency=<6000000>; dc-gpios=<&lcd_gpio 0 0>; reset-gpios=<&lcd_gpio 1 1>; backlight-gpios=<&lcd_gpio 2 1>; }; }; ')
+    if 'spiflash' in csr['memories']:
+        flash=csr['memories']['spiflash']
+        nodes.append(f'flash@{flash["base"]:x} {{ compatible="riscv-mini,flash-xip-ro"; reg=<0x{flash["base"]:x} 0x{flash["size"]:x}>,<0x{bases["flash_xip"]:x} 0x8>; }}; ')
+    return ''.join(nodes)
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--soc-dir',type=Path,required=True)
@@ -105,13 +135,15 @@ def main():
     dts=out/'riscv_mini.dts';dtb=out/'riscv_mini.dtb'
     validation=json.loads((a.soc_dir/'validation.json').read_text())
     isa=validation['isa']
+    extensions=list(isa.split('_')[0][4:])+isa.split('_')[1:]
+    isa_properties='riscv,isa-base="rv32i"; riscv,isa-extensions='+','.join('"'+ext+'"' for ext in extensions)+'; '
     uart=csr['csr_bases']['uart']
     sd=csr['csr_bases']['sdcard'];sd_control=csr['csr_bases']['sd_control']
     usb_control=csr['csr_bases']['usb_host'];phy_reset=csr['csr_bases']['phy_reset']
     dts.write_text('/dts-v1/;\n/ { #address-cells=<1>; #size-cells=<1>; compatible="riscv-mini,tangprimer20k"; model="riscv-mini"; '
         f'chosen {{ stdout-path="/soc/serial@{uart:x}"; }}; timer {{ compatible="riscv,timer"; }}; '
         'cpus { #address-cells=<1>; #size-cells=<0>; timebase-frequency=<60000000>; '
-        f'cpu@0 {{ device_type="cpu"; reg=<0>; compatible="riscv"; riscv,isa="{isa}"; mmu-type="riscv,sv32"; cpu_intc: interrupt-controller {{ #interrupt-cells=<1>; interrupt-controller; compatible="riscv,cpu-intc"; }}; }}; }}; '
+        f'cpu@0 {{ device_type="cpu"; reg=<0>; compatible="riscv"; riscv,isa="{isa}"; '+isa_properties+'mmu-type="riscv,sv32"; cpu_intc: interrupt-controller { #interrupt-cells=<1>; interrupt-controller; compatible="riscv,cpu-intc"; }; }; }; '
         'irq: interrupt-controller { compatible="riscv-mini,vexriscv-supervisor-irq"; #interrupt-cells=<1>; interrupt-controller; interrupts-extended=<&cpu_intc 9>; riscv-mini,mask-csr=<0x9c0>; riscv-mini,pending-csr=<0xdc0>; }; '
         'memory@0 { device_type="memory"; reg=<0x00000000 0x08000000>; }; '
         'reserved-memory { #address-cells=<1>; #size-cells=<1>; ranges; '
@@ -122,12 +154,12 @@ def main():
         # LiteSDCard native SD host (drivers/mmc/litesd.c). reg order:
         # sdcard CSR block, sd_control reset block.
         f'mmc@{sd:x} {{ compatible="riscv-mini,litesd"; '
-        f'reg=<0x{sd:x} 0x100>,<0x{sd_control:x} 0x4>; interrupt-parent=<&irq>; interrupts=<4>; }}; '
+        f'reg=<0x{sd:x} 0x100>,<0x{sd_control:x} 0x4>; dma-coherent; interrupt-parent=<&irq>; interrupts=<4>; }}; '
         # Custom Ultraembedded PIO full-speed USB host (drivers/usb/liteusb.c).
         # reg order: PIO transaction block, usb_host enable/reset/ready CSR block.
         'usb@f2000000 { compatible="riscv-mini,liteusb"; '
         f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<{csr["constants"]["usb_host_interrupt"]}>; }}; '
-        +lcd_node(csr)+'}; };\n')
+        +lcd_node(csr)+peripheral_nodes(csr)+'}; };\n')
     wsl(['dtc','-I','dts','-O','dtb','-o',linux(dtb),linux(dts)])
     probe=ROOT/'firmware/opensbi/probe';elf=out/'probe.elf';raw=out/'probe.bin'
     wsl(['clang','--target=riscv32-unknown-elf','-march=rv32ima_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror',

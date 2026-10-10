@@ -1575,7 +1575,13 @@ static void process_enumeration(tuh_xfer_t* xfer) {
 
       // TODO probably doesn't need to open/close each enumeration
       uint8_t const addr0 = 0;
-      TU_ASSERT(usbh_edpt_control_open(addr0, 8),);
+      // An HCD may reject an unsupported bus speed or lack endpoint slots.
+      // This is an external-device failure, not a stack invariant: release
+      // enumeration and resume hub polling instead of trapping the CPU.
+      if (!usbh_edpt_control_open(addr0, 8)) {
+        enum_full_complete();
+        break;
+      }
 
       // Get first 8 bytes of device descriptor for control endpoint size
       TU_LOG_USBH("Get 8 byte of Device Descriptor\r\n");

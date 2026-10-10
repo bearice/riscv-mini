@@ -1,0 +1,133 @@
+{
+  "created_at": "2026-10-10T13:30:34+00:00",
+  "title": "Linux RV32 port, BusyBox LCD shell and USB keyboard recovery",
+  "changes": [
+    "Add Linux 6.12.112 RV32IMA/Sv32 with native IRQ/UART, coherent framebuffer, MMC, Ethernet ring DMA, USB full-speed host, ALSA, GPIO/input/LED, SPI panel and read-only Flash drivers; preserve documented scope and driver limitations.",
+    "Provide pinned static BusyBox/musl initrd with serial and LCD tty1 ash, UNIX98 PTY, and checked SRAM/UART/TFTP boot workflow; reject incompatible images and host binaries.",
+    "Fix USB receive clock recovery at jittered SYNC/PID edges; release TinyUSB enumeration on expected EP0-open failure instead of trapping. PHY 48/60 MHz phase/jitter regression and real TinyUSB/HCD rejection regression pass.",
+    "Host 52 focused plus 18 workflow tests pass; captured candidate PnR 0/0, matching BIOS full suite/60-second soak and three all/cache rounds pass. Linux native receipt 20261010T080621373234Z-linux and BusyBox/LCD/PTY receipt 20261010T132255233230Z-linux pass; earlier ALSA capture failure remains documented. No Flash or SD writes."
+  ],
+  "build": {
+    "id": "45398e9-full-rv32ima-rom0k-l24k-linux-usb-commit-31595fad-ee74c4ff",
+    "label": "linux-usb-commit",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261010T132235828694Z-45398e9-dirty-full-rv32ima-rom0k-l24k-linux-usb-commit",
+    "purpose": "linux-usb-commit",
+    "registered_at": "2026-10-10T13:26:49+00:00",
+    "source": {
+      "commit": "45398e96febaabac257b2a44998b68e94649d8bf",
+      "dirty": true,
+      "inputs_sha256": "65705980cbb5d8deb1a314b253a37277b5ea17db314ced3b4f9b84f18ebbe131",
+      "kind": "captured",
+      "created_at": "2026-10-10T13:22:36+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "linux-usb-commit",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\releases\\system\\v0.9.1\\full-rv32ima-rom0k-l24k\\inputs\\cpu\\VexRiscv_Mmu.v",
+        "--boot-mode",
+        "xip",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "3",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--without-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-eth-dma",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261010T132235828694Z-45398e9-dirty-full-rv32ima-rom0k-l24k-linux-usb-commit"
+      ],
+      "cpu_rtl_sha256": "80b9ad665be1c30dfd0180671d5c4138b423e3df47dc76e67c450d99664bbcd9",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\recipes\\20261010T132235828694Z-45398e9-dirty-full-rv32ima-rom0k-l24k-linux-usb-commit-ee74c4ff"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32ima_zicsr_zifencei",
+      "rom_size_bytes": 0,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 3,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": false,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "eth_dma": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "dd338308d65be07b6b20bb4912004b050b3219ea67cf0918bbd3f678bb464fdd",
+    "bitstream_sha256": "31595fad5470cdbdf616d3114a9725e42ea09621517807269ab7b77ad57fce24",
+    "abi": "71da004d",
+    "component_versions": {
+      "rtl": "0.9.0",
+      "bootloader": "0.9.1",
+      "hal": "0.9.1",
+      "bios": "0.9.1",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\operations\\20261010T132748459709Z-verify\\firmware-verification.json",
+        "sha256": "7149870618e49fea6603e8b6b128c951e47c2ac1c65a63d5352734f8fb37638e"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\linux-usb-vs-v0.9.1.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "65705980cbb5d8deb1a314b253a37277b5ea17db314ced3b4f9b84f18ebbe131"
+  },
+  "mode": "staged review",
+  "base_revision": "45398e96febaabac257b2a44998b68e94649d8bf",
+  "source_revision": null
+}

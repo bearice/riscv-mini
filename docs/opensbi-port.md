@@ -1,5 +1,7 @@
 # OpenSBI 平台与 OS 引导
 
+Linux 6.12.112 已在 v0.9.1 RV32IMA/Sv32 实板进入用户态并通过内存、进程和定时器检查，最新路线与边界见 [Linux 最小系统移植](linux-port.md)。下文 SBI 探针验收仅证明其列出的检查，不能代替 Linux 的独立验收。
+
 BIOS 继续提供原有 M-mode 裸机服务；OSB1 镜像增加一次性的 OS 交接，由 OpenSBI 接管 M-mode，再进入 S-mode payload。
 平台、兼容补丁和 S/U 探针分别位于 [platform](../firmware/opensbi/platform)、[patches](../firmware/opensbi/patches) 和 [probe](../firmware/opensbi/probe)。Rust 多任务内核尚未实现。
 

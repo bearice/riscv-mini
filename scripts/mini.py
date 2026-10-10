@@ -16,7 +16,8 @@ def parser():
         ('repair-xip','Restore selected XIP boot region, then SRAM load and exact readback; writes Flash'),
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
         ('update','Persist complete system, exact Flash readback, then Flash boot (--method programmer for a bricked board)'),
-        ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot')]:
+        ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
+        ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--port',default='COM4')
         if name=='status':
@@ -25,6 +26,14 @@ def parser():
         op.add_argument('--build',default='current',help='Catalog ID/reference or artifact directory; default qualified current')
         op.add_argument('--location',default='107569')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')
+        if name=='linux':
+            op.add_argument('--os-image',type=Path,required=True,help='Matching OpenSBI/U-Boot OSB1 image')
+            op.add_argument('--kernel',type=Path,required=True,help='Uncompressed RV32 Linux Image with embedded /init')
+            op.add_argument('--initrd',type=Path,help='External BusyBox initrd.cpio.gz; verifies the shell instead of embedded selftests')
+            op.add_argument('--host-ip',default='169.254.25.153')
+            op.add_argument('--tftp-python',default=sys.executable,help='Firewall-allowed Python to run the existing read-only TFTP server')
+            op.add_argument('--timeout',type=int,default=180)
+            op.add_argument('--devices',action='store_true',help='Also verify native Linux device drivers and UDP echo; SD/Flash reads only')
         if name in ('run','update','verify'):
             op.add_argument('--image',type=Path,help='Compatible app.img override; default selected build image')
         if name=='update':

@@ -1,0 +1,5 @@
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export HOME=/root
+export TERM=vt100
+export PS1='mini-linux# '
+cd /root

@@ -3,14 +3,18 @@
 // receiver checks TX sync, stuffing, byte handshake and EOP.
 module usb_fs_phy_tb;
 parameter FREQ=60000000;
+parameter real JITTER_NS=0;
 localparam RATIO=FREQ/12000000;
-reg clk=0;always #10 clk=~clk;
+localparam real CLOCK_NS=1000000000.0/FREQ;
+localparam real BIT_NS=1000000000.0/12000000;
+reg clk=0;always #(CLOCK_NS/2) clk=~clk;
 reg rst=1,valid=0,rxdp=1,rxdn=0,rcv=1;
 reg [7:0] txdata;
 wire dp,dn,oen,ready;
 wire [7:0] received,loop_data;
 wire rxvalid,rxactive,rxerror,loop_valid,loop_error;
 integer txindex,rxindex,loop_index,phase,ones,i,j;
+integer symbol_index=0;
 reg line;
 reg [7:0] payload[0:4];
 usb_fs_phy #(.USB_CLK_FREQ(FREQ)) dut(.clk_i(clk),.rst_i(rst),
@@ -43,7 +47,9 @@ task symbol(input bit value);
 begin
  if(!value)line=~line;
  rxdp=line;rxdn=~line;rcv=line;
- #(20*RATIO);
+ // Alternate edge displacement without changing the average bit rate.
+ #(BIT_NS + ((symbol_index%2)?JITTER_NS:-JITTER_NS));
+ symbol_index=symbol_index+1;
 end endtask
 task send_byte(input [7:0] value,input bit stuff);
 integer b;
@@ -58,19 +64,19 @@ initial begin
  payload[0]=8'hc3;payload[1]=8'hff;payload[2]=8'h00;payload[3]=8'h7e;payload[4]=8'h55;
  txindex=0;rxindex=0;loop_index=0;txdata=payload[0];
  repeat(10)@(negedge clk);rst=0;
- // 1ns plus every clock phase, independent of receive sample enable.
- for(phase=0;phase<RATIO;phase=phase+1)begin
-   repeat(30)@(negedge clk);#(1+20*phase);
+ // Sweep the entire bit cell in 1ns steps, including clock-edge boundaries.
+ for(phase=0;phase<84;phase=phase+1)begin
+   repeat(30)@(negedge clk);#(1+phase);
    rxindex=0;line=1;ones=0;send_byte(8'h80,0);ones=0;
    for(i=0;i<5;i=i+1)send_byte(payload[i],1);
-   rxdp=0;rxdn=0;rcv=0;#(40*RATIO);rxdp=1;rxdn=0;rcv=1;#(20*RATIO);
+   rxdp=0;rxdn=0;rcv=0;#(2*BIT_NS);rxdp=1;rxdn=0;rcv=1;#(BIT_NS);
    repeat(20)@(negedge clk);
    if(rxindex!=5 || rxactive)$fatal(1,"RX phase %d incomplete: %d",phase,rxindex);
  end
  @(negedge clk);valid=1;
  repeat(400)@(negedge clk);
  if(txindex!=5 || loop_index!=5 || !oen)$fatal(1,"TX incomplete %d %d",txindex,loop_index);
- $display("PASS USB FS PHY %d MHz, %d samples/bit, RX all phases and TX stuffing/EOP",FREQ/1000000,RATIO);$finish;
+ $display("PASS USB FS PHY %d MHz, %d samples/bit, jitter %f ns, RX all phases and TX stuffing/EOP",FREQ/1000000,RATIO,JITTER_NS);$finish;
 end
 initial begin #1000000;$fatal(1,"watchdog");end
 endmodule

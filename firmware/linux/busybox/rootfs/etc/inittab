@@ -1,0 +1,4 @@
+ttyLXU0::respawn:/bin/sh -l
+tty1::respawn:/bin/sh -l
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r
