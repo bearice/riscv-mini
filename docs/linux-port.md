@@ -26,6 +26,8 @@ linux-mini>
 本轮新增镜像/启动回归 6 项通过，既有板端操作回归 32 项通过。之前板端入口把 Path 传给需要文件流的状态机，且被动读取可能消耗两秒 autoboot 窗口。已发起 SRAM/reset 的路径现在立即同步新启动横幅与菜单；处理未知现场状态仍保留状态机恢复。
 设备树视频 ABI 检查 4 项和 Ethernet ABI 检查 3 项也通过。
 
+当前范围：主 RGB LCD 保留 `/dev/fb0` 和 LCD shell；SPI 小屏不提供 framebuffer 驱动，已移除 SPI panel fb1 及对应设备自检，保留 SPI 控制器和 GPIO。下文 SPI fb1 的验收记录属于此前候选的历史结果。
+
 ## LCD framebuffer
 
 `riscv-mini-fb` 是本机 LCD 控制驱动，负责分配 Linux 所有的连续 DMA 缓冲、停止旧 DMA、设置双基地址为同一缓冲、启用扫描，并注册 `/dev/fb0`。固定模式为 480×272、RGB565、960 B stride、261120 B。支持 fbdev read/write、`mmap`、模式查询和 blank/unblank；不支持变更分辨率或 panning。
@@ -167,3 +169,9 @@ USB 接收 trace `20261010T073321384536Z-linux` 捕获 hub 描述符从 `12 01 0
 提交前完整候选 `45398e9-full-rv32ima-rom0k-l24k-linux-usb-commit-31595fad-ee74c4ff` 从最终源码输入重新构建，PnR setup/hold 0/0，ABI 保持 `71da004d`；此候选与前述 BusyBox 的 ab5ad2e5 构建分别记录身份。
 
 最终源码输入的候选 BIOS 验收 `20261010T132748459709Z-verify` 通过全部适用功能、双麦克风和 60 秒 soak，USB 三次重启与共享 PHY 检查通过；LCD underflows、音频 underruns/errors、IRQ drops/unhandled 均为 0。资格关联选定 FS/app hash，不是配置区独立读回。
+
+## 根端口状态修正与 SPI 屏幕范围
+
+Linux HCD 的 STATUS 是即时 PHY 线状态，不能直接把非 J 解释为掉线。根端口轮询现保留已连接设备的 K 状态，SE0/SE1 缺失样本需跨越至少 20 ms 才报告断开，并跳过自身 reset 与传输期间的采样；GetPortStatus 使用同一缓存状态。针对实际 root-hub callback 的回归覆盖 packet K、短 EOP、reset、transfer、拔出、重连及 tick 回绕，旧实现失败、新实现通过。此处的 20 ms 是采样间隔的消抖门限，并非硬件连续线状态监测；长期热插拔稳定性仍需单独验收。
+
+SPI panel framebuffer 驱动和 fb1 自检已删除。内核构建保留 RGB LCD fb0、SPI 控制器与 GPIO，并检查 SPI panel 配置未启用、panel_probe 未链接。历史 SPI fb1 结果不代表当前提供该接口。

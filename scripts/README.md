@@ -24,7 +24,7 @@
 | 修复损坏的 XIP 启动区 | `./mini.ps1 board repair-xip --build current` | 外部下载器单独写目标 XIP，再 SRAM 重载、独立读回确认；会写 Flash，应用可仍不匹配 |
 | 临时运行当前固件 | `./mini.ps1 board run --build current` | SRAM gateware + UART 应用到 DDR，验证就绪，不写 Flash |
 | 启动并验收最小 Linux | `./mini.ps1 board linux --os-image <UBOOT.OSB> --kernel <Image> --tftp-python <已放行Python>` | SRAM/UART BIOS，经 TFTP 进入 Linux PID 1 并检查用户态；[构建与验收](../docs/linux-port.md) |
-| 验收 Linux 全外设 | 上述 `board linux` 命令追加 `--devices` | 在用户态/fb0 回归后测试 Linux Ethernet UDP、SD/FAT 只读、Flash MTD、GPIO/LED、ALSA、SPI fb1、USB 枚举；详情与实际资格见 [Linux 移植](../docs/linux-port.md) |
+| 验收 Linux 全外设 | 上述 `board linux` 命令追加 `--devices` | 在用户态/fb0 回归后测试 Linux Ethernet UDP、SD/FAT 只读、Flash MTD、GPIO/LED、ALSA、USB 枚举（SPI 控制器保留，不提供 SPI 屏幕 fb1）；详情与实际资格见 [Linux 移植](../docs/linux-port.md) |
 | 构建 BusyBox initrd | `./scripts/busybox_build.ps1` | 固定 BusyBox/musl 源码与 SHA，WSL ext4 编译静态 RV32 用户态；需要先构建 Linux 以生成 UAPI headers |
 | 启动 BusyBox shell | 上述 `board linux` 命令追加 `--initrd build/linux/busybox/initrd.cpio.gz` | TFTP 校验外部 initramfs、检查 PID 1 init、串口/LCD tty1 shell、PTY、进程、tmpfs 与 loopback，记录 USB 键盘输入设备；不与 `--devices` 同时使用 |
 | 持久更新完整系统 | `./mini.ps1 board update --build current` | 根据 ROM/XIP 选择流程，精确读回应用/XIP，再从 Flash 启动 |

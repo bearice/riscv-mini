@@ -325,26 +325,9 @@ static void audio_test(void)
     ioctl_file(fd,SNDRV_PCM_IOCTL_DROP,0); close_file(fd);
     text("SELFTEST ALSA-stereo-DMA/microphone-capture PASS\n");
 }
-static void panel_test(void)
-{
-    char before[32],after[32];
-    load_file("/sys/class/graphics/fb1/device/updates",before,sizeof(before));
-    long fd=open_file("/dev/fb1",2); u32 var[40];
-    if(fd<0 || ioctl_file(fd,0x4600,var) || var[0]!=240 || var[1]!=135 || var[6]!=16) die("SPI panel geometry");
-    volatile unsigned short *pixels=(void *)call(222,0,240*135*2,3,1,fd,0);
-    if((long)pixels<0 && (long)pixels>=-4095) die("SPI panel mmap");
-    for(unsigned i=0;i<240*135;i++) pixels[i]=((i/240)&8)?0xf800:0x07e0;
-    for(unsigned i=0;i<400;i++) {
-        delay_ms(100); load_file("/sys/class/graphics/fb1/device/updates",after,sizeof(after));
-        if(field(after,"")!=field(before,"")) break;
-    }
-    if(field(after,"")==field(before,"")) die("SPI panel deferred transfer");
-    call(215,(long)pixels,240*135*2,0,0,0,0); close_file(fd);
-    text("SELFTEST SPI-panel-fb1/mmap/deferred-transfer PASS\n");
-}
 static void devices_test(void)
 {
-    delay_ms(2000); storage_test(); board_test(); audio_test(); panel_test();
+    delay_ms(2000); storage_test(); board_test(); audio_test();
     char data[128]; load_file("/sys/bus/usb/devices/usb1/product",data,sizeof(data)); text(data);
     load_file("/sys/bus/usb/devices/1-1/idVendor",data,sizeof(data)); text("USB attached vendor="); text(data);
     list_dir("/sys/bus/usb/devices");

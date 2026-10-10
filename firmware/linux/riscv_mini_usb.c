@@ -9,6 +9,7 @@
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
 #include <linux/workqueue.h>
+#include "riscv_mini_usb_port.h"
 
 enum { CTRL=0, STATUS=4, IRQ_ACK=8, IRQ_MASK=16, TX_LEN=20,
 	TOKEN=24, RX_STAT=28, FIFO=32 };
@@ -29,7 +30,8 @@ struct mini_usb {
 	struct list_head queue;
 	struct delayed_work work;
 	u16 change;
-	bool enabled, connected, stopping;
+	struct mini_usb_port port;
+	bool enabled, stopping, resetting, transacting;
 };
 static struct mini_usb *mini_hcd(struct usb_hcd *hcd) { return (void *)hcd->hcd_priv; }
 static int mini_packet(struct mini_usb *p,struct urb *urb,bool in,int toggle,int pid,
@@ -109,7 +111,9 @@ static void mini_usb_work(struct work_struct *work)
 	spin_unlock_irqrestore(&p->lock,flags);
 	if(q) {
 		mutex_lock(&p->io);
+		WRITE_ONCE(p->transacting, true);
 		ret=READ_ONCE(p->stopping)?-ESHUTDOWN:READ_ONCE(q->cancelled)?q->cancelled:mini_step(p,q);
+		WRITE_ONCE(p->transacting, false);
 		mutex_unlock(&p->io);
 		spin_lock_irqsave(&p->lock,flags);
 		if(q->cancelled) ret=q->cancelled;
@@ -164,13 +168,22 @@ static void mini_usb_stop(struct usb_hcd *hcd)
 }
 static int mini_hub_status(struct usb_hcd *hcd,char *buf)
 {
-	struct mini_usb *p=mini_hcd(hcd); bool connected=(readl(p->regs+STATUS)&3)==1;
-	if(connected!=p->connected) { p->connected=connected; p->change|=USB_PORT_STAT_C_CONNECTION; if(!connected) p->enabled=false; }
-	buf[0]=p->change?2:0; return p->change?1:0;
+	struct mini_usb *p=mini_hcd(hcd); unsigned long flags; int changed;
+	/* Called by the root-hub timer: no sleeping locks here. Reset SE0 and
+	 * packet J/K/EOP transitions must not be reported as unplug events. */
+	spin_lock_irqsave(&p->lock,flags);
+	if (!READ_ONCE(p->resetting) && !READ_ONCE(p->transacting) &&
+	    mini_usb_port_sample(&p->port, readl(p->regs+STATUS)&3,
+				 jiffies, msecs_to_jiffies(20))) {
+		p->change|=USB_PORT_STAT_C_CONNECTION;
+		if(!p->port.connected) p->enabled=false;
+	}
+	changed=p->change?1:0; buf[0]=changed?2:0;
+	spin_unlock_irqrestore(&p->lock,flags); return changed;
 }
 static int mini_hub_control(struct usb_hcd *hcd,u16 type,u16 value,u16 index,char *buf,u16 length)
 {
-	struct mini_usb *p=mini_hcd(hcd); u32 status; int ret=0;
+	struct mini_usb *p=mini_hcd(hcd); u32 status; unsigned long flags; int ret=0;
 	mutex_lock(&p->io);
 	switch(type) {
 	case GetHubDescriptor: {
@@ -180,23 +193,31 @@ static int mini_hub_control(struct usb_hcd *hcd,u16 type,u16 value,u16 index,cha
 	case GetHubStatus: put_unaligned_le32(0,buf); break;
 	case GetPortStatus:
 		if(index!=1) { ret=-EPIPE; break; }
+		spin_lock_irqsave(&p->lock,flags);
 		status=USB_PORT_STAT_POWER;
-		if((readl(p->regs+STATUS)&3)==1) status|=USB_PORT_STAT_CONNECTION;
+		if(p->port.connected) status|=USB_PORT_STAT_CONNECTION;
 		if(p->enabled) status|=USB_PORT_STAT_ENABLE;
-		put_unaligned_le32(status|((u32)p->change<<16),buf); break;
+		put_unaligned_le32(status|((u32)p->change<<16),buf);
+		spin_unlock_irqrestore(&p->lock,flags); break;
 	case SetPortFeature:
 		if(index!=1) { ret=-EPIPE; break; }
 		if(value==USB_PORT_FEAT_RESET) {
+			WRITE_ONCE(p->resetting,true);
 			writel(RESET,p->regs+CTRL); msleep(20); writel(RUN,p->regs+CTRL);
+			spin_lock_irqsave(&p->lock,flags);
 			p->enabled=true; p->change|=USB_PORT_STAT_C_RESET;
+			WRITE_ONCE(p->resetting,false);
+			spin_unlock_irqrestore(&p->lock,flags);
 		} else if(value!=USB_PORT_FEAT_POWER) ret=-EPIPE;
 		break;
 	case ClearPortFeature:
 		if(index!=1) { ret=-EPIPE; break; }
+		spin_lock_irqsave(&p->lock,flags);
 		if(value>=USB_PORT_FEAT_C_CONNECTION && value<=USB_PORT_FEAT_C_RESET)
 			p->change&=~BIT(value-USB_PORT_FEAT_C_CONNECTION);
 		else if(value==USB_PORT_FEAT_ENABLE) p->enabled=false;
 		else if(value!=USB_PORT_FEAT_POWER) ret=-EPIPE;
+		spin_unlock_irqrestore(&p->lock,flags);
 		break;
 	case SetHubFeature: case ClearHubFeature: break;
 	default: ret=-EPIPE;

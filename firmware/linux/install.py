@@ -12,7 +12,6 @@ drivers = [
     ('misc', 'riscv_mini_board', 'BOARD_RISCV_MINI', 'GPIOLIB && INPUT && LEDS_CLASS && RISCV && OF'),
     ('mtd/maps', 'riscv_mini_flash', 'MTD_RISCV_MINI', 'MTD && RISCV && OF'),
     ('spi', 'riscv_mini_spi', 'SPI_RISCV_MINI', 'SPI && RISCV && OF'),
-    ('video/fbdev', 'riscv_mini_panel', 'FB_PANEL_RISCV_MINI', 'FB && SPI && GPIOLIB && RISCV && OF'),
     ('usb/host', 'riscv_mini_usb', 'USB_RISCV_MINI', 'USB && RISCV && OF'),
     ('../sound/drivers', 'riscv_mini_audio', 'SND_RISCV_MINI', 'SND && RISCV && OF'),
 ]
@@ -24,8 +23,7 @@ for directory, name, config, depends in drivers:
     (folder / source.name).write_bytes(source.read_bytes().replace(b'\r\n', b'\n'))
     kconfig = folder / 'Kconfig'
     extra = {'SND_RISCV_MINI': '\tselect SND_PCM\n',
-             'MINI_IRQ': '\tselect LITEX\n',
-             'FB_PANEL_RISCV_MINI': '\tselect FB_DEFERRED_IO\n\tselect FB_SYSMEM_HELPERS\n'}.get(config, '')
+             'MINI_IRQ': '\tselect LITEX\n'}.get(config, '')
     config_text = kconfig.read_text()
     if f'config {config}\n' not in config_text:
         with kconfig.open('a') as f:
@@ -37,9 +35,9 @@ for directory, name, config, depends in drivers:
         if stanza + extra not in config_text:
             kconfig.write_text(config_text.replace(stanza, stanza + extra))
 
-(src / 'drivers/video/fbdev/riscv_mini_panel_init.h').write_bytes(
-    (port.parent / 'drivers/lcd_init.h').read_bytes().replace(b'\r\n', b'\n'))
 usb_make = src / 'drivers/usb/Makefile'
+(src / 'drivers/usb/host/riscv_mini_usb_port.h').write_bytes(
+    (port / 'riscv_mini_usb_port.h').read_bytes().replace(b'\r\n', b'\n'))
 usb_entry = 'obj-$(CONFIG_USB_RISCV_MINI) += host/\n'
 if usb_entry not in usb_make.read_text():
     with usb_make.open('a') as f: f.write(usb_entry)

@@ -34,7 +34,7 @@ def main():
                       load_address='0x02000000', console='liteuart0 (native ttyLXU0; early SBI DBCN)',
                       artifacts={name: hashlib.sha256((out / name).read_bytes()).hexdigest()
                                  for name in files}, board_verified=False, board_devices_verified=False)
-        inputs = sorted((ROOT / 'firmware/linux').rglob('*')) + [Path(__file__), ROOT/'firmware/drivers/lcd_init.h']
+        inputs = sorted((ROOT / 'firmware/linux').rglob('*')) + [Path(__file__)]
         record['port_inputs'] = {str(path.relative_to(ROOT)).replace('\\', '/'): hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in inputs if path.is_file()}
         if args.board_evidence:
@@ -101,15 +101,16 @@ grep -q '^CONFIG_ARCH_RV32I=y$' "$OBJ/.config"
 grep -q '^CONFIG_MMU=y$' "$OBJ/.config"
 grep -q '^CONFIG_HVC_RISCV_SBI=y$' "$OBJ/.config"
 grep -q '^CONFIG_FB_RISCV_MINI=y$' "$OBJ/.config"
-for symbol in MINI_IRQ SERIAL_LITEUART_CONSOLE MMC_RISCV_MINI NET_RISCV_MINI BOARD_RISCV_MINI SPI_RISCV_MINI USB_RISCV_MINI USB_HID HID_GENERIC USB_STORAGE BLK_DEV_SD INPUT_EVDEV GPIO_CDEV SND_RISCV_MINI SND_PCM FB_PANEL_RISCV_MINI MTD_RISCV_MINI HIGH_RES_TIMERS PROC_SYSCTL UNIX98_PTYS; do
+for symbol in MINI_IRQ SERIAL_LITEUART_CONSOLE MMC_RISCV_MINI NET_RISCV_MINI BOARD_RISCV_MINI SPI_RISCV_MINI USB_RISCV_MINI USB_HID HID_GENERIC USB_STORAGE BLK_DEV_SD INPUT_EVDEV GPIO_CDEV SND_RISCV_MINI SND_PCM MTD_RISCV_MINI HIGH_RES_TIMERS PROC_SYSCTL UNIX98_PTYS; do
     grep -q "^CONFIG_$symbol=y$" "$OBJ/.config"
 done
-! grep -Eq '^CONFIG_(FPU|RISCV_ISA_C|SMP)=y$' "$OBJ/.config"
+! grep -Eq '^CONFIG_(FPU|RISCV_ISA_C|SMP|FB_PANEL_RISCV_MINI)=y$' "$OBJ/.config"
 make -j8 ARCH=riscv LLVM=1 O="$OBJ" Image
 llvm-nm "$OBJ/vmlinux" > "$OBJ/mini-symbols.txt"
-for symbol in mini_usb_probe mini_net_probe mini_sd_probe mini_audio_probe mini_flash_probe panel_probe liteuart_probe; do
+for symbol in mini_usb_probe mini_net_probe mini_sd_probe mini_audio_probe mini_flash_probe liteuart_probe; do
     grep -q " $symbol$" "$OBJ/mini-symbols.txt"
 done
+! grep -q " panel_probe$" "$OBJ/mini-symbols.txt"
 cp "$OBJ/arch/riscv/boot/Image" "$OBJ/vmlinux" "$OBJ/System.map" "$OUT/"
 cp "$OBJ/mini-init" "$OUT/init"
 cp "$OBJ/.config" "$OUT/config"
