@@ -35,6 +35,14 @@ CD 在每次等待与块操作中检查。检测无卡时标记介质不可用�
 
 `hal_sd_get_info()` 返回 backend、宽度、当前时钟、容量、介质/初始化状态，以及原生读块/写块/错误累计值。SPI 回退仍复用原驱动，其三个累计统计目前为 0，表示未实现统计；模式/时钟/容量/状态仍有效。原生构建的 `hal_spi_transfer(HAL_SPI_SD,...)` 与 `hal_spi_select(HAL_SPI_SD,...)` 返回 `HAL_UNSUPPORTED`，SPI LCD 不受影响。调用模型仍为一个裸机主循环，不支持 ISR/多个任务并发访问 SD/FatFs。
 
+## 块缓存
+
+`disk_read()` 默认经过 `firmware/drivers/blockcache.c`：32 个 4 KiB 块的全相联 LRU（128 KiB BSS，原生与 SPI 回退共用同一份）。块大小取 4 KiB 是因为它正好是原生主机单条命令的上限——未命中只多付一次本来就要发的读，之后的扇区是免费预读；对 BIOS 的文件服务尤其划算，因为一次 `FS_READ` 的上限就是 4096 字节。
+
+写是**直通**的：`disk_write()` 先落卡，再用 `bc_written()` 把同一批数据刷进缓存副本。这样任何时刻都没有待写数据，控制器复位、拔卡、`board reset` 之前不需要 flush，也不会出现“写返回成功但卡上还是旧数据”。`disk_initialize()` 复位控制器后调用 `bc_invalidate()`，卡容量变化或重新初始化不会读到旧块；填充失败（短卡尾、CRC 错）的槽位保持无效。
+
+`bc_set_enabled(0)` 整体绕过缓存并清空内容，`bc_stats()` 读命中/未命中/逐出。`bench sd` 进入时会临时关闭缓存、退出时恢复——它回答的是“这张卡多快”，不能让重复读同一 1 MiB 的基准从缓存里拿答案。`test sd cache` 校验缓存路径与直读路径逐字节一致（见 [固件测试](firmware-tests.md)）。
+
 ## 构建、下载与验收
 
 ```powershell

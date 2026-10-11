@@ -80,7 +80,7 @@ static int readable_range(uint32_t address,uint32_t length) {
 }
 static void command(char *s) {
     if(bios_benchmark_command(s))return;
-    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, ping [A.B.C.D] [1..32], io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\nmd/mdb ADDR [COUNT] [u] word/byte dump (ADDR hex, COUNT dec, RAM only, u=UART only)\r\n");return;}
+    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), fetchraw FILE (any file, <=8 MiB), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, ping [A.B.C.D] [1..32], io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\nmd/mdb ADDR [COUNT] [u] word/byte dump (ADDR hex, COUNT dec, RAM only, u=UART only)\r\n");return;}
     if(!strcmp(s,"status")) {
         bios_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=");bios_decimal(MINI_FEATURE_MMU);
         bios_puts(" FPU=");bios_decimal(MINI_FEATURE_FPU);bios_puts("\r\n");bios_puts("BUILD " MINI_APP_ID " " MINI_BUILD_RTL_ID " " MINI_BUILD_ROM_ID "\r\n");settings_show();hal_video_status();
@@ -157,6 +157,7 @@ static void command(char *s) {
         if(!d || *p || n>30000)bios_puts("ERR delay\r\n");else bios_settings.delay_ms=n;
         return;
     }
+    if(!strncmp(s,"fetchraw ",9) && s[9]) {bios_fetch_raw(s+9);return;}
     if(!strncmp(s,"fetch ",6) && s[6]) {bios_fetch(s+6);return;}
     if(!strcmp(s,"boot sd") || !strncmp(s,"boot sd ",8)) {bios_sd_boot(s[7]?s+8:bios_settings.file);return;}
     if(!strcmp(s,"boot net") || !strncmp(s,"boot net ",9)) {bios_net_boot(bios_settings.server,s[8]?s+9:bios_settings.file);return;}

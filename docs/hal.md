@@ -13,7 +13,7 @@
 | uart | IRQ RX + 128 字节环形缓冲；非阻塞 getc；带超时和已写长度的 write；puts/hex 为阻塞便利函数 |
 | board IO | 六灯逻辑掩码、四按键稳定状态/按下释放事件、四 DIP、单颗 WS2812B、共用 PHY reset |
 | spi | 已有 SD / LCD mode-0 主机的事务接口，SPI 回退下位宽分别 8 / 16；原生 SD 构建中 SD SPI 请求返回 HAL_UNSUPPORTED；不是任意模式/引脚的通用 SPI 控制器 |
-| sd | FatFs mount/list、512 字节 block read/write；默认原生四位 SD + Wishbone DMA，SPI 作为回退；get_info 返回模式、时钟、容量和统计 |
+| sd | FatFs mount/list、512 字节 block read/write；默认原生四位 SD + Wishbone DMA，SPI 作为回退；读路径经过 4 KiB×32 块缓存（写直通后刷新缓存），见 [原生 SD](native-sd.md)；get_info 返回模式、时钟、容量和统计 |
 | flash | JEDEC/容量、read、受 `[2,4)` MiB 边界保护的 program/erase；无写后读回 |
 | display | SPI LCD 状态页，DDR RGB565 双帧的 init/frame/present/stop/status |
 | audio | PT8211 PCM16 stereo，48,000 Hz；PIO FIFO / DDR ring DMA、start/pause/stop/mute、进度及欠载统计；见 [音频](audio.md) |
@@ -76,5 +76,7 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 原生 SD 的块缓冲、错误取消和运行频率见 [原生 SD](native-sd.md)。
 
 `hal_sd_set_read_clock()` 仅调整原生 SD 读频率，重新初始化恢复默认值；写频率独立保留 7.5 MHz。SD info 同时报告实际、读、写时钟和 High Speed 协商状态。更高频率的只读检查由 BIOS `bench sd HZ` 提供，见 [性能测试](benchmark.md)。
+
+块读取走 `firmware/drivers/blockcache.h` 的全相联 LRU 缓存：32 个 4 KiB 块（128 KiB BSS），4 KiB 正好是原生 SD 主机单条命令的上限，所以未命中只多付一次本来就要发的命令，其余是免费预读。写是直通的——先落卡、再用 `bc_written()` 刷新缓存副本，因此卡复位、拔卡或复位前都不存在待刷新的脏数据。`bc_set_enabled(0)` 可整体绕过（`bench sd` 用它保证测的是卡而不是缓存），`bc_stats()` 给出命中/未命中/逐出计数，`test sd cache` 校验缓存路径与直读路径逐字节一致。SPI 回退驱动使用同一套缓存。
 
 `hal_flash_uid()` 读取工厂唯一序列号。SPI LCD提供 `hal_spi_lcd_network(mac,ip)` 与 `hal_spi_lcd_link(up)`，支持冒号/句点字形和局部更新。基础monitor默认显示实际MAC和IP UNCONFIGURED；显式 `test eth start` 启用测试用 ARP/ICMP/UDP 子集并显示测试 IP，`test eth stop` 恢复未配置状态。独立Ethernet示例也拥有自己的测试地址，HAL本身不提供完整IP栈。见 [Ethernet](ethernet.md)。

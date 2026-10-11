@@ -30,15 +30,108 @@ void bios_sd_list(void) {
     bios_puts("LS: filesystem disabled\r\n");
 #endif
 }
+/* ------------------------------------------------------------- file system
+ * One layer over FatFs used by every BIOS file user: the payload ecall
+ * services, the console commands (fetch/fetchraw/boot sd/settings) and the
+ * legacy FILE_READ/FILE_SIZE pair.  Handles are indices into this table; a
+ * handle owned by one payload is just an integer, so callers pass back what
+ * they were given.  sd_mount() keeps the volume mounted, so an open handle
+ * stays valid across the whole run. */
+#if MINI_FEATURE_FILESYSTEM
+#define BIOS_FS_HANDLES 6
+static struct {FIL fil;int used,writable;} fs_handles[BIOS_FS_HANDLES];
+
+static int fs_handle_ok(int handle) {
+    return handle>=0 && handle<BIOS_FS_HANDLES && fs_handles[handle].used;
+}
+int bios_fs_open(const char *path,unsigned flags) {
+    if(hal_sd_mount()!=HAL_OK)return -1;
+    BYTE mode=0;
+    if(flags&BIOS_FS_O_WRITE)mode|=FA_WRITE;
+    if(flags&BIOS_FS_O_CREATE)mode|=(flags&BIOS_FS_O_TRUNC)?FA_CREATE_ALWAYS:FA_CREATE_NEW;
+    else if(flags&BIOS_FS_O_TRUNC)mode|=FA_CREATE_ALWAYS;
+    if(flags&BIOS_FS_O_APPEND)mode|=FA_OPEN_APPEND;
+    if(!(flags&(BIOS_FS_O_WRITE|BIOS_FS_O_CREATE|BIOS_FS_O_TRUNC|BIOS_FS_O_APPEND)))mode=FA_READ;
+    for(int i=0;i<BIOS_FS_HANDLES;++i) {
+        if(fs_handles[i].used)continue;
+        if(f_open(&fs_handles[i].fil,path,mode)!=FR_OK)return -1;
+        fs_handles[i].used=1;fs_handles[i].writable=!!(flags&BIOS_FS_O_WRITE);
+        return i;
+    }
+    return -1; /* handle table full */
+}
+int bios_fs_close(int handle) {
+    if(!fs_handle_ok(handle))return -1;
+    FRESULT r=f_close(&fs_handles[handle].fil);
+    fs_handles[handle].used=0;
+    return r==FR_OK?0:-1;
+}
+int bios_fs_read(int handle,void *data,unsigned length) {
+    if(!fs_handle_ok(handle))return -1;
+    UINT got=0;FRESULT r=f_read(&fs_handles[handle].fil,data,length,&got);
+    return r==FR_OK?(int)got:-1;
+}
+int bios_fs_write(int handle,const void *data,unsigned length) {
+    if(!fs_handle_ok(handle) || !fs_handles[handle].writable)return -1;
+    UINT put=0;FRESULT r=f_write(&fs_handles[handle].fil,data,length,&put);
+    return r==FR_OK?(int)put:-1;
+}
+int bios_fs_seek(int handle,int offset,int whence) {
+    if(!fs_handle_ok(handle))return -1;
+    FIL *f=&fs_handles[handle].fil;
+    FSIZE_t base;
+    switch(whence) {
+    case BIOS_FS_SET:base=0;break;
+    case BIOS_FS_CUR:base=f_tell(f);break;
+    case BIOS_FS_END:base=f_size(f);break;
+    default:return -1;
+    }
+    FSIZE_t target=offset<0?(base<(FSIZE_t)(-offset)?0:base-(FSIZE_t)(-offset)):base+(FSIZE_t)offset;
+    if(f_lseek(f,target)!=FR_OK)return -1;
+    return (int)f_tell(f);
+}
+int bios_fs_stat(const char *path,struct bios_fs_stat *out) {
+    FILINFO info;
+    if(hal_sd_mount()!=HAL_OK)return -1;
+    if(f_stat(path,&info)!=FR_OK)return -1;
+    out->size=(uint32_t)info.fsize;out->attrib=info.fattrib;
+    return 0;
+}
+int bios_fs_mkdir(const char *path) {
+    if(hal_sd_mount()!=HAL_OK)return -1;
+    FRESULT r=f_mkdir(path);
+    return (r==FR_OK || r==FR_EXIST)?0:-1;
+}
+int bios_fs_unlink(const char *path) {
+    if(hal_sd_mount()!=HAL_OK)return -1;
+    return f_unlink(path)==FR_OK?0:-1;
+}
+int bios_fs_rename(const char *from,const char *to) {
+    if(hal_sd_mount()!=HAL_OK)return -1;
+    return f_rename(from,to)==FR_OK?0:-1;
+}
+#endif
+
+/* Legacy services, now thin clients of the layer above. */
 int bios_file_read(const char *path,unsigned offset,void *data,unsigned capacity) {
 #if MINI_FEATURE_FILESYSTEM
-    FIL f;UINT count;
-    if(hal_sd_mount()!=HAL_OK || f_open(&f,path,FA_READ)!=FR_OK)return -1;
-    FRESULT r=f_lseek(&f,offset);
-    if(r==FR_OK)r=f_read(&f,data,capacity,&count);
-    FRESULT c=f_close(&f);return r==FR_OK && c==FR_OK?(int)count:-1;
+    int handle=bios_fs_open(path,BIOS_FS_O_READ);
+    if(handle<0)return -1;
+    int result=-1;
+    if(bios_fs_seek(handle,(int)offset,BIOS_FS_SET)>=0)result=bios_fs_read(handle,data,capacity);
+    bios_fs_close(handle);
+    return result;
 #else
     (void)path;(void)offset;(void)data;(void)capacity;return -1;
+#endif
+}
+int bios_file_size(const char *path) {
+#if MINI_FEATURE_FILESYSTEM
+    struct bios_fs_stat info;
+    if(bios_fs_stat(path,&info)!=0)return -1;
+    return (int)info.size;
+#else
+    (void)path;return -1;
 #endif
 }
 int bios_payload_check(const void *image,unsigned length) {
@@ -123,25 +216,45 @@ int bios_net_boot(const uint8_t server[4],const char *path) {
     if(!r)bios_puts("BOOT TFTP unavailable/timeout\r\n");
     return r?bios_payload_run(STAGING,n):-1;
 }
+#if MINI_FEATURE_FILESYSTEM
+/* 把 STAGING 中的 n 字节写成 SD 上的新文件：显式创建、不覆盖已存在文件、
+ * 失败时删除半成品。经文件系统层，FETCH 与 FETCHRAW 共用。 */
+static int staging_write_sd(const char *path,unsigned n,const char *tag) {
+    int handle=bios_fs_open(path,BIOS_FS_O_WRITE|BIOS_FS_O_CREATE);
+    if(handle<0) {bios_puts(tag);bios_puts(" SD error/file exists\r\n");return -1;}
+    unsigned offset=0;int ok=1;
+    while(offset<n) {
+        unsigned bytes=n-offset;if(bytes>4096)bytes=4096;
+        int put=bios_fs_write(handle,STAGING+offset,bytes);
+        if(put!=(int)bytes) {ok=0;break;}
+        offset+=(unsigned)put;bios_poll();
+    }
+    if(bios_fs_close(handle)!=0)ok=0;
+    if(!ok) {f_unlink(path);bios_puts(tag);bios_puts(" SD write failed\r\n");return -1;}
+    bios_puts(tag);bios_puts(" SAVED ");bios_puts(path);bios_puts("\r\n");return 0;
+}
+#endif
 int bios_fetch(const char *path) {
 #if MINI_FEATURE_FILESYSTEM
     unsigned n;
     if(!bios_tftp_get(bios_settings.server,path,STAGING,BIOS_IMAGE_MAX+sizeof(struct bios_image),&n) || !bios_payload_check(STAGING,n)) {
         bios_puts("FETCH rejected/unavailable\r\n");return -1;
     }
-    FIL f;UINT count;
-    /* Explicit command creates a new file; never replaces an existing image. */
-    if(hal_sd_mount()!=HAL_OK || f_open(&f,path,FA_WRITE|FA_CREATE_NEW)!=FR_OK) {
-        bios_puts("FETCH SD error/file exists\r\n");return -1;
+    return staging_write_sd(path,n,"FETCH");
+#else
+    (void)path;return -1;
+#endif
+}
+/* FETCHRAW：原样搬运任意数据文件（不做 RPB 校验，上限 BIOS_FILE_FETCH_MAX）。
+ * 载荷镜像用 FETCH；数据文件（例如 DOOM 的 IWAD）用 FETCHRAW。 */
+int bios_fetch_raw(const char *path) {
+#if MINI_FEATURE_FILESYSTEM
+    unsigned n;
+    bios_puts("FETCHRAW ");bios_puts(path);bios_puts("\r\n");
+    if(!bios_tftp_get(bios_settings.server,path,STAGING,BIOS_FILE_FETCH_MAX,&n)) {
+        bios_puts("FETCHRAW rejected/unavailable\r\n");return -1;
     }
-    FRESULT r=FR_OK;unsigned offset=0;
-    while(offset<n) {unsigned bytes=n-offset;if(bytes>4096)bytes=4096;
-        r=f_write(&f,STAGING+offset,bytes,&count);if(r!=FR_OK || count!=bytes)break;
-        offset+=count;bios_poll();
-    }
-    FRESULT c=f_close(&f);
-    if(r!=FR_OK || c!=FR_OK || offset!=n) {f_unlink(path);bios_puts("FETCH SD write failed\r\n");return -1;}
-    bios_puts("FETCH SAVED ");bios_puts(path);bios_puts("\r\n");return 0;
+    return staging_write_sd(path,n,"FETCHRAW");
 #else
     (void)path;return -1;
 #endif
@@ -166,6 +279,45 @@ int bios_exception_hook(hal_trap_frame_t *f) {
             unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
             if(n<64)result=bios_file_read((char *)a[0],a[1],(void *)a[2],a[3]);
         }break;
+    case BIOS_FILE_SIZE:
+        if(pointer_ok(a[0],64)) {
+            unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
+            if(n<64)result=bios_file_size((char *)a[0]);
+        }break;
+    case BIOS_FS_OPEN:
+        if(pointer_ok(a[0],64)) {
+            unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
+            if(n<64)result=bios_fs_open((char *)a[0],a[1]);
+        }break;
+    case BIOS_FS_CLOSE:result=bios_fs_close((int)a[0]);break;
+    case BIOS_FS_READ:
+        if(pointer_ok(a[1],a[2]) && a[2]<=4096)result=bios_fs_read((int)a[0],(void *)a[1],a[2]);
+        break;
+    case BIOS_FS_WRITE:
+        if(pointer_ok(a[1],a[2]) && a[2]<=4096)result=bios_fs_write((int)a[0],(const void *)a[1],a[2]);
+        break;
+    case BIOS_FS_SEEK:result=bios_fs_seek((int)a[0],(int)a[1],(int)a[2]);break;
+    case BIOS_FS_STAT:
+        if(pointer_ok(a[0],64) && pointer_ok(a[1],sizeof(struct bios_fs_stat))) {
+            unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
+            if(n<64)result=bios_fs_stat((char *)a[0],(struct bios_fs_stat *)a[1]);
+        }break;
+    case BIOS_FS_MKDIR:
+        if(pointer_ok(a[0],64)) {
+            unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
+            if(n<64)result=bios_fs_mkdir((char *)a[0]);
+        }break;
+    case BIOS_FS_UNLINK:
+        if(pointer_ok(a[0],64)) {
+            unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
+            if(n<64)result=bios_fs_unlink((char *)a[0]);
+        }break;
+    case BIOS_FS_RENAME:
+        if(pointer_ok(a[0],64) && pointer_ok(a[1],64)) {
+            unsigned n=0;while(n<64 && ((char *)a[0])[n])++n;
+            unsigned m=0;while(m<64 && ((char *)a[1])[m])++m;
+            if(n<64 && m<64)result=bios_fs_rename((char *)a[0],(char *)a[1]);
+        }break;
     case BIOS_IO_READ:if(pointer_ok(a[0],sizeof(struct bios_io))) {struct bios_io v={hal_buttons_read(),hal_switches_read()};memcpy((void *)a[0],&v,sizeof(v));result=0;}break;
     case BIOS_LEDS:hal_leds_set(a[0]);result=0;break;
     case BIOS_FLASH_READ:
@@ -173,6 +325,7 @@ int bios_exception_hook(hal_trap_frame_t *f) {
         break;
     case BIOS_RGB:result=hal_ws2812_set(a[0]>>16,a[0]>>8,a[0])==HAL_OK?0:-1;break;
     case BIOS_MOUSE:if(pointer_ok(a[0],sizeof(struct bios_mouse)))result=bios_mouse_take((void *)a[0]);break;
+    case BIOS_KEY:if(pointer_ok(a[0],sizeof(struct bios_key)))result=bios_key_take((void *)a[0]);break;
     case BIOS_AUDIO_BEGIN:
         if(MINI_FEATURE_AUDIO && !(a[0]&3u) && a[1] && a[1]<=65535 && pointer_ok(a[0],a[1]*4))
             result=hal_audio_ring_begin((void *)a[0],a[1])==HAL_OK?0:-1;

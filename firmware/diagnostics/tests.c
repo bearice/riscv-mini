@@ -4,6 +4,7 @@
 #include <generated/csr.h>
 #include <generated/soc.h>
 #include "ff.h"
+#include "blockcache.h"
 #include <string.h>
 #if MINI_FEATURE_VIDEO
 #include "../common/rgb_canvas.h"
@@ -348,6 +349,39 @@ static unsigned sd_blocks(void) {
     }
     return hal_sd_read(0,buffer,16)==HAL_OK && crc_update(~0u,buffer,8192)==crc;
 }
+/* The block cache has to be transparent: identical bytes with it on and off,
+ * and the accounting has to show that a repeat read and the read-ahead inside
+ * the same 4 KiB block never reach the card.  Read-only on purpose; the write
+ * path is covered by `test sd write`, which reads its own file back.
+ * Counters are cumulative device stats, so every expectation is a delta from a
+ * baseline taken here: `test sd` and `test sd blocks` have already read the card
+ * by the time this runs. */
+static void cache_fail(const char *step,uint32_t h,uint32_t m) {
+    hal_uart_puts("sd cache: ");hal_uart_puts(step);
+    hal_uart_puts(" hits=");hal_uart_hex(h);
+    hal_uart_puts(" misses=");hal_uart_hex(m);hal_uart_puts("\r\n");
+}
+static unsigned sd_cache(void) {
+    if(hal_sd_init()!=HAL_OK)return 0;
+    uint8_t *buffer=(uint8_t *)work+1,*spare=buffer+WORK_BYTES/2;
+    uint32_t h0,m0,h,m;
+    const uint32_t base=64;
+    bc_set_enabled(1);bc_invalidate();
+    bc_stats(&h0,&m0,0);
+    if(hal_sd_read(base,buffer,1)!=HAL_OK) {cache_fail("read1",0,0);return 0;}
+    bc_stats(&h,&m,0);
+    /* One miss; the 4 KiB fill already covers the rest of the block. */
+    if(h!=h0||m!=m0+1) {cache_fail("expect-miss",h-h0,m-m0);return 0;}
+    if(hal_sd_read(base+1,spare,1)!=HAL_OK) {cache_fail("read2",0,0);return 0;}
+    bc_stats(&h,&m,0);
+    if(h!=h0+1||m!=m0+1) {cache_fail("expect-hit",h-h0,m-m0);return 0;}
+    if(memcmp(buffer,spare,512)) {cache_fail("readahead-differs",0,0);return 0;}
+    bc_invalidate();bc_set_enabled(0);
+    if(hal_sd_read(base,spare,1)!=HAL_OK) {bc_set_enabled(1);cache_fail("raw-read",0,0);return 0;}
+    bc_set_enabled(1);
+    if(memcmp(buffer,spare,512)) {cache_fail("raw-differs",0,0);return 0;}
+    return 1;
+}
 #endif
 #if MINI_FEATURE_FILESYSTEM
 static uint8_t sd_pattern(unsigned offset) {return (offset*17u)^(offset>>8)^0x5au;}
@@ -690,6 +724,7 @@ void tests_help(void) {
 #endif
 #if MINI_FEATURE_SD
     hal_uart_puts("test sd blocks\r\n");
+    hal_uart_puts("test sd cache\r\n");
 #endif
 #if MINI_FEATURE_FILESYSTEM
     hal_uart_puts("test sd|sd write\r\n");
@@ -846,6 +881,7 @@ int tests_command(const char *command) {
 #endif
 #if MINI_FEATURE_SD
     else if(!strcmp(name,"sd blocks"))ok=sd_blocks();
+    else if(!strcmp(name,"sd cache"))ok=sd_cache();
 #endif
 #if MINI_FEATURE_FILESYSTEM
     else if(!strcmp(name,"sd write"))ok=sd_write();

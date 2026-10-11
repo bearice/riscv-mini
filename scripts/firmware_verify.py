@@ -54,7 +54,7 @@ def main():
                 if marker not in text:raise RuntimeError(name+': '+text.decode(errors='replace'))
                 print(name+' OK',flush=True)
             cases=[('isa',True),('l2',bool(validation.get('l2_size_bytes'))),('fence',True),('uart',True),('irq',True),('ddr',True),('flash',enabled('flash')),
-                ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('lcd',enabled('video')),
+                ('sd',enabled('filesystem')),('sd blocks',enabled('sd')),('sd cache',enabled('sd')),('lcd',enabled('video')),
                 ('lcd start',enabled('video')),('lcd stop',enabled('video')),
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
                 ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),

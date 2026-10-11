@@ -11,12 +11,12 @@
 | ROM 的 L2/DDR 工作区 | `0x007ff000..0x007fffff` | ROM |
 | BIOS 代码、data、BSS、栈 | `0x00800000..0x00bfffff` | BIOS，沿用 ROM 应用窗口 |
 | 裸机程序入口 | `0x01000000` | 二级程序 |
-| 二级程序内存 | `0x01000000..0x07deffff` | 代码、data、BSS；文件载荷最多 4 MiB |
+| 二级程序内存 | `0x01000000..0x07deffff` | 代码、data、BSS；文件载荷最多 8 MiB（`BIOS_IMAGE_MAX`） |
 | 二级程序栈 | `0x07df0000..0x07dfffff`，初始 SP=`0x07e00000` | 二级程序及 BIOS trap 临时栈 |
-| 装载暂存区 | `0x07000000`，最多 4 MiB + 32 B | BIOS 装载阶段使用，进入程序前释放 |
+| 装载暂存区 | `0x07000000`；镜像与 `fetchraw` 数据文件各最多 8 MiB（`BIOS_IMAGE_MAX`/`BIOS_FILE_FETCH_MAX`，两者不会同时占用） | BIOS 装载/转存阶段使用，进入程序前释放 |
 | RGB565 双帧槽 | BIOS 链接区内 `video.c` 的 `frames[2][480*272]`，地址经 `rgb_lcd_base0/1` CSR 报告 | BIOS 扫描器 / 图形程序 |
 
-地址与 `firmware/common/memory_layout.h` 一致（RAM 基址为零）；双帧槽不再固定在 DDR 尾部，而是 BIOS 链接时分配并通过 CSR 公布。其他 HAL 固定工作区仍由 BIOS 使用，例如 SPI LCD 工作区 `0x00300000`。程序只能使用上表分配的程序内存、栈和两个帧槽，不能把其余 DDR 当成可用堆。
+地址与 `firmware/common/memory_layout.h` 一致（RAM 基址为零）；双帧槽不再固定在 DDR 尾部，而是 BIOS 链接时分配并通过 CSR 公布。其他 HAL 固定工作区仍由 BIOS 使用，例如 SPI LCD 工作区 `0x00300000`。程序只能使用上表分配的程序内存、栈和两个帧槽，不能把其余 DDR 当成可用堆。程序内存（代码 + data + BSS，即镜像头的 `memory_bytes`）还必须留在暂存区之下：装载时 BIOS 一边从暂存区读、一边往程序内存写，`memory_bytes` 超过 `0x06000000` 就会被自己的镜像覆盖，因此 `memory_bytes <= 0x06000000` 是硬约束。
 
 BIOS 装载完成后先初始化 HAL、显示和设置，执行有界 POST，然后进入 setup。默认 `boot=none`；配置为 SD/net 时，倒计时内任意 UART/USB 键盘输入可取消自动引导。引导失败返回 setup。程序入口为 `int payload_main(const struct bios_info *info)`；可以正常返回 BIOS，`info` 指向 BIOS 只读信息，程序可以用 `BIOS_INFO` 获取自己的副本。
 
@@ -97,6 +97,7 @@ BIOS 命令行带行编辑：方向键、Home/End、Insert 切换、Delete、Ctr
 | `tty` / `graphics` | 文字 / RGB565 图形模式 |
 | `boot sd [file]` / `boot net [file]` | 从 SD / TFTP 下载、校验并执行程序 |
 | `fetch FILE` | TFTP 下载有效程序后创建同名 SD 文件；不覆盖已有文件 |
+| `fetchraw FILE` | TFTP 下载任意数据文件（≤8 MiB，不做程序格式校验）创建同名 SD 文件，用于把 IWAD 一类数据送上卡；同样不覆盖已有文件 |
 | `settings` / `settings defaults` | 查看 / 恢复内存中的默认设置 |
 | `settings save` / `settings load` | 在 SD 根目录保存 / 读取 `BIOS.CFG` |
 | `set boot none/sd/net` | 设置自动引导来源 |
@@ -141,8 +142,21 @@ TFTP 为 512 B 停等协议，吞吐受逐块往返和软件轮询限制；最�
 | 17 | AUDIO_WRITE | a0=四字节对齐的 L16/R16 PCM，a1=帧数 ≤1024；返回实际接受帧数，0 表示暂时满 |
 | 18 | AUDIO_CONTROL | a0=0 停止 / 1 播放 / 2 暂停 / 3 静音 / 4 取消静音；0 成功 |
 | 19 | AUDIO_INFO | a0=bios_audio 输出；采样率、FIFO 水位、播放/读取帧数、欠载/溢出/错误；0 成功 |
+| 20 | KEY | a0=bios_key 输出；原始 USB HID 按键（usage page 0x07，含修饰键 E0..E7；pressed=1 按下 / 0 松开，自动重复重发按下）；0 成功，-1 暂无事件 |
+| 21 | FILE_SIZE | a0=文件名指针（<64 字符）；返回文件字节数，-1 失败（兼容接口，等价于 FS_STAT） |
+| 22 | FS_OPEN | a0=路径指针（<64 字符），a1=BIOS_FS_* 标志；返回句柄 ≥0，-1 失败 |
+| 23 | FS_CLOSE | a0=句柄；0 成功，-1 非法句柄 |
+| 24 | FS_READ | a0=句柄，a1=输出，a2=长度 ≤4096；返回实际字节数（0 表示到文件尾），-1 失败 |
+| 25 | FS_WRITE | a0=句柄，a1=输入，a2=长度 ≤4096；返回实际写入字节数，-1 失败或句柄只读 |
+| 26 | FS_SEEK | a0=句柄，a1=有符号偏移，a2=whence（0=SET / 1=CUR / 2=END）；返回新偏移，-1 失败 |
+| 27 | FS_STAT | a0=路径指针，a1=bios_fs_stat 输出（size、FatFs 属性位）；0 成功 |
+| 28 | FS_MKDIR | a0=路径指针；0 成功（目录已存在也算成功），-1 失败 |
+| 29 | FS_UNLINK | a0=路径指针；0 成功，-1 失败 |
+| 30 | FS_RENAME | a0=旧路径，a1=新路径；0 成功，-1 失败 |
 
-IO/存储服务 0 成功、-1 失败；未启用设备使用 HAL 的 unsupported 路径。info.features 位 0..4 依次表示 SD、视频、USB、Ethernet、音频。音频服务追加于 ABI=1，旧的 0..15 服务和 info 结构布局保持不变；新程序检查音频 feature 位再使用。指针服务只接受程序区域内的完整缓冲区。RAW SD 写会绕过 FatFs，程序自行协调文件系统与扇区访问。Flash 服务只读，编程仍走 ROM 恢复入口。
+IO/存储服务 0 成功、-1 失败；未启用设备使用 HAL 的 unsupported 路径。info.features 位 0..4 依次表示 SD、视频、USB、Ethernet、音频。音频服务追加于 ABI=1，旧的 0..15 服务和 info 结构布局保持不变；新程序检查音频 feature 位再使用。KEY 与文件系统服务同样追加于 ABI=1：KEY 是独立于 TTY 队列的原始按键事件流，供游戏载荷直接处理按下/松开，TTY 的 GETC 行为不变。
+
+SD 上的文件走 FS_OPEN/FS_CLOSE/FS_READ/FS_WRITE/FS_SEEK/FS_STAT/FS_MKDIR/FS_UNLINK/FS_RENAME 这一层（句柄是 BIOS 侧 0..5 的整数，同时最多 6 个打开文件；首次使用时自动挂载，卷保持挂载，卡被拔出或驱动失状态后下一次使用会重新初始化）。`FS_OPEN` 的标志位 `BIOS_FS_O_READ/O_WRITE/O_CREATE/O_TRUNC/O_APPEND` 与 `open(2)` 语义对应：`O_CREATE` 只新建、已存在则失败，`O_TRUNC` 新建或截断，`O_APPEND` 从文件尾写起；未给 `O_WRITE` 时句柄只读，`FS_WRITE` 返回 -1。`FS_STAT.attrib` 是 FatFs 属性位（`0x10` 为目录）。`FILE_READ`/`FILE_SIZE` 保留为兼容接口，现在是这一层的薄封装（等价于 open+seek+read+close），GW-BASIC 等既有载荷继续可用，新程序直接用 FS_*。指针服务只接受程序区域内的完整缓冲区。RAW SD 写（`SD_WRITE`）会绕过 FatFs，程序自行协调文件系统与扇区访问。Flash 服务只读，编程仍走 ROM 恢复入口。块读路径经过 4 KiB×32 的 SD 块缓存（写直通后刷新，见 [HAL](hal.md)）：一次 `FS_READ` 最多 4096 字节正好是一个缓存块，顺序读几乎全部命中，但**每次只读 1 字节的循环会把一次传输拆成上千次 ecall**，缓存也救不了——载荷侧务必按块聚合请求。
 
 音频使用打包的 16 位双声道 PCM，采样率由 AUDIO_INFO 查询；默认 DDS 配置为 48000 Hz。
 BEGIN 停止旧播放并设置程序拥有的环形缓冲区，WRITE 部分接受时由调用者保留未写入的尾部。
@@ -164,10 +178,10 @@ RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version�
 & $MiniPython scripts/bios_tftp.py --bind 169.254.25.153 --file build/bios-payload/BOOT.RPB
 ```
 
-在 BIOS 中设置 `set server 169.254.25.153`，然后 `boot net`；`fetch BOOT.RPB` 创建 SD 文件后可 `boot sd`。主机脚本不会修改网卡或防火墙；接收 RRQ 需要所选 Python 运行环境能够接收 UDP 入站。默认文件已有时，选择新的文件名。
+在 BIOS 中设置 `set server 169.254.25.153`，然后 `boot net`；`fetch BOOT.RPB` 创建 SD 文件后可 `boot sd`。数据文件用 `fetchraw FILE` 转存：同样 8 MiB 上限，但不做程序格式校验、落卡后也不要求是镜像，适合把 DOOM 的 `DOOM1.WAD` 之类文件送上卡。主机脚本不会修改网卡或防火墙；接收 RRQ 需要所选 Python 运行环境能够接收 UDP 入站。默认文件已有时，选择新的文件名。
 
 [端到端验证工具](../scripts/bios_verify.py) 调用相同固件命令，覆盖网络重试/重复块/零长度结束、坏 CRC、SD 重复启动、缺失文件、设置往返和非法参数。运行示例：`scripts/bios_verify.py --host-ip 169.254.25.153 --sd-file BIOSDEM.RPB`；需要 SD 上不存在这个目标文件，会显式保存 `BIOS.CFG`。Python 格式测试位于 [bios_image_test.py](../tests/bios_image_test.py)，板端格式/ECALL 测试为 `test bios`。
 
-默认 full BIOS 已在实际板卡验证 SD/TFTP 执行与返回，并确认 LCD TTY/USB 键盘输入。minimal 仅构建检查，不代表被裁剪的硬件已上板验收。BIOS 不包含 OS 引导、动态装载重定位、DHCP 或图形窗口系统；SDK 示例演示 `.data`/`.bss`、IO、服务调用、RGB565 换帧和返回 BIOS。[GW-BASIC 解释器](gwbasic.md) 是这套 ABI 上较大的一个应用：约 95 KiB 的 RPB1 程序，使用文字/图形服务、时钟和 SD 读文件，可在 QEMU 上跑真实产物做回归。
+默认 full BIOS 已在实际板卡验证 SD/TFTP 执行与返回，并确认 LCD TTY/USB 键盘输入。minimal 仅构建检查，不代表被裁剪的硬件已上板验收。BIOS 不包含 OS 引导、动态装载重定位、DHCP 或图形窗口系统；SDK 示例演示 `.data`/`.bss`、IO、服务调用、RGB565 换帧和返回 BIOS。[GW-BASIC 解释器](gwbasic.md) 是这套 ABI 上较大的一个应用：约 95 KiB 的 RPB1 程序，使用文字/图形服务、时钟和 SD 读文件，可在 QEMU 上跑真实产物做回归。[DOOM](doom.md) 是另一个：约 356 KiB，直接用文件系统服务读 SD 上的 IWAD，并零拷贝写 480×272 面板。**新写二级程序前先读 [给 BIOS 写二级程序](bios-payload-porting.md)**，那里集中了浮点前提、服务选择、主循环归属、SD/TFTP 准备与已踩过的坑。
 
 USB 键盘/鼠标可直连，也可通过全速 Hub 接入；`test usb tree` 显示配置成功的 Hub、下游端口及设备。当前容量为 2 个 Hub、4 个普通设备、总计 8 个 HID 接口；默认 PIO 后端只支持全速传输，低速设备和超过 7 个下游端口的 Hub 不在支持范围内。详见 [USB Host](usb-light.md)。

@@ -16,6 +16,15 @@ static unsigned head,tail;
 static unsigned caps;
 static struct {int x,y,wheel,buttons;uint32_t time_ms;unsigned pending;} mouse;
 #endif
+/* BIOS_KEY 原始按键队列：与 TTY 队列独立，游戏程序直接消费按下/松开事件。
+ * 存储不受 USB 编译开关影响（无 USB 时队列恒空），入队只在 USB 路径发生。 */
+static struct bios_key keyring[64];
+static unsigned keyhead,keytail;
+int bios_key_take(struct bios_key *event) {
+  if(keytail==keyhead)return -1;
+  *event=keyring[keytail];keytail=(keytail+1)&63;
+  return 0;
+}
 static void enqueue(unsigned char ch) {unsigned next=(head+1)&127;if(next!=tail){queue[head++]=ch;head&=127;}}
 
 #if MINI_FEATURE_USB
@@ -78,12 +87,22 @@ static int key_repeatable(unsigned k) {
   return k!=KEY_CAPSLOCK && k!=KEY_ESC;   /* 锁定键和 ESC 不重复 */
 }
 
+/* 原始按键入队（BIOS_KEY）。 */
+static void key_enqueue(unsigned usage,unsigned pressed,unsigned modifiers,uint32_t now) {
+  unsigned next=(keyhead+1)&63;
+  if(next==keytail)return;                 /* 满则丢事件，绝不阻塞 */
+  keyring[keyhead].usage=usage;keyring[keyhead].pressed=pressed;
+  keyring[keyhead].modifiers=modifiers;keyring[keyhead].time_ms=now;
+  keyhead=next;
+}
+
 /* 按当前记录的重发状态，到点就再发一次。返回是否发送。 */
 static void key_repeat_poll(void) {
   if(!repeat_held)return;
   uint32_t now=hal_time_ms();
   if(!hal_deadline_reached(now,repeat_next))return;
   repeat_next=now+KEY_REPEAT_PERIOD_MS;
+  key_enqueue(repeat_usage,1,repeat_mods,now);
   if(repeat_usage>=KEY_INSERT && repeat_usage<=KEY_UP)key_bytes(repeat_usage);
   else {unsigned char c=key_char(repeat_usage,repeat_mods);if(c)enqueue(c);}
 }
@@ -163,6 +182,7 @@ void bios_console_poll(void) {
 #if MINI_FEATURE_USB
   hal_usb_key_t key;
   while(hal_usb_key_take(&key)==HAL_OK) {
+    key_enqueue(key.usage,key.pressed,key.modifiers,hal_time_ms());
     if(key.usage>=0xe0 && key.usage<=0xe7) {
       // 修饰键变化不替换正在重复的普通键；按住 W 松开 Ctrl 后应重复 w。
       repeat_mods=key.modifiers;

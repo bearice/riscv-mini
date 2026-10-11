@@ -224,7 +224,7 @@ def main():
     app_sources=[drivers/'string.c',*[hal/'src'/n for n in ('board.c','irq.c','trap.S','devices.c','disabled.c')]]
     if features.spi_lcd or (features.sd and a.sd_backend=='spi'):app_sources.append(drivers/'spi.c')
     if features.spi_lcd:app_sources.append(drivers/'lcd.c')
-    if features.sd:app_sources.append(drivers/('sd_native.c' if a.sd_backend=='native' else 'sd.c'))
+    if features.sd:app_sources += [drivers/'blockcache.c',drivers/('sd_native.c' if a.sd_backend=='native' else 'sd.c')]
     if features.filesystem:app_sources += [drivers/'filesystem.c',vendor/'ff.c',vendor/'ffunicode.c']
     if features.video:app_sources.append(drivers/'video.c')
     for feature,driver_source in [('audio','audio.c'),('mic','microphone.c'),('eth','ethernet.c'),('usb','usb.c')]:

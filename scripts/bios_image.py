@@ -6,7 +6,7 @@ OS_MAGIC=0x3142534f
 VERSION=1
 LOAD=0x01000000
 LIMIT=0x07e00000
-MAX_FILE=4*1024*1024
+MAX_FILE=8*1024*1024   # mirrors BIOS_IMAGE_MAX: the staging buffer holds the whole image
 def pack(payload,memory_bytes=None,entry=LOAD,*,os_image=False):
     n=len(payload);memory_bytes=n if memory_bytes is None else memory_bytes
     if not 4<=n<=MAX_FILE or not n<=memory_bytes<=LIMIT-LOAD-65536 or entry&3 or not LOAD<=entry<=LOAD+n-4:

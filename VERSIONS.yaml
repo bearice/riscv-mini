@@ -8,6 +8,6 @@
 rtl: 0.9.0
 bootloader: 0.9.1
 hal: 0.9.1
-bios: 0.9.1
+bios: 0.10.0
 opensbi: 0.10.0
 uboot: 0.4.0

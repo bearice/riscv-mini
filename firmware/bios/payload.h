@@ -2,7 +2,13 @@
 #include "include/bios.h"
 #define BIOS_IMAGE_MAGIC 0x31425052u /* RPB1 */
 #define BIOS_OS_IMAGE_MAGIC 0x3142534fu /* OSB1: one-way OpenSBI entry */
-#define BIOS_IMAGE_MAX (4u*1024u*1024u)
+/* 载荷镜像（text+rodata+data）上限。装载时必须先把整个镜像放进 0x07000000 的
+ * 暂存区，再搬到 0x01000000；暂存区到载荷上限 0x07e00000 之间有 14 MiB，镜像与
+ * FETCHRAW 数据文件各取 8 MiB（同一时刻只用一个，进入程序前释放）。这限制的是
+ * 镜像文件本身，不是载荷能占用的内存（那由 BIOS_PAYLOAD_LIMIT 决定）。 */
+#define BIOS_IMAGE_MAX (8u*1024u*1024u)
+/* FETCHRAW 转存的原样文件上限（IWAD 一类数据文件）。 */
+#define BIOS_FILE_FETCH_MAX (8u*1024u*1024u)
 struct bios_image {uint32_t magic,version,load,file_bytes,memory_bytes,entry,crc,header_crc;};
 /* IEEE CRC32, same wire format as the former bitwise implementation. */
 static inline uint32_t bios_crc_update(uint32_t c,const void *p,unsigned n) {

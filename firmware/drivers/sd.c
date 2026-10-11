@@ -2,6 +2,7 @@
  * Writes are exposed only to FatFs; the monitor never writes arbitrary LBAs.
  */
 #include "io.h"
+#include "blockcache.h"
 #include "ff.h"
 #include "diskio.h"
 #include <hal/hal.h>
@@ -68,6 +69,7 @@ static int read_data(unsigned char *p, unsigned len) {
 DSTATUS disk_initialize(BYTE drive) {
     if (drive) return STA_NOINIT;
     initialized=high_capacity=io_failed=sectors=0;
+    bc_invalidate(); /* A re-init means new media or a new controller state. */
     spisdcard_clk_divider_write((CONFIG_CLOCK_FREQUENCY+399999u)/400000u); /* 400 kHz during initialization. */
     spi_select(0,0);
     io_delay_ms(10);
@@ -129,7 +131,7 @@ DSTATUS disk_status(BYTE drive) {
     }
     return 0;
 }
-DRESULT disk_read(BYTE drive, BYTE *buff, LBA_t sector, UINT count) {
+static DRESULT raw_read(BYTE drive, BYTE *buff, LBA_t sector, UINT count) {
     if (!count || sector>=sectors || count>sectors-sector) return RES_PARERR;
     if (disk_status(drive)) return RES_NOTRDY;
     io_failed=0;
@@ -142,7 +144,7 @@ DRESULT disk_read(BYTE drive, BYTE *buff, LBA_t sector, UINT count) {
     }
     return RES_OK;
 }
-DRESULT disk_write(BYTE drive, const BYTE *buff, LBA_t sector, UINT count) {
+static DRESULT raw_write(BYTE drive, const BYTE *buff, LBA_t sector, UINT count) {
     if (!count || sector>=sectors || count>sectors-sector) return RES_PARERR;
     if (disk_status(drive)) return RES_NOTRDY;
     io_failed=0;
@@ -160,6 +162,27 @@ DRESULT disk_write(BYTE drive, const BYTE *buff, LBA_t sector, UINT count) {
     return RES_OK;
 fail:
     release(); initialized=0; return RES_ERROR;
+}
+/* Cache fill: one aligned 4 KiB group.  SPI has no multi-block command, so this
+ * is up to eight CMD17 transfers; the read-ahead still pays because the next
+ * sector of the group is what FatFs (FAT/dir) and payload reads want next. */
+static int cache_fill(uint32_t block, void *dst) {
+    uint32_t start=block*BC_SECTORS;
+    if (start>=sectors) return -1;
+    unsigned n=sectors-start;
+    if (n>BC_SECTORS) n=BC_SECTORS;
+    return raw_read(0,(BYTE *)dst,start,n)==RES_OK ? 0 : -1;
+}
+DRESULT disk_read(BYTE drive, BYTE *buff, LBA_t sector, UINT count) {
+    if (!count || sector>=sectors || count>sectors-sector) return RES_PARERR;
+    if (disk_status(drive)) return RES_NOTRDY;
+    if (!bc_enabled()) return raw_read(drive,buff,sector,count);
+    return bc_read(sector,buff,count,cache_fill)==0 ? RES_OK : RES_ERROR;
+}
+DRESULT disk_write(BYTE drive, const BYTE *buff, LBA_t sector, UINT count) {
+    DRESULT r=raw_write(drive,buff,sector,count);
+    if (r==RES_OK) bc_written(sector,buff,count); /* write-through refresh */
+    return r;
 }
 DRESULT disk_ioctl(BYTE drive, BYTE cmd, void *buff) {
     if (disk_status(drive)) return RES_NOTRDY;

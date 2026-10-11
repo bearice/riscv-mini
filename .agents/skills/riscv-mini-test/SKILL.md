@@ -9,7 +9,7 @@ description: 在 TangPrimer-20K/riscv-mini 选择和执行主机、RTL、DFI 回
 
 验证矩阵读取 `docs/pre-commit-sop.md`，板测身份读取 `docs/build-artifacts.md`。
 
-日常上板入口与支持条件读取 `scripts/README.md`。恢复用 `scripts/mini.py board recover --build <ID>`；临时运行用 `board run`；完整功能验收用 `board verify --suite firmware`；精确 Flash 读回用 `--suite flash`，不写 Flash。每次日志在 `build/operations/`；持久写入仅在用户明确要求时用 `board update`，不要拼接 Gowin/临时串口探针。
+日常上板入口与支持条件读取 `scripts/README.md`。恢复用 `scripts/mini.py board recover --build <ID>`；临时运行用 `board run`；完整功能验收用 `board verify --suite firmware`；精确 Flash 读回用 `--suite flash`，不写 Flash。每次日志在 `build/operations/`；持久写入仅在用户明确要求时用 `board update`，不要拼接 Gowin/临时串口探针。**给 BIOS 写二级程序（新载荷）或这类程序上板时，先读 `docs/bios-payload-porting.md`**：浮点前提、ecall 服务选择、主循环归属、SD/TFTP 准备、以及“不要重置状态机/不要跨调用缓存文件句柄”这些已踩过的坑都在那里。
 
 按改动选择验证层级，使用 SOP 的验证矩阵。常用主机与 L2 检查：
 

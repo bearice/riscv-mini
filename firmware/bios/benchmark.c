@@ -1,6 +1,7 @@
 /* Wall-clock benchmarks: interrupts and LCD scanout stay enabled. No storage writes. */
 #include "internal.h"
 #include "payload.h"
+#include "blockcache.h"
 #include <generated/csr.h>
 #include <generated/soc.h>
 #include <string.h>
@@ -165,8 +166,8 @@ static void cache_benchmark(void) {
     bios_puts("CACHE benchmark requires cached CPU and L2\r\n");++failures;
 #endif
 }
-static void sd_benchmark(unsigned hz) {
 #if MINI_FEATURE_SD
+static void sd_benchmark_card(unsigned hz) {
     if(hal_sd_init()!=HAL_OK) {result("io.sd-read",0,0,0,0,0);return;}
     unsigned baseline=0;
     if(hz) {
@@ -197,6 +198,16 @@ static void sd_benchmark(unsigned hz) {
         result("io.sd-read",bytes,2048/blocks,ticks,crc,ok);
         if(!ok)break;
     }
+}
+#endif
+/* io.sd-* answers "how fast is this card?", so it must not be answered from the
+ * block cache: every pass deliberately re-reads the same 1 MiB. */
+static void sd_benchmark(unsigned hz) {
+#if MINI_FEATURE_SD
+    int cached=bc_enabled();
+    bc_set_enabled(0);
+    sd_benchmark_card(hz);
+    bc_set_enabled(cached);
 #else
     (void)hz;bios_puts("SD benchmark unsupported\r\n");++failures;
 #endif

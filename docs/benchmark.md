@@ -30,7 +30,7 @@ CPU 和内存的内层循环不调用 USB/network poll；各阶段之间恢复 p
 | mem.chase32 | 1 MiB 中 stride=4097 words 的完整依赖索引链，262,144 次加载 | ns / 依赖加载，含索引及循环开销 |
 | mem.libc-copy/set | 当前 BIOS memcpy/memset 处理 1 MiB | 有效 MiB/s；对齐 32 位访问，含结束 cache sync |
 | io.flash-read | 两次读取相同 64 KiB，比对 CRC，只计第一次读取 | MiB/s；Flash 初始化及校验不计入 |
-| io.sd-read | 从 LBA 0 顺序读取 1 MiB，分别 1/8 扇区每调用，CRC 必须一致 | MiB/s；含命令、DMA/cache 维护及每批 hal_poll |
+| io.sd-read | 从 LBA 0 顺序读取 1 MiB，分别 1/8 扇区每调用，CRC 必须一致；进入前 `bc_set_enabled(0)` 临时关闭块缓存、结束后恢复 | MiB/s；含命令、DMA/cache 维护及每批 hal_poll；数字是卡的速度，不是缓存的 |
 | io.rgb-fill16 | 填充当前未显示帧槽的 480×272 RGB565，逐像素检查 | MiB/s、填帧时间；不包含图元绘制/换帧等待 |
 | io.uart-tx | 原始发送 4096 个点，不经过 TTY mirror | 含 FIFO 排空及末字节等待，115200、8N1 |
 | io.tftp-rx | 接收最多 1 MiB，仅存入内存 | 包含 ARP、512 B stop-and-wait、进度输出、结束等待；CRC 不计入 |

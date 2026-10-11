@@ -2,6 +2,7 @@
  * FatFs owns writes. No raw-sector write command is exposed by the monitor.
  */
 #include "io.h"
+#include "blockcache.h"
 #include "ff.h"
 #include "diskio.h"
 #include <hal/hal.h>
@@ -119,6 +120,7 @@ static unsigned csd_bits(unsigned low,unsigned count) {
 DSTATUS disk_initialize(BYTE drive) {
     if(drive)return STA_NOINIT;
     initialized=0;sectors=0;rca=0;high_capacity=0;reset_controller();
+    bc_invalidate(); /* A re-init means new media or a new controller state. */
     if(!present())goto fail;
     sdcard_phy_init_initialize_write(1);io_delay_ms(1);
     if(!command(0,0,RESP_NONE))goto fail;
@@ -207,8 +209,30 @@ fail:
     puts_uart(" response=");io_hex(response(0));puts_uart("\r\n");
     ++errors;initialized=0;reset_controller();return present()?RES_ERROR:RES_NOTRDY;
 }
-DRESULT disk_read(BYTE drive,BYTE *buffer,LBA_t sector,UINT count) {return transfer(drive,buffer,sector,count,0);}
-DRESULT disk_write(BYTE drive,const BYTE *buffer,LBA_t sector,UINT count) {return transfer(drive,(void *)buffer,sector,count,1);}
+/* Cache fill: one aligned 4 KiB command, which is also the controller's largest
+ * single transfer.  A short card tail is clamped here; the unused tail of the
+ * slot is never handed out because every request is bounds-checked first. */
+static int cache_fill(uint32_t block,void *dst) {
+    uint32_t start=block*BC_SECTORS;
+    if(start>=sectors)return -1;
+    unsigned n=sectors-start;
+    if(n>BC_SECTORS)n=BC_SECTORS;
+    return transfer(0,(void *)dst,start,n,0)==RES_OK?0:-1;
+}
+DRESULT disk_read(BYTE drive,BYTE *buffer,LBA_t sector,UINT count) {
+    if(drive||!buffer||!count)return RES_PARERR;
+    if(disk_status(drive))return RES_NOTRDY;
+    if(sector>=sectors||count>sectors-sector)return RES_PARERR;
+    if(!bc_enabled())return transfer(drive,buffer,sector,count,0);
+    return bc_read(sector,buffer,count,cache_fill)==0?RES_OK:RES_ERROR;
+}
+DRESULT disk_write(BYTE drive,const BYTE *buffer,LBA_t sector,UINT count) {
+    DRESULT r=transfer(drive,(void *)buffer,sector,count,1);
+    /* Write-through: the card already has the bytes, so the cached copy only
+     * has to be kept from going stale. */
+    if(r==RES_OK)bc_written(sector,buffer,count);
+    return r;
+}
 DRESULT disk_ioctl(BYTE drive,BYTE cmd,void *buffer) {
     if(disk_status(drive))return RES_NOTRDY;
     if(cmd==CTRL_SYNC) {
