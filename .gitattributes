@@ -1,0 +1,5 @@
+# 上游 vendored 源码：保留原样，不做空白清理。
+# 这些文件是 doomgeneric/Chocolate Doom 的副本（见 firmware/apps/doom/UPSTREAM.md），
+# 上游代码里有大量行尾空格；`git diff --check` 会因此刷屏，掩盖我们自己代码的问题。
+# 只关闭空白检查，不改变换行符（不要在这里加 text/eol，那会重写全仓库内容）。
+firmware/apps/doom/** -whitespace

@@ -25,12 +25,16 @@ class BootSession:
     def note(self,data):
         if self.log:
             self.log.write(data);self.log.flush()
-    def until(self,marker,timeout=120):
+    def until(self,marker,timeout=120,on_chunk=None):
+        """Wait for `marker`.  `on_chunk(data)` is called for every chunk as it
+        arrives so a caller can stream a slow board instead of going silent
+        until the marker lands (or the wait times out)."""
         data=bytearray();deadline=time.monotonic()+timeout
         while time.monotonic()<deadline:
             # Small reads keep ACK/command boundaries intact.
             chunk=self.port.read(1)
             if chunk:
+                if on_chunk:on_chunk(chunk)
                 data.extend(chunk)
                 if data.endswith(b'ERR DDR INIT/TIMEOUT; reset\r\n') or data.endswith(b'ERR DDR INIT; reset\r\n'):
                     self.note(data)

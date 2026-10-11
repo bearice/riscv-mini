@@ -81,7 +81,7 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 | 构建身份、复现和清理 | `builds.py`、`build_records.py`、`build_recipe.py` | [产物组织](../docs/build-artifacts.md)；records/recipe 为内部模块；clean 默认仅列计划，保护固定版本和发布包 |
 | 启动镜像与串口协议 | `boot_upload.py`、`boot_image.py`、`boot_size.py` | [bootloader](../docs/bootloader.md)；旧 install 仅适用于 ROM，XIP 更新用正式入口 |
 | 基础板测 | `firmware_verify.py`、`boot_verify.py`、`boot_repeat_verify.py`、`cold_boot.py` | [测试 skill](../.agents/skills/riscv-mini-test/SKILL.md)；分别为功能、协议、重复启动、外部冷启动 |
-| BIOS 载荷与网络装载 | `bios_image.py`、`bios_payload.py`、`bios_tftp.py`、`bios_verify.py`、`monitor_external_verify.py` | [BIOS](../docs/bios.md)；RPB/OSB 载荷与 bootloader app.img 是不同格式；TFTP 解释器需要防火墙放行 |
+| BIOS 载荷与网络装载 | `bios_image.py`、`bios_payload.py`、`bios_tftp.py`、`bios_verify.py`、`monitor_external_verify.py` | [BIOS](../docs/bios.md)、[给 BIOS 写二级程序](../docs/bios-payload-porting.md)；RPB/OSB 载荷与 bootloader app.img 是不同格式；TFTP 解释器需要防火墙放行 |
 | OpenSBI / U-Boot | `opensbi_build.py`、`opensbi_build.ps1`、`opensbi_verify.py`、`uboot_build.py`、`uboot_verify.py` | [OpenSBI 与 U-Boot 移植](../docs/opensbi-port.md)；需相应源树和工具链 |
 | 外设专项验收 | `sd_verify.py`、`sd_clock_verify.py`、`ethernet_verify.py`、`raw_icmp.py`、`audio_verify.py`、`audio_capture.py` | 查工具 `--help`；raw_icmp 为网络验收实现；网络、音频、SD 的外部条件不会由一般板测推断 |
 | 性能测量与比较 | `benchmark.py`、`performance_report.py` | [性能 skill](../.agents/skills/riscv-mini-benchmark/SKILL.md)；加载身份与测量身份须匹配，显式候选/基线 |

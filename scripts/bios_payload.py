@@ -14,6 +14,8 @@ def main():
     p.add_argument('--source-dir',type=Path,help='compile every .c/.S in this directory instead of --source')
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/bios-payload')
     p.add_argument('--include-dir',type=Path,action='append',default=[])
+    p.add_argument('--define',action='append',default=[],help='extra -D for the compile step')
+    p.add_argument('--cflag',action='append',default=[],help='extra compiler flag, appended after the defaults')
     p.add_argument('--extra-source',type=Path,action='append',default=[])
     p.add_argument('--helper',action='append',choices=sorted(HELPERS),default=[],
                    help='link a repository-provided freestanding helper library')
@@ -31,6 +33,7 @@ def main():
     else:
         sources=[a.source.resolve()]
     args=[str(gcc),'-march='+march,'-mabi='+mabi,'-Os','-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-ffunction-sections','-fdata-sections','-msmall-data-limit=0','-nostdlib','-nostartfiles',
+        *[f'-D{d}' for d in a.define],*a.cflag,
         *[flag for directory in a.include_dir for flag in ('-I',str(directory.resolve()))],
         str(bios/'payload_start.S'),*[str(x.resolve()) for x in sources],*[str(x.resolve()) for x in a.extra_source],*[str(HELPERS[name]) for name in a.helper],
         '-T',str(bios/'payload.ld'),'-Wl,--gc-sections','-Wl,-Map,'+str(out/'payload.map'),'-lgcc','-o',str(elf)]
