@@ -31,7 +31,13 @@ static int hexval(int c) {
 }
 
 /* ------------------------------------------------------------------ console */
+/* dg_debug.c sets this while a base64 dump owns the UART.  Log lines written
+ * mid-dump land INSIDE the base64 stream and corrupt it (the frame heartbeat
+ * used to do exactly that), so console output is dropped for the duration of a
+ * dump instead of interleaving with it. */
+extern int dbg_uart_busy(void);
 static void con_write(const char *s,size_t n) {
+    if(dbg_uart_busy())return;
     while(n) {unsigned k=n>4096?4096:(unsigned)n;
         bios_call(BIOS_WRITE,(uintptr_t)s,k,0,0);s+=k;n-=k;}
 }
@@ -66,9 +72,6 @@ static unsigned now_ms(void) {return (unsigned)bios_call(BIOS_TIME,0,0,0,0);}
 static int fs_call(unsigned fn,uintptr_t a1,uintptr_t a2,uintptr_t a3) {
     unsigned t=now_ms();int r=bios_call(fn,a1,a2,a3,0);fs_ms+=now_ms()-t;++fs_calls;return r;
 }
-static void poll_call(void) {
-    unsigned t=now_ms();bios_call(BIOS_POLL,0,0,0,0);poll_ms+=now_ms()-t;++poll_calls;
-}
 /* Keep USB/console responsive during a long transfer without paying a POLL per
  * ecall: one pump per 8 ms is plenty (a POLL measured 0.55 ms on hardware). */
 static unsigned last_pump;
@@ -77,6 +80,10 @@ static void io_pump(void) {
     if((unsigned)(t-last_pump)<8)return;
     last_pump=t;
     bios_call(BIOS_POLL,0,0,0,0);poll_ms+=now_ms()-t;++poll_calls;
+    /* The debug console is otherwise only serviced between ticks, and one tick
+     * (startup reads 1.8 MiB of WAD) keeps the board silent for tens of seconds.
+     * Servicing here costs nothing: this already runs at most once per 8 ms. */
+    shim_debug_hook();
 }
 
 FILE *fopen(const char *path,const char *mode) {
@@ -120,13 +127,28 @@ int fclose(FILE *f) {
  * silent for minutes, which makes a slow board indistinguishable from a hung
  * one.  UART is a log sink only; the game never reads it. */
 static unsigned long io_bytes;
+static unsigned long io_crc=0xfffffffful;
 static unsigned long io_next_report=256ul*1024ul;
+/* IEEE CRC32 (reflected).  One implementation for the frame dumps and for the
+ * read check below. */
+unsigned long shim_crc32(unsigned long crc,const void *data,unsigned n) {
+    const unsigned char *s=data;
+    while(n--) {crc^=*s++;for(unsigned k=0;k<8;++k)crc=(crc>>1)^(0xEDB88320ul&-(crc&1ul));}
+    return crc;
+}
+void shim_io_snapshot(struct dbg_io *io) {
+    io->bytes=io_bytes;io->fs_ms=fs_ms;io->fs_calls=fs_calls;
+    io->poll_ms=poll_ms;io->poll_calls=poll_calls;io->crc=~io_crc;
+}
+/* crc covers every byte fread has handed to the engine.  The same shim runs in
+ * the QEMU simulator, so a board value that differs from the simulator's says
+ * the WAD bytes are wrong (SD/cache) rather than the picture being mis-rendered. */
 static void io_report(void) {
     if(io_bytes<io_next_report)return;
     io_next_report+=256ul*1024ul;
-    printf("shim: reads %u KiB fs=%u ms/%u calls poll=%u ms/%u t=%u ms\n",
+    printf("shim: reads %u KiB fs=%u ms/%u calls poll=%u ms/%u t=%u ms crc=0x%08x\n",
            (unsigned)(io_bytes>>10),(unsigned)fs_ms,(unsigned)fs_calls,
-           (unsigned)poll_ms,(unsigned)poll_calls,now_ms());
+           (unsigned)poll_ms,(unsigned)poll_calls,now_ms(),(unsigned)~io_crc);
 }
 /* One ecall per 4 KiB, never per item.  DOOM reads with fread(buf,1,n), so an
  * item loop here issued one FS_READ per byte: measured 268 127 calls and
@@ -140,6 +162,7 @@ size_t fread(void *dst,size_t sz,size_t n,FILE *f) {
         int r=fs_call(BIOS_FS_READ,f->handle,(uintptr_t)(out+done),cap);
         if(r<0) {f->err=1;errno=EIO;break;}
         if(r==0)break; /* EOF; a short count is how C reports it */
+        io_crc=shim_crc32(io_crc,out+done,(unsigned)r);
         done+=(unsigned)r;f->pos+=(unsigned)r;io_bytes+=(unsigned)r;
         io_pump();
     }
@@ -631,23 +654,35 @@ double atof(const char *s) {
 char *getenv(const char *name) {(void)name;return 0;}
 
 /* ------------------------------------------------------------------- exit */
-static uint32_t exit_buf[16];
-static int exit_armed;
-int shim_setjmp(void) {
-    extern int shim_setjmp_asm(uint32_t*);
-    int r=shim_setjmp_asm(exit_buf);
-    if(!r)exit_armed=1;
-    return r;
+/* The guard frame is payload_main's, so shim_setjmp has to capture the CALLER's
+ * context: it is written in asm on purpose.  A C wrapper only tail-calls by
+ * accident — at -Os gcc did tail-call and exit() worked, at -O2 it kept its own
+ * frame, so longjmp returned into a wrapper whose saved return address the
+ * game's stack use had long since overwritten (measured on hardware: exit()
+ * printed its breadcrumb and the very same payload instance kept running). */
+static uint32_t exit_buf[16] __attribute__((aligned(16)));
+uint32_t *shim_exit_bufp;   /* taken by the asm below, so --gc-sections keeps it */
+static int exit_armed;   /* 1 while the guard in payload_main is live */
+static int jmp_valid;    /* set once and never cleared: exit_buf stays usable */
+static int exit_calls;   /* how often exit() has been reached */
+void shim_guard_arm(void) {
+    shim_exit_bufp=exit_buf;
+    exit_armed=1;jmp_valid=1;
 }
-int shim_exit_armed(void) {return exit_armed;}
+/* exit() always leaves the payload.  There is no process to hand control to, so
+ * the old "not armed" spin wedged the board with the debug console still
+ * answering — and the console did reach it (the debug exit reported
+ * "EXIT (not armed)" while the game kept running).  The breadcrumb says which
+ * case happened: calls>1 means something else exited first, calls==1 with
+ * armed=0 means the guard was never seen. */
 void exit(int code) {
     extern void shim_longjmp_asm(const uint32_t*,int);
-    if(exit_armed) {
-        exit_armed=0;
-        shim_longjmp_asm(exit_buf,code?code:1);
-    }
-    {static const char msg[]="EXIT (not armed)\r\n";con_write(msg,sizeof msg-1);}
-    for(;;)bios_call(BIOS_POLL,0,0,0,0);
+    ++exit_calls;
+    printf("EXIT code=%d armed=%d calls=%d\r\n",code,exit_armed,exit_calls);
+    exit_armed=0;
+    if(jmp_valid)shim_longjmp_asm(exit_buf,code?code:1);
+    bios_call(BIOS_REBOOT,0,0,0,0);
+    for(;;);
 }
 void abort(void) {exit(134);}
 
@@ -678,14 +713,18 @@ double sqrt(double x) {
 /* --------------------------------------------------------------- asm jmp */
 __asm__(
 ".text\n.align 2\n"
-".globl shim_setjmp_asm\n.type shim_setjmp_asm,@function\n"
-"shim_setjmp_asm:\n"
-" sw ra,0(a0)\n sw sp,4(a0)\n sw s0,8(a0)\n sw s1,12(a0)\n"
-" sw s2,16(a0)\n sw s3,20(a0)\n sw s4,24(a0)\n sw s5,28(a0)\n"
-" sw s6,32(a0)\n sw s7,36(a0)\n sw s8,40(a0)\n sw s9,44(a0)\n"
-" sw s10,48(a0)\n sw s11,52(a0)\n"
-" li a0,0\n ret\n"
-".size shim_setjmp_asm,.-shim_setjmp_asm\n"
+/* shim_setjmp is the public entry: running it here means ra/sp/s0-s11 belong to
+ * the caller (payload_main), which is the frame longjmp has to resume.  A NULL
+ * shim_exit_bufp (guard never armed) just returns 0. */
+".globl shim_setjmp\n.type shim_setjmp,@function\n"
+"shim_setjmp:\n"
+" la t0,shim_exit_bufp\n lw t0,0(t0)\n beqz t0,9f\n"
+" sw ra,0(t0)\n sw sp,4(t0)\n sw s0,8(t0)\n sw s1,12(t0)\n"
+" sw s2,16(t0)\n sw s3,20(t0)\n sw s4,24(t0)\n sw s5,28(t0)\n"
+" sw s6,32(t0)\n sw s7,36(t0)\n sw s8,40(t0)\n sw s9,44(t0)\n"
+" sw s10,48(t0)\n sw s11,52(t0)\n"
+"9: li a0,0\n ret\n"
+".size shim_setjmp,.-shim_setjmp\n"
 ".globl shim_longjmp_asm\n.type shim_longjmp_asm,@function\n"
 "shim_longjmp_asm:\n"
 " lw ra,0(a0)\n lw sp,4(a0)\n lw s0,8(a0)\n lw s1,12(a0)\n"

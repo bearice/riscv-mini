@@ -157,6 +157,13 @@ byte *I_ZoneBase (int *size)
 
     zonemem = AutoAllocMemory(size, default_ram, min_ram);
 
+    /* [bios port] 把整个 zone 清零。vanilla 不清 zone，而渲染器会读到从未写过的
+       zone 内存，画面因此取决于分配历史：同一份代码 -O0 与 -O2 在关卡第 1 tic 有
+       71% 像素不同（相机状态逐比特相同）。清零后两者逐字节一致，实板（zone 在 BSS，
+       本来就被 BIOS 清零）与 QEMU（zone 来自 shim 堆）也一致。代价是一次 16 MiB
+       memset，约 1.8 s，换到的是可复现的画面。 */
+    memset(zonemem, 0, *size);
+
     printf("zone memory: %p, %x allocated for zone\n", 
            zonemem, *size);
 

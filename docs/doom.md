@@ -2,7 +2,7 @@
 
 `firmware/apps/doom/` 是能在本机常驻 BIOS 下加载运行的 DOOM（doomgeneric 移植）。它是一个普通 RPB1 二级程序：ROM 把 BIOS 装进 DDR 并执行，BIOS 再从 SD 或 TFTP 把 `DOOM.RPB` 装到 `0x01000000` 并跳转；游戏只通过 BIOS 的 ecall 服务访问帧缓冲、文件和时钟。
 
-视频不走复制：BIOS 的 480×272 RGB565 帧槽 stride 就是 960 B，`i_video.c` 每行正好推进 960 B，所以 `DG_ScreenBuffer` 直接指向非显示帧槽，画完 `VIDEO_PRESENT` 翻页（320×200 画面顶部对齐、左右和下方留黑）。
+视频不走复制：BIOS 的 480×272 RGB565 帧槽 stride 就是 960 B，`i_video.c` 每行正好推进 960 B，所以 `DG_ScreenBuffer` 直接指向非显示帧槽，画完 `VIDEO_PRESENT` 翻页（320×200 画面在 480×272 上居中，左右各 160 px、上下各 36 行黑边）。
 
 ## 构建与安装
 
@@ -37,11 +37,21 @@
 
 ### 把 WAD 和载荷放到 SD 卡
 
-`DOOM1.WAD` 放在 SD 根目录（4,196,020 B，shareware，sha256 `BB449C7480E9A02A62012D041406E8E43DAA51CAA0650646D1307D8650B8F837`）。`build/doom-assets/` 不进 Git，可自行准备：
+`DOOM1.WAD` 放在 SD 根目录。**要用 1.9 的 shareware WAD。** 1.8 的 `DEMO1/2/3` 和 1.9 引擎对不上：引擎会打印 `Demo is from a different game version! (read 108, should be 109)`，吸引模式里那个"玩家"其实是一条被带偏的录像，它会贴着墙走，屏幕上于是出现几十像素宽的纯色竖条——那是被放大几十倍的墙面贴图，看着像渲染坏了，渲染本身是对的。同一份代码换 1.9 的 WAD，告警消失，吸引模式画面正常（QEMU 同一条 150 s 时间线上，1.8 的帧右侧是灰色巨墙，1.9 的帧是正常走廊）。
+
+两个都是 4,196,020 B，只差版本：
+
+| 版本 | md5 | sha256 |
+| --- | --- | --- |
+| **1.9（用这个）** | `F0CEFCA49926D00903CF57551D901ABE` | `1D7D43BE501E67D927E415E0B8F3E29C3BF33075E859721816F652A526CAC771` |
+| 1.8（会报录像版本不符） | `5F4EB849B1AF12887DEC04A2A12E5E62` | `BB449C7480E9A02A62012D041406E8E43DAA51CAA0650646D1307D8650B8F837` |
+
+`build/doom-assets/` 不进 Git。1.9 的取法——Debian non-free 包里的就是原版 `doom1.wad`，实测无版本告警：
 
 ```powershell
-Invoke-WebRequest https://www.gamers.org/pub/idgames/idstuff/doom/doom-1.8.wad.gz -OutFile build/doom-assets/doom18.wad.gz
-# 解压得到 build/doom-assets/DOOM1.WAD（1.8 shareware；吸引模式会提示 demo 版本是 1.8）
+Invoke-WebRequest http://mirror.volia.net/debian/pool/non-free/d/doom-wad-shareware/doom-wad-shareware_1.9.fixed-5_all.deb -OutFile build/doom-assets/doom-wad.deb
+# .deb 是 ar 包：取出 data.tar.xz，解压拿 ./usr/share/games/doom/doom1.wad，改名 DOOM1.WAD，核对上表的 1.9 校验和
+# 老的 1.8 来源 https://www.gamers.org/pub/idgames/idstuff/doom/doom-1.8.wad.gz 还在，但会撞上上面的录像版本问题
 ```
 
 推上卡用 BIOS 的 `fetchraw`（TFTP 原样文件，≤8 MiB；`fetch` 只接受校验通过的 RPB1 程序）：
@@ -127,13 +137,65 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 本机 RTL 未变时用 `--build current`（合格的 v0.9.1 gateware）+ `--image` 指到自己的 BIOS 镜像；`mini.py build` 产出的 run 目录没有综合/PnR，直接当 `--build` 会被拒（"Board operations require completed PnR with setup/hold 0/0"）。构建目录以日志里的 `Build directory:` 为准，别按 `--purpose` 名字去猜——失败的尝试也会留下同前缀的目录。
 
+## 调试通道
+
+载荷在 UART 上监听单字符命令（`firmware/apps/doom/dg_debug.c`），主机侧统一走 `scripts/doom_debug.py`。载荷运行期间 BIOS 不再读控制台，同一时刻只有一个进程能占着 COM 口，所以换载荷的调试要让它自己负责启动：
+
+```powershell
+# 一条命令：BIOS 提示符 → TFTP 启动 → 等 I_InitGraphics → 暂停 → 取帧 → PNG
+& $MiniPython scripts/doom_debug.py --boot --host-ip 169.254.25.153 --settle 25 --command frame
+& $MiniPython scripts/doom_debug.py --command source      # 8-bit 源像素 + 引擎调色板
+& $MiniPython scripts/doom_debug.py --command timing      # 分段耗时
+& $MiniPython scripts/doom_debug.py --compare             # 不上板，重算差异
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `p` | 暂停/继续。冻结的是 `DG_GetTicksMs`，`i_timer.c` 的 `I_GetTime` 全从它导出，所以整个游戏时钟停住；恢复时把暂停时长扣掉，不会补帧 |
+| `s` | 暂停状态下走一帧 |
+| `f` / `F` | `f` 取面板正在显示那一格里的 320×200 画面区；`F` 把**两个帧槽都**取回来（各 480×272 含黑边），主机侧直接判 slot0/slot1 是否一致 |
+| `g` | 取回 `I_VideoBuffer` 的 8-bit 源像素**和**引擎真正在用的 `colors[]` 表 |
+| `t` | 分段耗时 tick/blit/draw/sleep/poll，带次数与均值；窗口每次打印后清零 |
+| `i` | shim 读盘统计与累计 CRC32 |
+| `v` | 面板地址、stride、信箱偏移、暂停状态 |
+| `m` | 游戏状态一行：`gametic`、`lt`（leveltime，本关已跑 tic 数）、`ticdup`、`state`、`ep/map`、`demo`、`viewx/y/z`、`angle`、`health`；每次 dump 也会先打这一行 |
+| `1`–`5` | 在面板上钉一张已知图案（竖条/1px 棋盘/4×4 棋盘/横条/渐变），游戏继续在后台跑；`0` 放开 |
+| `c` | 循环切换每帧空白：黑（默认）→ 索引 `0xff`（取证）→ 关。切到 `0xff` 时，dump 里还是 `0xff` 的像素就是"这一帧根本没画过"的位置 |
+| `x` | 退出载荷回 BIOS |
+
+线格式是 `DBGDUMP <kind> <bytes> <w> <h> <bpp> <stride>` + 连续 base64 + `DBGEND <crc32>`，每条命令以 `DBG done` 收尾（`g` 连发两块，只读到第一个 `DBGEND` 会丢掉调色板）。base64 必须整条流连续、只在结尾补一次 `=`：按行补 `=` 会让解码器在第一行末尾就停下。
+
+**为什么这套东西能定位问题**：`g` 给的是引擎画出来的 8-bit 像素，`f` 给的是面板里的 RGB565，`--compare` 用板子自己交上来的 `colors[]` 把前者换算成 RGB565 再逐字节比。源干净、面板脏 → 问题在 blit 或 DMA；源本身就脏 → 问题在数据或引擎。用 `colors[]` 而不是 WAD 里的 PLAYPAL，是因为 `I_SetPalette` 还过了一层 `gammatable[usegamma]`（不是恒等表），拿 PLAYPAL 比会看到 36.74% 的假差异。
+
+暂停期间载荷仍在跑 `dbg_service()`，串口不会失联；取帧期间游戏时钟同样冻结，15 s 的传输不会变成 15 s 的世界跳变。这条"面板 = 引擎源图"的等式由 `tests/doom_test.py` 的 `DebugChannelTest` 锁住：它在主机侧把 `g` 取回的源图按板子的调色板重跑一遍 blit，和 `f` 取回的 RGB565 逐字节比，必须 `0/200 rows differ`。换 WAD、换优化等级都会改变具体像素，所以这里不记 CRC 的具体值——但这条 diff 必须一直是 0，实板上的读数同样是 0。
+
+**闪烁要问两个帧槽，不是问一帧**：面板在 slot0/slot1 之间交替，"画面闪"只可能是两格内容不一样，所以单张截图永远证明不了。`F` 在暂停态把两格都取回来逐字节比——一致就说明面板交替的是同一张图的两份拷贝，帧缓冲这一层不可能闪；不一致，差异落在哪些行本身就是答案。QEMU 暂停态实测 `slot0 vs slot1: 0 bytes, 0/272 rows differ`。
+
+**取帧期间串口是独占的**：base64 流里混进任何 `printf` 都会毁掉这一帧（DOOM 每 100 帧那条心跳就干过）。现在 dump 的数据体写完后 shim 的 `con_write()` 才恢复输出（判据是 `dbg_uart_busy()`），期间日志直接丢弃；头尾两行是整行，周围混进东西主机侧会跳过，所以只有数据体需要独占。`parse_dumps()` 另外会把出现在行中间的 `DBGDUMP`/`DBGEND` 重新锚回行首——DOOM 有些启动日志结尾不带换行，标题会粘在日志尾巴上。
+
+**比对两边同一帧要认 `lt=`，不要认墙上时钟，也不要认 `gametic`**：吸引模式的录像回放是确定性的，同一个 `leveltime`（本关已经跑过的 tic 数）必然对应同一帧画面，所以 `lt` 才是实板与 QEMU 之间的锚。`gametic` 在标题画面那段时间照样往上涨，而录像什么时候开播取决于最后一次按键什么时候过期，两边差几百个 gametic 很正常；墙上时钟更没用，实板 3 fps、QEMU 40 fps。用法是让 dump 自己带状态行（`dump_area()` 在 `DBGDUMP` 头之前打 `DBG state ...`，放在头之前是因为主机把头的下一行就当 base64 正文），两边挑 `lt` 相同的那两张图比。**`lt` 相同而画面不同 → 移植有确定性问题，值得继续挖；画面相同 → 那就是录像在那个时刻本来的样子**，比如镜头贴着几何体时，被放大几十倍的墙面贴图就是会画出一整条纯色竖带，很容易被当成显示故障。
+
+**数据通路靠累计 CRC 一次性排除**：`i` 报的 `readcrc=` 是 shim 对"曾经 `fread` 返回过的每个字节"算的 CRC32，同一份 shim 也跑在 QEMU 里，所以把两边同检查点的值对上，就一次排除了 SD 块缓存 + FatFs + `FS_READ` + shim 整条链路。实板与 QEMU 在 261/522/768/1024/1282/1536 KiB 六个检查点上分别是 `0xd1fb97ef 0x656a036e 0xadd74aec 0xc231b549 0x262ddd42 0x46bc09e6`，逐值相同——"块缓存读坏数据"这条怀疑不需要再靠猜纹理来推翻。
+
+`--command bios-status` 在 BIOS 提示符下取一次 `status`，重点是 `RGB LCD … underflows=`（LCD DMA 的欠载计数，复位以来累计，所以要看一次运行前后的差）。载荷占着串口时它会先发 `x` 让载荷退出再问，前提是载荷的 `exit()` 真能回到 BIOS（见 [bios-payload-porting.md 坑 15](bios-payload-porting.md)）。
+
+**闪烁有客观证据，而且不在软件里**：跑一次 DOOM 前后各取一次 `bios-status`。空板待机 `underflows=00000000`（1202 个面板帧）；跑一轮吸引模式之后 `underflows=00000089`，同期 `frames` 从 `0x4b2` 走到 `0x2ac9`，即 **9751 个面板帧里欠载 137 次（1.4%）**——面板每 60 Hz 重扫一次，游戏只有 3 fps，所以每一次欠载都会在屏幕上留下可见的一闪。扫描器只有 8 KiB FIFO（`gateware/video.py` 的 `stream.SyncFIFO(depth=8192//2)`），而 `LCDScan` 是每个像素时钟消费一个像素、`underflow = draw & ~sink.valid`，8 KiB = 4096 像素 ≈ 450 µs 的余量，也就是说 DDR 有半毫秒没理 LCD DMA。**把它当成 SD 读卡的锅试过一次，结论是否**：把块缓存从 32 块（128 KiB）加到 512 块（2 MiB）之后，同样的 DOOM 流量还是同样的 1007 次 `FS_READ`（次数由调用方 4 KiB 合并决定，不由卡决定），欠载反而略多（6823 帧 148 次）。**所以欠载跟的是 CPU 的访存流量，不是读卡流量**——软件渲染器在 2 KiB 写直通 L1 上疯狂取纹理，把 LCD 的取数挤饿了。真正的解在 gateware 的 DDR 仲裁优先级或 FIFO 深度，属于 PnR 改动，不在移植范围内；软件侧能证明的都证明了：帧内容逐字节正确、两个帧槽一致、present 没有失败过。
+
+**取到的是"完整的一帧"，不是"命令那一刻的缓冲"**：调试命令是从 shim 的轮询里进来的，可能落在这一帧的中间，于是 dump 会拍到半张画好的图。现在 `I_StartFrame` 调 `dbg_frame_began()` 把帧标记为未完成、`I_FinishUpdate` 末尾调 `dbg_frame_done()`；帧没画完时 `f`/`F`/`g` 进 `g_queue[]` 排队，等帧边界再按原顺序执行（其余命令照旧立刻跑，否则启动那几分钟里什么都问不出来）。这个队列是 `tests/doom_test.py` 的 `DebugChannelTest` 逼出来的——空白填充一上上去，`blit diff` 立刻从 0 变成 76 470，因为 dump 开始落在"已清空、还没画"的窗口里。
+
+**每帧空白（`c`）治的是"上一屏残留"**：`I_StartFrame` 先把 `I_VideoBuffer` 的前 `viewheight` 行涂黑，DOOM 每个渲染帧都会重画整个画面（`d_main.c:222` 传 `ST_Drawer(true, true)`），所以涂掉是安全的。用 `c` 切到索引 `0xff` 量了一下到底有多少像素是引擎不写的：**关卡第 0 tic 全画面都没写，第 1 tic 剩 523 个像素（1.0%）没写，形状是第 101–120 行的一块三角形（第 101 行 55–60、第 110 行 0–44、第 119 行 0–0），从第 34 tic 起一个都没有。** 原始 DOOM 在 35 fps 下这一 tic 的残留根本看不见，本移植 3 fps 下它要在面板上摆三分之一秒——标题页、制作名单、吸引模式互相切换时看到的那一下"色块"就是这个。涂黑一次 64 KiB，约占一帧的 2%，所以默认开着。
+
+**画面不确定 = 引擎读到了从没写过的 zone 内存**：把同一份源码分别用 `-O0` 和 `-O2` 编进 QEMU，相机状态逐比特相同（`gametic=172 lt=1 state=0 ep=1 map=5 demo=1 pos=(-224.00,-624.00) angle=0x40000000`），画面却有 **45 726/64 000 字节（71.45%）不一样**；`lt=65/589/1219` 又完全相同。这就是"渲染器读了它自己从没写过的内存"，读到的值取决于分配历史，所以换优化等级就换画面。修法在 `i_system.c` 的 `I_ZoneBase()`：拿到 zone 之后整体清零（vanilla 不清）。**清零后 `-O0` 与 `-O2` 在 `lt=1/16/30` 逐字节一致（`a59d4059`/`73362f8d`/`28be0e09`）**，实板（zone 在 BSS，本来就被 BIOS 清零）与 QEMU（zone 来自 shim 堆）也走同一条路。代价是一次 16 MiB memset，约 1.8 s，在 140 s 的启动里占 1.3%。
+
 ## 边界与已知限制
 
 - **鼠标不支持**：doomgeneric 的 `i_input.c` 从不投递 `ev_mouse`，只有键盘这条路；要加鼠标得改 `i_input.c`（BIOS 侧 `MOUSE` 服务本身是好的）。
 - **没有声音**：`FEATURE_SOUND` 关闭（`doomfeatures.h`），`-nosound/-nomusic/-nosfx` 默认传入。
-- **WAD 是 1.8 shareware**：吸引模式会打印 `Demo is from a different game version! (read 108, should be 109) … This appears to be v1.8.` 并跳过 demo；自己开新游戏不受影响。要消掉就换 1.9 的 `DOOM1.WAD`。
+- **WAD 版本必须是 1.9**：1.8 的 WAD 会让吸引模式打印 `Demo is from a different game version! (read 108, should be 109) … This appears to be v1.8.`，随后那条被带偏的录像会把镜头怼在墙上，画出满屏的放大贴图，很容易被当成渲染故障（见[上面](#把-wad-和载荷放到-sd-卡)）。自己开新游戏不受影响，但默认就该用 1.9。
+- **"画面有色块/条带"查到哪一步了**：**帧缓冲的内容**已经排除干净——`g` 与 `f` 的逐字节 diff 是 0（blit 与主机模型完全一致）、暂停态两个帧槽逐字节一致、`readcrc` 与 QEMU 六个检查点逐值相同（0xd1fb97ef 0x656a036e 0xadd74aec 0xc231b549 0x262ddd42 0x46bc09e6）。真正修掉的原因有两个：1.8 的 WAD（上一条）和每帧残留像素（`c` 那一节）。**还有两件事不是软件能修的**：① 面板 DMA 在 CPU 满载时会欠载（1.4% 的面板帧），这是闪烁的来源，见[上面](#调试通道)；② 吸引模式录像头 ~30 tic 的纯色竖条在 QEMU 里逐比特重现、且是引擎自己画上去的（把缓冲涂成 `0xff` 之后那些像素都不是 `0xff`），即 vanilla 渲染器在那个机位本来的画法。要判断观感，得用真键盘开一局自己的游戏看，而这需要板子上插着 USB 键盘。
 - **存档**：`FS_WRITE` 已经可用，`M_SaveDefaults`/存档会写 SD 根部（`.savegame/` 目录由 `FS_MKDIR` 创建），但**尚未在板上实际验证过存档往返**；`remove`/`rename` 走 `FS_UNLINK`/`FS_RENAME`。
-- **性能**：2026-10-11 实板（v0.9.1 gateware、60 MHz rv32ima 无 FPU、DDR 120 MHz、L1+4 KiB L2）测得 **2.48 帧/秒**——`DOOM presents=100 ms=174958` 到 `presents=700 ms=416866`，600 帧 / 241 908 ms，约为 DOOM 标称 35 fps 的 7%。启动侧不再是瓶颈：`R_Init` 的 1282 KiB 只花 `fs=1642 ms/1007 calls`（逐字节读的年代是 261 KiB / 268 127 次 / 72 255 ms）。测量办法是被动收 UART：`scripts/mini.py board status --seconds 30`；**100 帧一行 ≈ 40 s 才有一条**，30 s 窗口收不到东西是正常的，不代表死机。渲染本身要提速需要动软件渲染路径或提高 CPU/DDR 频率，不在本次范围。
+- **性能**：2026-10-11 实板（v0.9.1 gateware、60 MHz rv32ima 无 FPU、DDR 120 MHz、L1 2 KiB 写直通 + 4 KiB L2 写回）用 `-O2` 构建（414 036 B）测得 **3.37 帧/秒**——`--command timing` 的 93 546 ms 窗口里 316 帧，`present_fails=0`。分段是 `tick` 平均 288 ms、`blit` 28 ms、`draw` 9 ms、`poll` 2528 ms/1917 次（摊到每帧 0.54 ms）：**blit 已经不是瓶颈，剩下的 ~266 ms/帧就是软件渲染本身**。两处提速是实打实的：`cmap_to_fb` 走 `rgb565_palette[]` 预表 + 两个像素合成一次 32-bit 写（原来逐像素重读 `s_Fb.bits_per_pixel`，写 `out` 可能别名到它，`-Os` 提不出来）把 blit 从 233 ms/帧打到 29 ms；`pump()` 的 `BIOS_POLL` 限流到 20 ms 一次，把每帧 15 ms 的轮询摊到 0.54 ms。`-O3` 只再快 2.4%（3.42 fps）却大 13%（466 348 B），所以留在 `-O2`。启动侧同样不再是瓶颈：`R_Init` 的 1282 KiB 只花 `fs=1642 ms/1007 calls`（逐字节读的年代是 261 KiB / 268 127 次 / 72 255 ms）。
+  **测量口径**：用 `--command timing` 的窗口，别用启动窗口（60 s 窗口含启动只有 0.89 fps），也别只靠 `DOOM presents=` 心跳——100 帧一行 ≈ 40 s 才有一条，被动收 UART（`scripts/mini.py board status --seconds 30`，上限 30 s）经常一条收不到，那不是死机。历史数字 2.48 fps 是 `-Os` 时代由心跳算的（`presents=100 ms=174958` → `presents=700 ms=416866`）。再要提速就得动软件渲染路径或提高 CPU/DDR 频率，不在本次范围。
 - 只写 FPGA SRAM 和 UART；Flash 只在用户明确要求时由 `board update` 写。
 - 程序内存硬约束：镜像 `memory_bytes` 必须 ≤ `0x06000000`（装载时一边读暂存区一边写程序内存），本载荷约 50.4 MiB，满足。
 
@@ -141,10 +203,12 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 | 文件 | 职责 |
 | --- | --- |
-| `firmware/apps/doom/` | doomgeneric 源码（Chocolate Doom 派生）+ 本地补丁：声音模块移除、`i_video.c` 默认 `rgb565`、`i_system.c` 去掉 GUI 弹窗、`d_loop.c` 去掉网络头依赖、`m_argv.c` 保持原有参数边界 |
+| `firmware/apps/doom/` | doomgeneric 源码（Chocolate Doom 派生）+ 本地补丁：声音模块移除、`i_video.c` 默认 `rgb565`、`i_system.c` 去掉 GUI 弹窗并在 `I_ZoneBase()` 里清零 zone（见上面的确定性一节）、`d_loop.c` 去掉网络头依赖、`m_argv.c` 保持原有参数边界 |
 | `firmware/apps/doom/dg_bios.c` | 平台层：`DG_Init/DG_DrawFrame/DG_SleepMs/DG_GetTicksMs/DG_GetKey/DG_SetWindowTitle`、HID usage→doomkeys 映射、F12 退出、UART 心跳 |
 | `firmware/apps/doom/shim.c`、`shim_include/` | 最小 libc：stdio/stdlib/string/ctype/errno/math 等，控制台走 `WRITE`，文件走 `FS_*`，48 MiB 静态堆，`exit()` 用自写 `setjmp/longjmp` 回到 `payload_main` |
 | `scripts/doom_image.py` | 构建 `BOOT.RPB`（转调 `bios_payload.py`，固定 `DOOMGENERIC_RESX/RESY=480/272`） |
 | `scripts/doom_sim.py` | QEMU 仿真（BIOS shim + 面板抓帧 + 脚本化按键） |
 | `scripts/doom_verify.py` | 实板验收（复用 `BootSession`/`PayloadServer`） |
+| `firmware/apps/doom/dg_debug.c`、`dg_debug.h` | UART 调试通道：暂停/单帧/取帧/取源像素与调色板/分段耗时/已知图案 |
+| `scripts/doom_debug.py` | 调试通道主机侧：发命令、解 base64、验 CRC、出 PNG、`--compare` 逐字节比对 |
 | `tests/doom_test.py` | 主机回归：RPB1 布局 + QEMU 跑真实载荷 |

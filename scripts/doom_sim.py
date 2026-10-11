@@ -68,6 +68,14 @@ static int sim_handle_ok(unsigned h) {return h<6 && sim_files[h].used;}
 
 /* Scripted input: time in simulated ms, HID usage, pressed flag. */
 struct sim_key {unsigned long at_ms; unsigned char usage, pressed;};
+#ifdef SIM_NOKEYS
+/* --define SIM_NOKEYS injects nothing, so the payload is left alone in the
+ * attract loop (title page / demo / credit page) exactly like a board with no
+ * keyboard attached.  The default script opens the menu, which paints over the
+ * very pages those runs are meant to observe. */
+static const struct sim_key keys[1];
+#define SIM_KEYS 0u
+#else
 static const struct sim_key keys[] = {
     {1200, 0x28, 1}, {1300, 0x28, 0},   /* ENTER: title screen -> menu      */
     {1600, 0x28, 1}, {1700, 0x28, 0},   /* ENTER: New Game                  */
@@ -79,6 +87,15 @@ static const struct sim_key keys[] = {
     {6200, 0x2c, 1}, {6300, 0x2c, 0},   /* SPACE: use/open                  */
 };
 #define SIM_KEYS (sizeof keys / sizeof keys[0])
+#endif
+
+/* Scripted UART characters for the payload's debug console (dg_debug.c): each
+ * becomes readable once the simulated clock reaches its time.  This is how the
+ * pause/dump path is exercised without a board. */
+struct sim_uart {unsigned long at_ms; unsigned char c;};
+static const struct sim_uart uart_in[] = {SIM_UART_SCRIPT};
+static const unsigned sim_uarts = SIM_UART_COUNT;
+static unsigned uart_index;
 
 void sim_finish(long code) __attribute__((noreturn));
 void sim_finish(long code)
@@ -139,7 +156,10 @@ void sim_trap(unsigned int *f)
         f[10] = a1;
         break;
     case BIOS_GETC:
-        f[10] = (unsigned int)-1;   /* UART input is not part of this port */
+        if (uart_index < sim_uarts && uart_in[uart_index].at_ms <= sim_ms)
+            f[10] = uart_in[uart_index++].c;
+        else
+            f[10] = (unsigned int)-1;
         break;
     case BIOS_TIME:
         f[10] = (unsigned int)sim_ms;
@@ -365,13 +385,19 @@ def tools():
     return gcc, gcc.parent
 
 
-def build(out, wad, defines=(), cflags=(), soft_float=False):
+def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='-O2'):
     gcc, bindir = tools()
     scratch = out / 'tmp'
     scratch.mkdir(parents=True, exist_ok=True)
     for name in ('TMP', 'TEMP', 'TMPDIR'):
         os.environ[name] = str(scratch)
-    (out / 'sim_shim.c').write_text(SHIM, encoding='utf-8')
+    # Scripted UART characters become a C initialiser; the count is passed
+    # separately so an empty script still compiles (a zero-length array is not
+    # standard C).
+    entries = ', '.join('{%d, %d}' % (int(ms), ord(ch)) for ms, ch in uart) or '{0, 0}'
+    shim = (SHIM.replace('SIM_UART_SCRIPT', entries)
+                .replace('SIM_UART_COUNT', str(len(uart))))
+    (out / 'sim_shim.c').write_text(shim, encoding='utf-8')
     (out / 'sim.ld').write_text(LINKER, encoding='utf-8')
     shutil.copyfile(wad, out / WAD_BLOB)
     wad_obj = out / 'wad.o'
@@ -383,7 +409,7 @@ def build(out, wad, defines=(), cflags=(), soft_float=False):
                    else ('rv32imaf_zicsr_zifencei', 'ilp32f'))
     sources = sorted([p for p in APP.iterdir() if p.suffix in ('.c', '.S')])
     elf = out / 'sim.elf'
-    args = [str(gcc), '-march=' + march, '-mabi=' + mabi, '-Os', '-Wall', '-Wextra',
+    args = [str(gcc), '-march=' + march, '-mabi=' + mabi, optimize, '-Wall', '-Wextra',
             '-Wno-error', '-ffreestanding', '-fno-builtin', '-ffunction-sections',
             '-fdata-sections', '-msmall-data-limit=0', '-nostdlib', '-nostartfiles',
             '-I', str(ROOT), '-I', str(APP), '-I', str(APP / 'shim_include'),
@@ -541,11 +567,25 @@ def main():
                    help='capture the panel at this many seconds after start '
                         '(repeatable); samples never end the run')
     p.add_argument('--expect', action='append', default=[])
+    p.add_argument('--uart', action='append', default=[], metavar='MS:CHAR',
+                   help='make CHAR readable on the simulated UART once the game clock '
+                        'reaches MS ms (repeatable); this is how the payload debug '
+                        'console is driven without a board, e.g. --uart 6000:p '
+                        '--uart 6200:f')
     p.add_argument('--soft-float', action='store_true')
+    p.add_argument('--optimize', default='-O2',
+                   help='compile the same way the board image is built (doom_image.py default)')
     p.add_argument('--cpu', default='rv32')
     p.add_argument('--define', action='append', default=[])
     p.add_argument('--cflag', action='append', default=[])
     a = p.parse_args()
+    uart = []
+    for spec in a.uart:
+        ms, _, char = spec.partition(':')
+        if len(char) != 1:
+            raise SystemExit(f'--uart expects MS:CHAR, got {spec!r}')
+        uart.append((float(ms), char))
+    uart.sort(key=lambda item: item[0])
     qemu = find_qemu(a.qemu)
     if not qemu:
         raise SystemExit('qemu-system-riscv32 not found; pass --qemu or set QEMU_RISCV32')
@@ -556,7 +596,8 @@ def main():
     out = a.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     elf = build(out, wad, a.define,
-                [f'-DSIM_MAX_PRESENTS={a.max_presents}', *a.cflag], a.soft_float)
+                [f'-DSIM_MAX_PRESENTS={a.max_presents}', *a.cflag], a.soft_float, uart,
+                a.optimize)
     code, text, frames, timeout_hit = run(elf, qemu, out, a.timeout, samples, a.cpu)
     print(text, flush=True)
     print(f'\nframes captured: {len(frames)}')

@@ -15,6 +15,7 @@
  *         payload_main; text mode is restored and control returns to the BIOS.
  */
 #include "../../bios/include/bios.h"
+#include "dg_debug.h"
 #include "doomgeneric.h"
 #include "doomkeys.h"
 #include "shim_private.h"
@@ -29,7 +30,21 @@ static unsigned g_slot;
 static unsigned g_video;
 
 static uint32_t ms_now(void) {return (uint32_t)bios_call(BIOS_TIME,0,0,0,0);}
-static void pump(void) {bios_call(BIOS_POLL,0,0,0,0);}
+/* BIOS_POLL is not free - it runs the USB host stack and the Ethernet poll - and
+ * it is reached from the clock, the sleep and the present path alike, so it is
+ * timed once here.  Read it as nested inside whichever section called it.
+ * Measured on hardware: 2 904 POLLs in 41 s at 0.68 ms each (15 ms of every
+ * frame) because I_GetTicks reaches it dozens of times per tick.  Throttle it
+ * here rather than at each call site; 20 ms is still a 50 Hz keyboard poll. */
+static void pump(void) {
+    static uint32_t last;
+    uint32_t t=ms_now();
+    if((uint32_t)(t-last)<20)return;
+    last=t;
+    unsigned started=dbg_now_ms();
+    bios_call(BIOS_POLL,0,0,0,0);
+    dbg_add(DBG_POLL,dbg_now_ms()-started);
+}
 
 void DG_Init(void) {
     if(bios_call(BIOS_VIDEO_MODE,BIOS_GRAPHICS,0,0,0)!=0)return;
@@ -44,6 +59,8 @@ void DG_Init(void) {
     g_slot=0;
     g_video=1;
     DG_ScreenBuffer=(pixel_t *)g_fb[g_slot];
+    dbg_video((uintptr_t)g_fb[0],(uintptr_t)g_fb[1],stride,2,
+              g_info.width,g_info.height,g_slot);
     printf("DG_Init: %ux%u fb=%p stride=%u\n",g_info.width,g_info.height,
            (void *)g_fb[0],stride);
 }
@@ -51,23 +68,33 @@ void DG_Init(void) {
 void DG_DrawFrame(void) {
     static unsigned frames;
     if(!g_video)return;
+    unsigned started=dbg_now_ms();
     pump();
-    bios_call(BIOS_VIDEO_PRESENT,g_slot,0,0,0);
-    g_slot^=1;                                   /* render into the other slot */
-    DG_ScreenBuffer=(pixel_t *)g_fb[g_slot];
-    /* UART heartbeat: the board acceptance reads this to tell "rendering" from
-     * "stuck"; the game never reads the UART. */
-    if(++frames%100==0)printf("DOOM presents=%u ms=%u\n",frames,(unsigned)ms_now());
+    /* A test pattern is held on the panel by the debug console; presenting now
+     * would overwrite the image being inspected. */
+    if(!dbg_hold()) {
+        if(bios_call(BIOS_VIDEO_PRESENT,g_slot,0,0,0)!=0)dbg_present_failed();
+        else {dbg_presented();dbg_displayed(g_slot);}
+        g_slot^=1;                                /* render into the other slot */
+        DG_ScreenBuffer=(pixel_t *)g_fb[g_slot];
+        /* UART heartbeat: the board acceptance reads this to tell "rendering"
+         * from "stuck"; the game never reads the UART.  It counts presented
+         * frames only, so a held test pattern goes quiet on purpose. */
+        if(++frames%100==0)printf("DOOM presents=%u ms=%u\n",frames,(unsigned)ms_now());
+    }
+    dbg_add(DBG_DRAW,dbg_now_ms()-started);
 }
 
 void DG_SleepMs(uint32_t ms) {
     uint32_t start=ms_now();
     while((uint32_t)(ms_now()-start)<ms)pump();
+    dbg_add(DBG_SLEEP,(unsigned)(ms_now()-start));
 }
 
 uint32_t DG_GetTicksMs(void) {
     pump();
-    return ms_now();
+    /* dbg_clock holds the game while the debug console is paused or dumping. */
+    return dbg_clock(ms_now());
 }
 
 void DG_SetWindowTitle(const char *title) {(void)title;}
@@ -162,6 +189,10 @@ static char arg_nosfx[]="-nosfx";
 
 int payload_main(const struct bios_info *info) {
     (void)info;
+    /* Arm before capturing: the setjmp asm stores the caller's registers through
+     * shim_exit_bufp, and that pointer is only set here. Arming afterwards left it
+     * NULL at capture time, so nothing was saved and exit() long-jumped to garbage. */
+    shim_guard_arm();
     if(shim_setjmp()) { /* exit() unwound D_DoomMain */
         bios_call(BIOS_VIDEO_MODE,BIOS_TEXT,0,0,0);
         {static const char bye[]="DOOM: exited, back to BIOS console\r\n";
@@ -173,7 +204,16 @@ int payload_main(const struct bios_info *info) {
                   arg_nosound,arg_nomusic,arg_nosfx,0};
     doomgeneric_Create((int)(sizeof argv/sizeof*argv)-1,argv);
     /* doomgeneric contract: D_DoomMain returns after D_DoomLoop has run one
-     * tick, so the platform owns the loop (see the other doomgeneric ports). */
-    for(;;)doomgeneric_Tick();
+     * tick, so the platform owns the loop (see the other doomgeneric ports).
+     * dbg_service() is the UART debug channel: it costs one BIOS_GETC per frame
+     * and holds the loop while the console is paused (docs/doom.md). */
+    for(;;) {
+        dbg_service();
+        if(dbg_frozen())continue;
+        unsigned started=dbg_now_ms();
+        doomgeneric_Tick();
+        dbg_add(DBG_TICK,dbg_now_ms()-started);
+        dbg_frame_done();
+    }
     return 0; /* unreachable: only exit() leaves the loop */
 }

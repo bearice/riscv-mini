@@ -39,6 +39,9 @@ rcsid[] = "$Id: i_x.c,v 1.6 1997/02/03 22:45:10 b1 Exp $";
 
 #include "doomgeneric.h"
 
+/* [bios port] UART debug channel (pause / frame dump / timing); see dg_debug.h */
+#include "dg_debug.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -158,6 +161,28 @@ void cmap_to_fb(uint8_t *out, uint8_t *in, int in_pixels)
     int i, k;
     struct color c;
     uint32_t pix;
+
+    /* [bios port] Fast path for the board: 16 bpp, 1:1 scaling, aligned output.
+     * The generic loop below re-reads s_Fb.bits_per_pixel every pixel (a store
+     * through `out` may alias it, so -Os cannot hoist it), unpacks the bitfields
+     * of struct color and issues one 16-bit store per pixel.  Measured on the
+     * 60 MHz board that cost 233 ms per frame, 69 % of the whole frame time.
+     * Here the palette is pre-packed by I_SetPalette, two pixels go out per
+     * 32-bit store, and the loop body is one table load and one store. */
+    if (fb_scaling == 1 && s_Fb.bits_per_pixel == 16
+        && (in_pixels & 1) == 0 && (((uintptr_t) out) & 3) == 0)
+    {
+        const uint16_t *pal = rgb565_palette;
+        uint32_t *word = (uint32_t *) out;
+
+        for (i = 0; i < in_pixels; i += 2)
+        {
+            /* little endian: the left-hand pixel is the low half. */
+            *word++ = (uint32_t) pal[in[0]] | ((uint32_t) pal[in[1]] << 16);
+            in += 2;
+        }
+        return;
+    }
 
     for (i = 0; i < in_pixels; i++)
     {
@@ -300,9 +325,40 @@ void I_ShutdownGraphics (void)
 	Z_Free (I_VideoBuffer);
 }
 
+/* [bios port] The engine never clears I_VideoBuffer, so every pixel a frame
+ * does not paint keeps the previous screen's value.  id's 35 fps loop hides
+ * that behind one tic; this port runs at about 3 fps, so the first frames after
+ * a title / credit / demo transition - which the renderer paints only partly -
+ * stay on the panel for a third of a second.  Measured with the blank fill
+ * below switched on: level tic 0 leaves 100 % of the view unwritten, tic 13
+ * still leaves a triangular hole at columns 0-60 rows 101-120, and only from
+ * tic 34 on is every pixel written.  Those first frames are the reported
+ * "colour blocks / bands / flashing title": they are the title picture showing
+ * through, not a broken blit.  Blanking the buffer each frame costs one 64 KiB
+ * memset and removes the whole class.  viewheight is 200 in the fullscreen
+ * layout (r_draw.c:60 holds it, r_main.c sets it to SCREENHEIGHT, d_main.c:222
+ * tests it against 200), so the status bar rows are blanked too and
+ * ST_Drawer(refresh=true) repaints them every frame.  `c` on the debug console
+ * switches this off, which is how you make the engine show its holes. */
+extern int viewheight;		/* r_draw.c:60, declared in no header */
+
 void I_StartFrame (void)
 {
+	int mode = dbg_clear_view ();
 
+	dbg_frame_began ();
+	if (mode && I_VideoBuffer != NULL)
+	{
+	    int h = viewheight;
+
+	    if (h > SCREENHEIGHT)
+		h = SCREENHEIGHT;
+	    if (h > 0)
+		/* Mode 2 fills with a colour index the renderer cannot produce, so
+		 * a `g` dump then names every pixel this frame left unwritten. */
+		memset (I_VideoBuffer, mode == 2 ? 0xFF : 0x00,
+			(size_t)SCREENWIDTH * h);
+	}
 }
 
 void I_StartTic (void)
@@ -337,7 +393,26 @@ void I_FinishUpdate (void)
     line_in  = (unsigned char *) I_VideoBuffer;
     line_out = (unsigned char *) DG_ScreenBuffer;
 
+    /* [bios port] vertical centring.  The y_offset above is a byte count
+     * WITHIN a row (that is what the horizontal pair of offsets means), so it
+     * can never move the picture down a row: upstream leaves the image stuck to
+     * the top of the panel, which on 480x272 shows as a 72-line black band at
+     * the bottom while the left/right margins are centred.  Skip whole rows
+     * instead, using the same row stride the loop below advances by. */
+    {
+        int rows_pad = (s_Fb.yres - SCREENHEIGHT * fb_scaling) / 2;
+        if (rows_pad > 0)
+            line_out += (size_t)rows_pad *
+                        (size_t)(x_offset + SCREENWIDTH * fb_scaling *
+                                 (s_Fb.bits_per_pixel / 8) + x_offset_end);
+        y_offset = (int)((size_t)rows_pad *
+                         (size_t)(x_offset + SCREENWIDTH * fb_scaling *
+                                  (s_Fb.bits_per_pixel / 8) + x_offset_end));
+    }
+
     y = SCREENHEIGHT;
+
+    const unsigned dbg_started = dbg_now_ms(); /* [bios port] debug timing */
 
     while (y--)
     {
@@ -365,6 +440,10 @@ void I_FinishUpdate (void)
         }
         line_in += SCREENWIDTH;
     }
+
+    /* [bios port] report where the image landed and how long the blit took */
+    dbg_blit(dbg_started,x_offset,y_offset,x_offset_end,I_VideoBuffer,
+             SCREENWIDTH,SCREENHEIGHT);
 
 	DG_DrawFrame();
 }
@@ -406,11 +485,25 @@ void I_SetPalette (byte* palette)
      * map to the right pixel format over here! */
 
     for (i=0; i<256; ++i ) {
+        byte r = gammatable[usegamma][*palette++];
+        byte g = gammatable[usegamma][*palette++];
+        byte b = gammatable[usegamma][*palette++];
+
         colors[i].a = 0;
-        colors[i].r = gammatable[usegamma][*palette++];
-        colors[i].g = gammatable[usegamma][*palette++];
-        colors[i].b = gammatable[usegamma][*palette++];
+        colors[i].r = r;
+        colors[i].g = g;
+        colors[i].b = b;
+        /* [bios port] same packing the 16 bpp branch of cmap_to_fb does, done
+         * once per palette change instead of once per pixel. */
+        rgb565_palette[i] = (uint16_t) (((r & 0xF8) << 8) |
+                                       ((g & 0xFC) << 3) |
+                                        (b >> 3));
     }
+
+    /* [bios port] publish the table the blit really uses.  It is PLAYPAL pushed
+     * through gammatable[usegamma], which is not the identity curve, so a host
+     * that assumed the raw WAD bytes would blame the blit for a gamma step. */
+    dbg_palette (colors, sizeof colors);
 
 #ifdef CMAP256
 

@@ -66,6 +66,9 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 - 载荷窗口 `0x01000000..0x07deffff`；栈 `0x07df0000..0x07dfffff`，初始 `SP=0x07e00000`；**程序内存 `memory_bytes` 必须 ≤ `0x06000000`**，因为装载时 BIOS 一边从 `0x07000000` 的暂存区读、一边往程序内存写，超过就会自己覆盖自己。
 - `.bss` 也算进 `memory_bytes`，BIOS 会清零：板上日志里 `BOOT zero/cache sync:` 就是这笔开销（约 50 MiB → 5.6 s），不是卡死。
 - 载荷镜像装载上限 8 MiB（`BIOS_IMAGE_MAX`）；数据文件（IWAD 之类）不要塞进镜像，用 SD/TFTP 单独传。
+- 优化等级由 `<app>_image.py --optimize` 决定（DOOM 默认 `-O2`，`bios_payload.py` 默认仍是 `-Os`）。
+
+**坑 15（优化等级改变的是行为，不只是速度）：** 两处实板测量。① `i_video.c` 的 `cmap_to_fb` 在 `-Os` 下每个像素重读一次 `s_Fb.bits_per_pixel`（对 `out` 的写可能与它别名，编译器不敢外提），一帧 blit 233 ms、占整帧 69%；改成"调色板预生成 16-bit 值 + 一次写两个像素"并开 `-O2` 后是 31 ms。② 反过来，`-O2` 让 C 写的 `setjmp` 包装不再尾调用，`longjmp` 于是回到一个返回地址早被游戏栈覆盖的栈帧：`exit()` 打完自己的日志，游戏照跑（`-Os` 恰好尾调用，所以看起来是好的）。→ 需要"捕获调用者上下文"的原语（setjmp）直接写成汇编，别赌编译器的尾调用；性能结论要带分段计时（DOOM 是调试通道的 `t` 命令），别拿一个总帧率定因。
 
 ## 6. 主机验证：先 QEMU，再上板
 

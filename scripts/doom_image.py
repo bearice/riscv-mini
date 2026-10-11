@@ -18,6 +18,9 @@ def main():
     p.add_argument('--cflag',action='append',default=[])
     p.add_argument('--soft-float',action='store_true',
                    help='build rv32im/ilp32 for a CPU without the F extension (the qualified gateware)')
+    p.add_argument('--optimize',default='-O2',
+                   help='payload optimization level; -O2 is the default here because DOOM is compute-bound '
+                        '(the generic -Os blit loop cost 69%% of the frame time on hardware)')
     a=p.parse_args()
     app=a.source_dir.resolve()
     cmd=[sys.executable,str(ROOT/'scripts/bios_payload.py'),
@@ -25,6 +28,8 @@ def main():
          '--output-dir',str(a.output_dir.resolve()),
          '--include-dir',str(app/'shim_include'),
          '--helper','string',
+         # '-O2' looks like a flag to argparse, so it has to travel attached.
+         '--optimize='+a.optimize,
          '--define','DOOMGENERIC_RESX=480','--define','DOOMGENERIC_RESY=272',
          *[f'--define={d}' for d in a.define],
          # The vendored Chocolate Doom sources predate modern -Wall/-Wextra:

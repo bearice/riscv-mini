@@ -20,6 +20,7 @@ def main():
     p.add_argument('--helper',action='append',choices=sorted(HELPERS),default=[],
                    help='link a repository-provided freestanding helper library')
     p.add_argument('--soft-float',action='store_true',help='build for rv32im/ilp32 instead of the default rv32imaf/ilp32f')
+    p.add_argument('--optimize',default='-Os',help='optimization level for the payload (default -Os; -O2 is worth several times the speed for compute-bound apps)')
     a=p.parse_args();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
     scratch=out/'tmp';scratch.mkdir(exist_ok=True)
     for name in ('TMP','TEMP','TMPDIR'):os.environ[name]=str(scratch)
@@ -32,7 +33,7 @@ def main():
         if not sources:raise SystemExit(f'no sources in {directory}')
     else:
         sources=[a.source.resolve()]
-    args=[str(gcc),'-march='+march,'-mabi='+mabi,'-Os','-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-ffunction-sections','-fdata-sections','-msmall-data-limit=0','-nostdlib','-nostartfiles',
+    args=[str(gcc),'-march='+march,'-mabi='+mabi,a.optimize,'-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-ffunction-sections','-fdata-sections','-msmall-data-limit=0','-nostdlib','-nostartfiles',
         *[f'-D{d}' for d in a.define],*a.cflag,
         *[flag for directory in a.include_dir for flag in ('-I',str(directory.resolve()))],
         str(bios/'payload_start.S'),*[str(x.resolve()) for x in sources],*[str(x.resolve()) for x in a.extra_source],*[str(HELPERS[name]) for name in a.helper],
