@@ -30,8 +30,18 @@ def lcd_node(csr):
             if reg['size']!=1:
                 raise ValueError('Linux LCD needs single-word scanout counters')
             linux_offsets.append(reg['addr']-base)
-    size=max(linux_offsets or offsets)+4
+    wrap_names=('wrap_start','wrap_end')
+    wrap_offsets=[]
+    if any('rgb_lcd_'+name in csr['csr_registers'] for name in wrap_names):
+        for name in wrap_names:
+            reg=csr['csr_registers'].get('rgb_lcd_'+name)
+            if not reg or reg['size']!=1:
+                raise ValueError('LCD ring ABI needs both single-word wrap CSRs')
+            wrap_offsets.append(reg['addr']-base)
+    size=max(linux_offsets+wrap_offsets or offsets)+4
     linux_props=('riscv-mini,linux-csr-offsets=<'+' '.join(hex(o) for o in linux_offsets)+'>; dma-coherent; ') if linux_offsets else ''
+    if wrap_offsets:
+        linux_props += 'riscv-mini,wrap-csr-offsets=<'+' '.join(hex(o) for o in wrap_offsets)+'>; '
     return (f'lcd@{base:x} {{ compatible="riscv-mini,rgb-lcd"; '
             f'reg=<0x{base:x} 0x{size:x}>; bootph-all; '
             'riscv-mini,csr-offsets=<'+' '.join(hex(o) for o in offsets)+'>; '

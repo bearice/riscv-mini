@@ -129,6 +129,9 @@ static void framebuffer_test(void)
     u32 var[40];
     if (call(29, fd, 0x4600, (long)var, 0, 0, 0) ||
         var[0] != WIDTH || var[1] != HEIGHT || var[6] != 16) die("fb geometry");
+    /* fbcon may have panned its virtual canvas before graphics takeover. */
+    var[4] = var[5] = 0; var[33] &= ~256u;
+    if (call(29, fd, 0x4606, (long)var, 0, 0, 0)) die("fb origin pan");
     volatile unsigned short *pixels = (void *)call(222, 0, BYTES, 3, 1, fd, 0);
     if ((long)pixels < 0 && (long)pixels >= -4095) die("fb mmap");
     unsigned short written = 0x1234, readback = 0;

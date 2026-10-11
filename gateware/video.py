@@ -68,6 +68,9 @@ class RGBLCD(LiteXModule):
         self._frames = CSRStatus(32,name='frames')
         self._completed = CSRStatus(32,name='completed')
         self._underflows = CSRStatus(32,name='underflows')
+        # Exclusive ring end; zero preserves the original contiguous scanout.
+        self._wrap_start = CSRStorage(32,name='wrap_start')
+        self._wrap_end = CSRStorage(32,name='wrap_end')
         self.fifo = fifo = stream.SyncFIFO([('data',16)],depth=8192//2,buffered=True)
         self.cdc = cdc = stream.ClockDomainCrossing([('data',16)],cd_from='sys',cd_to='video')
         self.scan = scan = ClockDomainsRenamer('video')(LCDScan())
@@ -93,14 +96,28 @@ class RGBLCD(LiteXModule):
         selected = Signal()
         frame_base = self.frame_base = Signal(32)
         requested_base = Signal(32)
+        wrap_enabled = Signal()
+        wrap_valid = Signal()
+        ring_start = Signal(32)
+        ring_end = Signal(32)
+        cursor = Signal(32)
         valid_base = self.valid_base = Signal()
         self.comb += [requested_base.eq(Mux(self._select.storage,self._base1.storage,self._base0.storage)),
+            wrap_enabled.eq(self._wrap_end.storage != 0),
+            wrap_valid.eq((self._wrap_start.storage[:shift] == 0)
+                & (self._wrap_end.storage[:shift] == 0)
+                & (self._wrap_start.storage >= RAM_BASE+4096)
+                & (self._wrap_end.storage <= RAM_BASE+RAM_SIZE)
+                & (self._wrap_end.storage > self._wrap_start.storage)
+                & (requested_base >= self._wrap_start.storage)
+                & (requested_base < self._wrap_end.storage)),
             valid_base.eq((requested_base[:shift] == 0) & (requested_base >= RAM_BASE+4096)
-                & (requested_base <= RAM_BASE+RAM_SIZE-FRAME_BYTES))]
+                & Mux(wrap_enabled, wrap_valid,
+                      requested_base <= RAM_BASE+RAM_SIZE-FRAME_BYTES))]
         offset = Signal(max=words)
         self.comb += [self._active.status.eq(selected),self._busy.status.eq(busy),
             port.cmd.valid.eq(issuing),port.cmd.we.eq(0),port.cmd.count.eq(8),
-            port.cmd.addr.eq(((frame_base-RAM_BASE) >> shift) + offset)]
+            port.cmd.addr.eq((cursor-RAM_BASE) >> shift)]
         self.sync += [
             If(start.o,self._frames.status.eq(self._frames.status+1),pending.eq(self._enable.storage)),
             If(error.o,self._underflows.status.eq(self._underflows.status+1)),
@@ -110,10 +127,14 @@ class RGBLCD(LiteXModule):
                 If(self._enable.storage,
                     self._address_error.status.eq(~valid_base),
                     If(valid_base,busy.eq(1),issuing.eq(1),offset.eq(0),
-                        selected.eq(self._select.storage),frame_base.eq(requested_base)))),
+                        selected.eq(self._select.storage),frame_base.eq(requested_base),
+                        cursor.eq(requested_base),ring_start.eq(self._wrap_start.storage),
+                        ring_end.eq(self._wrap_end.storage)))),
             If(port.cmd.valid & port.cmd.ready,
                 final_burst.eq(offset==words-1),
-                If(offset==words-1,issuing.eq(0)).Else(offset.eq(offset+1))),
+                If(offset==words-1,issuing.eq(0)).Else(offset.eq(offset+1)),
+                If((ring_end != 0) & (cursor == ring_end-16),
+                    cursor.eq(ring_start)).Else(cursor.eq(cursor+16))),
         ]
         if pads is None: return
         # Register all LCD data/controls at pixel rising edge; forwarded clock

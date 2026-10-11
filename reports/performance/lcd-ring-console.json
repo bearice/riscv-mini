@@ -1,0 +1,194 @@
+{
+  "candidate": "a4d09c0-full-rv32ima-rom0k-l24k-lcd-ring-wrap-compatible-463f6c57-dd14c592",
+  "firmware_receipt": "build/operations/20261011T031818847359Z-verify/firmware-verification.json",
+  "linux_native_receipt": "build/operations/20261011T032009556797Z-linux/result.json",
+  "linux_busybox_receipt": "build/operations/20261011T032213138633Z-linux/result.json",
+  "baseline_120": [
+    {
+      "target": "null",
+      "seconds": 3.01,
+      "output": "cat /proc/uptime; seq 1 120 >/dev/null; cat /proc/uptime\r\n235.65 10.58\r\n238.66 10.58\r\nmini-linux# ",
+      "paused_top": []
+    },
+    {
+      "target": "lcd",
+      "seconds": 21.53,
+      "output": "cat /proc/uptime; seq 1 120 >/dev/tty1; cat /proc/uptime\r\n242.22 10.59\r\n263.75 10.59\r\nmini-linux# ",
+      "paused_top": [],
+      "lcd_rows": [
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100",
+        "101",
+        "102",
+        "103",
+        "104",
+        "105",
+        "106",
+        "107",
+        "108",
+        "109",
+        "110",
+        "111",
+        "112",
+        "113",
+        "114",
+        "115",
+        "116",
+        "117",
+        "118",
+        "119",
+        "120",
+        ""
+      ]
+    },
+    {
+      "target": "pty_null",
+      "seconds": 7.89,
+      "output": "cat /proc/uptime; script -q -c 'seq 1 120' /dev/null >/dev/null; cat\r\r\n /proc/uptime\r\n272.64 10.63\r\n280.53 10.63\r\nmini-linux# ",
+      "paused_top": []
+    }
+  ],
+  "ring_120_rounds": [
+    [
+      {
+        "target": "null",
+        "seconds": 3.23,
+        "output": "cat /proc/uptime; seq 1 120 >/dev/null; cat /proc/uptime\r\n155.28 2.79\r\n158.51 2.79\r\nmini-linux# ",
+        "paused_top": []
+      },
+      {
+        "target": "lcd",
+        "seconds": 8.96,
+        "output": "cat /proc/uptime; seq 1 120 >/dev/tty1; cat /proc/uptime\r\n162.39 2.79\r\n171.35 2.79\r\nmini-linux# ",
+        "paused_top": [],
+        "lcd_rows": [
+          "88",
+          "89",
+          "90",
+          "91",
+          "92",
+          "93",
+          "94",
+          "95",
+          "96",
+          "97",
+          "98",
+          "99",
+          "100",
+          "101",
+          "102",
+          "103",
+          "104",
+          "105",
+          "106",
+          "107",
+          "108",
+          "109",
+          "110",
+          "111",
+          "112",
+          "113",
+          "114",
+          "115",
+          "116",
+          "117",
+          "118",
+          "119",
+          "120",
+          ""
+        ]
+      },
+      {
+        "target": "pty_null",
+        "seconds": 8.48,
+        "output": "cat /proc/uptime; script -q -c 'seq 1 120' /dev/null >/dev/null; cat\r\r\n /proc/uptime\r\n179.89 2.79\r\n188.37 2.79\r\nmini-linux# ",
+        "paused_top": []
+      }
+    ],
+    [
+      {
+        "target": "null",
+        "seconds": 2.84,
+        "output": "cat /proc/uptime; seq 1 120 >/dev/null; cat /proc/uptime\r\n282.37 10.74\r\n285.21 10.74\r\nmini-linux# ",
+        "paused_top": []
+      },
+      {
+        "target": "lcd",
+        "seconds": 8.79,
+        "output": "cat /proc/uptime; seq 1 120 >/dev/tty1; cat /proc/uptime\r\n288.56 10.78\r\n297.35 10.78\r\nmini-linux# ",
+        "paused_top": [],
+        "lcd_rows": [
+          "88",
+          "89",
+          "90",
+          "91",
+          "92",
+          "93",
+          "94",
+          "95",
+          "96",
+          "97",
+          "98",
+          "99",
+          "100",
+          "101",
+          "102",
+          "103",
+          "104",
+          "105",
+          "106",
+          "107",
+          "108",
+          "109",
+          "110",
+          "111",
+          "112",
+          "113",
+          "114",
+          "115",
+          "116",
+          "117",
+          "118",
+          "119",
+          "120",
+          ""
+        ]
+      },
+      {
+        "target": "pty_null",
+        "seconds": 7.1,
+        "output": "cat /proc/uptime; script -q -c 'seq 1 120' /dev/null >/dev/null; cat\r\r\n /proc/uptime\r\n305.81 10.84\r\n312.91 10.84\r\nmini-linux# ",
+        "paused_top": []
+      }
+    ]
+  ],
+  "pixel_readback": {
+    "file": "ring-frame.bin",
+    "rendered": "ring-frame.png",
+    "yoffset": 88,
+    "size": 261120,
+    "result": "continuous88..120 verified by viewing reconstructed RGB565 pixels; physical LCD not observed"
+  },
+  "five_second_budget_passed": false,
+  "pty_optimized": false,
+  "flash_written": false,
+  "committed": false,
+  "raw_sources": {
+    "baseline-120.json": "8b73c67d377a7fd22c0ffaf8f648fc200819828636f836b746bd320596918218",
+    "ring-120.json": "36d20c0451628106f401d284edc3882d7f3c230acba01eb2d0d7bd3bda027357",
+    "ring-120-round2.json": "7ae5e4bf1741a5b56f5418b747d6cabb81b88d758c83cfe660968f048b0a271d",
+    "ring-frame.bin": "ec4123f45a81aa94b9144bd1efaecdb5b1d5fc63c2ae03d5b63cfc944d23d253",
+    "ring-frame-receipt.json": "def0514c4beaba29106526bdd99e2d4fa8e8e2ef6c4942abf8777e3ba567e18b"
+  }
+}

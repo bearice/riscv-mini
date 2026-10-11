@@ -36,4 +36,16 @@ class VideoTest(unittest.TestCase):
         self.assertIn('dma-coherent',node)
         self.assertIn('csr-offsets=<0x0 0x4 0x8 0xc 0x14 0x10>',node)
 
+    def test_ring_binding_is_optional_and_does_not_reorder_old_offsets(self):
+        names=('enable','select','base0','base1','address_error','state',
+               'frames','completed','underflows','wrap_start','wrap_end')
+        csr={'csr_bases':{'rgb_lcd':0xf0008000},'csr_registers':{
+            'rgb_lcd_'+n:{'addr':0xf0008000+4*i,'size':1} for i,n in enumerate(names)}}
+        node=lcd_node(csr)
+        self.assertIn('reg=<0xf0008000 0x2c>',node)
+        self.assertIn('wrap-csr-offsets=<0x24 0x28>',node)
+        self.assertIn('linux-csr-offsets=<0x0 0x4 0x8 0xc 0x14 0x10 0x18 0x1c 0x20>',node)
+        del csr['csr_registers']['rgb_lcd_wrap_end']
+        with self.assertRaises(ValueError):lcd_node(csr)
+
 if __name__=='__main__':unittest.main()

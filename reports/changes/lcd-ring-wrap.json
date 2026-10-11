@@ -1,0 +1,132 @@
+{
+  "created_at": "2026-10-11T03:42:49+00:00",
+  "title": "LCD DMA 环形扫描与 Linux YWRAP 滚屏",
+  "changes": [
+    "增加帧边界锁存的 wrap_start/wrap_end，校验 DDR 和 16 字节对齐边界；默认关闭且旧 CSR 布局保持兼容。",
+    "Linux fb0 在单帧缓冲上启用 YWRAP，并在图形自检前复位显示起点；DT 可选属性兼容旧硬件。",
+    "实板固件、Linux fb0、BusyBox/PTY/HID 枚举及像素回读通过；120 行 LCD 滚屏从 21.53 s 降至 8.96/8.79 s，5 s 阈值仍失败，PTY 本身未优化。"
+  ],
+  "build": {
+    "id": "a4d09c0-full-rv32ima-rom0k-l24k-lcd-ring-commit-82c71ed6-461bdd84",
+    "label": "lcd-ring-commit",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261011T033421721618Z-a4d09c0-dirty-full-rv32ima-rom0k-l24k-lcd-ring-commit",
+    "purpose": "lcd-ring-commit",
+    "registered_at": "2026-10-11T03:38:28+00:00",
+    "source": {
+      "commit": "a4d09c0128756406b05b80cc17156aaf82613990",
+      "dirty": true,
+      "inputs_sha256": "5590dc924c0ff89449a15cb131bc900bd04064dffbe7bf0ff2da848bfc7561a5",
+      "kind": "captured",
+      "created_at": "2026-10-11T03:34:22+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "lcd-ring-commit",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.9.1-2cdec4723183\\full-rv32ima-rom0k-l24k\\inputs\\cpu\\VexRiscv_Mmu.v",
+        "--boot-mode",
+        "xip",
+        "--rom-size",
+        "4096",
+        "--l2-size",
+        "4096",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "3",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--without-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-eth-dma",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261011T033421721618Z-a4d09c0-dirty-full-rv32ima-rom0k-l24k-lcd-ring-commit"
+      ],
+      "cpu_rtl_sha256": "80b9ad665be1c30dfd0180671d5c4138b423e3df47dc76e67c450d99664bbcd9",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\recipes\\20261011T033421721618Z-a4d09c0-dirty-full-rv32ima-rom0k-l24k-lcd-ring-commit-461bdd84"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32ima_zicsr_zifencei",
+      "rom_size_bytes": 0,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 3,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": false,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "eth_dma": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "afa71581343771d2b6035226ad492c85c18fb0802d6939424d2c56b322ef27ce",
+    "bitstream_sha256": "82c71ed662f07e5e04566c83f0b4b16012ea9c27c615a5db2e0e0dce91b59b66",
+    "abi": "71da004d",
+    "component_versions": {
+      "rtl": "0.9.0",
+      "bootloader": "0.9.1",
+      "hal": "0.9.1",
+      "bios": "0.9.1",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\operations\\20261011T033911420061Z-verify\\firmware-verification.json",
+        "sha256": "1902ffb415d1e2684997df67caf39c9e4cf1763810fba78af609c181672d0d76"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\lcd-ring-bios.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/lcd-ring-commit-workflow.json"
+    ],
+    "source_inputs_sha256": "5590dc924c0ff89449a15cb131bc900bd04064dffbe7bf0ff2da848bfc7561a5"
+  },
+  "mode": "staged review",
+  "base_revision": "a4d09c0128756406b05b80cc17156aaf82613990",
+  "source_revision": null
+}

@@ -30,9 +30,9 @@ linux-mini>
 
 ## LCD framebuffer
 
-`riscv-mini-fb` 是本机 LCD 控制驱动，负责分配 Linux 所有的连续 DMA 缓冲、停止旧 DMA、设置双基地址为同一缓冲、启用扫描，并注册 `/dev/fb0`。固定模式为 480×272、RGB565、960 B stride、261120 B。支持 fbdev read/write、`mmap`、模式查询和 blank/unblank；不支持变更分辨率或 panning。
+`riscv-mini-fb` 是本机 LCD 控制驱动，负责分配 Linux 所有的连续 DMA 缓冲、停止旧 DMA、设置双基地址为同一缓冲、启用扫描，并注册 `/dev/fb0`。固定模式为 480×272、RGB565、960 B stride、261120 B。支持 fbdev read/write、`mmap`、模式查询和 blank/unblank；不支持变更分辨率。含回卷 CSR 的新 DMA 支持按扫描行的 YWRAP；旧 DMA 保持固定窗口。
 
-驱动从 DT 的 `riscv-mini,linux-csr-offsets` 获取 enable/select/base0/base1/state/address_error/frames/completed/underflows，原 U-Boot 的六寄存器属性保持原顺序。CSR aperture 包含全部九个寄存器。DT `dma-coherent` 对应本机真实共享内存路径：CPU L1 写透，LCD 与 CPU 共同访问共享 writeback L2；不能将该声明直接用于其他非一致 gateware。
+驱动从 DT 的 `riscv-mini,linux-csr-offsets` 获取 enable/select/base0/base1/state/address_error/frames/completed/underflows，原 U-Boot 的六寄存器属性保持原顺序。原九寄存器属性保持兼容。可选 `riscv-mini,wrap-csr-offsets` 描述 wrap_start/wrap_end 两个新增 CSR，存在时扩展 aperture 并启用环形滚屏。DT `dma-coherent` 对应本机真实共享内存路径：CPU L1 写透，LCD 与 CPU 共同访问共享 writeback L2；不能将该声明直接用于其他非一致 gateware。
 
 `/sys/class/graphics/fb0/device/dma_status` 提供只读硬件状态快照。blank 写 enable=0 后等待 CDC 和 busy 排空；probe 失败时若 DMA 无法排空则隔离缓冲，避免释放仍被硬件引用的内存。驱动仅 built-in，关闭手工 bind/unbind，shutdown 时停止扫描。
 
@@ -175,3 +175,15 @@ USB 接收 trace `20261010T073321384536Z-linux` 捕获 hub 描述符从 `12 01 0
 Linux HCD 的 STATUS 是即时 PHY 线状态，不能直接把非 J 解释为掉线。根端口轮询现保留已连接设备的 K 状态，SE0/SE1 缺失样本需跨越至少 20 ms 才报告断开，并跳过自身 reset 与传输期间的采样；GetPortStatus 使用同一缓存状态。针对实际 root-hub callback 的回归覆盖 packet K、短 EOP、reset、transfer、拔出、重连及 tick 回绕，旧实现失败、新实现通过。此处的 20 ms 是采样间隔的消抖门限，并非硬件连续线状态监测；长期热插拔稳定性仍需单独验收。
 
 SPI panel framebuffer 驱动和 fb1 自检已删除。内核构建保留 RGB LCD fb0、SPI 控制器与 GPIO，并检查 SPI panel 配置未启用、panel_probe 未链接。历史 SPI fb1 结果不代表当前提供该接口。
+
+## LCD DMA 环形滚屏
+
+2026-10-11 增加 `rgb_lcd_wrap_start`（偏移 0x24）和 `rgb_lcd_wrap_end`（偏移 0x28，不含末尾地址）。wrap_end=0 禁用回卷，保持旧连续扫描行为；启用时起止地址都需 16 字节对齐，范围位于 DDR，起始扫描地址落在环内。每帧锁存 selected base、wrap_start 和 wrap_end；每个 16 字节读请求到达末尾后从 wrap_start 继续，整帧仍输出 480×272 个 RGB565 像素。端口停顿期间请求地址保持，帧内 CSR 修改不改变已锁存的地址序列。回卷范围最小为一个 16 字节 burst；Linux 使用完整 261120 B 帧作为环形缓冲。
+
+Linux fb0 保留 480×272、960 B stride 和单帧分配，DT 提供两个可选回卷偏移时公布 ywrapstep=1，并启用 fbcon 环形滚屏策略；滚动改变 scanout base，无需搬动整屏像素。没有该属性时仍使用旧 redraw 路径。非回卷模式只接受 yoffset=0；YWRAP 接受 0≤yoffset<272，横向偏移不支持。用户态图形自检切换为 graphics 后先清除 YWRAP 并复位显示起点。
+
+前一高虚拟画布 pan 候选存在用户报告的显示错误，不能视为验收通过。地址级和完整像素 RTL 回归覆盖末尾回卷、跨边界帧、CSR 帧内更新、反压和范围拒绝；实板结果另以对应新 bitstream/kernel/bootstrap 收据记录。PTY/滚屏性能脚本为 `tests/linux_console_perf.py`，显式上板运行，比较 null、LCD 和 PTY-null，并核对终端文本连续；它会暂停 LCD 上的 top 并在测试后恢复。
+
+回卷是默认关闭且保留全部旧寄存器语义的兼容扩展。启动镜像 ABI 仅对位于 LCD 基址 +0x24/+0x28、单字 RW 的这对精确追加寄存器保留旧签名；错位、缺失配对或其他 CSR 变化仍进入 ABI 校验。完整 CSR 表及 bitstream 仍保存各自身份。这样旧 Flash XIP 引导器可以接收匹配新硬件的 RAM 固件，无须为实验改写 Flash。
+
+2026-10-11 候选 `a4d09c0-full-rv32ima-rom0k-l24k-lcd-ring-wrap-compatible-463f6c57-dd14c592` PnR setup/hold 为 0/0，完整固件回归（含 60 秒 soak、mic）通过。Linux native fb0 的 mmap/readback/DMA/blank 自检和 BusyBox/PTY/USB 键盘枚举通过，分别见 operation `20261011T032009556797Z-linux`、`20261011T032213138633Z-linux`。120 行滚屏后 yoffset=88，基地址=0x00d94a00，underflows/address_error=0；读取完整帧并按回卷起点重建后可见连续 88–120 行。帧缓冲回读不等同于物理屏幕信号观察。同负载 LCD 时间从旧内核 21.53 秒降到两轮 8.96/8.79 秒；5 秒性能阈值仍未通过，PTY-null 从 7.89 到 8.48/7.10 秒，不能宣称 PTY 本身已优化。详细结果保存在 `build/linux/scroll-perf/`。

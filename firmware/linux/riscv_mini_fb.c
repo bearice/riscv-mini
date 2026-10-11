@@ -14,7 +14,7 @@
 #define MINI_BYTES (MINI_WIDTH * MINI_HEIGHT * 2)
 #define MINI_BUSY BIT(1)
 enum mini_reg { ENABLE, SELECT, BASE0, BASE1, STATE, ADDRESS_ERROR,
-                FRAMES, COMPLETED, UNDERFLOWS, REG_COUNT };
+                FRAMES, COMPLETED, UNDERFLOWS, WRAP_START, WRAP_END, REG_COUNT };
 
 struct mini_fb {
     void __iomem *csr;
@@ -22,6 +22,7 @@ struct mini_fb {
     u32 palette[16];
     dma_addr_t dma;
     struct fb_info *info;
+    bool wrap;
 };
 
 static void __iomem *mini_reg(struct mini_fb *fb, enum mini_reg reg)
@@ -50,9 +51,12 @@ static int mini_blank(int blank, struct fb_info *info)
 
 static int mini_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
+    struct mini_fb *fb = info->par;
+    bool wrap = var->vmode & FB_VMODE_YWRAP;
     if (var->xres != MINI_WIDTH || var->yres != MINI_HEIGHT ||
         var->xres_virtual != MINI_WIDTH || var->yres_virtual != MINI_HEIGHT ||
-        var->bits_per_pixel != 16 || var->xoffset || var->yoffset ||
+        var->bits_per_pixel != 16 || var->xoffset ||
+        (wrap ? (!fb->wrap || var->yoffset >= MINI_HEIGHT) : var->yoffset != 0) ||
         var->grayscale || var->nonstd)
         return -EINVAL;
     var->red = info->var.red;
@@ -78,6 +82,23 @@ static int mini_mmap(struct fb_info *info, struct vm_area_struct *vma)
     return dma_mmap_coherent(info->device, vma, info->screen_buffer, fb->dma, MINI_BYTES);
 }
 
+static int mini_pan_display(struct fb_var_screeninfo *var, struct fb_info *info)
+{
+    struct mini_fb *fb = info->par;
+    u32 base;
+    bool wrap = var->vmode & FB_VMODE_YWRAP;
+    if (var->xoffset || var->yres_virtual != MINI_HEIGHT ||
+        (wrap ? (!fb->wrap || var->yoffset >= MINI_HEIGHT) : var->yoffset != 0))
+        return -EINVAL;
+    base = fb->dma + var->yoffset * info->fix.line_length;
+    /* Frame addresses are latched by hardware at scan start. Coherent RAM
+     * writes must precede publishing the new window to the in-order CSR bus. */
+    wmb();
+    writel_relaxed(base, mini_reg(fb, BASE0));
+    writel_relaxed(base, mini_reg(fb, BASE1));
+    return 0;
+}
+
 static const struct fb_ops mini_ops = {
     .owner = THIS_MODULE,
     __FB_DEFAULT_DMAMEM_OPS_RDWR,
@@ -86,6 +107,7 @@ static const struct fb_ops mini_ops = {
     .fb_check_var = mini_check_var,
     .fb_setcolreg = mini_setcolreg,
     .fb_blank = mini_blank,
+    .fb_pan_display = mini_pan_display,
 };
 
 static ssize_t dma_status_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -107,7 +129,7 @@ static int mini_probe(struct platform_device *pdev)
     struct resource *res;
     struct fb_info *info;
     struct mini_fb *fb;
-    int ret, i;
+    int ret, i, registers = WRAP_START;
 
     /* CPU L1 writes through; all LCD DMA reads share the writeback L2.
      * Do not claim this binding on a noncoherent gateware configuration. */
@@ -125,10 +147,18 @@ static int mini_probe(struct platform_device *pdev)
     fb->csr = devm_ioremap_resource(dev, res);
     if (IS_ERR(fb->csr)) { ret = PTR_ERR(fb->csr); goto release; }
     ret = of_property_read_u32_array(dev->of_node, "riscv-mini,linux-csr-offsets",
-                                     fb->offsets, REG_COUNT);
+                                     fb->offsets, WRAP_START);
     if (ret)
         goto release;
-    for (i = 0; i < REG_COUNT; ++i)
+    if (of_find_property(dev->of_node, "riscv-mini,wrap-csr-offsets", NULL)) {
+        ret = of_property_read_u32_array(dev->of_node, "riscv-mini,wrap-csr-offsets",
+                                        fb->offsets + WRAP_START, 2);
+        if (ret)
+            goto release;
+        fb->wrap = true;
+        registers = REG_COUNT;
+    }
+    for (i = 0; i < registers; ++i)
         if ((fb->offsets[i] & 3) || resource_size(res) < 4 ||
             fb->offsets[i] > resource_size(res) - 4) { ret = -EINVAL; goto release; }
     ret = mini_stop(fb);
@@ -141,12 +171,17 @@ static int mini_probe(struct platform_device *pdev)
     }
     memset(info->screen_buffer, 0, MINI_BYTES);
     info->screen_size = MINI_BYTES;
+    /* The optional ring DMA scans across the allocation boundary. Old
+     * gateware retains the original fixed-window, redraw-only console. */
     info->flags = FBINFO_VIRTFB;
+    if (fb->wrap)
+        info->flags |= FBINFO_HWACCEL_YWRAP | FBINFO_READS_FAST;
     info->fbops = &mini_ops;
     info->pseudo_palette = fb->palette;
     strscpy(info->fix.id, "riscv-mini", sizeof(info->fix.id));
     info->fix.smem_start = fb->dma;
     info->fix.smem_len = MINI_BYTES;
+    info->fix.ywrapstep = fb->wrap ? 1 : 0;
     info->fix.type = FB_TYPE_PACKED_PIXELS;
     info->fix.visual = FB_VISUAL_TRUECOLOR;
     info->fix.line_length = MINI_WIDTH * 2;
@@ -157,6 +192,10 @@ static int mini_probe(struct platform_device *pdev)
     info->var.green = (struct fb_bitfield){5, 6, 0};
     info->var.blue = (struct fb_bitfield){0, 5, 0};
     info->var.width = info->var.height = -1;
+    if (fb->wrap) {
+        writel(fb->dma, mini_reg(fb, WRAP_START));
+        writel(fb->dma + MINI_BYTES, mini_reg(fb, WRAP_END));
+    }
     writel(fb->dma, mini_reg(fb, BASE0));
     writel(fb->dma, mini_reg(fb, BASE1));
     writel(0, mini_reg(fb, SELECT));

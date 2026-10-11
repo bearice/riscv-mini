@@ -14,6 +14,7 @@ from gateware.video import RGBLCD
 
 TB = r"""
 module tb;
+parameter WRAP=0,PAN_BURSTS=0;
 reg sys_clk=0,video_clk=0,sys_rst=1,video_rst=1,enable=0;
 always #5 sys_clk=~sys_clk;
 always #33 video_clk=~video_clk;
@@ -29,7 +30,8 @@ wire [31:0] completed;
 integer pending=0,delay=0,requests=0,k,word_index,pixels=0,expected;
 reg [22:0] saved;
 lcd dut(.sys_clk(sys_clk),.sys_rst(sys_rst),.video_clk(video_clk),.video_rst(video_rst),
- .enable(enable),.select_slot(1'b0),.base0(32'h07e00000),.base1(32'h07e40000),.cmd_valid(cmd_valid),.cmd_ready(cmd_ready),
+ .enable(enable),.select_slot(1'b0),.base0(32'h07e00000 + PAN_BURSTS*16),.base1(32'h07e40000),
+ .wrap_start(32'h07e00000),.wrap_end(WRAP ? 32'h07e3fc00 : 32'h0),.cmd_valid(cmd_valid),.cmd_ready(cmd_ready),
  .addr(addr),.cmd_we(cmd_we),.rvalid(rvalid),.rready(rready),.rdata(rdata),
  .pixel(pixel),.h(h),.v(v),.de(de),.underflow(underflow),.scan_enable(scan_enable),.completed(completed));
 always @(posedge sys_clk)begin
@@ -38,7 +40,7 @@ always @(posedge sys_clk)begin
   if(cmd_valid && cmd_ready)begin
    if(cmd_we)$fatal(1,"LCD issued write");
    if(addr < 23'h7e0000 || addr >= 23'h7e0000+16320)$fatal(1,"frame address %h",addr);
-   if(addr !== 23'h7e0000+(requests%16320))$fatal(1,"burst order %h",addr);
+   if(addr !== 23'h7e0000+((PAN_BURSTS+requests)%16320))$fatal(1,"burst order %h",addr);
    requests<=requests+1;saved<=addr;pending<=1;delay<=5;cmd_ready<=0;
   end
   if(pending)begin
@@ -57,7 +59,7 @@ always @(negedge video_clk)begin
  if(!video_rst && scan_enable)begin
   if(underflow)$fatal(1,"LCD underflow at %d,%d",h,v);
   if(de)begin
-   expected=((v-14)*480+h-45)&65535;
+   expected=(((v-14)*480+h-45+PAN_BURSTS*8)%130560)&65535;
    if(pixel!==expected)$fatal(1,"pixel %d,%d: %h != %h",h,v,pixel,expected);
    pixels=pixels+1;
   end
@@ -88,6 +90,7 @@ def main():
     dut.submodules.video=video=RGBLCD(port,None)
     ports={'enable':video._enable.storage,'select_slot':video._select.storage,
         'base0':video._base0.storage,'base1':video._base1.storage,
+        'wrap_start':video._wrap_start.storage,'wrap_end':video._wrap_end.storage,
         'cmd_valid':native.cmd.valid,'cmd_ready':native.cmd.ready,'addr':native.cmd.addr,
         'cmd_we':native.cmd.we,'rvalid':native.rdata.valid,'rready':native.rdata.ready,
         'rdata':native.rdata.data,'pixel':video.scan.pixel,'h':video.scan.h,'v':video.scan.v,
@@ -103,5 +106,9 @@ def main():
         subprocess.run([str(compiler),'-g2012','-s','tb','-o',(output/'sim').as_posix(),
                         (output/'lcd.v').as_posix(),(output/'tb.v').as_posix()],env=env,check=True)
         subprocess.run([str(runner),(output/'sim').as_posix()],env=env,check=True,timeout=60)
+        subprocess.run([str(compiler),'-g2012','-s','tb','-Ptb.WRAP=1','-Ptb.PAN_BURSTS=16318',
+                        '-o',(output/'wrap-sim').as_posix(),(output/'lcd.v').as_posix(),
+                        (output/'tb.v').as_posix()],env=env,check=True)
+        subprocess.run([str(runner),(output/'wrap-sim').as_posix()],env=env,check=True,timeout=60)
 
 if __name__=='__main__':main()
