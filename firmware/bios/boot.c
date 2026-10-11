@@ -8,14 +8,18 @@ extern void bios_os_enter(uint32_t entry) __attribute__((noreturn));
 static struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),MINI_RAM_BASE,MINI_RAM_SIZE,
     BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0,0},480,272,960,565,
     MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4),60000000};
-void bios_sd_list(void) {
+/* ls 的目录参数版：NULL/空串按根目录处理，无参输出与旧 bios_sd_list 逐字节一致。
+ * 只列一层、不递归——载荷和脚本都靠这个输出挑文件，深度遍历留给上层。 */
+void bios_sd_list_dir(const char *path) {
 #if MINI_FEATURE_FILESYSTEM
+    if(!path || !path[0])path="/";
+    if(strlen(path)>=64) {bios_puts("LS: filename too long\r\n");return;}
     if(hal_sd_mount()!=HAL_OK) {bios_puts("LS: SD unavailable\r\n");return;}
     DIR directory;FILINFO entry;
-    FRESULT r=f_opendir(&directory,"/");
+    FRESULT r=f_opendir(&directory,path);
     if(r!=FR_OK) {bios_puts("LS: open failed FatFs=");bios_decimal(r);bios_puts("\r\n");return;}
     unsigned count=0;
-    bios_puts("SD /\r\n");
+    bios_puts("SD ");bios_puts(path);bios_puts("\r\n");
     for(;;) {
         r=f_readdir(&directory,&entry);
         if(r!=FR_OK || !entry.fname[0])break;
@@ -27,7 +31,90 @@ void bios_sd_list(void) {
     if(r!=FR_OK) {bios_puts("LS: read/close failed FatFs=");bios_decimal(r);bios_puts("\r\n");}
     else {bios_puts("LS: ");bios_decimal(count);bios_puts(" entries\r\n");}
 #else
+    (void)path;
     bios_puts("LS: filesystem disabled\r\n");
+#endif
+}
+void bios_sd_list(void) {bios_sd_list_dir(0);}
+/* 删除 SD 上的一个文件。fetch/fetchraw 故意不覆盖已存在的文件（见
+ * staging_write_sd 的显式创建），所以换一份 WAD 或镜像要先删掉旧的；
+ * f_unlink 不区分"不存在"和"只读"，FatFs 错误码原样打出来。 */
+void bios_sd_remove(const char *path) {
+#if MINI_FEATURE_FILESYSTEM
+    if(!path[0] || strlen(path)>=64) {bios_puts("RM: filename too long\r\n");return;}
+    FRESULT r=f_unlink(path);
+    if(r==FR_OK) {bios_puts("RM: deleted ");bios_puts(path);bios_puts("\r\n");}
+    else {bios_puts("RM: failed FatFs=");bios_decimal(r);bios_puts("\r\n");}
+#else
+    (void)path;
+    bios_puts("RM: filesystem disabled\r\n");
+#endif
+}
+/* ---------------------------------------------------------- SD 文件控制台命令
+ * cat/size/mkdir/mv 都是文件系统层之上的薄壳：路径上限与 rm 一致（<64，
+ * 和 ecall 分发同规矩），mkdir/mv 直接调 f_mkdir/f_rename 而不是
+ * bios_fs_*，因为控制台要把 FRESULT 原样打出来——bios_fs_mkdir 把
+ * FR_EXIST 折叠成成功，控制台恰恰需要区分"目录已存在"。 */
+/* cat 按 256 B 分块：UART 115200 下这个尺寸不会淹没接收端，
+ * 每块之间 bios_poll() 让键盘/USB 在长文件期间保持响应。 */
+void bios_sd_cat(const char *path,unsigned max) {
+#if MINI_FEATURE_FILESYSTEM
+    if(!path[0] || strlen(path)>=64) {bios_puts("CAT: not found or unreadable\r\n");return;}
+    if(!max)max=4096;
+    int handle=bios_fs_open(path,BIOS_FS_O_READ);
+    if(handle<0) {bios_puts("CAT: not found or unreadable\r\n");return;}
+    unsigned char buf[256];unsigned shown=0,more=0;
+    while(shown<max) {
+        unsigned want=max-shown;if(want>sizeof(buf))want=sizeof(buf);
+        int got=bios_fs_read(handle,buf,want);
+        if(got<=0)break;
+        for(int i=0;i<got;++i)bios_putc((char)buf[i]);
+        shown+=(unsigned)got;bios_poll();
+    }
+    if(shown>=max)more=bios_fs_read(handle,buf,1)>0;  /* 恰好读满不算截断，探一个字节才算 */
+    bios_fs_close(handle);
+    bios_puts("CAT: ");bios_decimal(shown);bios_puts(" bytes");
+    if(more)bios_puts(" (truncated)");
+    bios_puts("\r\n");
+#else
+    (void)path;(void)max;
+    bios_puts("CAT: filesystem disabled\r\n");
+#endif
+}
+void bios_sd_stat(const char *path) {
+#if MINI_FEATURE_FILESYSTEM
+    struct bios_fs_stat st;
+    if(!path[0] || strlen(path)>=64 || bios_fs_stat(path,&st)!=0) {bios_puts("SIZE: not found\r\n");return;}
+    bios_puts("SIZE: ");bios_puts(path);bios_puts(" ");bios_decimal(st.size);bios_puts(" bytes");
+    if(st.attrib&AM_DIR)bios_puts(" DIR");
+    if(st.attrib&AM_RDO)bios_puts(" RO");
+    bios_puts("\r\n");
+#else
+    (void)path;
+    bios_puts("SIZE: filesystem disabled\r\n");
+#endif
+}
+void bios_sd_mkdir(const char *path) {
+#if MINI_FEATURE_FILESYSTEM
+    if(!path[0] || strlen(path)>=64) {bios_puts("MKDIR: filename too long\r\n");return;}
+    FRESULT r=f_mkdir(path);
+    if(r==FR_OK) {bios_puts("MKDIR: created ");bios_puts(path);bios_puts("\r\n");}
+    else {bios_puts("MKDIR: failed FatFs=");bios_decimal(r);bios_puts("\r\n");}
+#else
+    (void)path;
+    bios_puts("MKDIR: filesystem disabled\r\n");
+#endif
+}
+/* f_rename 不覆盖已存在的目标，撞名会报 FR_EXIST 而不是静默吃掉旧文件。 */
+void bios_sd_move(const char *from,const char *to) {
+#if MINI_FEATURE_FILESYSTEM
+    if(!from[0] || strlen(from)>=64 || !to[0] || strlen(to)>=64) {bios_puts("MV: filename too long\r\n");return;}
+    FRESULT r=f_rename(from,to);
+    if(r==FR_OK) {bios_puts("MV: ");bios_puts(from);bios_puts(" -> ");bios_puts(to);bios_puts("\r\n");}
+    else {bios_puts("MV: failed FatFs=");bios_decimal(r);bios_puts("\r\n");}
+#else
+    (void)from;(void)to;
+    bios_puts("MV: filesystem disabled\r\n");
 #endif
 }
 /* ------------------------------------------------------------- file system

@@ -80,7 +80,7 @@ static int readable_range(uint32_t address,uint32_t length) {
 }
 static void command(char *s) {
     if(bios_benchmark_command(s))return;
-    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls, tty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), fetchraw FILE (any file, <=8 MiB), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, ping [A.B.C.D] [1..32], io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\nmd/mdb ADDR [COUNT] [u] word/byte dump (ADDR hex, COUNT dec, RAM only, u=UART only)\r\n");return;}
+    if(!strcmp(s,"help")) {bios_puts("help, status, post, ls [DIR], rm FILE, cat FILE [MAX], size FILE, mkdir DIR, mv FROM TO\r\ntty, graphics, boot sd [file], boot net [file]\r\nfetch FILE (TFTP to new SD file), fetchraw FILE (any file, <=8 MiB), settings, settings save/load/defaults\r\nset boot none/sd/net, set file NAME, set delay 0..30000\r\nset ip A.B.C.D, set server A.B.C.D, ping [A.B.C.D] [1..32], io, led HH, rgb RRGGBB\r\nbench [all|cpu|mem|cache|libc|io|net FILE|sd HZ], test bios, test ... (test alone lists diagnostics), reboot\r\nmd/mdb ADDR [COUNT] [u] word/byte dump (ADDR hex, COUNT dec, RAM only, u=UART only)\r\n");return;}
     if(!strcmp(s,"status")) {
         bios_puts("CPU/sys=60 MHz DDR=120 MHz UART=115200\r\nBIOS ABI=1 memory=128 MiB MMU=");bios_decimal(MINI_FEATURE_MMU);
         bios_puts(" FPU=");bios_decimal(MINI_FEATURE_FPU);bios_puts("\r\n");bios_puts("BUILD " MINI_APP_ID " " MINI_BUILD_RTL_ID " " MINI_BUILD_ROM_ID "\r\n");settings_show();hal_video_status();
@@ -140,6 +140,40 @@ static void command(char *s) {
     if(!strcmp(s,"post")) {bios_post();return;}
     if(!strcmp(s,"test bios")) {bios_puts(bios_self_test()?"BIOS TEST PASS\r\n":"BIOS TEST FAIL\r\n");return;}
     if(!strcmp(s,"ls")) {bios_sd_list();return;}
+    if(!strncmp(s,"ls ",3) && s[3]) {bios_sd_list_dir(s+3);return;}
+    if(!strncmp(s,"rm ",3) && s[3]) {bios_sd_remove(s+3);return;}
+    if(!strcmp(s,"cat")) {bios_puts("ERR cat FILE [MAX]\r\n");return;}
+    if(!strncmp(s,"cat ",4) && s[4]) {
+        const char *p=s+4,*e=p;char name[64];unsigned n=0,max=4096;
+        while(*e && *e!=' ')++e;
+        n=(unsigned)(e-p);
+        if(!n || n>=sizeof(name)) {bios_puts("ERR cat FILE [MAX]\r\n");return;}
+        memcpy(name,p,n);name[n]=0;
+        p=e;while(*p==' ')++p;
+        if(*p) {                                        /* 可选 MAX：十进制，至多 8 位防溢出 */
+            unsigned v=0,d=0;
+            while(*p>='0' && *p<='9' && d<8) {v=v*10+*p++-'0';++d;}
+            while(*p==' ')++p;
+            if(!d || !v || *p) {bios_puts("ERR cat MAX\r\n");return;}
+            max=v;
+        }
+        bios_sd_cat(name,max);return;
+    }
+    if(!strncmp(s,"size ",5) && s[5]) {bios_sd_stat(s+5);return;}
+    if(!strncmp(s,"mkdir ",6) && s[6]) {bios_sd_mkdir(s+6);return;}
+    if(!strncmp(s,"mv ",3) && s[3]) {
+        const char *p=s+3,*e=p;char from[64],to[64];unsigned n=0;
+        while(*e && *e!=' ')++e;
+        n=(unsigned)(e-p);
+        if(!n || n>=sizeof(from)) {bios_puts("ERR mv FROM TO\r\n");return;}
+        memcpy(from,p,n);from[n]=0;
+        p=e;while(*p==' ')++p;
+        e=p;while(*e && *e!=' ')++e;
+        n=(unsigned)(e-p);
+        if(!n || n>=sizeof(to) || *e) {bios_puts("ERR mv FROM TO\r\n");return;}
+        memcpy(to,p,n);to[n]=0;
+        bios_sd_move(from,to);return;
+    }
     if(!strcmp(s,"reboot"))hal_reboot();
     if(!strcmp(s,"tty")) {bios_video_mode(0);return;}
     if(!strcmp(s,"graphics")) {bios_video_mode(1);return;}

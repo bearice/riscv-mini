@@ -16,7 +16,16 @@
 enum {
     BC_SECTORS = 8u,        /* sectors per cache block, i.e. 4 KiB */
     BC_BYTES = 512u*BC_SECTORS,
-    BC_BLOCKS = 32u         /* 128 KiB of DDR; the BIOS lives in a 4 MiB region */
+    /* 128 KiB.  Bigger was measured and is not free: 512 blocks (2 MiB) left
+     * the same 1007 FS_READ calls for the same 1282 KiB of DOOM WAD traffic
+     * (the call count is bounded by the caller's 4 KiB coalescing, not by the
+     * card), cost ~250 ms more in the read path (the LRU scan is linear), and
+     * did not change the panel's `rgb_lcd underflows` count (148 vs 137 over a
+     * comparable run).  The underruns track CPU memory traffic, not SD reads:
+     * see docs/doom.md.  The BIOS region is 4 MiB at 0x00800000 and its
+     * text+rodata+data is ~120 KiB, so this is 128 KiB of a 4 MiB budget.
+     */
+    BC_BLOCKS = 32u
 };
 /* Fill one aligned block (BC_SECTORS sectors at block*BC_SECTORS); 0 on
  * success.  A driver may clamp a short card tail: bytes past the last sector

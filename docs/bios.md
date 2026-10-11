@@ -93,7 +93,12 @@ BIOS 命令行带行编辑：方向键、Home/End、Insert 切换、Delete、Ctr
 | `help` / `status` / `post` | 帮助、当前配置与扫描/音频/IRQ 状态、重复 POST |
 | `io` / `led HH` / `rgb RRGGBB` | 按键/DIP 状态、六个单色 LED、WS2812 |
 | `md ADDR [COUNT] [u]` / `mdb ADDR [COUNT] [u]` | 按 32 位字 / 按字节读内存，用于读回帧缓冲和 TTY 网格；ADDR 十六进制、COUNT 十进制，尾随 `u` 表示只写 UART 不动文字画面 |
-| `ls` | SD 根目录 |
+| `ls [DIR]` | SD 根目录；带参数时列出该目录 |
+| `rm FILE` | 删除 SD 上的一个文件（`fetch`/`fetchraw` 不覆盖，换文件先 `rm`）；失败时打印 FatFs 错误码 |
+| `cat FILE [MAX]` | 打印文件前 MAX 字节（十进制，默认 4096），结束打印 `CAT: n bytes`，因 MAX 截断时追加 `(truncated)` |
+| `size FILE` | 打印 `SIZE: 路径 字节数`，目录追加 ` DIR`、只读追加 ` RO`；不存在时打印 `SIZE: not found` |
+| `mkdir DIR` | 在 SD 上创建目录；失败（含已存在）时打印 FatFs 错误码 |
+| `mv FROM TO` | 重命名 / 移动 SD 上的文件或目录；目标已存在时失败并打印 FatFs 错误码 |
 | `tty` / `graphics` | 文字 / RGB565 图形模式 |
 | `boot sd [file]` / `boot net [file]` | 从 SD / TFTP 下载、校验并执行程序 |
 | `fetch FILE` | TFTP 下载有效程序后创建同名 SD 文件；不覆盖已有文件 |
