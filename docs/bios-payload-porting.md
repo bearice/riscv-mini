@@ -114,6 +114,8 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 
 **坑 14（别只加“读一次”的服务）：** 见第 2 节。提供完整的 FS 层后，`fetch`/`fetchraw`/`boot sd`/`settings` 和已有载荷（GW-BASIC 的 `FILE_READ`）都变成这一层的客户，行为一致、可复用。
 
+**坑 16（板子会悄悄退回 Flash 里的旧 BIOS）：** DDR 里跑的 BIOS 只要复位一下就没了，板子回到 Flash XIP 那份；如果新服务只存在于 DDR 那份里，载荷看到的是一个**没有文件服务的 BIOS**，而它报的错却像载荷自己的问题。实板症状：DOOM 直接 `IWAD file 'DOOM1.WAD' not found!` 退出，而 SD 卡上那个 WAD 是好的。查法两条：`help` 里有没有 `fetchraw`/`ls [DIR]`（旧 0.9.1 没有），或 `size DOOM1.WAD` 是不是 `ERR unknown command`。根因在 ABI：`firmware/bios/boot.c` 的 dispatch 以 `default:return -1;` 收尾，**未知调用和“文件不存在”返回同一个 -1**，载荷侧无法区分；`bios_info.features` 里也没有 FILESYSTEM 位（只有 SD/VIDEO/USB/ETH/AUDIO）。→ 上板前用 `scripts/mini.py board run --image <你的 app.img>` 把状态钉住，别假设 DDR 里还是你上一次加载的那份；结构性修法是给 `features` 加 FS 位、并让未知 `a6` 返回 `-ENOSYS`（改动 ABI 语义，需要单独一次提交）。
+
 ## 9. 上板运行与验收
 
 先确认状态，再动手；**任何往串口写字符之前都要确认板子在 `> ` 提示符**，否则你的字节会被正在跑的载荷当成按键（或干脆没人应答）：

@@ -69,6 +69,11 @@ void dbg_frame_done(void) {
     g_frame_ready=1;
     if(g_step)--g_step;
 }
+/* Non-zero while the game clock is held.  A real-time wait is then the only
+ * code running, and it is the only place left that can service the console. */
+int dbg_held(void) {
+    return (int)(g_paused||g_dumping);
+}
 void dbg_presented(void) {
     ++g_presents;
 }
@@ -100,7 +105,14 @@ void dbg_video(uintptr_t fb0,uintptr_t fb1,unsigned stride,unsigned bytes_per_pi
     int first=!g_stride;
     g_fb[0]=fb0;g_fb[1]=fb1;g_stride=stride;g_bpp=bytes_per_pixel;
     g_width=width;g_height=height;g_displayed=displayed;
-    if(first)printf("debug: UART console live - '?' lists commands\r\n");
+    if(first) {
+        /* The timing window starts here, not at zero.  dbg_now_ms() is the
+         * board's own uptime, so a window left initialised to 0 made the first
+         * `t` report divide the payload's frames by hours of power-on time; it
+         * printed fps=0.01 for a game that was running at 3.6. */
+        g_window_start=dbg_now_ms();
+        printf("debug: UART console live - '?' lists commands\r\n");
+    }
 }
 void dbg_blit(unsigned started_ms,int x_offset,int y_offset,int x_offset_end,
 	      const void *game_buffer,unsigned game_w,unsigned game_h) {
@@ -407,6 +419,17 @@ static void service(int boundary) {
     if(g_paused||g_dumping)bios_call(BIOS_POLL,0,0,0,0);
 }
 void dbg_service(void) {
+    service(1);
+}
+
+/* Called from a real-time wait while the clock is held.  The engine is parked
+ * waiting for time that a pause has frozen - the screen wipe spins in I_Sleep()
+ * on I_GetTime() - so the frame in progress is never going to complete on its
+ * own.  Declare it final, which is what the panel is showing anyway, and run the
+ * boundary service: queued dumps still drain in this one call, so they describe
+ * one and the same buffer instead of two different frames. */
+void dbg_service_held(void) {
+    g_frame_ready=1;
     service(1);
 }
 

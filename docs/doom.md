@@ -146,8 +146,10 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 & $MiniPython scripts/doom_debug.py --boot --host-ip 169.254.25.153 --settle 25 --command frame
 & $MiniPython scripts/doom_debug.py --command source      # 8-bit 源像素 + 引擎调色板
 & $MiniPython scripts/doom_debug.py --command timing      # 分段耗时
-& $MiniPython scripts/doom_debug.py --compare             # 不上板，重算差异
+& $MiniPython scripts/doom_debug.py --compare             # 不上板，重算差异（必须紧跟 source，见下）
 ```
+
+`--compare` 读的是 `--out-dir` 里**当前那份** `rgb565-*.png`/`index8-*.png`/`palette.raw`，每次取帧都会原地覆盖。所以它必须紧跟在 `frame`+`source` 之后、中间不夹任何别的取帧；否则比的是两个不同时刻的帧，会读出 80% 上下的假差异（我这么踩过一次）。要留多张，就每次换一个 `--out-dir`。
 
 | 命令 | 作用 |
 | --- | --- |
@@ -182,6 +184,9 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 **闪烁有客观证据，而且不在软件里**：跑一次 DOOM 前后各取一次 `bios-status`。空板待机 `underflows=00000000`（1202 个面板帧）；跑一轮吸引模式之后 `underflows=00000089`，同期 `frames` 从 `0x4b2` 走到 `0x2ac9`，即 **9751 个面板帧里欠载 137 次（1.4%）**——面板每 60 Hz 重扫一次，游戏只有 3 fps，所以每一次欠载都会在屏幕上留下可见的一闪。扫描器只有 8 KiB FIFO（`gateware/video.py` 的 `stream.SyncFIFO(depth=8192//2)`），而 `LCDScan` 是每个像素时钟消费一个像素、`underflow = draw & ~sink.valid`，8 KiB = 4096 像素 ≈ 450 µs 的余量，也就是说 DDR 有半毫秒没理 LCD DMA。**把它当成 SD 读卡的锅试过一次，结论是否**：把块缓存从 32 块（128 KiB）加到 512 块（2 MiB）之后，同样的 DOOM 流量还是同样的 1007 次 `FS_READ`（次数由调用方 4 KiB 合并决定，不由卡决定），欠载反而略多（6823 帧 148 次）。**所以欠载跟的是 CPU 的访存流量，不是读卡流量**——软件渲染器在 2 KiB 写直通 L1 上疯狂取纹理，把 LCD 的取数挤饿了。真正的解在 gateware 的 DDR 仲裁优先级或 FIFO 深度，属于 PnR 改动，不在移植范围内；软件侧能证明的都证明了：帧内容逐字节正确、两个帧槽一致、present 没有失败过。
 
 **取到的是"完整的一帧"，不是"命令那一刻的缓冲"**：调试命令是从 shim 的轮询里进来的，可能落在这一帧的中间，于是 dump 会拍到半张画好的图。现在 `I_StartFrame` 调 `dbg_frame_began()` 把帧标记为未完成、`I_FinishUpdate` 末尾调 `dbg_frame_done()`；帧没画完时 `f`/`F`/`g` 进 `g_queue[]` 排队，等帧边界再按原顺序执行（其余命令照旧立刻跑，否则启动那几分钟里什么都问不出来）。这个队列是 `tests/doom_test.py` 的 `DebugChannelTest` 逼出来的——空白填充一上上去，`blit diff` 立刻从 0 变成 76 470，因为 dump 开始落在"已清空、还没画"的窗口里。
+
+**但暂停会把排队的取帧永远饿死**：那个队列只在帧边界排空，而帧边界是 `payload_main` 循环里的 `dbg_service()`。引擎可能正卡在一个**等时钟**的循环里——`d_main.c:309-328` 的擦窗是 `do{ nowtime=I_GetTime(); tics=nowtime-wipestart; I_Sleep(1);}while(tics<=0);`——而暂停冻住的正是这个时钟，于是它永远到不了 `DG_DrawFrame`，边界服务再也不跑，排队的 `f` 就没了。实板上的现象：`--command frame` 什么都不返回（连 `DBG done` 都没有），不排队的 `m`/`t` 还能答，`t` 报 `frames=0`，恢复后游戏照跑 3.59 fps——看着像取帧坏了，其实是暂停把引擎钉死在帧中间。修法是 `DG_SleepMs` 在 `dbg_held()`（暂停或正在 dump）时调 `dbg_service_held()`：既然引擎在等一个被冻住的时间，这一帧不可能自己画完，就判它"最终"再跑边界服务；排队的 `f`/`F`/`g` 仍在同一次调用里按序跑完，所以它们描述的仍是同一块缓冲，`blit diff` 依旧 0。
+> 别图省事在 `p` 那一支直接把帧标记为已完成——试过：`f` 立刻在帧中间跑掉、`g` 在别处跑，两次 dump 来自不同帧，`DebugChannelTest` 当场 `168/200 rows differ, 59.74%`。排队的意义就是"同一次服务里跑完"。
 
 **每帧空白（`c`）治的是"上一屏残留"**：`I_StartFrame` 先把 `I_VideoBuffer` 的前 `viewheight` 行涂黑，DOOM 每个渲染帧都会重画整个画面（`d_main.c:222` 传 `ST_Drawer(true, true)`），所以涂掉是安全的。用 `c` 切到索引 `0xff` 量了一下到底有多少像素是引擎不写的：**关卡第 0 tic 全画面都没写，第 1 tic 剩 523 个像素（1.0%）没写，形状是第 101–120 行的一块三角形（第 101 行 55–60、第 110 行 0–44、第 119 行 0–0），从第 34 tic 起一个都没有。** 原始 DOOM 在 35 fps 下这一 tic 的残留根本看不见，本移植 3 fps 下它要在面板上摆三分之一秒——标题页、制作名单、吸引模式互相切换时看到的那一下"色块"就是这个。涂黑一次 64 KiB，约占一帧的 2%，所以默认开着。
 

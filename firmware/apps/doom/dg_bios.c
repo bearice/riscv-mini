@@ -87,7 +87,15 @@ void DG_DrawFrame(void) {
 
 void DG_SleepMs(uint32_t ms) {
     uint32_t start=ms_now();
-    while((uint32_t)(ms_now()-start)<ms)pump();
+    /* While the debug console holds the game clock, a real-time wait is the only
+     * code that runs: the screen wipe spins here waiting for I_GetTime(), and the
+     * pause froze exactly that clock.  Servicing here is what keeps the console
+     * answering - and a queued frame dump running - instead of going dark until
+     * someone resumes. */
+    while((uint32_t)(ms_now()-start)<ms) {
+        pump();
+        if(dbg_held())dbg_service_held();
+    }
     dbg_add(DBG_SLEEP,(unsigned)(ms_now()-start));
 }
 

@@ -39,6 +39,12 @@ uint32_t dbg_clock(uint32_t real_ms);
 /* Non-zero while the tick loop must leave the game alone. */
 int dbg_frozen(void);
 
+/* Non-zero while the game clock is held (paused or mid-dump).  A real-time
+ * wait is then the only code that runs, so DG_SleepMs services the console
+ * when nothing else will: the screen wipe spins in I_Sleep() waiting for
+ * I_GetTime(), and a pause freezes exactly that clock. */
+int dbg_held(void);
+
 /* One doomgeneric_Tick() finished; consumes a single-step budget. */
 void dbg_frame_done(void);
 
@@ -85,6 +91,12 @@ int dbg_clear_view(void);
 /* Drain pending UART commands.  Called once per frame, and repeatedly while
  * frozen, where it also keeps BIOS_POLL running and drops key events. */
 void dbg_service(void);
+
+/* Same, from a real-time wait while dbg_held(): the frame in progress cannot
+ * finish because the clock it is waiting on is frozen, so it is declared final
+ * and the queued commands run.  Without this a pause taken inside a screen wipe
+ * starves a queued frame dump forever. */
+void dbg_service_held(void);
 
 /* Geometry of the panel slots, set once by DG_Init and refreshed per flip.
  * displayed is the slot the panel is scanning right now. */
