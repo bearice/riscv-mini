@@ -16,5 +16,9 @@ unsigned long strtoul(const char*,char**,int);
 void exit(int);
 void abort(void);
 char *getenv(const char*);
-#define abs(x) ((x)<0?-(x):(x))
+/* Match abs(int)'s argument conversion and single evaluation. In particular,
+ * R_StoreWallRange passes an unsigned angle difference: a macro preserves its
+ * unsigned type, loses negative angles, and projects walls at near-zero depth.
+ * Unsigned negation also preserves the target's INT_MIN wrap behaviour. */
+static inline int abs(int x) { return x < 0 ? (int)(0u - (unsigned int)x) : x; }
 #endif

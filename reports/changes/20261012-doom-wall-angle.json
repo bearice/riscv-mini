@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-10-12T08:39:11+00:00",
+  "title": "Fix DOOM wall projection for unsigned angle differences",
+  "changes": [
+    "Restore abs(int) conversion and single evaluation in the payload shim; RV32 O0/O2 regression fails before the fix and passes afterward. DOOM suite: 11 tests OK. Same-camera E1M5 QEMU comparison and four board frames confirm removal of false vertical walls; board blit diff is zero. Evidence: build/doom-debug/fixed-20261012 and build/doom-render-sim-fixed."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests\\workflow_test.py",
+      "--report",
+      "build\\reports\\checks\\workflow.json"
+    ],
+    "source_inputs_sha256": "63ffa066ccc8f9a322114a8a5d44df84aa2e4fac9708a551776cdd26f6394fad"
+  },
+  "mode": "staged review",
+  "base_revision": "e34162c77bf51aaf48c454d655f7d0058e2504b2",
+  "source_revision": null
+}

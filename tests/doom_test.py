@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import bios_image            # noqa: E402
 import doom_debug            # noqa: E402
 import doom_sim              # noqa: E402
+from doom_shim_test import WallAngleTest  # noqa: E402,F401
 
 IMAGE_DIR = ROOT / 'build/doom-payload'
 IMAGE = IMAGE_DIR / 'BOOT.RPB'
