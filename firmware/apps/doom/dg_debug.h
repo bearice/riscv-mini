@@ -116,6 +116,8 @@ void dbg_blit(unsigned started_ms,int x_offset,int y_offset,int x_offset_end,
  * body is exclusive: header and trailer are whole lines, junk around them is
  * skipped by the host parser. */
 int dbg_uart_busy(void);
+/* Validate a completed fixed-demo frame after the measured window has ended. */
+void dbg_benchmark_checksum(void);
 
 /* Shim file-I/O snapshot for the 'i' command: struct dbg_io and
  * shim_io_snapshot() live in shim_private.h, next to the counters. */

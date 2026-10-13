@@ -27,10 +27,11 @@ import threading
 import time
 import zlib
 from pathlib import Path
+from payload_libc import newlib_link
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'firmware/apps/doom'
-HELPERS = [ROOT / 'firmware/drivers/string.c']
+HELPERS = [ROOT / 'firmware/libc/runtime.c']
 WAD_BLOB = 'wad.bin'          # copied into the output dir, linked as binary
 PANEL_BYTES = 480 * 272 * 2
 
@@ -38,6 +39,7 @@ SHIM = r'''
 /* Stand-in for the resident BIOS: bios_info, the ecall services DOOM uses, raw
  * HID key events from a scripted queue, and the linked WAD as the "SD card". */
 #include "firmware/bios/include/bios.h"
+#include <string.h>
 
 #define UART0_BASE 0x10000000u
 #define FINISHER   0x00100000u
@@ -56,15 +58,22 @@ static unsigned long sim_ms;
 static unsigned long presents;
 static unsigned long key_index;
 
-/* File system model: exactly one read-only file, the linked WAD.  Every path
- * opens that file, writes are refused and mkdir reports success, which is enough
- * to run the payload's file paths without emulating FatFs. */
-struct sim_file {int used;unsigned long pos;};
+/* WAD plus one bounded writable fixture; absent files really fail. */
+struct sim_file {int used, kind, flags; unsigned long pos;};
 static struct sim_file sim_files[6];
-static unsigned long wad_len(void) {
-    return (unsigned long)(_binary_wad_bin_end - _binary_wad_bin_start);
-}
+static unsigned char test_data[16384];
+static unsigned test_size;
+static int test_exists, directory_exists;
+static char test_name[64], directory_name[64];
+static unsigned long wad_len(void) {return _binary_wad_bin_end - _binary_wad_bin_start;}
 static int sim_handle_ok(unsigned h) {return h<6 && sim_files[h].used;}
+static int file_kind(const char *name) {
+    if (!strcmp(name,"DOOM1.WAD")) return 0;
+    if (test_exists && !strcmp(name,test_name)) return 1;
+    if (directory_exists && !strcmp(name,directory_name)) return 2;
+    return -1;
+}
+static unsigned long file_size(unsigned h) {return sim_files[h].kind ? test_size : wad_len();}
 
 /* Scripted input: time in simulated ms, HID usage, pressed flag. */
 struct sim_key {unsigned long at_ms; unsigned char usage, pressed;};
@@ -218,54 +227,70 @@ void sim_trap(unsigned int *f)
         break;
     }
     case BIOS_FS_OPEN: {
-        int handle=-1;
-        if(!(f[11] & BIOS_FS_O_WRITE)) {
-            for(int i=0;i<6;++i) if(!sim_files[i].used) {
-                sim_files[i].used=1;sim_files[i].pos=0;handle=i;break;
-            }
+        const char *name=(const char *)a0; unsigned flags=a1;
+        int kind=file_kind(name), handle=-1;
+        if (kind==2 || (kind==0 && (flags&BIOS_FS_O_WRITE))) {f[10]=(unsigned)-1; break;}
+        if ((flags&BIOS_FS_O_CREATE) && kind>=0 && !(flags&BIOS_FS_O_TRUNC)) {f[10]=(unsigned)-1; break;}
+        if (kind<0 && (flags&(BIOS_FS_O_CREATE|BIOS_FS_O_TRUNC))) {
+            if (test_exists || strlen(name)>=sizeof test_name) {f[10]=(unsigned)-1; break;}
+            strcpy(test_name,name); test_exists=1; test_size=0; kind=1;
         }
-        f[10]=(unsigned int)handle;
-        break;
+        if (kind<0) {f[10]=(unsigned)-1; break;}
+        if (flags&BIOS_FS_O_TRUNC) test_size=0;
+        for (int i=0;i<6;++i) if (!sim_files[i].used) {
+            sim_files[i].used=1; sim_files[i].kind=kind; sim_files[i].flags=flags;
+            sim_files[i].pos=(flags&BIOS_FS_O_APPEND) ? (kind ? test_size : wad_len()) : 0;
+            handle=i; break;
+        }
+        f[10]=(unsigned)handle; break;
     }
     case BIOS_FS_CLOSE:
-        if(sim_handle_ok(f[10])) {sim_files[f[10]].used=0;f[10]=0;} else f[10]=(unsigned int)-1;
+        if(sim_handle_ok(a0)) {sim_files[a0].used=0; f[10]=0;} else f[10]=(unsigned)-1;
         break;
     case BIOS_FS_READ: {
-        unsigned int handle=f[10];
-        if(!sim_handle_ok(handle)) {f[10]=(unsigned int)-1;break;}
-        unsigned long left=wad_len()-sim_files[handle].pos;
-        unsigned long n=f[12]<left?f[12]:left;
-        for(unsigned long i=0;i<n;++i)
-            ((unsigned char *)f[11])[i]=_binary_wad_bin_start[sim_files[handle].pos+i];
-        sim_files[handle].pos+=n;
-        f[10]=(unsigned int)n;
-        break;
+        unsigned h=a0;
+        if (!sim_handle_ok(h) || !(sim_files[h].flags&BIOS_FS_O_READ)) {f[10]=(unsigned)-1; break;}
+        unsigned long size=file_size(h), pos=sim_files[h].pos;
+        unsigned long left=pos<size ? size-pos : 0, n=f[12]<left ? f[12] : left;
+        const unsigned char *data=sim_files[h].kind ? test_data : _binary_wad_bin_start;
+        if(n)memcpy((void *)a1,data+pos,n);
+        sim_files[h].pos+=n; f[10]=n; break;
     }
-    case BIOS_FS_WRITE:
-        f[10]=(unsigned int)-1;   /* the simulated card is read-only */
-        break;
+    case BIOS_FS_WRITE: {
+        unsigned h=a0;
+        if (!sim_handle_ok(h) || !sim_files[h].kind || !(sim_files[h].flags&BIOS_FS_O_WRITE)) {f[10]=(unsigned)-1; break;}
+        unsigned pos=sim_files[h].pos, n=f[12];
+        if (pos>=sizeof test_data) {f[10]=0; break;}
+        if (n>sizeof test_data-pos)n=sizeof test_data-pos;
+        memcpy(test_data+pos,(const void *)a1,n); sim_files[h].pos+=n;
+        if(sim_files[h].pos>test_size)test_size=sim_files[h].pos;
+        f[10]=n; break;
+    }
     case BIOS_FS_SEEK: {
-        unsigned int handle=f[10];
-        if(!sim_handle_ok(handle)) {f[10]=(unsigned int)-1;break;}
-        long base=(f[12]==BIOS_FS_END)?(long)wad_len():(f[12]==BIOS_FS_CUR)?(long)sim_files[handle].pos:0;
-        long target=base+(int)f[11];
-        if(target<0)target=0;
-        sim_files[handle].pos=(unsigned long)target;
-        f[10]=(unsigned int)target;
-        break;
+        unsigned h=a0;
+        if (!sim_handle_ok(h)) {f[10]=(unsigned)-1; break;}
+        long base=(f[12]==BIOS_FS_END)?(long)file_size(h):(f[12]==BIOS_FS_CUR)?(long)sim_files[h].pos:0;
+        long target=base+(int)a1; if(target<0)target=0;
+        sim_files[h].pos=target; f[10]=target; break;
     }
     case BIOS_FS_STAT: {
-        unsigned int *out=(unsigned int *)f[11];
-        out[0]=(unsigned int)wad_len();
-        out[1]=0;
-        f[10]=0;
-        break;
+        int kind=file_kind((const char *)a0);
+        if(kind<0) {f[10]=(unsigned)-1; break;}
+        unsigned *out=(unsigned *)a1;
+        out[0]=kind==0 ? wad_len() : kind==1 ? test_size : 0;
+        out[1]=kind==2 ? 0x10 : 0; f[10]=0; break;
     }
     case BIOS_FS_MKDIR:
-        f[10]=0;                  /* pretend the directory exists */
+        if(directory_exists || strlen((const char *)a0)>=sizeof directory_name) f[10]=(unsigned)-1;
+        else {strcpy(directory_name,(const char *)a0); directory_exists=1; f[10]=0;}
         break;
-    case BIOS_FS_UNLINK:case BIOS_FS_RENAME:
-        f[10]=(unsigned int)-1;
+    case BIOS_FS_UNLINK:
+        if(file_kind((const char *)a0)==1) {test_exists=0; f[10]=0;} else f[10]=(unsigned)-1;
+        break;
+    case BIOS_FS_RENAME:
+        if(file_kind((const char *)a0)==1 && file_kind((const char *)a1)<0 && strlen((const char *)a1)<sizeof test_name) {
+            strcpy(test_name,(const char *)a1); f[10]=0;
+        } else f[10]=(unsigned)-1;
         break;
     case BIOS_REBOOT:
         sim_finish(0);
@@ -296,7 +321,6 @@ __attribute__((naked, used, section(".text.entry"))) void _start(void)
         "call sim_setup\n"
         "la a0, sim_info\n"
         "call _payload_start\n"
-        "li a0, 0\n"
         "call sim_finish\n");
 }
 
@@ -353,6 +377,9 @@ MEMORY { RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 256M }
 SECTIONS {
     .text : { KEEP(*(.text.entry)) KEEP(*(.text.start)) *(.text .text.*) } > RAM
     .rodata : { *(.rodata .rodata.*) } > RAM
+    .preinit_array : { __preinit_array_start = .; KEEP(*(.preinit_array*)) __preinit_array_end = .; } > RAM
+    .init_array : { __init_array_start = .; KEEP(*(SORT(.init_array.*))) KEEP(*(.init_array)) __init_array_end = .; } > RAM
+    .fini_array : { __fini_array_start = .; KEEP(*(SORT(.fini_array.*))) KEEP(*(.fini_array)) __fini_array_end = .; } > RAM
     .wad : { . = ALIGN(4); KEEP(*(.wad)) } > RAM
     .data : { . = ALIGN(4); *(.data .data.* .sdata .sdata.*) . = ALIGN(4); } > RAM
     __global_pointer$ = . + 0x800;
@@ -385,7 +412,7 @@ def tools():
     return gcc, gcc.parent
 
 
-def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='-O2'):
+def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='-O2', sources=None):
     gcc, bindir = tools()
     scratch = out / 'tmp'
     scratch.mkdir(parents=True, exist_ok=True)
@@ -407,12 +434,15 @@ def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='
                     WAD_BLOB, 'wad.o'], check=True, cwd=str(out))
     march, mabi = (('rv32im_zicsr_zifencei', 'ilp32') if soft_float
                    else ('rv32imaf_zicsr_zifencei', 'ilp32f'))
-    sources = sorted([p for p in APP.iterdir() if p.suffix in ('.c', '.S')])
+    libraries=newlib_link(gcc,march,mabi,out)
+    if sources is None:
+        sources = sorted([p for p in APP.iterdir() if p.suffix in ('.c', '.S')])
     elf = out / 'sim.elf'
     args = [str(gcc), '-march=' + march, '-mabi=' + mabi, optimize, '-Wall', '-Wextra',
             '-Wno-error', '-ffreestanding', '-fno-builtin', '-ffunction-sections',
             '-fdata-sections', '-msmall-data-limit=0', '-nostdlib', '-nostartfiles',
-            '-I', str(ROOT), '-I', str(APP), '-I', str(APP / 'shim_include'),
+            '-I', str(ROOT), '-I', str(APP), '-I', str(ROOT / 'firmware/libc'),
+            '-DBIOS_LIBC_HEAP_BYTES=(48u*1024u*1024u)',
             '-DDOOMGENERIC_RESX=480', '-DDOOMGENERIC_RESY=272',
             *[(d if d.startswith('-D') else f'-D{d}') for d in defines],
             *cflags,
@@ -422,7 +452,7 @@ def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='
             *[str(p) for p in HELPERS],
             str(wad_obj),
             '-T', str(out / 'sim.ld'), '-Wl,--gc-sections',
-            '-Wl,-Map,' + str(out / 'sim.map'), '-lgcc', '-o', str(elf)]
+            '-Wl,-Map,' + str(out / 'sim.map'), *libraries, '-o', str(elf)]
     subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
     return elf
 

@@ -1,0 +1,133 @@
+{
+  "created_at": "2026-10-13T05:53:59+00:00",
+  "title": "Default to qualified fast arithmetic and INDEX8 Doom with static Newlib apps",
+  "changes": [
+    "Add a reusable static Newlib syscall runtime for BIOS apps and replace the Doom libc shim; BIOS remains freestanding.",
+    "Add INDEX8 video with two hardware palettes, atomic frame/palette switching and viewport clipping while preserving RGB565 text mode.",
+    "Qualify fast CPU arithmetic with an 8 KiB shared L2, select the accepted configuration through current, and make INDEX8/soft float the Doom CLI defaults.",
+    "Preserve matched performance comparisons and failed experiments; current-source PnR 0/0, firmware/60-second soak, all 66 benchmark rows and Doom CRC checks pass."
+  ],
+  "build": {
+    "id": "a50a747-full-rv32ima-rom8k-l28k-doom-default-commit-5d05d711-6c87e75f",
+    "label": "doom-default-commit",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261013T052008451549Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-default-commit",
+    "purpose": "doom-default-commit",
+    "registered_at": "2026-10-13T05:48:31+00:00",
+    "source": {
+      "commit": "a50a747214c5fc3db62fad146ee25a8791d1cb00",
+      "dirty": true,
+      "inputs_sha256": "7cb68b40f0e73fc602591e2c28ca6338665e3cdc3eddbb2cd73a82c16810f664",
+      "kind": "captured",
+      "created_at": "2026-10-13T05:20:08+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "doom-default-commit",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\cpu-arithmetic-matrix\\VexRiscv_Mmu_s1m1.v",
+        "--boot-mode",
+        "rom",
+        "--rom-size",
+        "8192",
+        "--l2-size",
+        "8192",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "2",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--without-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--with-mic-stereo",
+        "--with-eth",
+        "--with-eth-dma",
+        "--with-usb",
+        "--synthesize",
+        "--output-dir",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261013T052008451549Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-default-commit"
+      ],
+      "cpu_rtl_sha256": "9f35e57b1cb182bb43d4d8a9ff408d09a290186d5df02a86d484af5a8fbe5d9d",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\recipes\\20261013T052008451549Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-default-commit-6c87e75f"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32ima_zicsr_zifencei",
+      "rom_size_bytes": 8192,
+      "l2_size_bytes": 8192,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": false,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": true,
+        "eth": true,
+        "eth_dma": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "c9fd5e16b78d54dede59752bb5f1751b072ad4f4f4cf57ea095c1923f64af0bd",
+    "bitstream_sha256": "5d05d71161bfc2a0f11442f904dc3fcb9f26d73d6c592f7d326d50ee37e6b373",
+    "abi": "b881c174",
+    "component_versions": {
+      "rtl": "0.9.0",
+      "bootloader": "0.9.1",
+      "hal": "0.9.1",
+      "bios": "0.10.0",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\operations\\20261013T054845755933Z-verify\\firmware-verification.json",
+        "sha256": "96e74e942ad9a3cd2c73e42195b827617067d1d862e491dc629bce6db15a1d83"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\doom-default-performance.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "7cb68b40f0e73fc602591e2c28ca6338665e3cdc3eddbb2cd73a82c16810f664"
+  },
+  "mode": "staged review",
+  "base_revision": "a50a747214c5fc3db62fad146ee25a8791d1cb00",
+  "source_revision": null
+}

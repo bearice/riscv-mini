@@ -58,6 +58,7 @@ COMMANDS = {
     'frame': 'f', 'slot': 'F', 'source': 'g',
     'timing': 't', 'io': 'i', 'video': 'v', 'state': 'm', 'exit': 'x', 'release': '0',
     'bars': '1', 'checker1': '2', 'checker4': '3', 'hbars': '4', 'ramp': '5',
+    'boot-check': '',  # marker followed by a returning app and BIOS prompt
 }
 DUMPS = ('frame', 'slot', 'source')
 HEADER = re.compile(rb'^DBGDUMP (\S+) (\d+) (\d+) (\d+) (\d+) (\d+)\s*$')
@@ -224,7 +225,20 @@ def board_palette(out_dir, wad):
 
 
 def compare(out_dir, wad):
-    """Re-analyse the newest rgb565 + index8 dumps already on disk."""
+    """Compare the native scan buffer with the source dump already on disk."""
+    native = sorted(Path(out_dir).glob('scanindex8-*.raw'), key=lambda p: p.stat().st_mtime)
+    if native:
+        source = sorted(Path(out_dir).glob('index8-*.raw'), key=lambda p: p.stat().st_mtime)
+        if not source:
+            print(f'no index8 source dump in {out_dir}; collect it with --command source')
+            return 1
+        w, h = (int(v) for v in source[-1].stem.rsplit('-', 1)[1].split('x'))
+        scanned, rendered = native[-1].read_bytes(), source[-1].read_bytes()
+        if len(scanned) != w * h or len(rendered) != w * h:
+            raise SystemExit('stale INDEX8 dump sizes')
+        differences = sum(a != b for a, b in zip(scanned, rendered))
+        print(f'INDEX8 source/native differences: {differences}/{w * h}')
+        return int(differences != 0)
     found = {}
     for kind in ('rgb565', 'index8'):
         hits = sorted(Path(out_dir).glob(f'{kind}-*.raw'), key=lambda p: p.stat().st_mtime)
@@ -374,7 +388,7 @@ def main():
     ap.add_argument('--command',
                     help='name from ' + ', '.join(sorted(COMMANDS)) + ', or a raw character')
     ap.add_argument('--compare', action='store_true',
-                    help='skip the board: diff the newest rgb565 and index8 dumps in --out-dir')
+                    help='skip the board: diff the native frame and source dumps in --out-dir')
     ap.add_argument('--boot', action='store_true',
                     help='boot the payload from the BIOS prompt before the command')
     ap.add_argument('--host-ip', help='TFTP bind address the board can reach (--boot)')
@@ -421,6 +435,8 @@ def main():
         ap.error('--host-ip is required with --boot')
 
     name = args.command
+    if name == 'boot-check' and not args.boot:
+        ap.error('boot-check requires --boot and an app-specific --boot-marker')
     char = COMMANDS.get(name, name)
     if name == 'bios-status':
         char = ''                 # a BIOS console query, not a payload command
@@ -436,6 +452,10 @@ def main():
             return 0
         if args.boot:
             boot_payload(port, args, echo)
+            if name == 'boot-check':
+                wait_prompt(port, echo)
+                print('[doom_debug] app marker observed and BIOS prompt restored', flush=True)
+                return 0
             if args.settle:
                 print(f'[doom_debug] letting the game run {args.settle:.0f} s', flush=True)
                 drain(port, args.settle, echo)

@@ -18,7 +18,12 @@ enum bios_function {BIOS_INFO=0,BIOS_WRITE,BIOS_GETC,BIOS_TIME,BIOS_POLL,
      * owned by the BIOS; the mount is implicit on first use.  See struct
      * bios_fs_stat and the BIOS_FS_* flags below. */
     BIOS_FS_OPEN,BIOS_FS_CLOSE,BIOS_FS_READ,BIOS_FS_WRITE,BIOS_FS_SEEK,
-    BIOS_FS_STAT,BIOS_FS_MKDIR,BIOS_FS_UNLINK,BIOS_FS_RENAME};
+    BIOS_FS_STAT,BIOS_FS_MKDIR,BIOS_FS_UNLINK,BIOS_FS_RENAME,
+    /* INDEX8: palette(pointer,bank,256), readback(pointer,bank,256),
+     * atomic present(slot,bank), window(x0,y0,x1,y1), exclusive ends.
+     * Features bit 5 advertises these append-only ABI v1 services. */
+    BIOS_VIDEO_PALETTE,BIOS_VIDEO_PRESENT_INDEX8,BIOS_VIDEO_PALETTE_READ,
+    BIOS_VIDEO_WINDOW};
 
 /* BIOS_FS_OPEN flags (open(2)-style, distinct from the service ids above).
  * O_READ/O_WRITE select access; O_CREATE makes a new file and fails if it
@@ -38,7 +43,7 @@ enum bios_audio_command {BIOS_AUDIO_STOP=0,BIOS_AUDIO_PLAY,BIOS_AUDIO_PAUSE,
  * CONTROL: bios_audio_command. INFO: writable struct bios_audio pointer.
  * Services are append-only ABI v1 additions; features bit 4 advertises audio. */
 struct bios_audio {uint32_t sample_rate,level,played,fetched,underruns,overruns,errors;};
-enum {BIOS_TEXT=0,BIOS_GRAPHICS=1};
+enum {BIOS_TEXT=0,BIOS_GRAPHICS=1,BIOS_GRAPHICS_INDEX8=2};
 struct bios_info {uint32_t version,size,ram_base,ram_bytes,payload_base,payload_limit,
     framebuffer[2],width,height,stride,format,features,clock_hz;};
 struct bios_io {uint32_t buttons,switches;};

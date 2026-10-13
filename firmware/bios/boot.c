@@ -7,7 +7,7 @@
 extern void bios_os_enter(uint32_t entry) __attribute__((noreturn));
 static struct bios_info info={BIOS_ABI_VERSION,sizeof(struct bios_info),MINI_RAM_BASE,MINI_RAM_SIZE,
     BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0,0},480,272,960,565,
-    MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4),60000000};
+    MINI_FEATURE_SD|(MINI_FEATURE_VIDEO<<1)|(MINI_FEATURE_USB<<2)|(MINI_FEATURE_ETH<<3)|(MINI_FEATURE_AUDIO<<4)|(MINI_FEATURE_VIDEO<<5),60000000};
 /* ls 的目录参数版：NULL/空串按根目录处理，无参输出与旧 bios_sd_list 逐字节一致。
  * 只列一层、不递归——载荷和脚本都靠这个输出挑文件，深度遍历留给上层。 */
 void bios_sd_list_dir(const char *path) {
@@ -351,12 +351,18 @@ int bios_exception_hook(hal_trap_frame_t *f) {
     if(f->cause!=11 || f->gpr[17]!=BIOS_ECALL_MAGIC)return 0;
     uint32_t *a=&f->gpr[10];int result=-1;
     switch(f->gpr[16]) {
-    case BIOS_INFO:if(pointer_ok(a[0],sizeof(info))) {info.framebuffer[0]=(uintptr_t)hal_video_frame(0);info.framebuffer[1]=(uintptr_t)hal_video_frame(1);memcpy((void *)a[0],&info,sizeof(info));result=0;}break;
+    case BIOS_INFO:if(pointer_ok(a[0],sizeof(info))) {info.format=hal_video_format();info.stride=480*(info.format==8?1:2);info.framebuffer[0]=(uintptr_t)hal_video_frame(0);info.framebuffer[1]=(uintptr_t)hal_video_frame(1);memcpy((void *)a[0],&info,sizeof(info));result=0;}break;
     case BIOS_WRITE:if(a[1]<=4096 && pointer_ok(a[0],a[1])) {for(unsigned i=0;i<a[1];++i)bios_putc(((char *)a[0])[i]);result=a[1];}break;
     case BIOS_GETC:result=bios_getc();break;
     case BIOS_TIME:result=hal_time_ms();break;
     case BIOS_POLL:bios_poll();result=0;break;
     case BIOS_VIDEO_MODE:result=bios_video_mode(a[0]);break;
+    case BIOS_VIDEO_PALETTE:
+    case BIOS_VIDEO_PALETTE_READ:
+        if(a[2]==256 && !(a[0]&1u) && pointer_ok(a[0],512))result=hal_video_palette((uint16_t *)a[0],a[1],a[2],f->gpr[16]==BIOS_VIDEO_PALETTE_READ)==HAL_OK?0:-1;
+        break;
+    case BIOS_VIDEO_PRESENT_INDEX8:result=hal_video_present_indexed(a[0],a[1])==HAL_OK?0:-1;break;
+    case BIOS_VIDEO_WINDOW:result=hal_video_window(a[0],a[1],a[2],a[3])==HAL_OK?0:-1;break;
     case BIOS_VIDEO_PRESENT:result=a[0]<2 && hal_video_present(a[0])==HAL_OK?0:-1;break;
     case BIOS_SD_READ:case BIOS_SD_WRITE:
         if(a[2] && a[2]<=8 && pointer_ok(a[1],a[2]*512))result=(f->gpr[16]==BIOS_SD_READ?hal_sd_read(a[0],(void *)a[1],a[2]):hal_sd_write(a[0],(void *)a[1],a[2]))==HAL_OK?0:-1;

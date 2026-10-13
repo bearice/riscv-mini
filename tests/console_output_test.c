@@ -30,6 +30,8 @@ uint32_t hal_time_ms(void) {return 0;}
 int hal_uart_getc(void) {return -1;}
 volatile uint16_t *hal_video_frame(unsigned slot) {(void)slot;return 0;}
 hal_result_t hal_video_present(unsigned slot) {(void)slot;return HAL_UNSUPPORTED;}
+unsigned hal_video_format(void) {return 565;}
+hal_result_t hal_video_configure(unsigned indexed) {(void)indexed;return HAL_UNSUPPORTED;}
 void tests_video_stop(void) {}
 /* Read one TTY row as a NUL-terminated, right-trimmed string. */
 static void term_row(unsigned r,char *out) {

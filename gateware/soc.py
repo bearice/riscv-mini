@@ -89,7 +89,7 @@ class MiniSoC(SoCCore):
         rom_size=8192,
         boot_mode='rom',
     ):
-        if l2_size not in (4096,8192):raise ValueError('Software DDR boot requires at least 4 KiB L2 boot RAM')
+        if l2_size not in (4096,8192,16384):raise ValueError('Software DDR boot supports 4, 8 or 16 KiB shared L2')
         if rom_size not in (4096,8192):raise ValueError('Boot ROM size must be 4 or 8 KiB')
         if boot_mode not in ('rom','xip'):raise ValueError('Invalid boot mode')
         # Validate feature selections and select matching CPU RTL.

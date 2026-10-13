@@ -36,6 +36,8 @@ base={'csr_registers':{},'memories':{},'constants':{}}
 small={**base,'constants':{'config_l2_size':4096}}
 large={**base,'constants':{'config_l2_size':8192}}
 assert len({abi_tag(base),abi_tag(small),abi_tag(large)})==3
+larger={**base,'constants':{'config_l2_size':16384}}
+assert abi_tag(larger) not in {abi_tag(base),abi_tag(small),abi_tag(large)}
 coherent={**base,'constants':{'config_l2_size':4096,'config_l2_mode':2,'config_shared_l2':1}}
 assert abi_tag(coherent)!=abi_tag(small),'Memory coherence policy must change the image ABI'
 lcd={**base,'csr_bases':{'rgb_lcd':0xf0008000},

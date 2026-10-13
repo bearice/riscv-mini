@@ -10,10 +10,11 @@ from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
 from gateware.shared_l2 import SharedL2
 
-parser=argparse.ArgumentParser();parser.add_argument('--writeback',action='store_true');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--writeback',action='store_true');parser.add_argument('--size',type=int,choices=(256,4096,8192,16384),default=256);args=parser.parse_args()
+WAIT=max(4000,args.size*2)
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback)
+dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback)
 ram={};counts={'reads':0,'writes':0};events=[]
 def initial(a):return sum(((a*17+i*11)&255)<<(i*8) for i in range(16))
 def value(a):return ram.get(a,initial(a))
@@ -42,7 +43,7 @@ def memory():
 def cpu(a,data=None,sel=15):
     yield wb.adr.eq((0x00000000>>2)+a//4);yield wb.we.eq(data is not None)
     yield wb.dat_w.eq(data or 0);yield wb.sel.eq(sel);yield wb.cyc.eq(1);yield wb.stb.eq(1)
-    for n in range(2000):
+    for n in range(WAIT):
         yield
         if (yield wb.ack):
             result=(yield wb.dat_r);break
@@ -54,7 +55,7 @@ def dma(a,data=None,mask=65535,client=None,data_delay=0):
     p=client or cache.dma
     yield p.cmd.addr.eq(a//16);yield p.cmd.we.eq(data is not None);yield p.cmd.valid.eq(1)
     yield p.wdata.data.eq(data or 0);yield p.wdata.we.eq(mask);yield p.wdata.valid.eq(data is not None and not data_delay)
-    for _ in range(2000):
+    for _ in range(WAIT):
         yield
         if (yield p.cmd.ready):break
     else:raise AssertionError('DMA command timeout')
@@ -66,7 +67,7 @@ def dma(a,data=None,mask=65535,client=None,data_delay=0):
             yield
             assert not (yield p.wdata.ready),'write completed before data arrived'
         yield p.wdata.valid.eq(1)
-        for _ in range(2000):
+        for _ in range(WAIT):
             yield
             if (yield p.wdata.ready):break
         else:raise AssertionError('DMA write timeout')
@@ -75,7 +76,7 @@ def dma(a,data=None,mask=65535,client=None,data_delay=0):
     # Consumer stalls after command acceptance; response must remain stable.
     yield p.rdata.ready.eq(0)
     for _ in range(20):yield
-    for _ in range(2000):
+    for _ in range(WAIT):
         if (yield p.rdata.valid):break
         yield
     else:raise AssertionError('DMA response timeout')
@@ -89,13 +90,13 @@ def dma(a,data=None,mask=65535,client=None,data_delay=0):
 def maintenance(invalidate=False):
     reg=cache._invalidate if invalidate else cache._flush
     yield reg.re.eq(1);yield;yield reg.re.eq(0);yield
-    for _ in range(4000):
+    for _ in range(WAIT):
         yield
         if not (yield cache._busy.status):break
     else:raise AssertionError('Maintenance timeout')
 
 def test():
-    for _ in range(30):yield
+    for _ in range(args.size//16+30):yield
     old=value(0)
     assert (yield from cpu(0))==old&0xffffffff
     before=counts['reads']
@@ -110,15 +111,15 @@ def test():
     assert (yield from cpu(8))==(expected>>64)&0xffffffff,'CPU must see DMA byte store'
     # Conflicting nonallocating streaming reads must not evict a CPU line.
     before=counts['reads']
-    assert (yield from dma(256,client=cache.video))==value(16)
+    assert (yield from dma(args.size,client=cache.video))==value(args.size//16)
     assert (yield from dma(0))==expected
     assert counts['reads']==before+1
     # Allocation conflict must write back the OLD address with all merged bytes.
-    yield from cpu(256)
+    yield from cpu(args.size)
     assert value(0)==expected
-    yield from cpu(260,0xfeedbeef)
+    yield from cpu(args.size+4,0xfeedbeef)
     yield from maintenance()
-    assert value(16)>>32&0xffffffff==0xfeedbeef
+    assert value(args.size//16)>>32&0xffffffff==0xfeedbeef
     # Partial streaming miss preserves all unselected bytes.
     prev=value(80)
     yield from dma(1280,0xcc,1)
@@ -143,7 +144,7 @@ def test():
     assert value(4)==expected
     yield from cpu(48,0xabcdef01)
     yield cache._enable.storage.eq(0)
-    for _ in range(2000):
+    for _ in range(WAIT):
         yield
         if not (yield cache._busy.status):break
     else:raise AssertionError('disable timeout')
@@ -166,7 +167,7 @@ run_simulation(dut,[test(),memory()])
 
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback)
+dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback)
 completed=[0,0,0]
 def contend(client):
     for n in range(20):
@@ -182,9 +183,9 @@ print('Shared arbitration PASS CPU/video/DMA=',completed)
 # Clean first: preserving dirty lines across a whole-system reset is not promised.
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=256,writeback=args.writeback))
+dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=args.size,writeback=args.writeback))
 def reset_check():
-    for _ in range(30):yield
+    for _ in range(args.size//16+30):yield
     yield from cpu(0,0x87654321)
     yield from maintenance()
     assert (yield from cpu(0))==0x87654321
@@ -198,10 +199,10 @@ print('Shared reset PASS')
 # reference image, mixing CPU writes and native DMA writes/readers.
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=SharedL2(wb,port,size=256,writeback=args.writeback)
+dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback)
 def mixed_check():
     rng=random.Random(0x20);expected={}
-    for _ in range(30):yield
+    for _ in range(args.size//16+30):yield
     for n in range(120):
         line=rng.randrange(64);a=line*16
         old=expected.get(line,value(line))

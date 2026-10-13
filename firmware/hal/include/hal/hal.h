@@ -98,6 +98,11 @@ hal_result_t hal_spi_lcd_show(unsigned sd_ready);
 hal_result_t hal_spi_lcd_network(const uint8_t mac[6],const uint8_t ip[4]); /* NULL IP: unconfigured */
 hal_result_t hal_spi_lcd_link(unsigned up);
 hal_result_t hal_video_init(void);
+unsigned hal_video_format(void);
+hal_result_t hal_video_configure(unsigned indexed);
+hal_result_t hal_video_palette(uint16_t *table,unsigned bank,unsigned count,unsigned readback);
+hal_result_t hal_video_present_indexed(unsigned slot,unsigned bank);
+hal_result_t hal_video_window(unsigned x0,unsigned y0,unsigned x1,unsigned y1);
 volatile uint16_t *hal_video_frame(unsigned slot);
 hal_result_t hal_video_set_buffers(uint16_t *first,uint16_t *second);
 hal_result_t hal_video_present(unsigned slot);

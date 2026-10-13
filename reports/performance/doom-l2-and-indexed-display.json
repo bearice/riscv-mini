@@ -1,0 +1,535 @@
+{
+  "method": "Same fixed Doom payload/workload; comparison of complete configurations, not isolated L2 attribution.",
+  "payload": {
+    "path": "build/doom-benchmark/BOOT.RPB",
+    "bytes": 541764,
+    "sha256": "00f02ffaa7415f0b62b21a91f6fd1ea67737792db49a53fb80ce233ce1c58adf"
+  },
+  "candidate": {
+    "samples": [
+      {
+        "round": 1,
+        "frames": 120,
+        "elapsed_ms": 22756,
+        "fps": 5.273334505185446,
+        "source": {
+          "path": "build/doom-perf-l216k-round1.log",
+          "bytes": 3466,
+          "sha256": "c2878186a0ecb138673e62b357d5f6a3abe6c6d7feb3d74adb53c209e0802fbe"
+        }
+      },
+      {
+        "round": 2,
+        "frames": 120,
+        "elapsed_ms": 22740,
+        "fps": 5.277044854881266,
+        "source": {
+          "path": "build/doom-perf-l216k-round2.log",
+          "bytes": 3467,
+          "sha256": "254564db99717b9962919ff5ac4bc3dd226c9b8abb06de2b707915496aa77954"
+        }
+      },
+      {
+        "round": 3,
+        "frames": 120,
+        "elapsed_ms": 22772,
+        "fps": 5.269629369401019,
+        "source": {
+          "path": "build/doom-perf-l216k-round3.log",
+          "bytes": 3466,
+          "sha256": "1188b0ebce9f047c91f760f5c40f2b0de0ec40d95f2cae4517c51cbc9b38bc1c"
+        }
+      }
+    ],
+    "median_elapsed_ms": 22756,
+    "median_fps": 5.273334505185446,
+    "loaded_identity": {
+      "id": "a50a747-full-rv32ima-rom8k-l216k-doom-l2-16k-p2-c3eb0652-60616715",
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261012T142723996204Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-l2-16k-p2",
+      "boot_mode": "rom",
+      "bitstream_sha256": "c3eb06529dbcafbd30289b64cf63c643182abe059f4291285ece8384451a893c",
+      "image_sha256": "9bf477d5c2da65cf66757f616b89537436234cc24e8adc3649cf4828ddf17a0f",
+      "abi_tag": 2715889852
+    },
+    "load_receipt": {
+      "path": "build/operations/20261012T145655015689Z-run/result.json",
+      "bytes": 2464,
+      "sha256": "461d19a57b99703489cfe3bf8ef50caba2cec56b249d48be1f9efd923c8c07fc"
+    },
+    "clock_hz": 60000000,
+    "ddr_clock_hz": 120000000,
+    "boot_mode": "rom",
+    "l2_size_bytes": 16384,
+    "resources": {
+      "Logic": {
+        "used": 18946,
+        "available": 20736
+      },
+      "Register": {
+        "used": 10508,
+        "available": 16173
+      },
+      "CLS": {
+        "used": 10118,
+        "available": 10368
+      },
+      "I/O Port": {
+        "used": 139,
+        "available": 207
+      },
+      "IOLOGIC": {
+        "used": 62,
+        "available": 207
+      },
+      "BSRAM": {
+        "used": 40,
+        "available": 46
+      },
+      "PRIMARY": {
+        "used": 8,
+        "available": 8
+      },
+      "LW": {
+        "used": 8,
+        "available": 8
+      },
+      "GCLK_PIN": {
+        "used": 6,
+        "available": 8
+      },
+      "CLKDIV": {
+        "used": 1,
+        "available": 8
+      },
+      "DHCEN": {
+        "used": 1,
+        "available": 16
+      },
+      "DLL": {
+        "used": 1,
+        "available": 4
+      },
+      "DQS": {
+        "used": 2,
+        "available": 9
+      },
+      "rPLL": {
+        "used": 3,
+        "available": 4
+      }
+    },
+    "timing": {
+      "setup": 0,
+      "hold": 0
+    },
+    "lcd_post": {
+      "active": 0,
+      "frames": 31155,
+      "completed": 30132,
+      "underflows": 0,
+      "source": {
+        "path": "build/doom-perf-l216k-post-status.log",
+        "bytes": 574,
+        "sha256": "3f9b335e538e78f41f5dcd2179cc31ed80fdad2b003913989b17b0d44bdd6622"
+      }
+    }
+  },
+  "baseline": {
+    "samples": [
+      {
+        "round": 1,
+        "frames": 120,
+        "elapsed_ms": 28761,
+        "fps": 4.172316678835924,
+        "source": {
+          "path": "build/doom-perf-l24k-xip-round1.log",
+          "bytes": 3467,
+          "sha256": "d12532356de80219431c0ff36e32d61871c8ce44a2ee114a81d5775b200d929b"
+        }
+      },
+      {
+        "round": 2,
+        "frames": 120,
+        "elapsed_ms": 28828,
+        "fps": 4.162619675315665,
+        "source": {
+          "path": "build/doom-perf-l24k-xip-round2.log",
+          "bytes": 3464,
+          "sha256": "8d8415c6b8cc37439fddb293510ee675d4c6f469353c69694e2cd154a2473ad3"
+        }
+      },
+      {
+        "round": 3,
+        "frames": 120,
+        "elapsed_ms": 28779,
+        "fps": 4.169707078077765,
+        "source": {
+          "path": "build/doom-perf-l24k-xip-round3.log",
+          "bytes": 3463,
+          "sha256": "9c3b4494230e6da063ec5613ed60bef186e096c2afbde23ef76bf945e2ee9ae2"
+        }
+      }
+    ],
+    "median_elapsed_ms": 28779,
+    "median_fps": 4.169707078077765,
+    "loaded_identity": {
+      "id": "v0.9.1-full-rv32ima-rom0k-l24k-commit-snapshot-4a621a87-913fe5ae",
+      "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.9.1-30a935686925\\full-rv32ima-rom0k-l24k",
+      "boot_mode": "xip",
+      "bitstream_sha256": "4a621a87bdeaef5c6fe024641dc83832326aa8acaf2654e453b8182733741337",
+      "image_sha256": "07060b0cd59b39fb926568e57ae01e079ffdc4745016460c4e48ce75672b0c8e",
+      "abi_tag": 1910112333
+    },
+    "load_receipt": {
+      "path": "build/operations/20261012T150037568025Z-run/result.json",
+      "bytes": 2407,
+      "sha256": "73839ebb0e0bb009c27b97dbd32993a389a3e3102b7672ef155988b6c53c24a7"
+    },
+    "clock_hz": 60000000,
+    "ddr_clock_hz": 120000000,
+    "boot_mode": "xip",
+    "l2_size_bytes": 4096,
+    "resources": {
+      "Logic": {
+        "used": 18915,
+        "available": 20736
+      },
+      "Register": {
+        "used": 10591,
+        "available": 16173
+      },
+      "CLS": {
+        "used": 10048,
+        "available": 10368
+      },
+      "I/O Port": {
+        "used": 139,
+        "available": 207
+      },
+      "IOLOGIC": {
+        "used": 62,
+        "available": 207
+      },
+      "BSRAM": {
+        "used": 32,
+        "available": 46
+      },
+      "PRIMARY": {
+        "used": 8,
+        "available": 8
+      },
+      "LW": {
+        "used": 8,
+        "available": 8
+      },
+      "GCLK_PIN": {
+        "used": 6,
+        "available": 8
+      },
+      "CLKDIV": {
+        "used": 1,
+        "available": 8
+      },
+      "DHCEN": {
+        "used": 1,
+        "available": 16
+      },
+      "DLL": {
+        "used": 1,
+        "available": 4
+      },
+      "DQS": {
+        "used": 2,
+        "available": 9
+      },
+      "rPLL": {
+        "used": 3,
+        "available": 4
+      }
+    },
+    "timing": {
+      "setup": 0,
+      "hold": 0
+    },
+    "lcd_post": {
+      "active": 0,
+      "frames": 14567,
+      "completed": 13541,
+      "underflows": 73,
+      "source": {
+        "path": "build/doom-perf-l24k-xip-post-status.log",
+        "bytes": 574,
+        "sha256": "eecddd6d592410f93a59b55e8f3e69021ae52372163f7c7a1c6abcf591494b6f"
+      }
+    }
+  },
+  "fps_change_percent": 26.467744770609936,
+  "elapsed_change_percent": -20.928454776051986,
+  "limitations": [
+    "Baseline XIP versus candidate integrated 8 KiB ROM; generated BIOS identities also differ.",
+    "Matched 4 KiB ROM control passed PnR with place4 but failed two board startup attempts.",
+    "Candidate cache suite rejects non-4-KiB L2 before execution; not counted as passed.",
+    "LCD counts are cumulative since FPGA reset across load/idle/game activity, not exclusive timedemo windows.",
+    "Operator-selected file association and programming/upload logs; no independent device bitstream readback."
+  ],
+  "bios_benchmarks": {
+    "candidate_all": {
+      "source": {
+        "path": "build/doom-perf/l216k-all/results.json",
+        "bytes": 18124,
+        "sha256": "e04e66106a25a5ed018b88d9bbfa98fcd47c37573c1854dae9d2492637c67d97"
+      },
+      "rows": 66,
+      "rounds": 3,
+      "raw_identity": {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261012T142723996204Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-l2-16k-p2",
+        "bitstream_sha256": "c3eb06529dbcafbd30289b64cf63c643182abe059f4291285ece8384451a893c",
+        "image_sha256": "9bf477d5c2da65cf66757f616b89537436234cc24e8adc3649cf4828ddf17a0f",
+        "association": "operator-selected loaded build; no device bitstream readback"
+      },
+      "association": "candidate recorded identity; baseline separate exact load receipt records hardware and override firmware"
+    },
+    "baseline_all": {
+      "source": {
+        "path": "build/doom-perf/l24k-xip-all/results.json",
+        "bytes": 17714,
+        "sha256": "f47373fe4f3c40e0c9a4f14cb5bcbab1900f101c5e603c7e9e72bd25334d5a26"
+      },
+      "rows": 66,
+      "rounds": 3,
+      "raw_identity": null,
+      "association": "candidate recorded identity; baseline separate exact load receipt records hardware and override firmware"
+    },
+    "baseline_cache": {
+      "source": {
+        "path": "build/doom-perf/l24k-xip-cache/results.json",
+        "bytes": 9789,
+        "sha256": "e0c4b1cd0f7c7fb6ee2c880ea134b0d36e8858d800ddeee5637d5b27f89793bb"
+      },
+      "rows": 24,
+      "rounds": 3,
+      "raw_identity": null,
+      "association": "candidate recorded identity; baseline separate exact load receipt records hardware and override firmware"
+    }
+  },
+  "all_comparisons": [
+    {
+      "name": "cpu.mul-add",
+      "size": 2,
+      "metric": "cycles_per_iteration",
+      "baseline_median": 40.08134,
+      "candidate_median": 40.14045,
+      "change_percent": 0.14747510936512498,
+      "samples_each": 3
+    },
+    {
+      "name": "cpu.xorshift",
+      "size": 6,
+      "metric": "cycles_per_iteration",
+      "baseline_median": 45.313498,
+      "candidate_median": 45.3518,
+      "change_percent": 0.08452669003835567,
+      "samples_each": 3
+    },
+    {
+      "name": "io.flash-read",
+      "size": 65536,
+      "metric": "MiB_per_second",
+      "baseline_median": 0.5320989017194883,
+      "candidate_median": 0.5404359199365081,
+      "change_percent": 1.5668174074553676,
+      "samples_each": 3
+    },
+    {
+      "name": "io.rgb-fill16",
+      "size": 261120,
+      "metric": "MiB_per_second",
+      "baseline_median": 6.417603302306383,
+      "candidate_median": 6.399363314712396,
+      "change_percent": -0.2842180598391364,
+      "samples_each": 3
+    },
+    {
+      "name": "io.sd-read",
+      "size": 512,
+      "metric": "MiB_per_second",
+      "baseline_median": 0.501279897074538,
+      "candidate_median": 0.5605532249257652,
+      "change_percent": 11.824397546589328,
+      "samples_each": 3
+    },
+    {
+      "name": "io.sd-read",
+      "size": 4096,
+      "metric": "MiB_per_second",
+      "baseline_median": 1.7684816426742165,
+      "candidate_median": 1.908286176136404,
+      "change_percent": 7.905342644709701,
+      "samples_each": 3
+    },
+    {
+      "name": "io.uart-tx",
+      "size": 4096,
+      "metric": "MiB_per_second",
+      "baseline_median": 0.01097660885238975,
+      "candidate_median": 0.010977393898540825,
+      "change_percent": 0.007151991672782465,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.chase32",
+      "size": 1048576,
+      "metric": "ns_per_load",
+      "baseline_median": 2137.2655232747397,
+      "candidate_median": 2107.2977701822915,
+      "change_percent": -1.4021539563568775,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.copy32",
+      "size": 1024,
+      "metric": "MiB_per_second",
+      "baseline_median": 24.808016958760394,
+      "candidate_median": 25.82077798004054,
+      "change_percent": 4.082394102534304,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.copy32",
+      "size": 4096,
+      "metric": "MiB_per_second",
+      "baseline_median": 5.267838415378015,
+      "candidate_median": 5.500175913959648,
+      "change_percent": 4.410490228845809,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.copy32",
+      "size": 65536,
+      "metric": "MiB_per_second",
+      "baseline_median": 5.306175619025081,
+      "candidate_median": 5.394242724739885,
+      "change_percent": 1.6597095919524962,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.copy32",
+      "size": 1048576,
+      "metric": "MiB_per_second",
+      "baseline_median": 5.310895860501885,
+      "candidate_median": 5.383114944845951,
+      "change_percent": 1.359828666217533,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.libc-copy",
+      "size": 1048576,
+      "metric": "MiB_per_second",
+      "baseline_median": 5.286351530218151,
+      "candidate_median": 5.352757896990634,
+      "change_percent": 1.25618522326576,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.libc-set",
+      "size": 1048576,
+      "metric": "MiB_per_second",
+      "baseline_median": 8.517484905952061,
+      "candidate_median": 7.807056407934312,
+      "change_percent": -8.34082485454477,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.read32",
+      "size": 1024,
+      "metric": "MiB_per_second",
+      "baseline_median": 19.80013087886511,
+      "candidate_median": 20.132464908274812,
+      "change_percent": 1.6784435994028568,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.read32",
+      "size": 4096,
+      "metric": "MiB_per_second",
+      "baseline_median": 12.135870782102261,
+      "candidate_median": 12.977934051330324,
+      "change_percent": 6.938630810653668,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.read32",
+      "size": 65536,
+      "metric": "MiB_per_second",
+      "baseline_median": 8.71224458058456,
+      "candidate_median": 8.937883053460904,
+      "change_percent": 2.589900579457849,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.read32",
+      "size": 1048576,
+      "metric": "MiB_per_second",
+      "baseline_median": 8.713201065973019,
+      "candidate_median": 8.935367360502907,
+      "change_percent": 2.5497666454352474,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.write32",
+      "size": 1024,
+      "metric": "MiB_per_second",
+      "baseline_median": 23.171945879603204,
+      "candidate_median": 24.031981761327977,
+      "change_percent": 3.7115393165224386,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.write32",
+      "size": 4096,
+      "metric": "MiB_per_second",
+      "baseline_median": 22.07606233691309,
+      "candidate_median": 24.080331987510338,
+      "change_percent": 9.078927301477746,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.write32",
+      "size": 65536,
+      "metric": "MiB_per_second",
+      "baseline_median": 8.562435567672354,
+      "candidate_median": 7.819757712627032,
+      "change_percent": -8.673675254845914,
+      "samples_each": 3
+    },
+    {
+      "name": "mem.write32",
+      "size": 1048576,
+      "metric": "MiB_per_second",
+      "baseline_median": 8.565041497626055,
+      "candidate_median": 7.826564376948733,
+      "change_percent": -8.621991158851984,
+      "samples_each": 3
+    }
+  ],
+  "final_restore": {
+    "path": "build/operations/20261012T150549423722Z-run/result.json",
+    "bytes": 2464,
+    "sha256": "55de5df503a7b921e4c028e4530015405162d70a61b6ce4b272820c0893f54b6"
+  },
+  "normal_doom_restart": {
+    "path": "build/doom-l216k-final-live.log",
+    "bytes": 3468,
+    "sha256": "9037be3a660e1a3b8f402be47f92a821a1bba46f57e85485dc1afb78b27a3662"
+  },
+  "frame_comparison": {
+    "path": "build/doom-l216k-matched-diff.log",
+    "bytes": 189,
+    "sha256": "5a381e775acf09d6d194a78309a36fd5c9ff81bd136545fa2f52a82b07e1d45c"
+  },
+  "baseline_firmware_override": {
+    "path": "build/runs/20261011T144208227286Z-62dca7a-dirty-full-rv32ima-rom0k-l24k-doom-bios-filecmds2/firmware/app.img",
+    "bytes": 122756,
+    "sha256": "07060b0cd59b39fb926568e57ae01e079ffdc4745016460c4e48ce75672b0c8e"
+  }
+}

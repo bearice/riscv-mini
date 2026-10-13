@@ -65,9 +65,11 @@ def add_ddr_init_exceptions(platform, with_video=False,usb_backend="ultra"):
             stream.write('set_false_path -to [get_pins {ddrphy/DQS/HOLD ddrphy/DQS_1/HOLD *DQS*/HOLD}]\n')
             if with_video:
                 pairs=re.findall(r'\b(\w+)\s*<=\s*(\w+)\s*;',rtl)
+                # Memory-backed RGBLCD changes Migen's inferred prefix from
+                # rgb_lcd to rgblcd. Both spellings designate this module only.
                 stages=[dest for dest,src in pairs if src=='lcd_video_enable' or
-                    re.fullmatch(r'rgb_lcd_(?:cdc_(?:cdc_)?graycounter[01]_q|(?:start|done|error)_toggle_i)',src)]
-                if len(stages)!=6: raise ValueError(f'Unexpected LCD CDC first stages: {stages}')
+                    re.fullmatch(r'(?:rgb_lcd|rgblcd)_(?:cdc_(?:cdc_)?graycounter[01]_q|(?:start|done|error)_toggle_i|format_storage|selected_bank|window_(?:start|end)_storage)',src)]
+                if len(stages)!=10: raise ValueError(f'Unexpected LCD CDC first stages: {stages}')
                 stream.write('# LCD CDC: only async first-stage D pins; second stages stay timed.\n')
                 stream.write('set_false_path -through [get_nets {lcd_video_async_reset}]\n')
                 declarations={name:int(msb)+1 for msb,name in re.findall(r'reg\s+\[(\d+):0\]\s+(\w+)',rtl)}

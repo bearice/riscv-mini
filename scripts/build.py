@@ -121,7 +121,7 @@ def main():
         group.add_argument('--with-'+flag,dest=name,action='store_true',default=None)
         group.add_argument('--without-'+flag,dest=name,action='store_false')
     p.add_argument('--synthesize',action='store_true')
-    p.add_argument('--l2-size',type=int,choices=(4096,8192),default=4096,help='Shared writeback cache bytes; >=4 KiB required for boot RAM')
+    p.add_argument('--l2-size',type=int,choices=(4096,8192,16384),default=4096,help='Shared writeback cache bytes; >=4 KiB required for boot RAM')
     p.add_argument('--rom-size',type=int,choices=(4096,8192),default=8192,help='Boot ROM address window in bytes; linker rejects overflow')
     p.add_argument('--boot-mode',choices=('rom','xip'),default='xip',help='Execute boot code from ROM or mapped Flash')
     p.add_argument('--without-compressed',action='store_true',help='Reject CPU RTL with the C extension')

@@ -27,6 +27,8 @@ def main():
                         help='Enable the RISC-V C compressed instruction extension')
     parser.add_argument('--pipelined-fetch', action='store_true',
                         help='Use a two-cycle I-cache and an instruction injector register')
+    parser.add_argument('--arithmetic-matrix', action='store_true',
+                        help='Generate MMU/no-FPU CPUs for all four single-cycle shift/multiply combinations')
     args = parser.parse_args()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -85,13 +87,16 @@ def main():
     repositories = output/'repositories'
     repositories.write_text('[repositories]\nlocal\nmaven-central: https://repo.maven.apache.org/maven2/\n')
     pipeline = ' --relaxedPcCalculation true' if args.relaxed_pc_calculation else ''
-    variants = [('all','false','VexRiscv_Base'), ('all','true','VexRiscv_Fpu'),
-                ('linux','false','VexRiscv_Mmu'), ('linux','true','VexRiscv_MmuFpu')]
+    variants = [('all','false','VexRiscv_Base',False,False), ('all','true','VexRiscv_Fpu',False,False),
+                ('linux','false','VexRiscv_Mmu',False,False), ('linux','true','VexRiscv_MmuFpu',False,False)]
+    if args.arithmetic_matrix:
+        variants = [('linux','false',f'VexRiscv_Mmu_s{int(shift)}m{int(mul)}',shift,mul)
+                    for shift,mul in ((False,False),(True,False),(False,True),(True,True))]
     commands = [
         f'runMain vexriscv.GenCoreDefault --csrPluginConfig {csr} --iCacheSize 2048 '
-        '--dCacheSize 2048 --singleCycleMulDiv false --singleCycleShift false '
+        f'--dCacheSize 2048 --singleCycleMulDiv {str(mul).lower()} --singleCycleShift {str(shift).lower()} '
         f'--fpu {fpu} --compressedGen {str(args.compressed).lower()}{pipeline} --outputFile {name}'
-        for csr, fpu, name in variants
+        for csr, fpu, name, shift, mul in variants
     ]
     java_tmp = output/'java-tmp'
     java_tmp.mkdir(exist_ok=True)
@@ -115,11 +120,12 @@ def main():
                   (base/'src/main/scala/vexriscv/GenCoreDefault.scala').read_bytes()).hexdigest()}
     report['pipeline'].update(two_cycle_icache=args.pipelined_fetch or not args.compressed,
                               injector_register=args.pipelined_fetch)
-    for csr, fpu, name in variants:
+    for csr, fpu, name, shift, mul in variants:
         path = output/(name+'.v')
         report['cpu_rtls'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                                   'mmu':csr=='linux','fpu':fpu=='true','dcache':True,
-                                  'compressed':args.compressed,'bitmanip':[]}
+                                  'compressed':args.compressed,'bitmanip':[],
+                                  'single_cycle_shift':shift,'single_cycle_muldiv':mul}
     (output/'generator.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

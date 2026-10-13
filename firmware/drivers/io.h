@@ -19,6 +19,11 @@ int sd_mount(void);
 int sd_list(void);
 
 int video_init(void);
+unsigned video_format(void);
+int video_configure(unsigned indexed);
+int video_palette(uint16_t *table,unsigned bank,unsigned count,unsigned readback);
+int video_present_indexed(unsigned slot,unsigned bank);
+int video_window(unsigned x0,unsigned y0,unsigned x1,unsigned y1);
 int video_set_buffers(uint16_t *first,uint16_t *second);
 volatile uint16_t *video_frame(unsigned slot);
 int video_present(unsigned slot);

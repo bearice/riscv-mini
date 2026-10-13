@@ -170,7 +170,12 @@ int bios_mouse_take(struct bios_mouse *event) {
 }
 
 int bios_video_mode(unsigned m) {
-  if(m>1||!video)return -1;
+  if(m>2||!video)return -1;
+  unsigned indexed=(m==BIOS_GRAPHICS_INDEX8);
+  if((hal_video_format()==8)!=indexed) {
+    if(hal_video_configure(indexed)!=HAL_OK)return -1;
+    slot=0;
+  }
   mode=m;
   if(!mode) {tests_video_stop();dirty=1;}
   return 0;

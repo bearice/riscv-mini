@@ -87,6 +87,11 @@ hal_result_t hal_spi_lcd_link(unsigned up) {return result(lcd_link(!!up));}
 #endif
 #if MINI_FEATURE_VIDEO
 hal_result_t hal_video_init(void) {return result(video_init());}
+unsigned hal_video_format(void) {return video_format();}
+hal_result_t hal_video_configure(unsigned indexed) {return result(video_configure(indexed));}
+hal_result_t hal_video_palette(uint16_t *table,unsigned bank,unsigned count,unsigned readback) {return result(video_palette(table,bank,count,readback));}
+hal_result_t hal_video_present_indexed(unsigned slot,unsigned bank) {return result(video_present_indexed(slot,bank));}
+hal_result_t hal_video_window(unsigned x0,unsigned y0,unsigned x1,unsigned y1) {return result(video_window(x0,y0,x1,y1));}
 hal_result_t hal_video_set_buffers(uint16_t *first,uint16_t *second) {return result(video_set_buffers(first,second));}
 #endif
 #if MINI_FEATURE_VIDEO

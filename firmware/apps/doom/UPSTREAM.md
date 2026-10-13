@@ -11,9 +11,9 @@
 | 文件 | 改动 | 原因 |
 | --- | --- | --- |
 | `dg_bios.c` | 新增：本平台层（`DG_Init/DG_DrawFrame/DG_SleepMs/DG_GetTicksMs/DG_GetKey`、HID usage→doomkeys、F12 退出、每 100 帧 UART 心跳） | BIOS 只提供 ecall 服务，没有 SDL/POSIX 显示与输入 |
-| `shim.c`、`shim_private.h`、`shim_include/` | 新增：最小 libc（stdio/stdlib/string/ctype/errno/math 等），控制台走 `WRITE`，文件走 `FS_*`，48 MiB 静态堆，`exit()` 用自写 `setjmp/longjmp` 回到 `payload_main` | 裸机 `-nostdlib`，没有 libc |
+| `shim.c`、`shim_private.h` | CRC、进度和调试钩子，移除原手写 libc 与替代头文件 | 标准函数改用静态 Newlib，平台 syscall 由 `firmware/libc/` 共用 runtime 适配 |
 | `doomfeatures.h` | `FEATURE_SOUND` 关闭；`i_sound.c` 里对 doomgeneric 的引用同步处理 | 板上没有声音后端（`-nosound/-nomusic/-nosfx` 也默认传入） |
-| `i_video.c` | 默认色深改为 `rgb565` | 面板就是 480×272 RGB565，避免每次启动靠参数纠正 |
+| `i_video.c` | INDEX8 构建按行复制索引并上传硬件调色板；显式 RGB565 构建保留转换路径 | 当前已验收默认使用调色板扫描，旧格式继续用于兼容和对照 |
 | `i_system.c` | 去掉 GUI 错误弹窗路径 | 裸机没有终端弹窗，错误只能走 UART |
 | `d_loop.c` | `extern boolean net_client_connected; extern boolean drone;` 取代网络头文件 | 网络模块被裁掉，符号仍被引用 |
 | `m_argv.c` | `M_CheckParmWithArgs` 的边界保持 `i < myargc - num_args`（原样，加注释说明） | 改成 `<=` 会读 `myargv[myargc]`，在板上是 load access fault |

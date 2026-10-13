@@ -1,4 +1,4 @@
-"""Check libc semantics used by DOOM's wall projection, with the real shim header."""
+"""Check the libc semantics used by DOOM's wall projection on RV32."""
 import json
 import os
 from pathlib import Path
@@ -58,9 +58,8 @@ int main(void) {
                 with self.subTest(optimization=optimization):
                     compiled = subprocess.run([CC, optimization, '-march=rv32im', '-mabi=ilp32',
                                     '-ffreestanding', '-nostdlib', '-fno-builtin',
-                                    '-Wl,--no-relax', '-T', str(linker), '-I',
-                                    str(ROOT / 'firmware/apps/doom/shim_include'),
-                                    str(c), '-o', str(exe)],
+                                    '-Wl,--no-relax', '-T', str(linker),
+                                    str(c), '-lc', '-lgcc', '-o', str(exe)],
                                    capture_output=True, text=True, env=env)
                     self.assertEqual(compiled.returncode, 0, compiled.stderr)
                     result = subprocess.run([str(QEMU), '-machine', 'virt', '-bios',

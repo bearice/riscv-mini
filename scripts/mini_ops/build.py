@@ -31,13 +31,22 @@ def invocation(args):
         if args.app:command+=['--app',str(args.app.resolve())]
     else:
         template=Build(args.template)
-        v=template.validation
+        v=dict(template.validation)
+        if args.l2_size is not None:v['l2_size_bytes']=args.l2_size
+        if args.place_option is not None:v['place_option']=args.place_option
+        if args.route_option is not None:v['route_option']=args.route_option
+        if args.boot_mode is not None:
+            v['boot_mode']=args.boot_mode
+            if args.boot_mode=='rom' and not v['rom_size_bytes']:v['rom_size_bytes']=8192
         app=args.app or Path(v.get('application_source',''))
         if not app.is_file():raise ValueError('Template application source missing; select --app')
         cpu=Path(v.get('cpu_verilog',''))
         if not cpu.is_file():raise ValueError('Template CPU RTL missing; reproduce the template first')
         command=configuration_arguments(v,app,cpu,args.purpose)
     if args.synthesize:command.append('--synthesize')
+    if args.minimal:
+        if args.l2_size is not None:command+=['--l2-size',str(args.l2_size)]
+        if args.boot_mode is not None:command+=['--boot-mode',args.boot_mode]
     return [sys.executable,str(ROOT/'scripts/build.py'),*command]
 
 
@@ -47,10 +56,11 @@ def perform(args):
     try:
         command=invocation(args)
         if args.minimal:
-            configuration=('minimal','rv32im',8192,4096)
+            configuration=('minimal','rv32im',0 if args.boot_mode=='xip' else 8192,args.l2_size or 4096)
         else:
             v=Build(args.template).validation
-            configuration=(v['profile'],v['isa'],v['rom_size_bytes'],v['l2_size_bytes'])
+            mode=args.boot_mode or v.get('boot_mode','rom')
+            configuration=(v['profile'],v['isa'],0 if mode=='xip' else (v['rom_size_bytes'] or (8192 if args.boot_mode=='rom' else 4096)),args.l2_size or v['l2_size_bytes'])
         output,_=run_path(*configuration,args.purpose)
         command+=['--output-dir',str(output)]
         operation.report['command']=command

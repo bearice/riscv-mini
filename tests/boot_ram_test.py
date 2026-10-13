@@ -74,5 +74,5 @@ def exercise(size):
             yield cache.reset.eq(0);traffic.clear()
     run_simulation(dut,[drive(),memory()])
 
-for size in (4096,8192):exercise(size)
-print('Boot RAM isolation / byte lanes / dirty handoff / reset PASS (4/8 KiB)')
+for size in (4096,8192,16384):exercise(size)
+print('Boot RAM isolation / byte lanes / dirty handoff / reset PASS (4/8/16 KiB)')

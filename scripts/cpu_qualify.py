@@ -49,6 +49,9 @@ def main():
                         help='Gowin PnR routing algorithm (default: timing priority)')
     parser.add_argument('--synthesis-only', action='store_true',
                         help='Run synthesis without placement and routing')
+    parser.add_argument('--l2-size', type=int, choices=(4096,8192,16384), default=4096)
+    parser.add_argument('--rom-size', type=int, choices=(4096,8192), default=8192)
+    parser.add_argument('--boot-mode', choices=('rom','xip'), default='rom')
     args = parser.parse_args()
     args.audio_clock = "dds" if args.audio_clock == "sys" else args.audio_clock
     output = args.output_dir.resolve()
@@ -75,6 +78,7 @@ def main():
         'pnr_route_option':args.route_option,
         'pipeline_configuration':json.loads((cpu.parent/'generator.json').read_text()).get('pipeline'),
         'sys_hz': 60000000, 'ddr_hz': 120000000,
+        'l2_size_bytes':args.l2_size,'rom_size_bytes':args.rom_size,'boot_mode':args.boot_mode,
         'rom_source': str(args.rom.resolve()), 'rom_sha256': hashlib.sha256(rom).hexdigest(),
         'software_adapted': False, 'board_test': 'not performed',
         'purpose': 'resource and timing qualification only; not a deployable build',
@@ -85,7 +89,8 @@ def main():
     os.environ['PATH'] = str(Path(local['gowin']).parent)+os.pathsep+os.environ['PATH']
     try:
         soc = MiniSoC(rom_data=data, features=features,
-                      cpu_variant=args.cpu_variant, cpu_verilog=cpu,usb_backend=args.usb_backend,sd_backend=args.sd_backend,sd_profile=args.sd_profile,audio_clock=args.audio_clock)
+                      cpu_variant=args.cpu_variant, cpu_verilog=cpu,usb_backend=args.usb_backend,sd_backend=args.sd_backend,sd_profile=args.sd_profile,audio_clock=args.audio_clock,
+                      l2_size=args.l2_size,rom_size=args.rom_size,boot_mode=args.boot_mode)
         if args.retiming:soc.platform.toolchain.options['retiming']='1'
         if args.pipelining:soc.platform.toolchain.options['pipe']='1'
         soc.platform.toolchain.options['retiming_resource']=args.retiming_resource

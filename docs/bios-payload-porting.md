@@ -40,9 +40,11 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 - **文件请用标准接口，不要一个命令一个服务。** 现有 FS 层是 `FS_OPEN/CLOSE/READ/WRITE/SEEK/STAT/MKDIR/UNLINK/RENAME`（服务号 22–30，`open(2)` 风格 `BIOS_FS_O_*` 标志，句柄是 BIOS 侧 0..5）。`FILE_READ`/`FILE_SIZE` 只是它的兼容薄封装。只提供“按路径+偏移读一次”的服务，会让每个应用自己发明打开/定位/关闭，还会诱导出下面坑 5 那种缓存。
 - **原始按键用 `KEY`（20），不要解析 TTY 字节流。** `KEY` 给 HID usage 的按下/松开事件（含修饰键、自动重复），游戏类程序需要 key-up；TTY 队列（`GETC`）是文字终端的字节流，仅供日志/命令行。
 
-## 3. 运行时：自己带 libc 时最容易死人的地方
+## 3. 运行时：标准 libc 与历史手写 shim 的教训
 
-用 `-nostdlib -ffreestanding` 时，编译器仍会要 `memcpy/memset/strlen` 等（仓库里 `firmware/drivers/string.c` 已经提供，`bios_payload.py --helper string`），其余要自己实现。真实踩过的坑：
+复杂 C app 使用 [静态 Newlib 运行库](payload-libc.md)，通过 `bios_payload.py --libc newlib` 构建；BIOS 不需要链接 Newlib。以下保留旧手写 shim 的历史教训。
+
+旧的 `-nostdlib -ffreestanding` 模式下，编译器仍会要 `memcpy/memset/strlen` 等（仓库里 `firmware/drivers/string.c` 已经提供，`bios_payload.py --helper string`），其余要自己实现。真实踩过的坑：
 
 **坑 2（printf 精度）：** 症状 `W_GetNumForName: STCFN33 not found!`（lump 明明存在）。原因是 `printf("%.3d")` 的**整数精度**没实现，`"STCFN%.3d"` 输出成 `STCFN33` 而不是 `STCFN033`。→ 整数精度 = 最少位数、左侧补零；给了精度时忽略 `0` 标志。
 

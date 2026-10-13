@@ -1,0 +1,506 @@
+{
+  "candidate_id": "a50a747-full-rv32ima-rom8k-l28k-doom-palette-l28k-range-p2-702f30b6-9031f6b7",
+  "validation": {
+    "profile": "full",
+    "boot_mode": "rom",
+    "boot_sources": [
+      "flash",
+      "uart"
+    ],
+    "rom_size_bytes": 8192,
+    "sram_size_bytes": 0,
+    "ddr_initialization": "software",
+    "boot_ram_address": 8384512,
+    "boot_ram_size_bytes": 4096,
+    "boot_ram_backend": "pinned-l2",
+    "firmware_bytes": 5508,
+    "firmware_sha256": "6403f36ec564b2fe429931faa6f42773132fe558647b2892399ab8e15c08146b",
+    "firmware_sizes": {
+      "boot": {
+        "text": 5508,
+        "data": 0,
+        "bss": 4,
+        "binary_bytes": 5508
+      },
+      "app": {
+        "text": 122884,
+        "data": 128,
+        "bss": 1116492,
+        "binary_bytes": 123012
+      }
+    },
+    "cpu_variant": "linux",
+    "cpu_verilog": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\cpu-arithmetic-matrix\\VexRiscv_Mmu_s1m1.v",
+    "isa": "rv32ima_zicsr_zifencei",
+    "abi": "ilp32",
+    "cpu_capabilities": {
+      "mmu": true,
+      "fpu": false,
+      "dcache": true,
+      "compressed": false,
+      "bitmanip": [],
+      "high_mmio_xip": true
+    },
+    "l2_size_bytes": 8192,
+    "memory_system": "shared-writeback",
+    "memory_port_widths": {
+      "wishbone": 32,
+      "video": 16,
+      "sd": 32,
+      "eth": 32
+    },
+    "memory_burst_bytes": 16,
+    "dma_backend": "native",
+    "native_dma_clients": [
+      "sd",
+      "eth"
+    ],
+    "ethernet_dma_backend": "native-descriptor-ring",
+    "l2_policy": "write-back",
+    "sd_profile": "lite",
+    "audio_clock": "dds",
+    "expected_plls": 3,
+    "audio_reference_hz": 60000000,
+    "audio_sample_rate": 48000,
+    "mic_sample_rate": 48000,
+    "clock_hz": 60000000,
+    "ddr_clock_hz": 120000000,
+    "usb_backend": "ultra",
+    "usb_phy_clock_hz": 60000000,
+    "ulpi_clock_hz": 60000000,
+    "rtl": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261013T042949595152Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-range-p2\\gateware\\riscv_mini.v",
+    "features": {
+      "mmu": true,
+      "fpu": false,
+      "flash": true,
+      "spi_lcd": true,
+      "sd": true,
+      "filesystem": true,
+      "video": true,
+      "board_io": true,
+      "ws2812": true,
+      "audio": true,
+      "mic": true,
+      "mic_stereo": true,
+      "eth": true,
+      "eth_dma": true,
+      "usb": true
+    },
+    "verilog_mode": "hierarchical",
+    "netlist_hierarchy": 0,
+    "rtl_hierarchy": "blocks",
+    "place_option": 2,
+    "route_option": 2,
+    "synthesis_requested": true,
+    "board_test": "not performed",
+    "sd_backend": "native",
+    "application_source": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+    "build_id": "bios-0.10.0+a50a747.bc110e3c.dirty",
+    "component_versions": {
+      "rtl": "0.9.0",
+      "bootloader": "0.9.1",
+      "hal": "0.9.1",
+      "bios": "0.10.0",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "app_component": "bios",
+    "rtl_sha256": "7914f555311780e7aced3d2900458787b335b3b43340a859d3c26b1f12d8a36a",
+    "config_sha256": "bc110e3c75560746c3eb66c97b631a316aa7d1f4d40b4910e22de7e811f381fe",
+    "boot_image": {
+      "abi_tag": 3095511412,
+      "flash_offset": 2097152,
+      "load_address": 8388608,
+      "entry": 8388608,
+      "image_bytes": 123060,
+      "sha256": "3b010a9302fc01edc749c4f11f2cbfaa37198c83003b1b4798057345dc46b679"
+    },
+    "rtl_manifest": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261013T042949595152Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-range-p2\\gateware\\rtl-manifest.json",
+    "rtl_modules": 32,
+    "bitstream": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261013T042949595152Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-range-p2\\gateware\\riscv_mini.fs",
+    "bitstream_sha256": "702f30b607294712780051270470f927bf787cdfb0b8e9851ef6a1673b9a63cb",
+    "timing_violated_endpoints": {
+      "setup": 0,
+      "hold": 0
+    },
+    "resources": {
+      "Logic": {
+        "used": 18877,
+        "available": 20736
+      },
+      "Register": {
+        "used": 10701,
+        "available": 16173
+      },
+      "CLS": {
+        "used": 10083,
+        "available": 10368
+      },
+      "I/O Port": {
+        "used": 139,
+        "available": 207
+      },
+      "IOLOGIC": {
+        "used": 62,
+        "available": 207
+      },
+      "BSRAM": {
+        "used": 37,
+        "available": 46
+      },
+      "PRIMARY": {
+        "used": 8,
+        "available": 8
+      },
+      "LW": {
+        "used": 8,
+        "available": 8
+      },
+      "GCLK_PIN": {
+        "used": 6,
+        "available": 8
+      },
+      "CLKDIV": {
+        "used": 1,
+        "available": 8
+      },
+      "DHCEN": {
+        "used": 1,
+        "available": 16
+      },
+      "DLL": {
+        "used": 1,
+        "available": 4
+      },
+      "DQS": {
+        "used": 2,
+        "available": 9
+      },
+      "rPLL": {
+        "used": 3,
+        "available": 4
+      }
+    }
+  },
+  "measurements": {
+    "rgb": {
+      "elapsed_ms": [
+        20954,
+        20938,
+        20938
+      ],
+      "median_ms": 20938,
+      "fps": 5.7312064189511895,
+      "payload": {
+        "path": "build\\doom-benchmark\\BOOT.RPB",
+        "bytes": 541764,
+        "sha256": "00f02ffaa7415f0b62b21a91f6fd1ea67737792db49a53fb80ce233ce1c58adf"
+      }
+    },
+    "index": {
+      "elapsed_ms": [
+        16449,
+        16449,
+        16383
+      ],
+      "median_ms": 16449,
+      "fps": 7.2952763085901875,
+      "payload": {
+        "path": "build\\doom-palette-benchmark\\BOOT.RPB",
+        "bytes": 541460,
+        "sha256": "bc0373cbb62f02c5ad2eefb683d754abde32ad740b428608f5bd1ce1989b958b"
+      }
+    }
+  },
+  "inputs": {
+    "build\\doom-palette-rgb-round1.log": "8ed001c583349f343357ca98e93b6feb0c1dae4319b6b17e7a02785f0e28596c",
+    "build\\doom-palette-rgb-round2.log": "3aabc0d3d16c5b52dee77257955ab88c948c2244b81637fd14dbce204ba00b79",
+    "build\\doom-palette-rgb-round3.log": "a3583dc7701a35ed5ee739e0429185c28b7d0beb0a8aa55e6d6bc4e95099a8da",
+    "build\\doom-palette-index-round1.log": "b0fb7c8f5696a2ceb5de286d69a014c627effaba42ebbf9d3577f437e6c7c68a",
+    "build\\doom-palette-index-round2.log": "26f4bb741a2907033fbd009c6f7ff81592b54f8d836b8354a5135c1e158b88b9",
+    "build\\doom-palette-index-round3.log": "09528f57e93f284f8ab1917986b1cb7485509d162d96ea4fed428a2a7a358d2e",
+    "build\\doom-palette-rgb-validation.log": "6dfc031deaa51891e86e1f136d9bdc69b68f71eeb5b8024359d6c160dff3a758",
+    "build\\doom-palette-index-validation.log": "b6b4a590949f6a5ac1a30d7722c72c428fdabdd0fa15478d63de478bf79d50c6",
+    "build\\doom-palette-pre-status.log": "ce23eeaa380b9cee63611436314d528dc107d219889cd543048e466b3d197277",
+    "build\\doom-palette-post-status.log": "aa142aa83249dee2f4556a70863d4087687c141658a6892d55dfad20a71852b7",
+    "build\\doom-perf\\palette-l28k-all\\results.json": "49dd6829890945e84f237c6328284ceb1b79d1bf2ccfe518b49d3f1f7f213044",
+    "build\\operations\\20261013T043541099542Z-verify\\firmware-verification.json": "30ac4778081692b6ff0574153fdf840fab802da3b4674210e221050a6a807c0b",
+    "build/runs/20261012T171245687746Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-p3/gateware/impl/pnr/project.log": "255bcb5da210c4f7a72a7b4e9d56639a04858ded49fbfa42ace756487b064715",
+    "build/runs/20261012T171518576163Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-writefirst-p3/gateware/impl/pnr/project.log": "2928fffdfbe2436845b6386d814f62abba52d34e55bbcc0ad016de8b9b3d8843",
+    "build/runs/20261012T171736295756Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-nochange-p3/gateware/impl/pnr/project.log": "94321db1b28d4f2f5a9b1369cff61036f584e3f2df4d2b38d7513571dc3af373",
+    "build/runs/20261012T172225298887Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-nochange-p2/gateware/impl/pnr/project.log": "c7e96f800bfa0bb404dc66d9019fbf101822910969b875350284fe463c86d8f5",
+    "build/runs/20261012T172846341982Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-window-p4/gateware/impl/pnr/project.log": "864283bd6c449362cfd67f81bf518f35849b5d7563a850380ec8ccf7d2472c06",
+    "build/runs/20261012T173706619071Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-p3/gateware/impl/pnr/project.log": "efc428f22682c74b39706f4df9ec078726f666b0bb6d946c6636c042bfb1eee4",
+    "build/runs/20261013T042949595152Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-range-p2/gateware/impl/pnr/project.log": "a8be4b72e9711497b5bc498248d64bcd3b6cf45260d0e949206121d28f1dc082",
+    "build/runs/20261013T044044329303Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-l216k-range-p2/gateware/impl/pnr/project.log": "c079c821acececdae849fc0787075bb793adacdc71802f431d0b1cc785e93761",
+    "build/doom-palette-frame1/scanindex8-320x200.png": "23169b0fba45915e73636fcaf642a973bf3dde71dfa38fcb88a88a7f153295b2",
+    "build/doom-palette-frame2/scanindex8-320x200.png": "305bc13b2debca12a75d952ce8b6cf400dcc3fda39791a82f4de1111e0bb575d",
+    "build/doom-palette-frame3-retry/scanindex8-320x200.png": "f78ebbd8a590b3be9e10717588001823c28506f1eea74f75741f03416bcfe5e4",
+    "build/doom-palette-frame1.log": "2ccca7afa9a60521cfb87fcad38c95c9916e4ca865427ed9ddb4327b5fd1c86a",
+    "build/doom-palette-frame2.log": "a765b56e1b55800dc4e1a24353cc3d76b6d7d01bfd5e44fdadc644a2cf857a9a",
+    "build/doom-palette-frame3.log": "e79acccf3224fdd1b50c7bab5fa0808701c0366a4eacbc99deef817d198e45c4",
+    "build/doom-palette-noanswer.log": "21533a09f0cb15084fab597a4a5cefd4b3a79cafdad061cf5bc91b80f75a66f4",
+    "build/doom-palette-recovery-status.log": "49824f5a492e9d3ba7161bb7695f9a905716f7a5b2fe03cd803549388181d3e0",
+    "build/doom-palette-frame3-retry.log": "32bf8c0bc4a622c56507a974357260d325ecaf043341208a77ebf63505cc68c4",
+    "build/doom-palette-source3-retry.log": "5abf0a88001a7f89debd6e89d2b6e9a5d7992a296d64045ccbc65b9e220d49a0",
+    "build/doom-palette-resume3-retry.log": "5be2bd85f2ada1a8d2aaaf398f59413f3a21565eb5e3ed6ab9500f51ce604754",
+    "build/doom-palette-frame3-compare.json": "51f684ed62fcba710d1a6d68624febe384f75c0d6e5a9abffe516fc12fa431e3"
+  },
+  "fps_gain_percent": 27.290412791051132,
+  "checks": {
+    "firmware_and_soak60": true,
+    "all_rounds": 3,
+    "all_passed_rows": 66,
+    "lcd_underflows_before": 0,
+    "lcd_underflows_after": 0,
+    "source_crc": "37fa8643",
+    "palette_crc": "d89868c8",
+    "rgb_video_crc": "f90257a0",
+    "index_video_crc": "37fa8643",
+    "mapped565_crc": "f90257a0",
+    "normal_game_frames": 2397,
+    "normal_present_fails": 0
+  },
+  "limitations": [
+    "BIOS cache suite rejects L2 sizes other than4096; unsupported, not passed.",
+    "Same8KiB hardware used for the matched display comparison; CPU matrix used16KiB.",
+    "BIOS reserves510KiB compatibility framebuffer pool; only active INDEX8 scan area halves.",
+    "UART frame dumps are board memory reconstructed through reported palette, not camera observation of LCD pins.",
+    "One short debug state query timed out, subsequent timing response and BIOS status succeeded; exact cause unidentified.",
+    "No Flash write, current pin change, commit or push."
+  ],
+  "attempts": [
+    {
+      "path": "build/runs/20261012T171245687746Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-p3",
+      "unrouted_nets": 0,
+      "error": "GW2A DPB read-first unsupported"
+    },
+    {
+      "path": "build/runs/20261012T171518576163Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-writefirst-p3",
+      "unrouted_nets": 0,
+      "error": "GW2A DPB read-first unsupported"
+    },
+    {
+      "path": "build/runs/20261012T171736295756Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-nochange-p3",
+      "unrouted_nets": 83
+    },
+    {
+      "path": "build/runs/20261012T172225298887Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-nochange-p2",
+      "unrouted_nets": 105
+    },
+    {
+      "path": "build/runs/20261012T172846341982Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-window-p4",
+      "unrouted_nets": 74
+    },
+    {
+      "path": "build/runs/20261012T173706619071Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-p3",
+      "unrouted_nets": 0,
+      "timing": {
+        "setup": 23,
+        "hold": 0
+      },
+      "resources": {
+        "Logic": {
+          "used": 18870,
+          "available": 20736
+        },
+        "Register": {
+          "used": 10701,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10097,
+          "available": 10368
+        },
+        "I/O Port": {
+          "used": 139,
+          "available": 207
+        },
+        "IOLOGIC": {
+          "used": 62,
+          "available": 207
+        },
+        "BSRAM": {
+          "used": 37,
+          "available": 46
+        },
+        "PRIMARY": {
+          "used": 8,
+          "available": 8
+        },
+        "LW": {
+          "used": 8,
+          "available": 8
+        },
+        "GCLK_PIN": {
+          "used": 6,
+          "available": 8
+        },
+        "CLKDIV": {
+          "used": 1,
+          "available": 8
+        },
+        "DHCEN": {
+          "used": 1,
+          "available": 16
+        },
+        "DLL": {
+          "used": 1,
+          "available": 4
+        },
+        "DQS": {
+          "used": 2,
+          "available": 9
+        },
+        "rPLL": {
+          "used": 3,
+          "available": 4
+        }
+      }
+    },
+    {
+      "path": "build/runs/20261013T042949595152Z-a50a747-dirty-full-rv32ima-rom8k-l28k-doom-palette-l28k-range-p2",
+      "unrouted_nets": 0,
+      "timing": {
+        "setup": 0,
+        "hold": 0
+      },
+      "resources": {
+        "Logic": {
+          "used": 18877,
+          "available": 20736
+        },
+        "Register": {
+          "used": 10701,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10083,
+          "available": 10368
+        },
+        "I/O Port": {
+          "used": 139,
+          "available": 207
+        },
+        "IOLOGIC": {
+          "used": 62,
+          "available": 207
+        },
+        "BSRAM": {
+          "used": 37,
+          "available": 46
+        },
+        "PRIMARY": {
+          "used": 8,
+          "available": 8
+        },
+        "LW": {
+          "used": 8,
+          "available": 8
+        },
+        "GCLK_PIN": {
+          "used": 6,
+          "available": 8
+        },
+        "CLKDIV": {
+          "used": 1,
+          "available": 8
+        },
+        "DHCEN": {
+          "used": 1,
+          "available": 16
+        },
+        "DLL": {
+          "used": 1,
+          "available": 4
+        },
+        "DQS": {
+          "used": 2,
+          "available": 9
+        },
+        "rPLL": {
+          "used": 3,
+          "available": 4
+        }
+      }
+    },
+    {
+      "path": "build/runs/20261013T044044329303Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-palette-l216k-range-p2",
+      "unrouted_nets": 0,
+      "timing": {
+        "setup": 26,
+        "hold": 0
+      },
+      "resources": {
+        "Logic": {
+          "used": 18872,
+          "available": 20736
+        },
+        "Register": {
+          "used": 10702,
+          "available": 16173
+        },
+        "CLS": {
+          "used": 10112,
+          "available": 10368
+        },
+        "I/O Port": {
+          "used": 139,
+          "available": 207
+        },
+        "IOLOGIC": {
+          "used": 62,
+          "available": 207
+        },
+        "BSRAM": {
+          "used": 41,
+          "available": 46
+        },
+        "PRIMARY": {
+          "used": 8,
+          "available": 8
+        },
+        "LW": {
+          "used": 8,
+          "available": 8
+        },
+        "GCLK_PIN": {
+          "used": 6,
+          "available": 8
+        },
+        "CLKDIV": {
+          "used": 1,
+          "available": 8
+        },
+        "DHCEN": {
+          "used": 1,
+          "available": 16
+        },
+        "DLL": {
+          "used": 1,
+          "available": 4
+        },
+        "DQS": {
+          "used": 2,
+          "available": 9
+        },
+        "rPLL": {
+          "used": 3,
+          "available": 4
+        }
+      }
+    }
+  ],
+  "frame_comparison": {
+    "bytes": 64000,
+    "different_bytes": 0,
+    "native_crc": "9480e74a",
+    "source_crc": "9480e74a"
+  },
+  "screenshots": [
+    "build/doom-palette-frame1/scanindex8-320x200.png",
+    "build/doom-palette-frame2/scanindex8-320x200.png",
+    "build/doom-palette-frame3-retry/scanindex8-320x200.png"
+  ],
+  "board_state": "ordinary INDEX8 Doom resumed, same qualified8KiB SRAM gateware/BIOS; persistentFlash andcurrent pin untouched"
+}

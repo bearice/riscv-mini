@@ -212,16 +212,43 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 - 只写 FPGA SRAM 和 UART；Flash 只在用户明确要求时由 `board update` 写。
 - 程序内存硬约束：镜像 `memory_bytes` 必须 ≤ `0x06000000`（装载时一边读暂存区一边写程序内存），本载荷约 50.4 MiB，满足。
 
+## 静态 Newlib（2026-10-12）
+
+Doom 现在通过 `bios_payload.py --libc newlib` 静态链接工具链标准库，使用 [app libc 运行库](payload-libc.md)。旧 `shim_include/` 和手写 stdio/allocator/math/setjmp 已移除，`shim.c` 只保留 CRC、进度和调试钩子。BIOS 固件与 ecall ABI 保持不变。`exit()` 先由 Newlib 清理，再通过共用 runtime 返回 `payload_main`；返回后的提示信息直接使用 BIOS_WRITE。
+
+上面的 fread CRC 六检查点属于旧 shim 的历史证据。Newlib 会缓冲/预读，当前 `i` 统计的是底层 `_read` 字节；只能比较同一版本 runtime、同一工作负载的板子与 QEMU，不能沿用旧 CRC 常量判断失败。
+
 ## 代码结构
 
 | 文件 | 职责 |
 | --- | --- |
 | `firmware/apps/doom/` | doomgeneric 源码（Chocolate Doom 派生）+ 本地补丁：声音模块移除、`i_video.c` 默认 `rgb565`、`i_system.c` 去掉 GUI 弹窗并在 `I_ZoneBase()` 里清零 zone（见上面的确定性一节）、`d_loop.c` 去掉网络头依赖、`m_argv.c` 保持原有参数边界 |
 | `firmware/apps/doom/dg_bios.c` | 平台层：`DG_Init/DG_DrawFrame/DG_SleepMs/DG_GetTicksMs/DG_GetKey/DG_SetWindowTitle`、HID usage→doomkeys 映射、F12 退出、UART 心跳 |
-| `firmware/apps/doom/shim.c`、`shim_include/` | 最小 libc：stdio/stdlib/string/ctype/errno/math 等，控制台走 `WRITE`，文件走 `FS_*`，48 MiB 静态堆，`exit()` 用自写 `setjmp/longjmp` 回到 `payload_main` |
+| `firmware/apps/doom/shim.c` | CRC、进度和调试钩子；标准库实现由静态链接的 Newlib 提供 |
+| `firmware/libc/` | 共用 app syscall runtime、48 MiB Doom 堆边界和退出返回；不编进 BIOS 固件 |
 | `scripts/doom_image.py` | 构建 `BOOT.RPB`（转调 `bios_payload.py`，固定 `DOOMGENERIC_RESX/RESY=480/272`） |
 | `scripts/doom_sim.py` | QEMU 仿真（BIOS shim + 面板抓帧 + 脚本化按键） |
 | `scripts/doom_verify.py` | 实板验收（复用 `BootSession`/`PayloadServer`） |
 | `firmware/apps/doom/dg_debug.c`、`dg_debug.h` | UART 调试通道：暂停/单帧/取帧/取源像素与调色板/分段耗时/已知图案 |
 | `scripts/doom_debug.py` | 调试通道主机侧：发命令、解 base64、验 CRC、出 PNG、`--compare` 逐字节比对 |
 | `tests/doom_test.py` | 主机回归：RPB1 布局 + QEMU 跑真实载荷 |
+
+
+## INDEX8 调色板实验
+
+`scripts/doom_image.py --indexed --soft-float --output-dir build/doom-palette-payload` 编译实验载荷。需要带调色板 CSR 与 BIOS features bit 5 的硬件/固件组合；BIOS 复位及文字模式使用 RGB565，旧服务编号和寄存器偏移保留。不要把实验载荷当作旧 BIOS 已支持的格式。
+
+`I_SetPalette` 计算 gamma 后的 RGB565 表，`DG_SetPalette` 经 BIOS 上传非活动的 256 项调色板并逐项读回校验。`BIOS_VIDEO_PRESENT_INDEX8(slot,bank)` 用一个 CSR 提交帧缓冲和调色板；硬件在开始下一帧 DMA 时锁存，两组表共 512×16 bits，用一块 BSRAM。显示端每个 16-bit FIFO word 拆成先低后高的两个索引，再同步查表。
+
+`BIOS_VIDEO_MODE(BIOS_GRAPHICS_INDEX8)` 返回 format=8、stride=480；RGB565 是 format=565、stride=960。`BIOS_VIDEO_WINDOW(x0,y0,x1,y1)` 的结束坐标为 exclusive，只在停止并排空旧帧后配置。Doom 的窗口是 (80,36)-(400,236)，外围由硬件输出黑色。离开载荷时恢复 RGB565 文字控制台。BIOS 仍然不链接 Newlib，应用继续各自静态链接。
+
+480×272 的单帧 DMA 数据量由 261120 降至 130560 bytes，双缓冲实际扫描区从 510 降至 255 KiB。实验复用 BIOS 原有的 510 KiB 静态显存池，因此这一步不会回收整个 BIOS 预留池，也不会因为 DDR 显存减少而释放 BSRAM。INDEX8 仍按行复制 320×200 的引擎缓冲。
+
+验证入口：`tests/lcd_palette_verilog_test.py --iverilog C:/msys64/ucrt64/bin/iverilog.exe` 检查索引顺序、256 项颜色、调色板读回、帧/表同步切换、窗口和每帧 8160 个 16-byte DMA burst；RGB565 是 16320 个。`--benchmark-checksum` 在计时完成后报告 source、palette、video 与 mapped565 校验，性能测试用不带此选项的独立载荷。实验布局、时序、实板验收和帧率见 `reports/performance/doom-palette-experiment.md`。
+
+
+## 默认配置
+
+已验收的默认硬件模板由 `scripts/mini.py builds show current` 查询；`scripts/mini.py build` 和 `board run` 默认使用该模板。当前配置为 RV32IMA/MMU、无F/C、60/120MHz、ROM8KiB、L2 8KiB、快速移位和流水乘法，支持 INDEX8 双调色板。CPU RTL 与完整参数保存在对应构建 recipe/提交快照，复现时使用模板输入，不能用未经验收的其它 CPU 变体替代。
+
+`scripts/doom_image.py` 默认生成 RV32IM/ILP32 的 INDEX8/Newlib 载荷。`--soft-float` 仍接受；只有另行验收的 FPU CPU 才使用 `--hard-float`。`--indexed` 仍接受；显式 `--rgb565` 用于旧 BIOS 或 RGB565 性能对照。BIOS 文字控制台仍使用 RGB565，应用退出时恢复文字模式。16KiB L2 调色板组合的时序失败记录保留；默认选择已经达到0/0并完成实板验收的8KiB配置。

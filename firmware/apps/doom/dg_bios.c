@@ -1,12 +1,10 @@
 /* DOOM platform layer for the riscv-mini resident BIOS (ABI v1).
  *
- * Video : 480x272 RGB565 panel, double buffered. I_FinishUpdate writes packed
- *         16bpp rows that advance exactly one panel stride (960 B), so the DOOM
- *         frame is rendered straight into the inactive hardware slot with no
- *         copy: DG_Init points DG_ScreenBuffer at a BIOS framebuffer and
- *         DG_DrawFrame presents it and flips. The 320x200 image is top aligned
- *         (i_video.c computes y_offset but never uses it); both slots are
- *         cleared once here so the letterbox margin stays black.
+ * Video : 480x272 panel, double buffered. RGB565 converts the 320x200
+ *         engine surface into the inactive BIOS slot. DOOM_INDEX8 copies its
+ *         index rows instead and uploads the gamma-adjusted RGB565 palette to
+ *         the inactive hardware bank. Present commits slot and bank together;
+ *         the hardware viewport keeps the centered letterbox black.
  * Input : raw USB HID usage codes from BIOS_KEY (page 0x07) mapped to doomkeys.
  *         UART is log output only, per the port's scope.
  * Time  : BIOS millisecond counter; every DG_ call also pumps BIOS_POLL so the
@@ -19,6 +17,10 @@
 #include "doomgeneric.h"
 #include "doomkeys.h"
 #include "shim_private.h"
+#include "runtime.h"
+#ifdef DOOM_TIMEDEMO
+#include "doomstat.h"
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,17 @@ static struct bios_info g_info;
 static volatile uint16_t *g_fb[2];
 static unsigned g_slot;
 static unsigned g_video;
+#ifdef DOOM_INDEX8
+static unsigned g_palette_bank,g_pending_bank;
+void DG_SetPalette(const uint16_t *palette) {
+    g_pending_bank=g_palette_bank^1;
+    if(bios_call(BIOS_VIDEO_PALETTE,(uintptr_t)palette,g_pending_bank,256,0)!=0)
+        exit(2);
+    uint16_t readback[256];
+    if(bios_call(BIOS_VIDEO_PALETTE_READ,(uintptr_t)readback,g_pending_bank,256,0)!=0
+       || memcmp(palette,readback,sizeof readback))exit(3);
+}
+#endif
 
 static uint32_t ms_now(void) {return (uint32_t)bios_call(BIOS_TIME,0,0,0,0);}
 /* BIOS_POLL is not free - it runs the USB host stack and the Ethernet poll - and
@@ -47,9 +60,17 @@ static void pump(void) {
 }
 
 void DG_Init(void) {
+    #ifdef DOOM_INDEX8
+    if(bios_call(BIOS_VIDEO_MODE,BIOS_GRAPHICS_INDEX8,0,0,0)!=0)exit(4);
+    if(bios_call(BIOS_VIDEO_WINDOW,80,36,400,236)!=0)exit(5);
+#else
     if(bios_call(BIOS_VIDEO_MODE,BIOS_GRAPHICS,0,0,0)!=0)return;
+#endif
     if(bios_call(BIOS_INFO,(uintptr_t)&g_info,0,0,0)!=0)return;
     if(!g_info.framebuffer[0]||!g_info.framebuffer[1])return;
+#ifdef DOOM_INDEX8
+    if(g_info.format!=8 || g_info.stride!=480)exit(6);
+#endif
     unsigned stride=g_info.stride?g_info.stride:(g_info.width*2);
     for(unsigned i=0;i<2;++i) {
         g_fb[i]=(volatile uint16_t *)(uintptr_t)g_info.framebuffer[i];
@@ -59,7 +80,7 @@ void DG_Init(void) {
     g_slot=0;
     g_video=1;
     DG_ScreenBuffer=(pixel_t *)g_fb[g_slot];
-    dbg_video((uintptr_t)g_fb[0],(uintptr_t)g_fb[1],stride,2,
+    dbg_video((uintptr_t)g_fb[0],(uintptr_t)g_fb[1],stride,g_info.format==8?1:2,
               g_info.width,g_info.height,g_slot);
     printf("DG_Init: %ux%u fb=%p stride=%u\n",g_info.width,g_info.height,
            (void *)g_fb[0],stride);
@@ -73,7 +94,13 @@ void DG_DrawFrame(void) {
     /* A test pattern is held on the panel by the debug console; presenting now
      * would overwrite the image being inspected. */
     if(!dbg_hold()) {
-        if(bios_call(BIOS_VIDEO_PRESENT,g_slot,0,0,0)!=0)dbg_present_failed();
+        #ifdef DOOM_INDEX8
+        int presented=bios_call(BIOS_VIDEO_PRESENT_INDEX8,g_slot,g_pending_bank,0,0);
+        if(!presented)g_palette_bank=g_pending_bank;
+#else
+        int presented=bios_call(BIOS_VIDEO_PRESENT,g_slot,0,0,0);
+#endif
+        if(presented!=0)dbg_present_failed();
         else {dbg_presented();dbg_displayed(g_slot);}
         g_slot^=1;                                /* render into the other slot */
         DG_ScreenBuffer=(pixel_t *)g_fb[g_slot];
@@ -170,6 +197,10 @@ static unsigned char map_key(unsigned usage) {
 }
 
 int DG_GetKey(int *pressed,unsigned char *key) {
+#ifdef DOOM_TIMEDEMO
+    (void)pressed; (void)key;
+    return 0; /* A benchmark's recorded inputs must not depend on the keyboard. */
+#else
     for(unsigned spins=0;spins<64;++spins) {
         struct bios_key ev;
         if(bios_call(BIOS_KEY,(uintptr_t)&ev,0,0,0)!=0)break; /* queue empty */
@@ -183,6 +214,7 @@ int DG_GetKey(int *pressed,unsigned char *key) {
     }
     pump();
     return 0;
+#endif
 }
 
 /* ------------------------------------------------------------------ payload */
@@ -195,20 +227,13 @@ static char arg_nosound[]="-nosound";
 static char arg_nomusic[]="-nomusic";
 static char arg_nosfx[]="-nosfx";
 
-int payload_main(const struct bios_info *info) {
+static int doom_main(const struct bios_info *info) {
     (void)info;
-    /* Arm before capturing: the setjmp asm stores the caller's registers through
-     * shim_exit_bufp, and that pointer is only set here. Arming afterwards left it
-     * NULL at capture time, so nothing was saved and exit() long-jumped to garbage. */
-    shim_guard_arm();
-    if(shim_setjmp()) { /* exit() unwound D_DoomMain */
-        bios_call(BIOS_VIDEO_MODE,BIOS_TEXT,0,0,0);
-        {static const char bye[]="DOOM: exited, back to BIOS console\r\n";
-         bios_call(BIOS_WRITE,(uintptr_t)bye,sizeof bye-1,0,0);}
-        return 0;
-    }
     /* argv[argc] must be NULL, as for a normal C program. */
     char *argv[]={arg_doom,arg_iwad,arg_wad,arg_mb,arg_mbval,
+#ifdef DOOM_TIMEDEMO
+                  "-timedemo",DOOM_TIMEDEMO,
+#endif
                   arg_nosound,arg_nomusic,arg_nosfx,0};
     doomgeneric_Create((int)(sizeof argv/sizeof*argv)-1,argv);
     /* doomgeneric contract: D_DoomMain returns after D_DoomLoop has run one
@@ -219,9 +244,34 @@ int payload_main(const struct bios_info *info) {
         dbg_service();
         if(dbg_frozen())continue;
         unsigned started=dbg_now_ms();
+#if defined(DOOM_TIMEDEMO) && DOOM_BENCH_FRAMES > 0
+        static unsigned bench_start,bench_count,bench_lt;
+        int measuring=gamestate==GS_LEVEL && leveltime>=16;
+        if(measuring && !bench_count) {bench_start=started;bench_lt=leveltime;}
+#endif
         doomgeneric_Tick();
         dbg_add(DBG_TICK,dbg_now_ms()-started);
         dbg_frame_done();
+#if defined(DOOM_TIMEDEMO) && DOOM_BENCH_FRAMES > 0
+        if(measuring && ++bench_count==DOOM_BENCH_FRAMES) {
+            unsigned elapsed=dbg_now_ms()-bench_start;
+            unsigned rate=elapsed ? (bench_count*100000u)/elapsed : 0;
+            printf("DBG bench frames=%u elapsed=%u ms fps=%u.%02u start_lt=%u end_lt=%u\n",
+                   bench_count,elapsed,rate/100,rate%100,bench_lt,(unsigned)leveltime);
+#ifdef DOOM_BENCH_CHECKSUM
+            dbg_benchmark_checksum(); /* outside the measured window */
+#endif
+            exit(0);
+        }
+#endif
     }
     return 0; /* unreachable: only exit() leaves the loop */
+}
+
+int payload_main(const struct bios_info *info) {
+    int status=bios_libc_run(info,doom_main);
+    bios_call(BIOS_VIDEO_MODE,BIOS_TEXT,0,0,0);
+    static const char bye[]="DOOM: exited, back to BIOS console\r\n";
+    bios_call(BIOS_WRITE,(uintptr_t)bye,sizeof bye-1,0,0);
+    return status;
 }

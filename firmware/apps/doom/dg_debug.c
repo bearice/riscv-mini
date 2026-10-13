@@ -216,8 +216,41 @@ static void dump_area(const char *kind,const volatile unsigned char *base,
 static void dump_drawn(void) {
     /* The 320x200 image I_FinishUpdate wrote into the letterboxed slot. */
     if(!g_game_bytes) {printf("DBGERR no blit has run yet\r\n");return;}
-    dump_area("rgb565",(const void *)g_fb[g_displayed],g_stride,
+    dump_area(g_bpp==1?"scanindex8":"rgb565",(const void *)g_fb[g_displayed],g_stride,
 	      g_lb_x,g_lb_y,g_game_w,g_game_h,g_bpp);
+    if(g_bpp==1 && g_palette && g_palette_bytes)
+        dump_area("palette",g_palette,g_palette_bytes,0,0,g_palette_bytes,1,1);
+}
+void dbg_benchmark_checksum(void) {
+    if(!g_game||!g_game_bytes||!g_palette||!g_fb[g_displayed]) {
+        printf("DBGERR checksum requires a completed displayed frame\r\n");return;
+    }
+    unsigned source=~shim_crc32(~0u,g_game,g_game_bytes);
+    unsigned palette=~shim_crc32(~0u,g_palette,g_palette_bytes);
+    unsigned video=~0u,row=g_game_w*g_bpp;
+    for(unsigned y=0;y<g_game_h;++y) {
+        const volatile unsigned char *src=(const volatile unsigned char *)g_fb[g_displayed]
+            +(size_t)(g_lb_y+y)*g_stride+g_lb_x;
+        for(unsigned i=0;i<row;++i)scratch[i]=src[i];
+        video=shim_crc32(video,scratch,row);
+    }
+    printf("DBG checksum lt=%u source=%08x palette=%08x video=%08x bpp=%u\r\n",
+           (unsigned)leveltime,source,palette,~video,g_bpp);
+    /* Reconstruct exactly the RGB565 table uploaded to the hardware. This
+     * checksum runs after the timer stops and permits RGB/INDEX comparisons. */
+    if(g_palette_bytes==1024) {
+        const unsigned char *colors=g_palette,*indices=g_game;
+        unsigned mapped=~0u;
+        for(unsigned y=0;y<g_game_h;++y) {
+            for(unsigned x=0;x<g_game_w;++x) {
+                const unsigned char *c=colors+indices[y*g_game_w+x]*4;
+                unsigned p=((c[2]&0xf8u)<<8)|((c[1]&0xfcu)<<3)|(c[0]>>3);
+                scratch[x*2]=p;scratch[x*2+1]=p>>8;
+            }
+            mapped=shim_crc32(mapped,scratch,g_game_w*2);
+        }
+        printf("DBG mapped565 %08x\r\n",~mapped);
+    }
 }
 static void dump_slot(void) {
     /* Both slots, not just the displayed one.  While the game is frozen nothing

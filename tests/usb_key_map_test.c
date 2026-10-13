@@ -55,6 +55,8 @@ hal_result_t hal_usb_report_take(hal_usb_report_t *out) {
 void tests_usb_report(const hal_usb_report_t *report) {(void)report;++reports_seen;}
 void tests_usb_key(const hal_usb_key_t *key) {(void)key;}
 void tests_usb_mouse(const hal_usb_mouse_t *mouse) {(void)mouse;}
+unsigned hal_video_format(void) {return 565;}
+hal_result_t hal_video_configure(unsigned indexed) {(void)indexed;return HAL_UNSUPPORTED;}
 void tests_video_stop(void) {}
 void hal_poll(void) {}
 uint32_t hal_time_ms(void) {return fake_ms;}

@@ -2,6 +2,7 @@
 import argparse,json,subprocess,os
 from pathlib import Path
 from bios_image import pack
+from payload_libc import newlib_link
 ROOT=Path(__file__).resolve().parents[1]
 # A payload links with -nostdlib, so the freestanding helpers the compiler still
 # emits calls to (memcpy, memset, strlen, ...) have to be linked in explicitly.
@@ -21,7 +22,10 @@ def main():
                    help='link a repository-provided freestanding helper library')
     p.add_argument('--soft-float',action='store_true',help='build for rv32im/ilp32 instead of the default rv32imaf/ilp32f')
     p.add_argument('--optimize',default='-Os',help='optimization level for the payload (default -Os; -O2 is worth several times the speed for compute-bound apps)')
+    p.add_argument('--libc',choices=('none','newlib'),default='none',help='link Newlib and the BIOS syscall runtime')
     a=p.parse_args();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
+    if a.libc=='newlib' and a.helper:
+        p.error('Newlib supplies standard helpers; omit --helper when using --libc newlib')
     scratch=out/'tmp';scratch.mkdir(exist_ok=True)
     for name in ('TMP','TEMP','TMPDIR'):os.environ[name]=str(scratch)
     gcc=Path(json.loads((ROOT/'.tools.local.json').read_text())['gcc']);bin=gcc.parent
@@ -33,11 +37,14 @@ def main():
         if not sources:raise SystemExit(f'no sources in {directory}')
     else:
         sources=[a.source.resolve()]
+    runtime=[ROOT/'firmware/libc/runtime.c'] if a.libc=='newlib' else []
+    libraries=newlib_link(gcc,march,mabi,out) if runtime else ['-lgcc']
     args=[str(gcc),'-march='+march,'-mabi='+mabi,a.optimize,'-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-ffunction-sections','-fdata-sections','-msmall-data-limit=0','-nostdlib','-nostartfiles',
+        '-I',str(ROOT/'firmware/libc'),
         *[f'-D{d}' for d in a.define],*a.cflag,
         *[flag for directory in a.include_dir for flag in ('-I',str(directory.resolve()))],
-        str(bios/'payload_start.S'),*[str(x.resolve()) for x in sources],*[str(x.resolve()) for x in a.extra_source],*[str(HELPERS[name]) for name in a.helper],
-        '-T',str(bios/'payload.ld'),'-Wl,--gc-sections','-Wl,-Map,'+str(out/'payload.map'),'-lgcc','-o',str(elf)]
+        str(bios/'payload_start.S'),*[str(x.resolve()) for x in sources+runtime],*[str(x.resolve()) for x in a.extra_source],*[str(HELPERS[name]) for name in a.helper],
+        '-T',str(bios/'payload.ld'),'-Wl,--gc-sections','-Wl,-Map,'+str(out/'payload.map'),*libraries,'-o',str(elf)]
     subprocess.run(args,check=True)
     subprocess.run([str(bin/'riscv-none-elf-objcopy.exe'),'-O','binary',str(elf),str(raw)],check=True)
     text=subprocess.check_output([str(bin/'riscv-none-elf-nm.exe'),str(elf)],text=True)

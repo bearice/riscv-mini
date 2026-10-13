@@ -270,6 +270,23 @@ class MiniOperationsTests(unittest.TestCase):
         self.assertEqual(command[command.index('--place-option')+1],'3')
         self.assertIn('--with-flash',command)
         self.assertIn('--synthesize',command)
+    def test_cache_experiment_preserves_other_template_inputs(self):
+        self.v.update(profile='full',boot_mode='xip',place_option=3,route_option=2,
+                      cpu_variant='linux',rom_size_bytes=0,l2_size_bytes=4096,
+                      sd_profile='lite',usb_backend='ultra',audio_clock='dds',
+                      application_source=str(ROOT/'firmware/bios/main.c'),
+                      cpu_verilog=str(self.path/'cpu.v'))
+        (self.path/'cpu.v').write_text('// cpu')
+        self.save()
+        original=invocation(parser().parse_args(['build','--from',str(self.path)]))
+        candidate=invocation(parser().parse_args(['build','--from',str(self.path),
+                                                 '--l2-size','16384','--boot-mode','rom']))
+        expected=list(original)
+        expected[expected.index('--l2-size')+1]='16384'
+        expected[expected.index('--boot-mode')+1]='rom'
+        expected[expected.index('--rom-size')+1]='8192'
+        self.assertEqual(candidate,expected)
+
     def test_release_csr_is_self_contained_after_original_run_disappears(self):
         import release
         csr=dict(csr_registers={},memories={})

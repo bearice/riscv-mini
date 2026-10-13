@@ -238,7 +238,7 @@ void I_InitGraphics (void)
 	s_Fb.xres_virtual = s_Fb.xres;
 	s_Fb.yres_virtual = s_Fb.yres;
 
-#ifdef CMAP256
+#if defined(CMAP256) || defined(DOOM_INDEX8)
 
 	s_Fb.bits_per_pixel = 8;
 
@@ -419,7 +419,7 @@ void I_FinishUpdate (void)
         int i;
         for (i = 0; i < fb_scaling; i++) {
             line_out += x_offset;
-#ifdef CMAP256
+#if defined(CMAP256) || defined(DOOM_INDEX8)
             if (fb_scaling == 1) {
                 memcpy(line_out, line_in, SCREENWIDTH); /* fb_width is bigger than Doom SCREENWIDTH... */
             } else {
@@ -504,6 +504,10 @@ void I_SetPalette (byte* palette)
      * through gammatable[usegamma], which is not the identity curve, so a host
      * that assumed the raw WAD bytes would blame the blit for a gamma step. */
     dbg_palette (colors, sizeof colors);
+#ifdef DOOM_INDEX8
+    extern void DG_SetPalette(const uint16_t *palette);
+    DG_SetPalette(rgb565_palette);
+#endif
 
 #ifdef CMAP256
 

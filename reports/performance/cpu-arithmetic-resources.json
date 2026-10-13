@@ -1,0 +1,247 @@
+{
+  "configuration": {
+    "cpu": "RV32IMA, MMU, no FPU/C, I/D cache 2 KiB, two-cycle I-cache/injector",
+    "cpu_hz": 60000000,
+    "ddr_hz": 120000000,
+    "l2_bytes": 16384,
+    "rom_bytes": 8192,
+    "peripherals": "full, USB ultra, SD lite, audio DDS",
+    "device": "GW2A-LV18PG256C8/I7",
+    "stage": "Gowin synthesis, no PnR or board test"
+  },
+  "baseline_normalized_cpu_sha256": "63f7c8f56cec1038d3de3194bdefa73df1a27f45ba903cead3e16770b1db855b",
+  "baseline_only_comment_difference": true,
+  "generator": {
+    "path": "build/cpu-arithmetic-matrix/generator.json",
+    "sha256": "9d2e99c26c77012b024fcac501c8e0ebacf0912702f57327865e2a59363ea4b9"
+  },
+  "rows": [
+    {
+      "case": "s0m0",
+      "single_cycle_shift": false,
+      "single_cycle_muldiv": false,
+      "Logic": 18757,
+      "LUT": 16042,
+      "ALU": 2385,
+      "RAM16": 55,
+      "Register": 10476,
+      "BSRAM": 40,
+      "dsp_primitives": {
+        "MULT18X18": 0,
+        "ALU54D": 0
+      },
+      "cpu_sha256": "e5ffdbfcde480e622736b427757e45a87c5fc7b608247f05b2751f3a150c19c3",
+      "qualification": {
+        "path": "build/cpu-arithmetic-resource/s0m0/qualification.json",
+        "sha256": "18b6f0e43a7c5604f482d3724935ce7e376774e6ebedc076dee65228246394c6"
+      },
+      "synthesis_report": {
+        "path": "build/cpu-arithmetic-resource/s0m0/gateware/impl/gwsynthesis/project_syn.rpt.html",
+        "sha256": "fc093fe31faa3e1a2b0e3d4970166ff1fd3fb9a8443e5d5bb2bed9c90eaa7b4e"
+      },
+      "mapped_netlist": {
+        "path": "build/cpu-arithmetic-resource/s0m0/gateware/impl/gwsynthesis/project.vg",
+        "sha256": "b2f4ba9d0abd8a86e9883af6314be5a46c3d5b5cd6a984108f5409005c3df862"
+      },
+      "delta": {
+        "Logic": 0,
+        "LUT": 0,
+        "ALU": 0,
+        "RAM16": 0,
+        "Register": 0,
+        "BSRAM": 0
+      }
+    },
+    {
+      "case": "s1m0",
+      "single_cycle_shift": true,
+      "single_cycle_muldiv": false,
+      "Logic": 18852,
+      "LUT": 16136,
+      "ALU": 2386,
+      "RAM16": 55,
+      "Register": 10504,
+      "BSRAM": 40,
+      "dsp_primitives": {
+        "MULT18X18": 0,
+        "ALU54D": 0
+      },
+      "cpu_sha256": "682eb66f14ee46b80305bc2d464196c48d68af1de55bbdaa291ef9b9288dd818",
+      "qualification": {
+        "path": "build/cpu-arithmetic-resource/s1m0-retry/qualification.json",
+        "sha256": "76f982433605ac1cab5965cc88611e344c1955ac8b67c4366653912cc06942d6"
+      },
+      "synthesis_report": {
+        "path": "build/cpu-arithmetic-resource/s1m0-retry/gateware/impl/gwsynthesis/project_syn.rpt.html",
+        "sha256": "8cdafec9d07e5ca28fb9462e11d75130f1b00460102345da01363bd1dfc8aaa6"
+      },
+      "mapped_netlist": {
+        "path": "build/cpu-arithmetic-resource/s1m0-retry/gateware/impl/gwsynthesis/project.vg",
+        "sha256": "13d2fd052728710fa39fa5241c7d43ddb327333eb93dd1d86c4dad16afac203b"
+      },
+      "delta": {
+        "Logic": 95,
+        "LUT": 94,
+        "ALU": 1,
+        "RAM16": 0,
+        "Register": 28,
+        "BSRAM": 0
+      }
+    },
+    {
+      "case": "s0m1",
+      "single_cycle_shift": false,
+      "single_cycle_muldiv": true,
+      "Logic": 18412,
+      "LUT": 15705,
+      "ALU": 2377,
+      "RAM16": 55,
+      "Register": 10468,
+      "BSRAM": 40,
+      "dsp_primitives": {
+        "MULT18X18": 4,
+        "ALU54D": 2
+      },
+      "cpu_sha256": "b01e658e6256eec9f96b0b44f155a7bfd6fedf03fd01c553b94f52f61313dfeb",
+      "qualification": {
+        "path": "build/cpu-arithmetic-resource/s0m1/qualification.json",
+        "sha256": "040bb473e28f444f9e25c262a5163ade3a1810164120384f779d84dab2707b79"
+      },
+      "synthesis_report": {
+        "path": "build/cpu-arithmetic-resource/s0m1/gateware/impl/gwsynthesis/project_syn.rpt.html",
+        "sha256": "3bcafaca61cce42c6b6657fe081360315172da1f800189755ab2ce22a451565b"
+      },
+      "mapped_netlist": {
+        "path": "build/cpu-arithmetic-resource/s0m1/gateware/impl/gwsynthesis/project.vg",
+        "sha256": "cf32073496bd38311e8ed898b971dbf1f61ff2b06353e2444cc63ea9c59b0296"
+      },
+      "delta": {
+        "Logic": -345,
+        "LUT": -337,
+        "ALU": -8,
+        "RAM16": 0,
+        "Register": -8,
+        "BSRAM": 0
+      }
+    },
+    {
+      "case": "s1m1",
+      "single_cycle_shift": true,
+      "single_cycle_muldiv": true,
+      "Logic": 19003,
+      "LUT": 16292,
+      "ALU": 2381,
+      "RAM16": 55,
+      "Register": 10496,
+      "BSRAM": 40,
+      "dsp_primitives": {
+        "MULT18X18": 4,
+        "ALU54D": 2
+      },
+      "cpu_sha256": "9f35e57b1cb182bb43d4d8a9ff408d09a290186d5df02a86d484af5a8fbe5d9d",
+      "qualification": {
+        "path": "build/cpu-arithmetic-resource/s1m1/qualification.json",
+        "sha256": "7a0292319b15f83e0eb39ab5b056cffb27285922e65e765bfb0746b6555f838c"
+      },
+      "synthesis_report": {
+        "path": "build/cpu-arithmetic-resource/s1m1/gateware/impl/gwsynthesis/project_syn.rpt.html",
+        "sha256": "699d41847e5e964edb668bb7f0c21619139fec68cfe579d343a14c6badf8567a"
+      },
+      "mapped_netlist": {
+        "path": "build/cpu-arithmetic-resource/s1m1/gateware/impl/gwsynthesis/project.vg",
+        "sha256": "00154c9b053181e789fcf1ec4cb152ba93eabddd13db407c64f7c9ac26b1e10c"
+      },
+      "delta": {
+        "Logic": 246,
+        "LUT": 250,
+        "ALU": -4,
+        "RAM16": 0,
+        "Register": 20,
+        "BSRAM": 0
+      }
+    }
+  ],
+  "limitations": [
+    "Synthesis Logic/LUT counts are not placed CLS counts or proof of 60 MHz timing closure.",
+    "MULT18X18 and ALU54D are DSP primitive counts; do not sum them as independent physical DSP blocks.",
+    "singleCycleMulDiv true uses pipelined MulPlugin plus iterative DivPlugin, not single-cycle division.",
+    "Combined deltas are not the sum of individual deltas due to synthesis optimization interactions.",
+    "Initial s1m0 tool invocation exited 1 with an empty synthesis log; retained, serial retry passed."
+  ],
+  "both_enabled_pnr": {
+    "id": "a50a747-full-rv32ima-rom8k-l216k-doom-fast-arithmetic-15a6d0d6-5381debf",
+    "path": "build\\runs\\20261012T152652866716Z-a50a747-dirty-full-rv32ima-rom8k-l216k-doom-fast-arithmetic",
+    "timing": {
+      "setup": 0,
+      "hold": 0
+    },
+    "resources": {
+      "Logic": {
+        "used": 19190,
+        "available": 20736
+      },
+      "Register": {
+        "used": 10528,
+        "available": 16173
+      },
+      "CLS": {
+        "used": 10066,
+        "available": 10368
+      },
+      "I/O Port": {
+        "used": 139,
+        "available": 207
+      },
+      "IOLOGIC": {
+        "used": 62,
+        "available": 207
+      },
+      "BSRAM": {
+        "used": 40,
+        "available": 46
+      },
+      "PRIMARY": {
+        "used": 8,
+        "available": 8
+      },
+      "LW": {
+        "used": 8,
+        "available": 8
+      },
+      "GCLK_PIN": {
+        "used": 6,
+        "available": 8
+      },
+      "CLKDIV": {
+        "used": 1,
+        "available": 8
+      },
+      "DHCEN": {
+        "used": 1,
+        "available": 16
+      },
+      "DLL": {
+        "used": 1,
+        "available": 4
+      },
+      "DQS": {
+        "used": 2,
+        "available": 9
+      },
+      "rPLL": {
+        "used": 3,
+        "available": 4
+      },
+      "DSP": {
+        "used": 4,
+        "available": 24
+      }
+    },
+    "bitstream_sha256": "15a6d0d6e554d8e33a95687bb2b23956be4435174e7fa44ac451b2bad9b68df1",
+    "image_sha256": "69b43f555eca05763187083169da8e392aff2f0118f2e607ad4cf799a6b26f95",
+    "abi_tag": 2715889852,
+    "raw_report_sha256": "2750c968bf9d32acb3712cf607213aa190ba8db8cd32c1e161c307f9ed446333",
+    "board_test": "not performed",
+    "default_current_changed": false
+  }
+}
