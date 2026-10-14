@@ -42,5 +42,58 @@ CSR 包含 enable、select、active、busy、frames、completed 和 underflows�
 | B[0:4] | B12 / C12 / B13 / A14 / B14 |
 
 当前 LiteX platform 的 lcd.vsync 指向 SD detect 使用的 D15，本设计显式定义 RGB LCD 接口并改用示例 D14。
-触摸、额外 reset 和可控背光不属于本地示例的扫描端口，当前不驱动这些额外信号。
+背光使用 E10 / RGB_LCD_BL，高电平开启，独立于视频 enable。
+Dock-3713 Rev1.1 原理图 P006_LCD（PDF 第 4 页，图纸编号 6/9）显示它直接接 U5 LP3320
+的 EN，并由 R33 10K 上拉；5inch 参考工程的 rgb_lcd.cst 同样将 lcd_bl 约束到 E10。
+CSR 复位为 100，保留原有上电常亮行为；触摸和额外 reset 仍不驱动。
 扫描时序按示例参数重新实现，未复制其未复位计数器或 VS_POL 引用 HS_POL 的写法。
+
+## CSR 窗口 skip 与背光
+
+在现有寄存器末尾追加 `skip`（1 bit，复位 0）和 `backlight`（7 bit，复位 100），
+保留旧寄存器偏移。`backlight=0..100` 设定 RGB LCD 背光 PWM 占空比百分数，0 为常低关闭，100 为常高全亮，
+有效 7 bit 值 101..127 输出饱和为全亮（CSR 读回保留原始 7 bit 写值）。PWM 固定 45kHz、1% 步进，
+占空比在下一个周期边界生效，延迟约 23us（包括占空比同步）；输出经过寄存器，避免计数器进位毛刺。
+PWM 复用 9MHz video 时钟，每个占空比步长为 2 个像素时钟；配置同步到 video，输出电平同步回 sys，不增加时钟域；不停止像素时钟、DMA 或计数器。
+
+`skip=0` 保持完整 480×272 帧的原有行为，包括 RGB565 ring/YWRAP 和 INDEX8 的输出窗口遮黑。
+`skip=1` 时，扫描窗口之外直接输出 RGB565 黑色零值，不消费 FIFO 数据、不触发缺像素错误；
+窗口内按行连续消费紧凑帧。支持 RGB565 和 INDEX8，也可与有效 DMA ring 组合。
+面板扫描时序仍为 525×286，DE 仍覆盖完整 480×272，刷新率不变。
+
+窗口复用 `window_start/end`：h 位于 [0:10]，v 位于 [10:19]，start 的 bit19 必须为 1；
+end 为独占边界。用户像素坐标转换为扫描坐标时，x 加 45、y 加 14。
+合法范围为 `45 <= h0 < h1 <= 525`、`14 <= v0 < v1 <= 286`。
+DMA 字节数由 `(h1-h0)*(v1-v0)*(format ? 1 : 2)` 自动计算，必须为非零的 16 字节倍数。
+无 ring 时根据紧凑帧长度检查完整 DDR 区间；非法窗口、对齐或地址配置置 address_error，不启动 DMA。
+窗口、format、skip、base/ring 都必须在 enable=0 且 busy=0 后修改，配置完等待至少
+24 个 sys 时钟供串行面积计算和 CDC 稳定，再开启扫描。驱动使用 1ms 等待。
+切换回 BIOS 普通图形/TTY 时，驱动初始化与 format 配置显式清除 skip。
+
+居中显示紧凑 320×200 INDEX8 帧的配置示例（先关 enable 并等 busy=0）：
+
+```c
+rgb_lcd_format_write(1);
+rgb_lcd_window_start_write(125u | (50u << 10) | (1u << 19));
+rgb_lcd_window_end_write(445u | (250u << 10));
+rgb_lcd_skip_write(1);
+/* base0/base1 指向各 64000 字节、16 字节对齐的 DDR 缓冲；ring 默认关闭。 */
+rgb_lcd_base0_write(front);
+rgb_lcd_base1_write(back);
+rgb_lcd_wrap_end_write(0);
+/* 写好 palette，fence rw,rw，并等待 1ms 后开启 enable。 */
+```
+
+此配置每帧读取 4000 次 16B burst，而全屏 INDEX8 为 8160 次；黑边不占 VRAM。
+它提供应用免复制的扫描条件，应用仍需管理前后台缓冲所有权，不能覆盖正在扫描的帧。
+
+针对性 RTL 回归：`tests/lcd_skip_verilog_test.py --iverilog <iverilog.exe> --case <case>`，
+case 包括 doom、small、full、rgb、range、stall、starve；检查完整像素流、黑边、DMA 请求、
+换帧/调色板原子切换、背光输出、地址/窗口拒绝、延迟与欠载后的恢复。
+
+板端 `test lcd skip` 检查 RGB565/INDEX8 各两种紧凑尺寸、帧完成与欠载计数、
+背光 CSR 设为 0/25/50/75/100 时扫描继续运行，并恢复普通全屏模式；物理明暗仍需目视确认。
+
+`backlight_level`（只读、+0x54）返回 PWM 输出寄存器当前电平，可用于数字波形采样。
+板端 `test lcd skip` 对 0/25/50/75/100 的输出采样测量频率与占空比；模拟占空比精确性
+由 RTL 逐时钟验证，板端采样允许测量误差，不能代替引脚示波器或屏幕亮度校准。

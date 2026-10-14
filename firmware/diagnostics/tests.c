@@ -478,6 +478,67 @@ static void video_poll(void) {
     if(video_running && !video_busy && hal_deadline_reached(hal_time_ms(),video_next))
         if(!video_render(0)) {video_running=0;result("lcd background",0);}
 }
+
+/* Exercise tight scanout through the same CSRs used by applications. Pixel
+ * content/border correctness is checked in RTL; this checks the board DMA. */
+static unsigned backlight_measure(unsigned duty) {
+    unsigned samples=0,highs=0,rises=0,last=rgb_lcd_backlight_level_read();
+    unsigned start=hal_ticks();
+    while((unsigned)(hal_ticks()-start)<CONFIG_CLOCK_FREQUENCY/200u) {
+        unsigned level=rgb_lcd_backlight_level_read();
+        highs+=level;rises+=level && !last;last=level;++samples;
+    }
+    unsigned elapsed=hal_ticks()-start;
+    unsigned percent=highs*100u/samples;
+    unsigned hz=(unsigned)((uint64_t)rises*CONFIG_CLOCK_FREQUENCY/elapsed);
+    value("LCD PWM requested=",duty);value(" observed_percent=",percent);value(" observed_hz=",hz);
+    hal_uart_puts("\r\n");
+    if(!duty)return !highs && !rises;
+    if(duty>=100)return highs==samples && !rises;
+    return percent+5>=duty && percent<=duty+5 && hz>=40500 && hz<=49500;
+}
+static unsigned video_skip_check(void) {
+    tests_video_stop();
+    unsigned ok=1,light=rgb_lcd_backlight_read();
+    for(unsigned indexed=0;indexed<2 && ok;++indexed) {
+        if(hal_video_configure(indexed)!=HAL_OK || hal_video_stop()!=HAL_OK) {ok=0;break;}
+        for(unsigned size=0;size<2 && ok;++size) {
+            unsigned width=size?160u:320u,height=size?100u:200u;
+            unsigned x=45u+(480u-width)/2,y=14u+(272u-height)/2;
+            unsigned bytes=(width*height)<<(1u-indexed);
+            rgb_lcd_window_start_write(x|(y<<10)|(1u<<19));
+            rgb_lcd_window_end_write((x+width)|((y+height)<<10));
+            rgb_lcd_skip_write(1);
+            volatile uint16_t *fb=hal_video_frame(0);
+            for(unsigned i=0;i<bytes/2;++i)fb[i]=indexed?0x0100u:0x07e0u;
+            if(indexed)for(unsigned i=0;i<256;++i) {
+                rgb_lcd_palette_address_write(i);rgb_lcd_palette_data_write(i?0xffffu:0xf800u);
+            }
+            __asm__ volatile("fence rw,rw":::"memory");wait_ms(1);
+            unsigned before=rgb_lcd_completed_read(),errors=rgb_lcd_underflows_read();
+            rgb_lcd_enable_write(1);wait_ms(100);
+            unsigned completed=rgb_lcd_completed_read()-before;
+            value("LCD skip indexed=",indexed);value(" bytes=",bytes);value(" completed=",completed);
+            value(" underflows=",rgb_lcd_underflows_read()-errors);hal_uart_puts("\r\n");
+            ok=completed>=3 && !rgb_lcd_address_error_read() && rgb_lcd_underflows_read()==errors;
+            if(hal_video_stop()!=HAL_OK)ok=0;
+        }
+    }
+    if(hal_video_init()!=HAL_OK)ok=0;
+    unsigned before=rgb_lcd_completed_read();
+    rgb_lcd_backlight_write(0);wait_ms(40);
+    ok=ok && !rgb_lcd_backlight_read() && rgb_lcd_completed_read()!=before && backlight_measure(0);
+    for(unsigned duty=25;duty<=100;duty+=25) {
+        before=rgb_lcd_completed_read();rgb_lcd_backlight_write(duty);wait_ms(40);
+        ok=ok && rgb_lcd_backlight_read()==duty && rgb_lcd_completed_read()!=before;
+        if(!backlight_measure(duty))ok=0;
+        value("LCD backlight PWM percent=",duty);hal_uart_puts("\r\n");
+    }
+    rgb_lcd_backlight_write(light);
+    hal_uart_puts("LCD backlight PWM 45kHz; physical brightness observation required\r\n");
+    return ok;
+}
+
 static unsigned video_check(void) {return video_render(1);}
 #endif
 void tests_video_stop(void) {
@@ -730,7 +791,7 @@ void tests_help(void) {
     hal_uart_puts("test sd|sd write\r\n");
 #endif
 #if MINI_FEATURE_VIDEO
-    hal_uart_puts("test lcd|lcd start|lcd stop|lcd clear\r\n");
+    hal_uart_puts("test lcd|lcd start|lcd stop|lcd clear|lcd skip\r\n");
 #endif
 #if MINI_FEATURE_SPI_LCD
     hal_uart_puts("test spi-lcd\r\n");
@@ -888,6 +949,7 @@ int tests_command(const char *command) {
 #endif
 #if MINI_FEATURE_VIDEO
     else if(!strcmp(name,"lcd"))ok=video_check();
+    else if(!strcmp(name,"lcd skip"))ok=video_skip_check();
     else if(!strcmp(name,"lcd start")) {
         if(!video_running) {video_epoch=hal_time_ms();video_frames=video_fill_ticks=0;}
         video_running=1;ok=video_render(0);

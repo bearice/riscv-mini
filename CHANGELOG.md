@@ -1,5 +1,38 @@
 # Changelog
 
+## bios v0.11.0 — BIOS compact LCD and PWM diagnostics
+
+- Add test lcd skip to exercise RGB565/INDEX8 compact frames, continued DMA while dimming, and measured PWM at 0/25/50/75/100 percent; include the test in firmware verification for compatible CSRs.
+- Versioned single-microphone candidate passes board firmware diagnostics and 60-second soak, with LCD underflows and audio errors remaining zero.
+
+性能报告：[reports/performance/lcd-skip-pwm-mono.md](reports/performance/lcd-skip-pwm-mono.md)。基线必须显式选择，详见报告身份和边界。
+
+提交检查：18 tests，PASS（源码输入指纹匹配）。
+
+发布二进制、Git hash、构建参数和逐文件 SHA256 见对应版本的 release.json；完整改动以 Git 记录为准，已知失败和未验收项保留在性能/验收报告中。
+
+## hal v0.10.0 — Video driver supports compact scanout buffers
+
+- Validate buffer sizes against compact window geometry when skip is enabled; clear skip when restoring standard graphics, format or window configuration.
+
+性能报告：[reports/performance/lcd-skip-pwm-mono.md](reports/performance/lcd-skip-pwm-mono.md)。基线必须显式选择，详见报告身份和边界。
+
+提交检查：18 tests，PASS（源码输入指纹匹配）。
+
+发布二进制、Git hash、构建参数和逐文件 SHA256 见对应版本的 release.json；完整改动以 Git 记录为准，已知失败和未验收项保留在性能/验收报告中。
+
+## rtl v0.10.0 — CSR-controlled compact LCD scanout and PWM backlight
+
+- Add skip-controlled compact RGB565/INDEX8 scanout with direct black margins and bounded DMA geometry; preserve full-screen and ring operation when skip is disabled.
+- Drive E10 backlight with 45 kHz PWM, 0..100 percent duty and synchronized output observation; reset remains full brightness.
+- Qualification uses one microphone, RV32IMA 60/120 MHz and 8 KiB L2: PnR setup/hold 0/0, firmware/LCD/PWM/mic/60-second soak pass. Worst setup slack +0.031 ns; physical brightness remains unobserved.
+
+性能报告：[reports/performance/lcd-skip-pwm-mono.md](reports/performance/lcd-skip-pwm-mono.md)。基线必须显式选择，详见报告身份和边界。
+
+提交检查：18 tests，PASS（源码输入指纹匹配）。
+
+发布二进制、Git hash、构建参数和逐文件 SHA256 见对应版本的 release.json；完整改动以 Git 记录为准，已知失败和未验收项保留在性能/验收报告中。
+
 ## bios v0.10.0 — BIOS 提供文件服务与原始按键流，SD 读路径加块缓存
 
 - 新增文件系统服务 22-30（FS_OPEN/CLOSE/READ/WRITE/SEEK/STAT/MKDIR/UNLINK/RENAME，句柄 0..5，卷保持挂载）：二级程序需要按偏移反复读 SD 上的大文件，原来的 FILE_READ 每次都要重新给完整路径、无法保持打开状态。

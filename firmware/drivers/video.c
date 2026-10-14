@@ -9,6 +9,13 @@ volatile uint16_t *video_frame(unsigned slot) {
 int video_set_buffers(uint16_t *first,uint16_t *second) {
     uintptr_t a=(uintptr_t)first,b=(uintptr_t)second;
     unsigned bytes=sizeof(frames[0]) >> rgb_lcd_format_read();
+    if(rgb_lcd_skip_read()) {
+        unsigned start=rgb_lcd_window_start_read(),end=rgb_lcd_window_end_read();
+        unsigned width=(end&1023u)-(start&1023u),height=((end>>10)&511u)-((start>>10)&511u);
+        if(!(start&(1u<<19)) || !width || width>480 || !height || height>272)return 0;
+        bytes=(width*height)<<(1u-rgb_lcd_format_read());
+        if(bytes&15u)return 0;
+    }
     if(rgb_lcd_enable_read() || rgb_lcd_busy_read())return 0;
     if(a<4096 || b<4096 || (a&15u) || (b&15u) || a>MINI_RAM_END-bytes || b>MINI_RAM_END-bytes)return 0;
     if(a<b+bytes && b<a+bytes)return 0;
@@ -35,7 +42,7 @@ void video_status(void) {
 }
 int video_init(void) {
     if(!video_stop()) return 0;
-    rgb_lcd_format_write(0);rgb_lcd_window_start_write(0);
+    rgb_lcd_skip_write(0);rgb_lcd_format_write(0);rgb_lcd_window_start_write(0);
     rgb_lcd_wrap_start_write(0);rgb_lcd_wrap_end_write(0);
     if(!video_set_buffers(frames[0],frames[1]))return 0;
     for(unsigned slot=0;slot<2;++slot) for(unsigned i=0;i<PIXELS;++i) video_frame(slot)[i]=0;
@@ -49,7 +56,7 @@ int video_init(void) {
 unsigned video_format(void) {return rgb_lcd_format_read()?8u:565u;}
 int video_configure(unsigned indexed) {
     if(indexed>1 || !video_stop())return 0;
-    rgb_lcd_format_write(indexed);
+    rgb_lcd_skip_write(0);rgb_lcd_format_write(indexed);
     rgb_lcd_wrap_start_write(0);rgb_lcd_wrap_end_write(0);
     rgb_lcd_window_start_write(0);rgb_lcd_window_end_write(0);
     if(!video_set_buffers(frames[0],indexed?frames[0]+PIXELS/2:frames[1]))return 0;
@@ -87,6 +94,7 @@ int video_present_indexed(unsigned slot,unsigned bank) {
 int video_window(unsigned x0,unsigned y0,unsigned x1,unsigned y1) {
     if(x0>=x1 || y0>=y1 || x1>480 || y1>272 || !rgb_lcd_format_read())return 0;
     if(!video_stop())return 0;
+    rgb_lcd_skip_write(0);
     rgb_lcd_window_end_write((x1+45)|((y1+14)<<10));
     rgb_lcd_window_start_write((x0+45)|((y0+14)<<10)|(1u<<19));
     io_delay_ms(1);rgb_lcd_enable_write(1);return 1;

@@ -1,0 +1,130 @@
+{
+  "created_at": "2026-10-14T07:38:34+00:00",
+  "title": "BIOS compact LCD and PWM diagnostics",
+  "changes": [
+    "Add test lcd skip to exercise RGB565/INDEX8 compact frames, continued DMA while dimming, and measured PWM at 0/25/50/75/100 percent; include the test in firmware verification for compatible CSRs.",
+    "Versioned single-microphone candidate passes board firmware diagnostics and 60-second soak, with LCD underflows and audio errors remaining zero."
+  ],
+  "build": {
+    "id": "2d8e6d0-full-rv32ima-rom8k-l28k-lcd-pwm-versioned-mono-546c595a-959c261b",
+    "label": "lcd-pwm-versioned-mono",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261014T042810038293Z-2d8e6d0-dirty-full-rv32ima-rom8k-l28k-lcd-pwm-versioned-mono",
+    "purpose": "lcd-pwm-versioned-mono",
+    "registered_at": "2026-10-14T04:32:14+00:00",
+    "source": {
+      "commit": "2d8e6d0532d81b121804ab468ecc1902efe72b1f",
+      "dirty": true,
+      "inputs_sha256": "b47e965f2eeda1aafd573ae5cc957e7245241492d8c55f762fcf8d98c26e7616",
+      "kind": "captured",
+      "created_at": "2026-10-14T04:28:10+00:00",
+      "arguments": [
+        "--profile",
+        "full",
+        "--purpose",
+        "lcd-pwm-versioned-mono",
+        "--app",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\firmware\\bios\\main.c",
+        "--cpu-variant",
+        "linux",
+        "--cpu-verilog",
+        "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\archives\\v0.10.0-2d8e6d0532d8\\full-rv32ima-rom8k-l28k\\inputs\\cpu\\VexRiscv_Mmu_s1m1.v",
+        "--boot-mode",
+        "rom",
+        "--rom-size",
+        "8192",
+        "--l2-size",
+        "8192",
+        "--sd-profile",
+        "lite",
+        "--usb-backend",
+        "ultra",
+        "--audio-clock",
+        "dds",
+        "--place-option",
+        "2",
+        "--route-option",
+        "2",
+        "--with-mmu",
+        "--without-fpu",
+        "--with-flash",
+        "--with-spi-lcd",
+        "--with-sd",
+        "--with-filesystem",
+        "--with-video",
+        "--with-board-io",
+        "--with-ws2812",
+        "--with-audio",
+        "--with-mic",
+        "--without-mic-stereo",
+        "--with-eth",
+        "--with-eth-dma",
+        "--with-usb",
+        "--synthesize"
+      ],
+      "cpu_rtl_sha256": "9f35e57b1cb182bb43d4d8a9ff408d09a290186d5df02a86d484af5a8fbe5d9d",
+      "recipe": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\recipes\\20261014T042810038293Z-2d8e6d0-dirty-full-rv32ima-rom8k-l28k-lcd-pwm-versioned-mono-959c261b"
+    },
+    "configuration": {
+      "profile": "full",
+      "isa": "rv32ima_zicsr_zifencei",
+      "rom_size_bytes": 8192,
+      "l2_size_bytes": 8192,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": true,
+        "fpu": false,
+        "flash": true,
+        "spi_lcd": true,
+        "sd": true,
+        "filesystem": true,
+        "video": true,
+        "board_io": true,
+        "ws2812": true,
+        "audio": true,
+        "mic": true,
+        "mic_stereo": false,
+        "eth": true,
+        "eth_dma": true,
+        "usb": true
+      }
+    },
+    "image_sha256": "5995cb04a8079ac054e8f0a1fc8f573a65459ab8f566b2718162a34133a7ef5f",
+    "bitstream_sha256": "546c595ad5192007c2677043c3dacf042297c88bb9142057d5cf92e9eb074631",
+    "abi": "28890b7e",
+    "component_versions": {
+      "rtl": "0.10.0",
+      "bootloader": "0.9.1",
+      "hal": "0.10.0",
+      "bios": "0.11.0",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "status": "board-qualified",
+    "evidence": [
+      {
+        "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\operations\\20261014T043305295104Z-verify\\firmware-verification.json",
+        "sha256": "5c983c0295d51c2f9562f1af66f8114a76d65199482181964b11ca8e08bafe4a"
+      }
+    ]
+  },
+  "performance_report": "reports\\performance\\lcd-skip-pwm-mono.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/lcd-pwm-versioned.json"
+    ],
+    "source_inputs_sha256": "b47e965f2eeda1aafd573ae5cc957e7245241492d8c55f762fcf8d98c26e7616"
+  },
+  "mode": "staged review",
+  "release_version": "0.11.0",
+  "base_revision": "2d8e6d0532d81b121804ab468ecc1902efe72b1f",
+  "source_revision": null
+}

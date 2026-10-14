@@ -58,6 +58,7 @@
       "format": "rgb565",
       "pins": {
         "clk": "R9",
+        "backlight": "E10",
         "hsync": "A15",
         "vsync": "D14",
         "de": "E15",

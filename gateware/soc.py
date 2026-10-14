@@ -249,7 +249,7 @@ class MiniSoC(SoCCore):
         if features.video:
             pins=json.loads(Path(__file__).with_name('board.json').read_text())['video']['rgb_lcd']['pins']
             platform.add_extension([('rgb_lcd',0,
-                *[Subsignal(name,Pins(pins[name])) for name in ('clk','hsync','vsync','de')],
+                *[Subsignal(name,Pins(pins[name])) for name in ('clk','hsync','vsync','de','backlight')],
                 *[Subsignal(color,Pins(' '.join(pins[color+'_lsb_first']))) for color in 'rgb'],IOStandard('LVCMOS33'))])
             self.rgb_lcd=RGBLCD(self.memory.video,platform.request('rgb_lcd'))
 

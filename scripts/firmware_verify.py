@@ -59,6 +59,8 @@ def main():
                 ('lcd clear',enabled('video')),('spi-lcd',enabled('spi_lcd')),
                 ('io',enabled('board_io') or enabled('ws2812')),('audio',enabled('audio')),
                 ('eth',enabled('eth')),('eth parser',enabled('eth')),('usb',enabled('usb')),('usb tree',enabled('usb')),('usb stop',enabled('usb'))]
+            if enabled('video') and 'rgb_lcd_skip' in json.loads((output/'csr.json').read_text())['csr_registers']:
+                cases += [('lcd skip',True)]
             cases += [('dma',validation.get('dma_backend')=='native')]
             capabilities = validation.get('cpu_capabilities')
             if capabilities is not None:
