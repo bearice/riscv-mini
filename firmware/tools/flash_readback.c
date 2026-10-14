@@ -3,7 +3,7 @@
  */
 #include <stdint.h>
 #include "probe_config.h"
-#include "../bootloader/image_abi.h"
+#include "image_abi.h"
 
 static uint32_t read_reg(uint32_t address) { return *(volatile uint32_t *)address; }
 static void write_reg(uint32_t address, uint32_t value) { *(volatile uint32_t *)address=value; }

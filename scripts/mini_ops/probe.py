@@ -32,6 +32,10 @@ def compile_probe(build, directory, tools, run=subprocess.run, writable=False):
                            PROBE_LENGTH1=build.validation['firmware_bytes'])
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
+    abi = build.validation['boot_image']['abi_tag']
+    (directory/'image_abi.h').write_text(
+        f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n#define MINI_IMAGE_ABI_HEX "{abi:08x}"\n',
+        encoding='ascii')
     (directory/'probe_config.h').write_text(''.join(
         f'#define {name} 0x{value:x}u\n' for name,value in definitions.items()),encoding='ascii')
     gcc = Path(tools['gcc'])
