@@ -29,6 +29,14 @@ full 的 HAL 当前仍以最多 8 扇区分块；更宽硬件不代表 HAL 已�
 
 首次使用 MMU/FPU 先生成四种 RTL（需要 Java 8、sbt-launch 1.9.7 与兼容的 VexRiscv checkout，固定版本为 `b6118e5cc2a33323425df6455697139021d50c72`）：
 
+在 Linux 的 `nix develop` shell 中，flake 已提供 Java、sbt launcher 和默认兼容的 VexRiscv 源码路径：
+
+```sh
+python scripts/cpu_generate.py --vexriscv-source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
+```
+
+Windows PowerShell 使用独立安装的 Java 8、sbt launcher 和 VexRiscv checkout：
+
 ```powershell
 .venv/Scripts/python.exe scripts/cpu_generate.py --vexriscv-source <VexRiscv 源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir build/cpu-features
 .venv/Scripts/python.exe scripts/build.py --with-mmu --with-fpu --sd-profile lite --audio-clock dds --synthesize --output-dir build/config-profiles/mmu-fpu-lite-dds

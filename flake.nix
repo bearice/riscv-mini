@@ -14,6 +14,21 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       gowin = gowin-wrapper.packages.${system}.default;
+      jdk8 = pkgs.jdk8_headless;
+
+      sbtLauncher = pkgs.stdenvNoCC.mkDerivation {
+        pname = "sbt-launch";
+        version = "1.9.7";
+        src = pkgs.fetchurl {
+          url = "https://repo.maven.apache.org/maven2/org/scala-sbt/sbt-launch/1.9.7/sbt-launch-1.9.7.jar";
+          hash = "sha256-UkTpMtuR6mvU0f+3+bx8RRwnftVSuU8magPAkgClbtQ=";
+        };
+        dontUnpack = true;
+        dontBuild = true;
+        installPhase = ''
+          install -Dm644 "$src" "$out/share/java/sbt-launch.jar"
+        '';
+      };
 
       riscvGcc = pkgs.stdenvNoCC.mkDerivation {
         pname = "xpack-riscv-none-elf-gcc";
@@ -39,6 +54,8 @@
           pkgs.gnumake
           pkgs.openfpgaloader
           pkgs.uv
+          jdk8
+          sbtLauncher
           gowin
           riscvGcc
         ];
@@ -47,6 +64,8 @@
           export PYTHONUTF8=1
           export PYTHONUNBUFFERED=1
           export LITEX_ENV_CC_TRIPLE=riscv-none-elf
+          export JAVA_HOME="${jdk8}/lib/openjdk"
+          export SBT_LAUNCH_JAR="${sbtLauncher}/share/java/sbt-launch.jar"
           export GOWIN_HOME="''${GOWIN_HOME:-$HOME/Gowin_V1.9.12.04_linux}"
           export GOWIN_ROOT="$GOWIN_HOME"
           export UV_PYTHON_INSTALL_DIR="''${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}"
@@ -82,6 +101,8 @@
           fi
 
           source .venv/bin/activate
+          export VEXRISCV_SOURCE="$(python -c 'from pathlib import Path; import pythondata_cpu_vexriscv as p; print(Path(p.data_location) / "ext/VexRiscv")')"
+          sbt() { java -jar "$SBT_LAUNCH_JAR" "$@"; }
           if [ -x "$GOWIN_HOME/IDE/bin/gw_sh" ]; then
             python scripts/configure_tools.py --gowin-bin "${gowin}/bin" --riscv-bin "${riscvGcc}/bin"
           else

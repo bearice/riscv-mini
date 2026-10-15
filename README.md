@@ -93,7 +93,13 @@ python scripts/mini.py --help
 python scripts/mini.py doctor
 ```
 
-flake 使用锁定的 Nixpkgs 26.05 提供 uv，由 uv 按 `.python-version` 安装和管理 Python 3.10.20、虚拟环境及 `requirements.lock` 中的 LiteX/Migen 依赖；同时提供 xPack RISC-V GCC 15.2.0-1。首次进入时同步依赖并配置忽略提交的 `.tools.local.json`。Gowin EDA 使用 [Gowin IDE Wrapper](https://github.com/bearice/gowin-ide-wrapper) 提供的 FHS 启动器；无 X/Wayland 显示时自动使用 Qt offscreen。EDA 本体因需注册下载，不放入仓库或 Nix store。将发行包解压到 `~/Gowin_V1.9.12.04_linux`，或在进入 shell 前设置 `GOWIN_HOME` 指向解压目录。使用其他已许可版本时也通过 `GOWIN_HOME` 指定。
+flake 使用锁定的 Nixpkgs 26.05 提供 uv，由 uv 按 `.python-version` 安装和管理 Python 3.10.20、虚拟环境及 `requirements.lock` 中的 LiteX/Migen 依赖；同时提供 xPack RISC-V GCC 15.2.0-1、JDK 8 和 sbt-launch 1.9.7。首次进入时同步依赖并配置忽略提交的 `.tools.local.json`。CPU RTL 生成所需的 `JAVA_HOME`、`SBT_LAUNCH_JAR` 和兼容的 `VEXRISCV_SOURCE` 也会自动设置，可用 `sbt` 命令启动 sbt。Gowin EDA 使用 [Gowin IDE Wrapper](https://github.com/bearice/gowin-ide-wrapper) 提供的 FHS 启动器；无 X/Wayland 显示时自动使用 Qt offscreen。EDA 本体因需注册下载，不放入仓库或 Nix store。将发行包解压到 `~/Gowin_V1.9.12.04_linux`，或在进入 shell 前设置 `GOWIN_HOME` 指向解压目录。使用其他已许可版本时也通过 `GOWIN_HOME` 指定。
+
+需要完整 MMU/FPU CPU RTL 时，在 shell 中运行：
+
+```sh
+python scripts/cpu_generate.py --vexriscv-source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
+```
 
 Windows PowerShell 仍可使用独立 Python 环境、Gowin FPGA Designer 和 xPack RISC-V GCC。机器路径写入忽略提交的 `.tools.local.json`。
 
