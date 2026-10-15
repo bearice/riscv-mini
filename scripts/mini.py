@@ -15,7 +15,7 @@ def parser():
         ('recover','SRAM load selected gateware, enter loader and query Flash header'),
         ('repair-xip','Restore selected XIP boot region, then SRAM load and exact readback; writes Flash'),
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
-        ('update','Persist complete system, exact Flash readback, then Flash boot (--method programmer for a bricked board)'),
+        ('update','Program complete Flash image directly, without SPI Verify, then Flash boot'),
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
@@ -24,7 +24,7 @@ def parser():
             op.add_argument('--seconds',type=float,default=2)
             continue
         op.add_argument('--build',default='current',help='Catalog ID/reference or artifact directory; default qualified current')
-        op.add_argument('--location',default='107569')
+        op.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')
         if name=='linux':
             op.add_argument('--os-image',type=Path,required=True,help='Matching OpenSBI/U-Boot OSB1 image')
@@ -37,8 +37,8 @@ def parser():
         if name in ('run','update','verify'):
             op.add_argument('--image',type=Path,help='Compatible app.img override; default selected build image')
         if name=='update':
-            op.add_argument('--method',choices=('auto','programmer'),default='auto',
-                            help='auto: DDR software SPI (needs a booting loader). programmer: full Flash write via Gowin programmer only; use when the board cannot boot')
+            op.add_argument('--method',choices=('auto','programmer'),default='programmer',
+                            help='auto: DDR software SPI (needs a booting loader). programmer (default): direct Flash op8/op31, no SRAM download, SPI Verify or readback')
         if name=='verify':
             op.add_argument('--suite',choices=('firmware','boot','flash','spi','cold'),default='firmware')
             op.add_argument('--soak-seconds',type=int,default=0)

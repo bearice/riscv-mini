@@ -20,7 +20,7 @@ def main():
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--log-dir',type=Path,help='Operation-specific logs and evidence')
     p.add_argument('--port',default='COM4')
-    p.add_argument('--location',default='107569')
+    p.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     p.add_argument('--program',action='store_true')
     p.add_argument('--reset',action='store_true')
     p.add_argument('--install',action='store_true',help='Write the generated firmware image to [2,4) MiB Flash')

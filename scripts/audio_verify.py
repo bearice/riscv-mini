@@ -14,7 +14,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir',type=Path,default=ROOT/'build/m7-base')
     parser.add_argument('--image',type=Path,default=ROOT/'build/m7-demo/firmware/app.img')
-    parser.add_argument('--port',default='COM4');parser.add_argument('--location',default='107569')
+    parser.add_argument('--port',default='COM4');parser.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     parser.add_argument('--reset',action='store_true');parser.add_argument('--program',action='store_true')
     parser.add_argument('--skip-capture',action='store_true');parser.add_argument('--device',default='Line In')
     parser.add_argument('--soak-seconds',type=float,default=300)

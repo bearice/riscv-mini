@@ -15,7 +15,7 @@ from boot_image import unpack_image
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output-dir',type=Path,required=True)
-    p.add_argument('--port',default='COM4');p.add_argument('--location',default='107569')
+    p.add_argument('--port',default='COM4');p.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     p.add_argument('--program-count',type=int,default=3);p.add_argument('--reset-count',type=int,default=5)
     args=p.parse_args()
     if not 0<=args.program_count<=10 or not 0<=args.reset_count<=10 or not args.program_count+args.reset_count:

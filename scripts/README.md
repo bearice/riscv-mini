@@ -29,14 +29,14 @@ Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/m
 | 验收 Linux 全外设 | 上述 `board linux` 命令追加 `--devices` | 在用户态/fb0 回归后测试 Linux Ethernet UDP、SD/FAT 只读、Flash MTD、GPIO/LED、ALSA、USB 枚举（SPI 控制器保留，不提供 SPI 屏幕 fb1）；详情与实际资格见 [Linux 移植](../docs/linux-port.md) |
 | 构建 BusyBox initrd | `./scripts/busybox_build.ps1` | 固定 BusyBox/musl 源码与 SHA，WSL ext4 编译静态 RV32 用户态；需要先构建 Linux 以生成 UAPI headers |
 | 启动 BusyBox shell | 上述 `board linux` 命令追加 `--initrd build/linux/busybox/initrd.cpio.gz` | TFTP 校验外部 initramfs、检查 PID 1 init、串口/LCD tty1 shell、PTY、进程、tmpfs 与 loopback，记录 USB 键盘输入设备；不与 `--devices` 同时使用 |
-| 持久更新完整系统 | `./mini.ps1 board update --build current` | 根据 ROM/XIP 选择流程，精确读回应用/XIP，再从 Flash 启动 |
+| 持久更新完整系统 | `./mini.ps1 board update --build current` | 编程器直接写配置与应用/XIP，关闭 SPI Verify 和读回，再从 Flash 启动 |
 | 验收 BIOS/monitor 功能 | `./mini.ps1 board verify --build current --suite firmware` | SRAM/UART 装载后执行固件命令测试；支持 `--soak-seconds 60` |
 | 验收启动协议与错误边界 | `./mini.ps1 board verify --build current --suite boot` | SRAM/UART 执行协议测试，不安装 Flash |
 | 确认 Flash 中是目标文件 | `./mini.ps1 board verify --build current --suite flash` | SRAM gateware，DDR 只读探针，应用/XIP 逐字节比较，然后 Flash 启动 |
 | 验证 XIP 关闭及软件 SPI 交接 | `./mini.ps1 board verify --build current --suite spi` | SRAM/DDR 程序关闭 XIP、等待 busy=0、确认软件 SPI CS 空闲，再恢复 loader；不写 Flash，仅适用 XIP |
 | 观察断电冷启动 | `./mini.ps1 board verify --build current --suite cold` | 等待用户外部断电重启；不发送复位，默认等待 300 秒。不属于默认流程，仅在用户主动要求时执行 |
 
-表中命令可直接在 PowerShell 运行。板端默认 `COM4`、Gowin location `107569`；换板或下载器时使用 `--port` / `--location`。冷启动和 Flash 验收要求已经安装目标应用；它们不会替你安装。
+表中命令可直接在 PowerShell 运行。串口默认 `COM4`，Linux 使用 `--port /dev/ttyUSB1` 等实际串口。Gowin location 默认在每次编程前通过 `--scan-cables F` 自动发现；USB 重枚举后会重新扫描，不缓存旧 location。只选择 USB Debugger A 的 JTAG channel 0，多个候选时停止并要求显式 `--location`。Linux 若 `ftdi_sio` 占用 JTAG interface A，仍需先解除该接口的驱动绑定；UART interface B 保持绑定。冷启动和 Flash 验收要求已经安装目标应用；它们不会替你安装。
 
 板端命令（status 除外）和 build 支持 `--dry-run`。下面是完整、可复制的更新预检：
 
@@ -44,11 +44,16 @@ Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/m
 ./mini.ps1 board update --build current --dry-run
 ```
 
+`board update --build <ID>` 默认通过编程器直接写 Flash（`--method programmer`）。
+此路径使用 operation 8 写 FPGA 配置，使用 Erase,Program（operation 31）
+按声明地址分别写 XIP 和应用，再 reload、等待 Flash 启动。
+不执行 SPI Verify、Flash 读回、SRAM 下载或 DDR 软件 SPI；收据明确记录这一验收边界。
+
 去掉 `--dry-run` 才执行更新。`run`、`update`、firmware/flash 验收支持 `--image <app.img>`，先检查目标 ABI。boot/cold 验收不接受被忽略的镜像参数。
 
 ## 更新与验证契约
 
-ROM 更新通过下载器写配置并 reload，再由 bootloader UART 安装应用。XIP 更新需要配置、1 MiB 启动代码、2 MiB 应用三个产物；地址来自选定构建的元数据，应用分区遵循 `boot_image.py`。XIP 与应用由 UART 加载的 DDR 工具通过片上软件 SPI 写入；配置最后由 Gowin op 8 写入并 reload。入口不要求发布包包含 Gowin 中间文件 `project.bin`，通过 FS 的二进制行计算配置空间，并检查与启动分区不重叠。
+默认编程器路径使用 operation 8 写配置、operation 31 写应用/XIP、operation 1 reload，不执行 SPI Verify、Flash 读回或 SRAM 下载。下述软件 SPI 与精确读回契约仅适用于显式 `--method auto` 的旧流程。ROM 的旧流程通过下载器写配置并 reload，再由 bootloader UART 安装应用。XIP 的旧流程需要配置、1 MiB 启动代码、2 MiB 应用三个产物；地址来自选定构建的元数据，应用分区遵循 `boot_image.py`。XIP 与应用由 UART 加载的 DDR 工具通过片上软件 SPI 写入；配置最后由 Gowin op 8 写入并 reload。入口不要求发布包包含 Gowin 中间文件 `project.bin`，通过 FS 的二进制行计算配置空间，并检查与启动分区不重叠。
 
 更新前验证全部输入、分区、CSR ABI，编译 DDR 工具，暂存并核对文件，然后打开串口。XIP 分支先 SRAM 加载目标 gateware，上传 DDR 工具，在禁用中断的 DDR 代码中关闭 XIP，等待 busy=0 并确认软件 SPI CS 空闲。收不到 `XIP QUIESCED enable=0 busy=0 spi_cs=idle` 确认就禁止写入。写入版工具仅由 update 编译，范围和长度固定为选定构建的两个区域；每个区域擦除前独立读取 JEDEC 三次并要求本板 `0x0B4017`，检查 WEL/WIP，接收带序号和 CRC32 的 128 字节数据包，逐页片段写入并读回确认后才 ACK。随后写配置并 reload。只读验收工具不编译写入命令。
 

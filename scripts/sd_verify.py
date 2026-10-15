@@ -19,7 +19,7 @@ def main():
     parser.add_argument('--output-dir',type=Path,default=ROOT/'build/m6')
     parser.add_argument('--image',type=Path,default=ROOT/'build/m6-demo/firmware/app.img')
     parser.add_argument('--port',default='COM4')
-    parser.add_argument('--location',default='107569')
+    parser.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     parser.add_argument('--program',action='store_true')
     parser.add_argument('--reset',action='store_true')
     parser.add_argument('--write-test',action='store_true')

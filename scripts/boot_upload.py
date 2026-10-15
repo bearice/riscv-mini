@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 import serial
 from boot_image import CHUNK, HEADER, packet, unpack_image
+from programmer_cable import resolve_location
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -119,7 +120,8 @@ def program(output,location,configuration=False,log_dir=None):
         if configuration_bytes(fs)>=0x200000:
             raise RuntimeError('Configuration image must fit below the firmware partition')
     tools=json.loads((ROOT/'.tools.local.json').read_text())
-    command=[tools['programmer'],'--cable-index','4','--location',str(location),'--frequency','2MHz',
+    selected_location=resolve_location(tools['programmer'],location,log_path=logs/'programmer-cables.log')
+    command=[tools['programmer'],'--cable-index','4','--location',selected_location,'--frequency','2MHz',
              '--device','GW2A-18C','--operation_index','8' if configuration else '2','--fsFile',str(fs)]
     if configuration: command+=['--spiaddr','0x000000']
     log=logs/('configuration-programmer.log' if configuration else 'programmer.log')
@@ -131,6 +133,8 @@ def program(output,location,configuration=False,log_dir=None):
         raise RuntimeError('Programming failed; inspect programmer log')
     if configuration:
         reload_command=command[:command.index('--operation_index')]+['--operation_index','1']
+        reload_command[reload_command.index('--location')+1]=resolve_location(
+            tools['programmer'],location,log_path=logs/'configuration-reload-cables.log')
         result=subprocess.run(reload_command,capture_output=True,text=True,timeout=120)
         (logs/'configuration-reload.log').write_text(result.stdout+result.stderr,encoding='utf-8')
         if not programmer_succeeded(result):raise RuntimeError('FPGA Flash reload failed; inspect reload log')
@@ -140,7 +144,7 @@ def main():
     if hasattr(sys.stdout,'reconfigure'): sys.stdout.reconfigure(encoding='utf-8',errors='replace')
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--port',default='COM4')
-    p.add_argument('--location',default='107569')
+    p.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/base')
     p.add_argument('--image',type=Path)
     p.add_argument('--log-dir',type=Path,help='Operation-specific logs; legacy default is output-dir')

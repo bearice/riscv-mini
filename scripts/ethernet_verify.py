@@ -26,7 +26,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output-dir',type=Path,default=ROOT/'build/m8')
     p.add_argument('--image',type=Path,default=ROOT/'build/m8-demo/firmware/app.img')
-    p.add_argument('--port',default='COM4');p.add_argument('--location',default='107569')
+    p.add_argument('--port',default='COM4');p.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     p.add_argument('--host-ip',required=True);p.add_argument('--interface-index',type=int,required=True)
     p.add_argument('--board-ip',default='169.254.20.20')
     p.add_argument('--program',action='store_true');p.add_argument('--reset',action='store_true')

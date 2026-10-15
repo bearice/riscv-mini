@@ -103,7 +103,7 @@ def main():
     p.add_argument('--no-tftp',action='store_true',help='Serve externally (firewall-allowed interpreter); do not bind UDP/69 here')
     p.add_argument('--program',action='store_true',help='Reset the FPGA (SRAM reprogram) before connecting')
     p.add_argument('--soc-dir',type=Path,default=Path('build/runs/v0.7.1-ce277e099275-full-rv32imafc-rom4k-l24k-final-build'))
-    p.add_argument('--location',default='107569')
+    p.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
     p.add_argument('--tftp-stats',action='store_true',help='Print per-block DATA->ACK latency after the transfer')
     p.add_argument('--network-check', action='store_true', help='Verify ping and two TFTP transfers with CRC after entering U-Boot')
     p.add_argument('--video',action='store_true',help='Check LCD console, framebuffer stores and DMA counters (requires --soc-dir csr.json)')

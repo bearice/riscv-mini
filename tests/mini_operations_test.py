@@ -103,16 +103,17 @@ class MiniOperationsTests(unittest.TestCase):
         calls=[]
         def runner(command,stdout,**kwargs):
             calls.append(command);index=command[command.index('--operation_index')+1]
-            if index=='32':
+            if index in ('31','32'):
                 offset=int(command[command.index('--spiaddr')+1],16)
                 file=Path(command[command.index('--mcuFile')+1]);self.assertTrue(file.is_absolute())
                 self.assertEqual(file.suffix,'.bin')
-                stdout.write(output_error or f'SPI start of address: {offset:#x}\nSPI end of address: {offset:#x}\nFinished.\n')
+                end=offset+(file.stat().st_size-1)//256*256
+                stdout.write(output_error or f'SPI start of address: {offset:#x}\nSPI end of address: {end:#x}\nFinished.\n')
             else:
                 stdout.write('Finished.\n')
                 if index in ('1','2'):port.startup()
             return subprocess.CompletedProcess(command,0)
-        board=Board(build,op,runner=runner,serial_factory=lambda *a,**k:port,
+        board=Board(build,op,location='1234',runner=runner,serial_factory=lambda *a,**k:port,
                     tools={'programmer':str(Path(sys.executable))})
         return build,op,board,port,calls
     def test_xip_update_writes_three_artifacts_and_verifies_before_boot(self):
@@ -122,12 +123,41 @@ class MiniOperationsTests(unittest.TestCase):
         self.assertNotIn(b'p',port.commands)
         self.assertEqual(port.commands[-2:],[b'b',b'f'])
         self.assertTrue(all(s['matched'] for s in op.report['steps'] if 'matched' in s))
+    def test_board_rescans_location_before_each_programmer_step(self):
+        build,op,board,port,calls=self.backend()
+        original=board.runner
+        locations=iter(('4145','4161'))
+        def runner(command,**kwargs):
+            if '--scan-cables' in command:
+                return subprocess.CompletedProcess(command,0,
+                    'Cable found: USB Debugger A/0/'+next(locations)+'/null\n','')
+            return original(command,**kwargs)
+        board.runner=runner;board.location=None
+        board.program('reload-one',1)
+        board.program('reload-two',1)
+        self.assertEqual([c[c.index('--location')+1] for c in calls],['4145','4161'])
+        self.assertTrue((op.path/'reload-two-cables.log').is_file())
     def test_rom_uses_uart_install_then_exact_readback(self):
         self.v['boot_mode']='rom';self.save()
         build,op,board,port,calls=self.backend()
         board.update(build.update_plan(),pack_image(b'probe',42))
         self.assertIn(b'p',port.commands)
         self.assertEqual([c[c.index('--operation_index')+1] for c in calls],['8','1','2'])
+    def test_programmer_update_preserves_offsets_without_sram_or_verify(self):
+        build,op,board,port,calls=self.backend()
+        with patch('mini_ops.board.BootSession.wait_state',return_value=(b'BOOT FLASH\r\nSYSTEM READY\r\n> ',{})):
+            board.update_flash(build.update_plan())
+        self.assertEqual([c[c.index('--operation_index')+1] for c in calls],['8','31','31','1'])
+        self.assertEqual((op.path/'xip.bin').read_bytes(),self.xip)
+        self.assertEqual((op.path/'application.bin').read_bytes(),self.image)
+        self.assertEqual([c[c.index('--spiaddr')+1] for c in calls if '--spiaddr' in c],
+                         ['0x000000','0x100000','0x200000'])
+    def test_programmer_update_verify_warning_stops_before_reload(self):
+        build,op,board,port,calls=self.backend(output_error=
+            'SPI start of address: 0x100000\nSPI end of address: 0x100000\nError: SPI Verify failed!\nFinished.\n')
+        with self.assertRaises(RuntimeError):board.update_flash(build.update_plan())
+        self.assertEqual([c[c.index('--operation_index')+1] for c in calls],['8','31'])
+        self.assertFalse(op.report['steps'][-1]['requires_independent_readback'])
     def test_corrupt_readback_stops_before_flash_boot(self):
         build,op,board,port,_=self.backend(corrupt=True)
         with self.assertRaisesRegex(RuntimeError,'readback differs'):

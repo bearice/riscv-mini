@@ -15,6 +15,7 @@ from boot_image import CHUNK, packet
 from build_records import ROOT, write_json
 from mini_ops.artifacts import Build, sha256
 from mini_ops.probe import compile_probe
+from programmer_cable import resolve_location
 
 
 class Operation:
@@ -36,7 +37,7 @@ class Operation:
 
 
 class Board:
-    def __init__(self, build, operation, port='COM4', location='107569',
+    def __init__(self, build, operation, port='COM4', location=None,
                  runner=subprocess.run, serial_factory=None, tools=None):
         self.build, self.op = build, operation
         self.port, self.location = port, location
@@ -52,10 +53,13 @@ class Board:
             return serial.Serial(self.port,115200,timeout=.1)
         return self.serial_factory(self.port,115200,timeout=.1)
 
-    def program(self, name, index, path=None, offset=None, raw=False):
+    def program(self, name, index, path=None, offset=None, raw=False, allow_verify_warning=True):
         print('Programmer step:',name,flush=True)
+        location = resolve_location(self.tools['programmer'], self.location,
+                                    runner=self.runner,
+                                    log_path=self.op.path/(name+'-cables.log'))
         command = [self.tools['programmer'],'--device','GW2A-18C',
-                   '--cable-index','4','--location',str(self.location),
+                   '--cable-index','4','--location',location,
                    '--frequency','2MHz','--operation_index',str(index)]
         if path is not None:
             command += ['--mcuFile' if raw else '--fsFile',str(Path(path).resolve())]
@@ -70,7 +74,7 @@ class Board:
         completed = subprocess.CompletedProcess(command,result.returncode,output,'')
         # Only the specifically documented zero-exit Verify warning may proceed
         # to independent readback. Other errors and malformed extents stop now.
-        warning = (raw and result.returncode == 0 and 'Error: SPI Verify failed!' in output
+        warning = (allow_verify_warning and raw and result.returncode == 0 and 'Error: SPI Verify failed!' in output
                    and programmer_succeeded(subprocess.CompletedProcess(
                        command,0,output.replace('Error: SPI Verify failed!',''),'')))
         if raw:
@@ -79,8 +83,9 @@ class Board:
             # The programmer rejects a stream whose padded size exceeds the
             # Flash; that failure prints no address extent, so treat a missing
             # extent as invalid rather than silently skipping the check.
+            last_page=offset+(Path(path).stat().st_size-1)//256*256
             extent_valid = (len(starts)==len(ends)==1 and int(starts[0],16)==offset
-                            and offset <= int(ends[0],16) < offset+Path(path).stat().st_size)
+                            and last_page <= int(ends[0],16) < offset+Path(path).stat().st_size)
             if not extent_valid:
                 warning = False
                 success = False
@@ -301,16 +306,10 @@ class Board:
             self.flash_boot(session)
 
     def update_flash(self, plan):
-        """Full Flash write through the Gowin programmer only; needs no running
-        loader, so it works when the board cannot boot and software SPI is
-        unavailable. The FPGA configuration must be programmed before the Flash
-        regions it addresses, so the XIP boot code is never fetched by a design
-        that does not provide the XIP window.
+        """Program configuration, XIP and app directly, without SPI Verify.
 
-        The programmer's raw Flash operation (index 32) sizes its stream from
-        the file itself, so each region is staged as a file padded to the
-        region's end; the extent check in program() still proves the written
-        range starts at the requested offset."""
+        No SRAM download, DDR software SPI or Flash readback is performed.
+        """
         staged=[]
         fs=self.op.path/'configuration.fs'
         fs.write_bytes(self.build.fs.read_bytes())
@@ -324,11 +323,12 @@ class Board:
             staged_path=self.op.path/(write['name']+'.bin')
             staged_path.write_bytes(data)
             staged.append((write,staged_path))
-        self.program('configuration',8,fs,0)
-        for write,path in staged:
-            self.program('flash-'+write['name'],32,path,write['offset'],True)
-        self.program('reload',1)
         with self.connect() as port,(self.op.path/'uart.log').open('wb') as log:
+            self.program('configuration',8,fs,0)
+            for write,path in staged:
+                self.program('flash-'+write['name'],31,path,write['offset'],True,allow_verify_warning=False)
+            port.reset_input_buffer()
+            self.program('reload',1)
             session=BootSession(port,log)
             # Canonical state wait: the loader auto-boot takes 2 s, so wait for
             # the application to reach APP_READY; a FAILED classification
@@ -450,7 +450,10 @@ def perform(args):
                 operation.report['plan']=plan
             if getattr(args,'method','auto')=='programmer':
                 operation.report['method']='gowin-programmer'
-                operation.report['verification']='programmer SPI verify per region, then Flash boot; no DDR software SPI, no independent readback'
+                operation.report['verification']='programmer configuration op8 and XIP/application op31, then Flash boot; SPI Verify and readback disabled'
+                plan.update(method='gowin-programmer',
+                            preparation='stage configuration, XIP and application at declared offsets; no SRAM download',
+                            verification=operation.report['verification'])
             if args.dry_run:
                 if plan:
                     _,csr_path=build.csr()
@@ -491,7 +494,8 @@ def perform(args):
                 command=[sys.executable,str(ROOT/'scripts'/script),'--output-dir',str(build.path),
                          '--log-dir',str(operation.path),'--port',args.port]
                 if args.suite!='cold':
-                    command+=['--program','--location',args.location]
+                    command+=['--program']
+                    if args.location is not None:command+=['--location',args.location]
                 if args.suite=='firmware' and args.image:
                     command+=['--image',str(build.image_path)]
                 if args.mic:command+=['--mic']
@@ -511,8 +515,16 @@ def perform(args):
     except Exception as error:
         operation.report['error']=str(error)
         operation.report['recovery_command']=['./mini.ps1','board','recover','--build',
-            getattr(args,'build','current'),'--port',args.port,'--location',getattr(args,'location','107569')]
+            getattr(args,'build','current'),'--port',args.port]
+        if getattr(args,'location',None) is not None:
+            operation.report['recovery_command']+=['--location',args.location]
         operation.report['recovery_limit']='SRAM recovery needs intact XIP boot code in XIP builds; reprogram target XIP first if that region was damaged'
+        if args.operation=='update' and getattr(args,'method',None)=='programmer':
+            operation.report['recovery_command']=['python','scripts/mini.py','board','update',
+                '--method','programmer','--build',args.build,'--port',args.port]
+            if args.location is not None:
+                operation.report['recovery_command']+=['--location',args.location]
+            operation.report['recovery_limit']='Retry direct full-image programming only; no SRAM download, SPI Verify or Flash readback'
         raise
     finally:
         operation.save()

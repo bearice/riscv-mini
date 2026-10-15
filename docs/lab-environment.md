@@ -16,6 +16,8 @@
 - 控制台：`COM4`，115200 8N1，沙箱内的子进程可以直接打开。
 - 下载参数（`scripts/boot_upload.py` 的 `program()`）：`--cable-index 4 --location 107569 --frequency 2MHz --device GW2A-18C --operation_index 2 --fsFile <bitstream>`。判定成功要求输出含 `Finished` 且无 error/failed。
 
+Linux 上 `ftdi_sio` 会占用 Sipeed FT2232 的 JTAG interface A；编程时需临时解绑 interface A，保留 interface B 的 UART，结束后恢复绑定。Gowin location 会在 USB 重枚举后变化，不能复用 Windows 或上一次 Linux 的数值。脚本默认在每次编程前通过 `--scan-cables F` 扫描 JTAG channel 0 的当前 location；显式 `--location` 仅用于人工覆盖。USB 与板卡共用供电，不能假设拔掉 USB 时板卡仍保持供电。
+
 ## SD 卡
 
 - 卡常驻插在核心板 J2，SDHC，`sectors=0747b000`；`test sd` 的验收文件存在。
