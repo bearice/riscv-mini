@@ -61,3 +61,15 @@
     opensbi: 0.10.0
     uboot: 0.4.0
   external: [opensbi, uboot]
+
+# Qualified current deployment: ed50260, single microphone, 8 KiB L2,
+# CPU/DDR 60/120 MHz; LCD skip/PWM and firmware/60-second soak passed.
+0.10.0:
+  components:
+    rtl: 0.10.0
+    bootloader: 0.9.1
+    hal: 0.10.0
+    bios: 0.11.0
+    opensbi: 0.10.0
+    uboot: 0.4.0
+  external: [opensbi, uboot]
