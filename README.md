@@ -85,8 +85,17 @@ test lcd clear
 
 ## 开发环境
 
-Windows PowerShell 下使用独立 Python 环境、LiteX/Migen、Gowin FPGA Designer 和 xPack RISC-V GCC。
-依赖固定在 `requirements.lock`；机器路径写入忽略提交的 `.tools.local.json`。
+Linux/NixOS 开发环境使用仓库根目录的 Nix flake：
+
+```sh
+nix develop
+python scripts/mini.py --help
+python scripts/mini.py doctor
+```
+
+flake 使用锁定的 Nixpkgs 26.05 提供 uv，由 uv 按 `.python-version` 安装和管理 Python 3.10.20、虚拟环境及 `requirements.lock` 中的 LiteX/Migen 依赖；同时提供 xPack RISC-V GCC 15.2.0-1。首次进入时同步依赖并配置忽略提交的 `.tools.local.json`。Gowin EDA 使用 [Gowin IDE Wrapper](https://github.com/bearice/gowin-ide-wrapper) 提供的 FHS 启动器；无 X/Wayland 显示时自动使用 Qt offscreen。EDA 本体因需注册下载，不放入仓库或 Nix store。将发行包解压到 `~/Gowin_V1.9.12.04_linux`，或在进入 shell 前设置 `GOWIN_HOME` 指向解压目录。使用其他已许可版本时也通过 `GOWIN_HOME` 指定。
+
+Windows PowerShell 仍可使用独立 Python 环境、Gowin FPGA Designer 和 xPack RISC-V GCC。机器路径写入忽略提交的 `.tools.local.json`。
 
 ```powershell
 cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini

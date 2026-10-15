@@ -1,5 +1,7 @@
 # 操作入口
 
+Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/mini.py`；Windows PowerShell 使用 `./mini.ps1`。
+
 在仓库根目录运行 `./mini.ps1`（自动选择本仓库 Python 和工作目录）。Python 等价入口是 `.venv/Scripts/python.exe scripts/mini.py`。从 `--help` 或 `guide` 开始，日常操作按任务选择命令；不需要先读底层脚本源码。
 
 ```powershell

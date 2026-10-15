@@ -197,6 +197,17 @@ int bios_fs_rename(const char *from,const char *to) {
     if(hal_sd_mount()!=HAL_OK)return -1;
     return f_rename(from,to)==FR_OK?0:-1;
 }
+#else
+/* Keep the BIOS ecall ABI linkable when the filesystem feature is disabled. */
+int bios_fs_open(const char *path,unsigned flags) {(void)path;(void)flags;return -1;}
+int bios_fs_close(int handle) {(void)handle;return -1;}
+int bios_fs_read(int handle,void *data,unsigned length) {(void)handle;(void)data;(void)length;return -1;}
+int bios_fs_write(int handle,const void *data,unsigned length) {(void)handle;(void)data;(void)length;return -1;}
+int bios_fs_seek(int handle,int offset,int whence) {(void)handle;(void)offset;(void)whence;return -1;}
+int bios_fs_stat(const char *path,struct bios_fs_stat *out) {(void)path;(void)out;return -1;}
+int bios_fs_mkdir(const char *path) {(void)path;return -1;}
+int bios_fs_unlink(const char *path) {(void)path;return -1;}
+int bios_fs_rename(const char *from,const char *to) {(void)from;(void)to;return -1;}
 #endif
 
 /* Legacy services, now thin clients of the layer above. */

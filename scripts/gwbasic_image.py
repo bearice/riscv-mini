@@ -2,6 +2,7 @@
 import argparse, json, subprocess, sys
 from pathlib import Path
 import bios_payload
+from riscv_toolchain import executable as tool_executable
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'firmware/apps/gwbasic'
 HELPERS = ['string']
@@ -22,7 +23,7 @@ def main():
     bios_payload.main()
     out = a.output_dir
     gcc = Path(json.loads((ROOT / '.tools.local.json').read_text())['gcc'])
-    nm = str(gcc.parent / 'riscv-none-elf-size.exe')
+    nm = str(gcc.parent / tool_executable('riscv-none-elf-size'))
     print(subprocess.check_output([nm, str(out / 'payload.elf')], text=True).strip())
 
 

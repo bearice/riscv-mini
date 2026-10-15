@@ -9,6 +9,7 @@ $MiniRoot = Split-Path -Parent $PSScriptRoot
 $MiniUv = (Get-Command uv -ErrorAction Stop).Source
 $MiniVenv = Join-Path $MiniRoot '.venv'
 $MiniPython = Join-Path $MiniVenv 'Scripts\python.exe'
+$MiniPythonVersion = (Get-Content -LiteralPath (Join-Path $MiniRoot '.python-version') -Raw).Trim()
 
 function Invoke-MiniChecked {
     param([string]$Executable, [string[]]$Arguments)
@@ -16,8 +17,13 @@ function Invoke-MiniChecked {
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed (exit $LASTEXITCODE)." }
 }
 
-if (-not (Test-Path -LiteralPath $MiniPython)) {
-    Invoke-MiniChecked -Executable $MiniUv -Arguments @('venv', '--python', '3.10.21', $MiniVenv)
+if (Test-Path -LiteralPath $MiniPython) {
+    $MiniCurrentPythonVersion = (& $MiniPython -c 'import platform; print(platform.python_version())' 2>$null | Select-Object -First 1).Trim()
+} else {
+    $MiniCurrentPythonVersion = ''
+}
+if ($MiniCurrentPythonVersion -ne $MiniPythonVersion) {
+    Invoke-MiniChecked -Executable $MiniUv -Arguments @('venv', '--clear', '--python', $MiniPythonVersion, $MiniVenv)
 }
 # uv clones git dependencies with nested submodules; deep checkout paths exceed
 # MAX_PATH unless git core.longpaths is enabled. Warn instead of failing obscurely.

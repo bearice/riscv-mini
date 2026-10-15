@@ -70,6 +70,19 @@ Get-NetIPAddress -AddressFamily IPv4
 
 脚本绑定指定的现有IP和Windows IP_UNICAST_IF，并在启动/共享复位后通过源地址限定的SendARP解析邻居，依次检查协商、UDP 长度0..1472、ping、共享 reset 后恢复，以及最多300秒的网络/SD CRC/LCD/静音音频并发。不修改主机 IP、路由或防火墙配置。五分钟结论与实物拔插结果见 [系统设计](system-design.md)。
 
+Linux/NixOS 使用现有接口名查 ifindex 和 IPv4，然后传给同一验收脚本：
+
+```sh
+IFACE=veth302d823b
+cat "/sys/class/net/$IFACE/ifindex"
+ip -o -4 addr show dev "$IFACE"
+python scripts/ethernet_verify.py --output-dir <PnR候选目录> \
+    --image <PnR候选目录>/firmware/app.img --program --port /dev/ttyUSB1 \
+    --host-ip <该接口已有IPv4> --interface-index <上一步ifindex> --soak-seconds 0
+```
+
+`--soak-seconds 0` 仍检查100M全双工链路、ARP/MAC、ICMP、UDP 长度0..1472及共享PHY reset恢复；完整并发 soak 需要构建启用 SD/文件系统、视频和音频的系统。Linux 通过绑定指定接口发送 UDP，并读取系统邻居表确认 ARP；不要求原始套接字权限。
+
 ## Flash 身份与 SPI 状态页
 
 `hal_flash_uid(uid,&length)` 返回工厂只读UID。本机XTX `0x0b4017` 使用 `5A 00 01 94`、一字节dummy、16字节UID；支持的Winbond型号使用`4B`、四字节dummy、8字节UID。XTX依据：[XT25F64B原厂手册 rev1.2](https://file2.dzsc.com/product/19/06/22/216185_132959081.pdf)，§6.35。拒绝全零/全FF或传输失败，不写Flash，不增加bootloader功能。

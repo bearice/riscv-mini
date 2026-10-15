@@ -1,0 +1,49 @@
+{
+  "nodes": {
+    "gowin-wrapper": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1781147238,
+        "narHash": "sha256-M+igN2PfhmyFbjquB5MlnC0zv4S8ecCRu2KbuqdEZ5Y=",
+        "ref": "main",
+        "rev": "2311c9abd2308e3124ebf535a88b3d2801f52398",
+        "revCount": 6,
+        "type": "git",
+        "url": "https://github.com/bearice/gowin-ide-wrapper.git"
+      },
+      "original": {
+        "ref": "main",
+        "type": "git",
+        "url": "https://github.com/bearice/gowin-ide-wrapper.git"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1791883866,
+        "narHash": "sha256-yvkDdToRZ4IgPc9tSBzzCYJvTLf8n5eE3rgUkpCuD5A=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "a033e66ab94a6bedf2c3d58d93a36319d3cbbbaf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-26.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "gowin-wrapper": "gowin-wrapper",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

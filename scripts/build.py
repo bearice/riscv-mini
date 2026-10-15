@@ -19,6 +19,7 @@ from gateware.flash_xip import FLASH_BASE, XIP_OFFSET, XIP_SIZE
 from scripts.build_records import now, register, run_path, source_identity, write_json
 from scripts.build_recipe import create_recipe
 from scripts.versions import COMPONENTS, read_versions
+from scripts.riscv_toolchain import executable as tool_executable
 
 def checked(command,log=None):
     command=[str(part) for part in command]
@@ -248,8 +249,8 @@ def main():
             sources=[*sources,ROOT/'firmware/diagnostics/tests.c',*[ROOT/'firmware/bios'/n for n in ('console.c','vt.c','settings.c','boot.c','network.c','benchmark.c','enter.S')]]
             compact+=['-DMINI_BIOS=1']
         checked([gcc,*flags,*compact,*common,flash_source,main,*sources,'-T',linker,'-Wl,--gc-sections',f'-Wl,-Map,{firmware/f"{name}.map"}','-lgcc','-o',elf])
-        checked([toolbin/'riscv-none-elf-objcopy.exe','-O','binary',elf,firmware/f'{name}.bin'])
-        sizes=subprocess.check_output([str(toolbin/'riscv-none-elf-size.exe'),str(elf)],text=True)
+        checked([toolbin/tool_executable('riscv-none-elf-objcopy'),'-O','binary',elf,firmware/f'{name}.bin'])
+        sizes=subprocess.check_output([str(toolbin/tool_executable('riscv-none-elf-size')),str(elf)],text=True)
         print(sizes,flush=True)
         values=sizes.splitlines()[1].split()
         firmware_sizes[name]={kind:int(value) for kind,value in zip(('text','data','bss'),values[:3])}

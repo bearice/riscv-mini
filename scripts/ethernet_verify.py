@@ -1,10 +1,11 @@
-"""Direct-PC Ethernet demo: ARP/ping/UDP, shared reset and <=5m media coexistence.
+"""Direct-PC Ethernet demo: ARP/ping/UDP, shared reset and optional media coexistence.
 
 Bind the host's existing IPv4 address and interface; never change NIC configuration.
 """
 import argparse
 import ctypes
 import json
+import os
 import re
 import socket
 import struct
@@ -38,7 +39,16 @@ def main():
     if not 0<=args.settle_seconds<=30:p.error('Use 0..30 settling seconds')
     output=args.output_dir.resolve();validation,_=verified_output(output);image=args.image.read_bytes()
     unpack_image(image,validation['boot_image']['abi_tag'])
+    features=validation.get('features',{})
+    media_ready=all(features.get(name) for name in ('sd','filesystem','video','audio'))
+    if args.soak_seconds and not media_ready:
+        p.error('--soak-seconds requires SD, filesystem, video and audio in the selected build; use 0 for network-only checks')
+    if args.usb and not features.get('usb'):
+        p.error('--usb requires USB in the selected build')
+    try:interface_name=socket.if_indextoname(args.interface_index)
+    except OSError as error:p.error(f'Unknown interface index {args.interface_index}: {error}')
     report={'passed':False,'checks':{},'host_ip':args.host_ip,'interface_index':args.interface_index,
+            'interface_name':interface_name,
             'board_ip':args.board_ip,'bitstream_sha256':validation['bitstream_sha256']}
     try:
         with (output/'ethernet-verification-uart.log').open('wb') as log,serial.Serial(args.port,115200,timeout=.05) as port:
@@ -69,6 +79,17 @@ def main():
                     if audio['control']!=7 or audio['underruns'] or audio['overruns'] or audio['errors'] or audio['amp']:raise RuntimeError(text)
                     if b'underflows=00000000' not in text or b'SD ready=00000001' not in text or b'errors=00000000 drops=00000000 unhandled=00000000' not in text:raise RuntimeError(text)
                 return eth,text
+            def linux_ping(count,timeout):
+                ping_command=['ping','-I',interface_name,'-I',args.host_ip,'-c',str(count),'-W',str(timeout),args.board_ip]
+                # A shared PHY reset can make the host briefly withdraw its
+                # link-local address while carrier renegotiates.
+                deadline=time.monotonic()+30
+                while True:
+                    result=subprocess.run(ping_command,capture_output=True,text=True)
+                    output=result.stdout+result.stderr
+                    if result.returncode==0 or 'Cannot assign requested address' not in output or time.monotonic()>=deadline:
+                        return result
+                    time.sleep(.25)
             def usb_status():
                 text=command('u');usb=fields(text,b'USB ready=')
                 if not usb['ready'] or not usb['phy_ready'] or usb['phy']!=0x00060424 or usb['phy_error'] or usb['errors'] or usb['key_drops'] or usb['report_drops']:
@@ -98,27 +119,48 @@ def main():
                 raise RuntimeError('No negotiated 100M full-duplex link: '+text.decode(errors='replace'))
             report['checks']['link']=await_link();print('100M full-duplex link ready',flush=True)
             def resolve_arp():
-                # Explicitly resolve on the selected source interface. Following
-                # PHY reset, Windows may temporarily retain an unreachable entry.
-                send_arp=ctypes.windll.iphlpapi.SendARP
-                send_arp.argtypes=[ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32)]
-                send_arp.restype=ctypes.c_uint32
-                destination=struct.unpack('<I',socket.inet_aton(args.board_ip))[0]
-                source=struct.unpack('<I',socket.inet_aton(args.host_ip))[0]
-                deadline=time.monotonic()+20;code=0
+                if os.name=='nt':
+                    # Explicitly resolve on the selected source interface.
+                    # Following PHY reset, Windows may retain an unreachable entry.
+                    send_arp=ctypes.windll.iphlpapi.SendARP
+                    send_arp.argtypes=[ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32)]
+                    send_arp.restype=ctypes.c_uint32
+                    destination=struct.unpack('<I',socket.inet_aton(args.board_ip))[0]
+                    source=struct.unpack('<I',socket.inet_aton(args.host_ip))[0]
+                    deadline=time.monotonic()+20;code=0
+                    while time.monotonic()<deadline:
+                        mac=(ctypes.c_ubyte*8)();length=ctypes.c_uint32(8)
+                        code=send_arp(destination,source,mac,ctypes.byref(length))
+                        if not code:
+                            value=bytes(mac[:length.value]).hex(':')
+                            if value!=board_mac:raise RuntimeError('Unexpected ARP MAC '+value)
+                            return value
+                        time.sleep(.25)
+                    raise RuntimeError(f'ARP resolution failed: Windows error {code}')
+
+                # Let the kernel resolve the neighbor over the explicitly
+                # selected interface, then inspect its ARP table entry. This
+                # avoids requiring CAP_NET_RAW merely to construct an ARP frame.
+                probe=linux_ping(1,2)
+                if probe.returncode:
+                    raise RuntimeError('ARP/ICMP probe failed: '+probe.stdout+probe.stderr)
+                deadline=time.monotonic()+5
                 while time.monotonic()<deadline:
-                    mac=(ctypes.c_ubyte*8)();length=ctypes.c_uint32(8)
-                    code=send_arp(destination,source,mac,ctypes.byref(length))
-                    if not code:
-                        value=bytes(mac[:length.value]).hex(':')
-                        if value!=board_mac:raise RuntimeError('Unexpected ARP MAC '+value)
-                        return value
-                    time.sleep(.25)
-                raise RuntimeError(f'ARP resolution failed: Windows error {code}')
+                    for row in Path('/proc/net/arp').read_text().splitlines()[1:]:
+                        fields=row.split()
+                        if len(fields)>=6 and fields[0]==args.board_ip and fields[5]==interface_name and int(fields[2],16)&2:
+                            value=fields[3].lower()
+                            if value!=board_mac:raise RuntimeError('Unexpected ARP MAC '+value)
+                            return value
+                    time.sleep(.1)
+                raise RuntimeError(f'No resolved ARP entry for {args.board_ip} on {interface_name}')
             report['checks']['arp']=resolve_arp()
             with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as udp:
-                # Windows IP_UNICAST_IF uses a network-byte-order DWORD.
-                udp.setsockopt(socket.IPPROTO_IP,31,struct.pack('!I',args.interface_index))
+                if os.name=='nt':
+                    # Windows IP_UNICAST_IF uses a network-byte-order DWORD.
+                    udp.setsockopt(socket.IPPROTO_IP,31,struct.pack('!I',args.interface_index))
+                else:
+                    udp.setsockopt(socket.SOL_SOCKET,socket.SO_BINDTODEVICE,interface_name.encode()+b'\0')
                 udp.bind((args.host_ip,0));udp.settimeout(2)
                 count=0;bytes_total=0;latencies=[]
                 def echo(length):
@@ -139,8 +181,9 @@ def main():
                 sizes=[0,1,31,32,63,64,255,511,1024,1472]
                 for size in sizes:echo(size)
                 report['checks']['udp_sizes']=sizes
-                ping=subprocess.run(['ping','-S',args.host_ip,'-n','4','-w','2000',args.board_ip],capture_output=True)
-                report['checks']['ping']=ping.stdout.decode(errors='replace')
+                ping=(subprocess.run(['ping','-S',args.host_ip,'-n','4','-w','2000',args.board_ip],capture_output=True)
+                      if os.name=='nt' else linux_ping(4,2))
+                report['checks']['ping']=(ping.stdout.decode(errors='replace') if isinstance(ping.stdout,bytes) else ping.stdout)
                 if ping.returncode:raise RuntimeError('ICMP ping failed: '+repr(ping.stdout))
                 # F10 reset intentionally resets both PHYs; no host NIC mutation.
                 command('e');report['checks']['shared_reset']=await_link()
@@ -154,34 +197,39 @@ def main():
                     deadline=time.monotonic()+args.settle_seconds
                     while time.monotonic()<deadline:time.sleep(min(.1,max(0,deadline-time.monotonic())))
                     report['settling']['status_after']=status()[1].decode(errors='replace')
-                command('d');baseline=status(True)[0]['drops'];started=time.monotonic();rounds=0;first=None;last=None
-                usb_before=await_usb() if args.usb else None
-                while time.monotonic()-started<args.soak_seconds:
-                    for size in sizes:echo(size)
-                    if b'FRAME PASS' not in command('f'):raise RuntimeError('Frame swap missing')
-                    if b'SD READ PASS bytes=00001000 crc=08040e1e' not in command('r'):raise RuntimeError('SD CRC mismatch')
-                    eth,text=status(True)
-                    if not eth['link']:raise RuntimeError('Link lost: '+text.decode(errors='replace'))
-                    if args.usb:
-                        usb,usb_text=usb_status()
-                        if not usb['connected'] or not usb['hid']:raise RuntimeError('USB receiver lost: '+usb_text.decode(errors='replace'))
-                        if rounds and usb['frame']==usb_previous['frame']:raise RuntimeError('OHCI frame clock stopped')
-                        usb_previous=usb
-                    audio=fields(text,b'AUDIO ');lcd=fields(text,b'LCD ')
-                    now=(eth['rx'],eth['tx'],audio['played'],audio['fetched'],lcd['frames'],lcd['completed'])
-                    if last is not None and any(a==b for a,b in zip(now,last)):raise RuntimeError('Counters stopped')
-                    if first is None:first=now
-                    last=now;rounds+=1
-                    if rounds%10==0:print(f'{rounds} rounds {time.monotonic()-started:.1f}s: UDP/SD/LCD/audio OK',flush=True)
-                    # Keep packets flowing during the rest of each one-second round.
-                    until=min(started+args.soak_seconds,started+rounds)
-                    while time.monotonic()<until:echo(511);time.sleep(.02)
-                report['soak']={'seconds':time.monotonic()-started,'rounds':rounds,'first':first,'last':last,
-                    'udp_packets':count,'udp_timeouts':0,'payload_bytes':bytes_total,'max_rtt_ms':max(latencies),
-                    'raw_rx_drops_before':baseline,'raw_rx_drops_after':status()[0]['drops']}
-                report['checks']['final_status']=status(bool(args.soak_seconds))[1].decode(errors='replace')
-                if args.usb:report['checks']['usb_soak']={'before':usb_before,'after':usb_status()[0]}
-                command('x')
+                if args.soak_seconds:
+                    command('d');baseline=status(True)[0]['drops'];started=time.monotonic();rounds=0;first=None;last=None
+                    usb_before=await_usb() if args.usb else None
+                    while time.monotonic()-started<args.soak_seconds:
+                        for size in sizes:echo(size)
+                        if b'FRAME PASS' not in command('f'):raise RuntimeError('Frame swap missing')
+                        if b'SD READ PASS bytes=00001000 crc=08040e1e' not in command('r'):raise RuntimeError('SD CRC mismatch')
+                        eth,text=status(True)
+                        if not eth['link']:raise RuntimeError('Link lost: '+text.decode(errors='replace'))
+                        if args.usb:
+                            usb,usb_text=usb_status()
+                            if not usb['connected'] or not usb['hid']:raise RuntimeError('USB receiver lost: '+usb_text.decode(errors='replace'))
+                            if rounds and usb['frame']==usb_previous['frame']:raise RuntimeError('OHCI frame clock stopped')
+                            usb_previous=usb
+                        audio=fields(text,b'AUDIO ');lcd=fields(text,b'LCD ')
+                        now=(eth['rx'],eth['tx'],audio['played'],audio['fetched'],lcd['frames'],lcd['completed'])
+                        if last is not None and any(a==b for a,b in zip(now,last)):raise RuntimeError('Counters stopped')
+                        if first is None:first=now
+                        last=now;rounds+=1
+                        if rounds%10==0:print(f'{rounds} rounds {time.monotonic()-started:.1f}s: UDP/SD/LCD/audio OK',flush=True)
+                        # Keep packets flowing during the rest of each one-second round.
+                        until=min(started+args.soak_seconds,started+rounds)
+                        while time.monotonic()<until:echo(511);time.sleep(.02)
+                    report['soak']={'seconds':time.monotonic()-started,'rounds':rounds,'first':first,'last':last,
+                        'udp_packets':count,'udp_timeouts':0,'payload_bytes':bytes_total,'max_rtt_ms':max(latencies),
+                        'raw_rx_drops_before':baseline,'raw_rx_drops_after':status()[0]['drops']}
+                    report['checks']['final_status']=status(True)[1].decode(errors='replace')
+                    if args.usb:report['checks']['usb_soak']={'before':usb_before,'after':usb_status()[0]}
+                    command('x')
+                else:
+                    report['soak']={'seconds':0,'rounds':0,'udp_packets':count,'udp_timeouts':0,
+                        'payload_bytes':bytes_total,'max_rtt_ms':max(latencies)}
+                    report['checks']['final_status']=status()[1].decode(errors='replace')
                 report['passed']=True
     finally:
         (output/'ethernet-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')

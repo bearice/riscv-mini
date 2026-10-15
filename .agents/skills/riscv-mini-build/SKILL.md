@@ -5,16 +5,16 @@ description: 在 TangPrimer-20K/riscv-mini 创建最小或完整系统构建、�
 
 # 构建与 PnR
 
-在 riscv-mini 仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
+在 riscv-mini 仓库根目录先运行 `nix develop`，使用 flake 管理的 Python、依赖和 xPack RISC-V 工具链；Linux/NixOS 使用 `python` 或 `.venv/bin/python`。Windows PowerShell 使用 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
 
 构建身份与参数读取 `docs/build-artifacts.md`。
 
 基本构建入口读取 `scripts/README.md`：`scripts/mini.py build --from current` 复用已验收配置并编译当前源码，`--minimal` 从零构建最小系统，`--synthesize` 才执行 PnR。硬件参数实验继续使用下面的专项工具。
 
-```powershell
-.venv/Scripts/python.exe scripts/builds.py list
-.venv/Scripts/python.exe scripts/builds.py show current
-.venv/Scripts/python.exe scripts/build.py --profile minimal --purpose <本次用途>
+```sh
+python scripts/builds.py list
+python scripts/builds.py show current
+python scripts/build.py --profile minimal --purpose <本次用途>
 ```
 
 最后一条生成 RTL、boot/app 固件；增加 `--synthesize` 才执行 Gowin 综合和 PnR。默认创建独立 `build/runs/`，通过本次输出获取目录和完整 ID，保存 `build-info.json`、`validation.json` 和工具日志。

@@ -28,6 +28,7 @@ import time
 import zlib
 from pathlib import Path
 from payload_libc import newlib_link
+from riscv_toolchain import executable as tool_executable
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'firmware/apps/doom'
@@ -428,7 +429,7 @@ def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='
     (out / 'sim.ld').write_text(LINKER, encoding='utf-8')
     shutil.copyfile(wad, out / WAD_BLOB)
     wad_obj = out / 'wad.o'
-    subprocess.run([str(bindir / 'riscv-none-elf-objcopy.exe'), '-I', 'binary',
+    subprocess.run([str(bindir / tool_executable('riscv-none-elf-objcopy')), '-I', 'binary',
                     '-O', 'elf32-littleriscv', '-B', 'riscv',
                     '--rename-section', '.data=.wad,alloc,load,readonly,data,contents',
                     WAD_BLOB, 'wad.o'], check=True, cwd=str(out))
@@ -459,7 +460,7 @@ def build(out, wad, defines=(), cflags=(), soft_float=False, uart=(), optimize='
 
 def symbol(elf, name):
     _gcc, bindir = tools()
-    text = subprocess.check_output([str(bindir / 'riscv-none-elf-nm.exe'), str(elf)], text=True)
+    text = subprocess.check_output([str(bindir / tool_executable('riscv-none-elf-nm')), str(elf)], text=True)
     for line in text.splitlines():
         parts = line.split()
         if len(parts) == 3 and parts[2] == name:

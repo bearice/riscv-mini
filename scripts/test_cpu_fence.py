@@ -7,6 +7,7 @@ import shutil
 import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
+from riscv_toolchain import executable as tool_executable
 
 
 def main():
@@ -28,7 +29,7 @@ def main():
     defines=['-DTEST_COMPRESSED'] if args.compressed else []
     subprocess.run([str(gcc),'-march='+arch,*defines,'-mabi=ilp32','-nostdlib','-nostartfiles',
         '-Wl,-Ttext=0','-Wl,--build-id=none',str(ROOT/'tests/cpu_fence_program.S'),'-o',str(output/'program.elf')],check=True,env=env)
-    subprocess.run([str(gcc.parent/'riscv-none-elf-objcopy.exe'),'-O','binary',str(output/'program.elf'),str(output/'program.bin')],check=True,env=env)
+    subprocess.run([str(gcc.parent/tool_executable('riscv-none-elf-objcopy')),'-O','binary',str(output/'program.elf'),str(output/'program.bin')],check=True,env=env)
     data=(output/'program.bin').read_bytes();data+=bytes(16384-len(data))
     (output/'program.hex').write_text('\n'.join(f'{int.from_bytes(data[i:i+4],"little"):08x}' for i in range(0,len(data),4))+'\n')
     subprocess.run([str(iv),'-g2012','-s','cpu_fence_tb',f'-Pcpu_fence_tb.ACK_DELAY={args.ack_delay}','-o',str(output/'test.vvp'),

@@ -3,14 +3,15 @@ import argparse
 import json
 import subprocess
 from pathlib import Path
+from riscv_toolchain import executable as tool_executable
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def analyze(elf):
     toolbin = Path(json.loads((ROOT/'.tools.local.json').read_text())['gcc']).parent
-    symbols = subprocess.check_output([str(toolbin/'riscv-none-elf-nm.exe'), '-S', '--size-sort', str(elf)], text=True)
-    sections = subprocess.check_output([str(toolbin/'riscv-none-elf-size.exe'), '-A', str(elf)], text=True)
+    symbols = subprocess.check_output([str(toolbin/tool_executable('riscv-none-elf-nm')), '-S', '--size-sort', str(elf)], text=True)
+    sections = subprocess.check_output([str(toolbin/tool_executable('riscv-none-elf-size')), '-A', str(elf)], text=True)
     functions = []
     for row in symbols.splitlines():
         fields = row.split()
@@ -28,7 +29,7 @@ def analyze(elf):
         functions.append({'name': '_start', 'address': 0,
                           'bytes': min(f['address'] for f in functions), 'inferred_extent': True})
     functions.sort(key=lambda f: f['bytes'], reverse=True)
-    headers=subprocess.check_output([str(toolbin/'riscv-none-elf-objdump.exe'),'-h',str(elf)],text=True)
+    headers=subprocess.check_output([str(toolbin/tool_executable('riscv-none-elf-objdump')),'-h',str(elf)],text=True)
     ranges=[]
     for line in headers.splitlines():
         fields=line.split()

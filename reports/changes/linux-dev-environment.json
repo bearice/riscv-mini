@@ -1,0 +1,131 @@
+{
+  "created_at": "2026-10-15T05:57:15+00:00",
+  "title": "Add Nix Linux development environment",
+  "changes": [
+    "Add a locked stable Nix development shell with nixpkgs uv, uv-managed Python, the Gowin IDE wrapper, and xPack RISC-V GCC.",
+    "Make tool discovery and RISC-V utility execution work on Linux while preserving Windows support, and document Linux build and Ethernet workflows.",
+    "Provide disabled filesystem ecall implementations so minimal BIOS builds without filesystem support link cleanly."
+  ],
+  "build": {
+    "id": "746cc8b-minimal-rv32im-rom0k-l24k-linux-dev-no-filesystem-bios-0740793b-93d14576",
+    "label": "linux-dev-no-filesystem-bios",
+    "path": "/home/bearice/workspace/fpga/riscv-mini/build/runs/20261015T055302439379Z-746cc8b-dirty-minimal-rv32im-rom0k-l24k-linux-dev-no-filesystem-bios",
+    "purpose": "linux-dev-no-filesystem-bios",
+    "registered_at": "2026-10-15T05:53:10+00:00",
+    "source": {
+      "commit": "746cc8bff82f63000484f78c36849d7161bee634",
+      "dirty": true,
+      "inputs_sha256": "c82d4c0abbd1a8f38cb34d7b452d0cc83dc626a1b700b358207d04b69de4d8c6",
+      "kind": "captured",
+      "created_at": "2026-10-15T05:53:02+00:00",
+      "arguments": [
+        "--profile",
+        "minimal",
+        "--without-filesystem",
+        "--purpose",
+        "linux-dev-no-filesystem-bios"
+      ],
+      "cpu_rtl_sha256": null,
+      "recipe": "/home/bearice/workspace/fpga/riscv-mini/build/recipes/20261015T055302439379Z-746cc8b-dirty-minimal-rv32im-rom0k-l24k-linux-dev-no-filesystem-bios-93d14576"
+    },
+    "configuration": {
+      "profile": "minimal",
+      "isa": "rv32im_zicsr_zifencei",
+      "rom_size_bytes": 0,
+      "l2_size_bytes": 4096,
+      "memory_system": "shared-writeback",
+      "clock_hz": 60000000,
+      "ddr_clock_hz": 120000000,
+      "place_option": 2,
+      "route_option": 2,
+      "features": {
+        "mmu": false,
+        "fpu": false,
+        "flash": true,
+        "spi_lcd": false,
+        "sd": false,
+        "filesystem": false,
+        "video": false,
+        "board_io": false,
+        "ws2812": false,
+        "audio": false,
+        "mic": false,
+        "mic_stereo": false,
+        "eth": false,
+        "eth_dma": false,
+        "usb": false
+      }
+    },
+    "image_sha256": "0740793b6d5621eced774549994abee1e87d514c12fab27ef498a8f2f393b6c3",
+    "bitstream_sha256": null,
+    "abi": "acce7a69",
+    "component_versions": {
+      "rtl": "0.10.0",
+      "bootloader": "0.9.1",
+      "hal": "0.10.0",
+      "bios": "0.11.0",
+      "opensbi": "0.10.0",
+      "uboot": "0.4.0"
+    },
+    "status": "generated",
+    "evidence": []
+  },
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "source_inputs_sha256": "c82d4c0abbd1a8f38cb34d7b452d0cc83dc626a1b700b358207d04b69de4d8c6",
+    "checks": [
+      {
+        "name": "flake development shell and doctor",
+        "passed": true,
+        "python": "3.10.20",
+        "gcc_version": "riscv-none-elf-gcc (xPack GNU RISC-V Embedded GCC x86_64) 15.2.0",
+        "environment_report": "build/environment.json"
+      },
+      {
+        "name": "workflow regression",
+        "passed": true,
+        "tests_run": 18,
+        "report": "build/reports/checks/workflow.json",
+        "source_inputs_sha256": "c82d4c0abbd1a8f38cb34d7b452d0cc83dc626a1b700b358207d04b69de4d8c6"
+      },
+      {
+        "name": "changed Python scripts compile",
+        "passed": true,
+        "command": "python -m py_compile on changed tool and Ethernet scripts"
+      },
+      {
+        "name": "minimal BIOS build with filesystem disabled",
+        "passed": true,
+        "build_id": "746cc8b-minimal-rv32im-rom0k-l24k-linux-dev-no-filesystem-bios-0740793b-93d14576",
+        "validation": "build/runs/20261015T055302439379Z-746cc8b-dirty-minimal-rv32im-rom0k-l24k-linux-dev-no-filesystem-bios/validation.json",
+        "image_sha256": "0740793b6d5621eced774549994abee1e87d514c12fab27ef498a8f2f393b6c3"
+      },
+      {
+        "name": "Ethernet candidate PnR",
+        "passed": true,
+        "build_id": "746cc8b-minimal-rv32im-rom8k-l24k-veth-ethernet-pio-42d293a9-a6531ba9",
+        "validation": "build/runs/20261015T051836522982Z-746cc8b-dirty-minimal-rv32im-rom8k-l24k-veth-ethernet-pio/validation.json"
+      },
+      {
+        "name": "Gowin SRAM plus UART board run",
+        "passed": true,
+        "operation": "build/operations/20261015T055107596047Z-run/result.json",
+        "flash_written": false
+      },
+      {
+        "name": "Ethernet board verification",
+        "passed": true,
+        "operation": "build/operations/20261015T054257Z-ethernet-acceptance-complete/ethernet-verification.json",
+        "interface": "enp3s0",
+        "udp_packets": 20,
+        "udp_timeouts": 0
+      }
+    ],
+    "performance": "not applicable; no RTL changed"
+  },
+  "mode": "staged review",
+  "base_revision": "746cc8bff82f63000484f78c36849d7161bee634",
+  "source_revision": null
+}

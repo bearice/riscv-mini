@@ -3,6 +3,7 @@ import argparse,json,subprocess,os
 from pathlib import Path
 from bios_image import pack
 from payload_libc import newlib_link
+from riscv_toolchain import executable as tool_executable
 ROOT=Path(__file__).resolve().parents[1]
 # A payload links with -nostdlib, so the freestanding helpers the compiler still
 # emits calls to (memcpy, memset, strlen, ...) have to be linked in explicitly.
@@ -46,8 +47,8 @@ def main():
         str(bios/'payload_start.S'),*[str(x.resolve()) for x in sources+runtime],*[str(x.resolve()) for x in a.extra_source],*[str(HELPERS[name]) for name in a.helper],
         '-T',str(bios/'payload.ld'),'-Wl,--gc-sections','-Wl,-Map,'+str(out/'payload.map'),*libraries,'-o',str(elf)]
     subprocess.run(args,check=True)
-    subprocess.run([str(bin/'riscv-none-elf-objcopy.exe'),'-O','binary',str(elf),str(raw)],check=True)
-    text=subprocess.check_output([str(bin/'riscv-none-elf-nm.exe'),str(elf)],text=True)
+    subprocess.run([str(bin/tool_executable('riscv-none-elf-objcopy')),'-O','binary',str(elf),str(raw)],check=True)
+    text=subprocess.check_output([str(bin/tool_executable('riscv-none-elf-nm')),str(elf)],text=True)
     symbols={parts[2]:int(parts[0],16) for line in text.splitlines() if len(parts:=line.split())==3}
     image=pack(raw.read_bytes(),symbols['_memory_end']-0x01000000,symbols['_payload_start'])
     (out/'BOOT.RPB').write_bytes(image)
