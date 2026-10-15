@@ -144,14 +144,16 @@ def main():
     final.mkdir(parents=True)
     write_json(final/'release.json',dict(state='building',**receipt,commit=source['commit'],created_at=now()))
     inputs=final/'inputs/cpu';inputs.mkdir(parents=True)
-    cpu=Path(v['cpu_verilog'])
-    for f in (cpu,cpu.with_suffix('.yaml'),cpu.parent/'generator.json'):
-        if f.is_file():shutil.copy2(f,inputs/f.name)
+    cpu_source=v.get('cpu_verilog')
+    cpu=Path(cpu_source) if cpu_source else None
+    if cpu is not None:
+        for f in (cpu,cpu.with_suffix('.yaml'),cpu.parent/'generator.json'):
+            if f.is_file():shutil.copy2(f,inputs/f.name)
     app=a.app or Path(v.get('application_source',''))
     if not app.is_file():p.error('Select --app explicitly for this template')
     run=ROOT/'build/runs'/f"{tag}-{source['commit'][:12]}-{config}-final-build"
     if run.exists():p.error('Final build run already exists; preserve it for diagnosis')
-    args=configuration_arguments(v,app,inputs/cpu.name,'final-build',synthesize=True)
+    args=configuration_arguments(v,app,inputs/cpu.name if cpu is not None else None,'final-build',synthesize=True)
     args+=['--output-dir',str(run)]
     write_json(final/'invocation.json',dict(commit=source['commit'],command=[sys.executable,'scripts/build.py',*args]))
     def execute(name,command):

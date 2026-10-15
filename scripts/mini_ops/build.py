@@ -12,7 +12,10 @@ from mini_ops.board import Operation
 def configuration_arguments(v, app, cpu, purpose, synthesize=False):
     """Shared by development builds and final release builds."""
     command=['--profile',v['profile'],'--purpose',purpose,'--app',str(Path(app).resolve()),
-             '--cpu-variant',v['cpu_variant'],'--cpu-verilog',str(Path(cpu).resolve()),
+             '--cpu-variant',v['cpu_variant']]
+    if cpu is not None:
+        command += ['--cpu-verilog',str(Path(cpu).resolve())]
+    command += [
              '--boot-mode',v.get('boot_mode','rom'),
              '--rom-size',str(v['rom_size_bytes'] or 4096),'--l2-size',str(v['l2_size_bytes']),
              '--sd-profile',v['sd_profile'],'--usb-backend',v['usb_backend'],'--audio-clock',v['audio_clock'],
@@ -40,8 +43,9 @@ def invocation(args):
             if args.boot_mode=='rom' and not v['rom_size_bytes']:v['rom_size_bytes']=8192
         app=args.app or Path(v.get('application_source',''))
         if not app.is_file():raise ValueError('Template application source missing; select --app')
-        cpu=Path(v.get('cpu_verilog',''))
-        if not cpu.is_file():raise ValueError('Template CPU RTL missing; reproduce the template first')
+        cpu_path=v.get('cpu_verilog')
+        cpu=Path(cpu_path) if cpu_path else None
+        if cpu is not None and not cpu.is_file():raise ValueError('Template CPU RTL missing; reproduce the template first')
         command=configuration_arguments(v,app,cpu,args.purpose)
     if args.synthesize:command.append('--synthesize')
     if args.minimal:

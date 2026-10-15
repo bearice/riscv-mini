@@ -1,0 +1,38 @@
+{
+  "created_at": "2026-10-15T06:01:36+00:00",
+  "title": "Support snapshots for built-in lite CPU",
+  "changes": [
+    "Allow template-driven builds and snapshots to omit an external CPU RTL path when the selected lite CPU is provided by pythondata."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 18,
+    "source_inputs_sha256": "70fc9049840d5be4820d32f6eb8c1adf8f5c037e4f77adf61ce531f662ca847f",
+    "checks": [
+      {
+        "name": "workflow regression",
+        "passed": true,
+        "tests_run": 18,
+        "report": "build/reports/checks/workflow-release-cpu.json",
+        "source_inputs_sha256": "70fc9049840d5be4820d32f6eb8c1adf8f5c037e4f77adf61ce531f662ca847f"
+      },
+      {
+        "name": "built-in lite CPU template dry run",
+        "passed": true,
+        "operation": "build/operations/20261015T060043512228Z-build/result.json",
+        "cpu_verilog_argument_present": false
+      },
+      {
+        "name": "Python syntax",
+        "passed": true,
+        "command": "python -m py_compile scripts/mini_ops/build.py scripts/release.py"
+      }
+    ],
+    "resolved_issue": "A pre-fix snapshot attempt found cpu_verilog=None on built-in lite CPU templates; the follow-up changes omit the external RTL argument."
+  },
+  "mode": "staged review",
+  "base_revision": "f2e6a3386224dc39d4f8c78ddd04b6298b989683",
+  "source_revision": null
+}
