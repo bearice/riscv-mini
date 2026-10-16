@@ -12,7 +12,7 @@ description: 在 TangPrimer-20K/riscv-mini 运行 BIOS benchmark 或对比历史
 先明确候选和用户指定基线，确认各自配置、时钟与工作量；按测试顺序加载对应镜像。`--build-dir` 记录选择的镜像身份，不会自动编程，也不读回 FPGA 镜像。补测基线后恢复候选。
 
 ```powershell
-$Candidate = & .venv/Scripts/python.exe scripts/builds.py path <候选完整ID>
+$Candidate = & .venv/Scripts/python.exe scripts/mini.py builds path <候选完整ID>
 $Run = "build/reports/performance/$(Get-Date -Format yyyyMMdd-HHmmss)-<候选标识>"
 .venv/Scripts/python.exe scripts/benchmark.py --build-dir $Candidate --suite all --rounds 3 --output-dir "$Run/all"
 .venv/Scripts/python.exe scripts/benchmark.py --build-dir $Candidate --suite cache --rounds 3 --output-dir "$Run/cache"

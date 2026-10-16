@@ -46,9 +46,8 @@ def clean_build(record_id, execute=False, root=ROOT):
         refresh(root)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest='command', required=True)
+def add_arguments(parser):
+    sub = parser.add_subparsers(dest='operation', required=True)
     sub.add_parser('list')
     sub.add_parser('refresh')
     lookup = sub.add_parser('path')
@@ -70,22 +69,25 @@ def main():
     replay = sub.add_parser('reproduce')
     replay.add_argument('id')
     replay.add_argument('--output-dir', type=Path, required=True)
-    args = parser.parse_args()
+
+
+def perform(args, parser):
+    parser=parser
     try:
-        if args.command == 'list':
+        if args.operation == 'list':
             for r in reversed(records()):
                 print(f"{r['status']:16} {r['id']}\n  {r['path']}")
-        elif args.command == 'refresh':
+        elif args.operation == 'refresh':
             refresh(); legacy_index(); print(ROOT / 'build/README.md')
-        elif args.command in ('path', 'show'):
+        elif args.operation in ('path', 'show'):
             r = get_record(args.name)
-            print(r['path'] if args.command == 'path' else json.dumps(r, ensure_ascii=False, indent=2))
-        elif args.command == 'register':
+            print(r['path'] if args.operation == 'path' else json.dumps(r, ensure_ascii=False, indent=2))
+        elif args.operation == 'register':
             source = dict(kind='historical-association', commit=args.commit) if args.commit else None
             print(register(args.path, args.purpose, source, label=args.label)['id'])
-        elif args.command == 'pin':
+        elif args.operation == 'pin':
             print(pin(args.name, args.id, args.evidence)['path'])
-        elif args.command == 'clean':
+        elif args.operation == 'clean':
             clean_build(args.id, args.execute)
         else:
             matches = [r for r in records() if r['id']==args.id]
@@ -95,7 +97,3 @@ def main():
             print(register(args.output_dir,'reproduced',info['source'])['id'])
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, str(error)+'\n')
-
-
-if __name__ == '__main__':
-    main()

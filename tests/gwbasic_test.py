@@ -30,7 +30,7 @@ MAX_FILE = 4 * 1024 * 1024
 
 
 def build_image():
-    subprocess.run([sys.executable, str(ROOT / 'scripts/gwbasic_image.py'),
+    subprocess.run([sys.executable, str(ROOT / 'scripts/mini.py'), 'build', 'gwbasic',
                     '--output-dir', str(IMAGE_DIR)],
                    check=True, stdout=subprocess.DEVNULL)
 

@@ -8,7 +8,7 @@ BIOS 继续提供原有 M-mode 裸机服务；OSB1 镜像增加一次性的 OS �
 ## CPU 与中断
 
 full 使用 VexRiscv linux CSR 配置：RV32IMAF、M/S/U、Sv32、2 KiB I/D-cache、4 KiB L2、sys 60 MHz / DDR CK 120 MHz。
-[CPU 生成器](../scripts/cpu_generate.py) 为 linux 配置初始化真实 `misa`：MMU+FPU 为 `0x40141121`，无 FPU 为 `0x40141101`；不宣称 C/B/D 扩展。
+[CPU 生成器](../scripts/builders/cpu_generator.py) 为 linux 配置初始化真实 `misa`：MMU+FPU 为 `0x40141121`，无 FPU 为 `0x40141101`；不宣称 C/B/D 扩展。
 Linux cached DBus 支持 AMO 和 LR/SC；OpenSBI 编译 ISA 使用 `rv32ima_zicsr_zifencei`、ILP32。
 
 CPU 不提供硬件 time/timeh，OpenSBI 按 60 MHz 机器定时器模拟它们。
@@ -66,8 +66,8 @@ FW_PAYLOAD 内部提供 DTB 与下一阶段地址。OSB1 不支持返回 BIOS；
 构建路径可以自行选择，下例使用独立候选目录以保留 Flash 中的已验收版本：
 
 ```powershell
-& $MiniPython scripts/build.py --cpu-rtl-dir build/opensbi/cpu --output-dir build/opensbi/soc-time --synthesize
-./scripts/opensbi_build.ps1 -SocDir build/opensbi/soc-time
+& $MiniPython scripts/mini.py build system --cpu-verilog build/opensbi/cpu/VexRiscv_Mmu.v --output-dir build/opensbi/soc-time --synthesize
+./mini.ps1 build opensbi -SocDir build/opensbi/soc-time
 & $MiniPython scripts/boot_upload.py --output-dir build/opensbi/soc-time --program --mode uart
 & $MiniPython scripts/opensbi_verify.py --host-ip 169.254.25.153 --reset-bios build/opensbi/soc-time/firmware/app.img
 ```

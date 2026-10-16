@@ -7,8 +7,8 @@
 ## 构建与安装
 
 ```powershell
-& $MiniPython scripts/doom_image.py --soft-float      # 现役 rv32ima 配置必须软浮点
-& $MiniPython scripts/doom_image.py                   # 只在带 FPU 的 --with-fpu 配置上用
+& $MiniPython scripts/mini.py build doom --soft-float      # 现役 rv32ima 配置必须软浮点
+& $MiniPython scripts/mini.py build doom                   # 只在带 FPU 的 --feature fpu=on 配置上用
 ```
 
 产物是 `build/doom-payload/BOOT.RPB`（约 366 KiB，入口 `0x01000000`，另声明约 48 MiB `.bss` 作为 DOOM 的堆）。
@@ -18,7 +18,7 @@
 现役 full 配置是 `rv32ima`（`status` 里 `FPU=0`），没有 F 扩展；硬浮点 payload 会以非法指令死在第一条浮点指令上。因此本机默认用 `--soft-float`（`-march=rv32im -mabi=ilp32`，浮点走 libgcc 软实现）：
 
 - `--soft-float`：rv32im/ilp32，**现役配置用这个**
-- 不带：rv32imaf/ilp32f，只在显式 `--with-fpu` 的 full 配置上跑
+- 不带：rv32imaf/ilp32f，只在显式 `--feature fpu=on` 的 full 配置上跑
 
 硬浮点使能机制与 [GW-BASIC 的说明](gwbasic.md#硬浮点前提) 相同（`firmware/boot/start.S` 只在 `MINI_FEATURE_FPU` 构建里置 `mstatus.FS`）。
 
@@ -29,7 +29,7 @@
 构建并临时运行（SRAM gateware + UART 应用进 DDR，不写 Flash）：
 
 ```powershell
-& $MiniPython scripts/mini.py build --from current --app firmware/bios/main.c --purpose doom-bios
+& $MiniPython scripts/mini.py build system --hardware current --source firmware/bios/main.c --purpose doom-bios
 & $MiniPython scripts/mini.py board run --image build/runs/<本次run>/firmware/app.img
 ```
 
@@ -214,7 +214,7 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 ## 静态 Newlib（2026-10-12）
 
-Doom 现在通过 `bios_payload.py --libc newlib` 静态链接工具链标准库，使用 [app libc 运行库](payload-libc.md)。旧 `shim_include/` 和手写 stdio/allocator/math/setjmp 已移除，`shim.c` 只保留 CRC、进度和调试钩子。BIOS 固件与 ecall ABI 保持不变。`exit()` 先由 Newlib 清理，再通过共用 runtime 返回 `payload_main`；返回后的提示信息直接使用 BIOS_WRITE。
+Doom 现在通过 `mini.py build payload --libc newlib` 静态链接工具链标准库，使用 [app libc 运行库](payload-libc.md)。旧 `shim_include/` 和手写 stdio/allocator/math/setjmp 已移除，`shim.c` 只保留 CRC、进度和调试钩子。BIOS 固件与 ecall ABI 保持不变。`exit()` 先由 Newlib 清理，再通过共用 runtime 返回 `payload_main`；返回后的提示信息直接使用 BIOS_WRITE。
 
 上面的 fread CRC 六检查点属于旧 shim 的历史证据。Newlib 会缓冲/预读，当前 `i` 统计的是底层 `_read` 字节；只能比较同一版本 runtime、同一工作负载的板子与 QEMU，不能沿用旧 CRC 常量判断失败。
 
@@ -226,7 +226,7 @@ Doom 现在通过 `bios_payload.py --libc newlib` 静态链接工具链标准库
 | `firmware/apps/doom/dg_bios.c` | 平台层：`DG_Init/DG_DrawFrame/DG_SleepMs/DG_GetTicksMs/DG_GetKey/DG_SetWindowTitle`、HID usage→doomkeys 映射、F12 退出、UART 心跳 |
 | `firmware/apps/doom/shim.c` | CRC、进度和调试钩子；标准库实现由静态链接的 Newlib 提供 |
 | `firmware/libc/` | 共用 app syscall runtime、48 MiB Doom 堆边界和退出返回；不编进 BIOS 固件 |
-| `scripts/doom_image.py` | 构建 `BOOT.RPB`（转调 `bios_payload.py`，固定 `DOOMGENERIC_RESX/RESY=480/272`） |
+| `scripts/mini.py build doom` | 构建 `BOOT.RPB`（转调 `mini.py build payload`，固定 `DOOMGENERIC_RESX/RESY=480/272`） |
 | `scripts/doom_sim.py` | QEMU 仿真（BIOS shim + 面板抓帧 + 脚本化按键） |
 | `scripts/doom_verify.py` | 实板验收（复用 `BootSession`/`PayloadServer`） |
 | `firmware/apps/doom/dg_debug.c`、`dg_debug.h` | UART 调试通道：暂停/单帧/取帧/取源像素与调色板/分段耗时/已知图案 |
@@ -236,7 +236,7 @@ Doom 现在通过 `bios_payload.py --libc newlib` 静态链接工具链标准库
 
 ## INDEX8 调色板实验
 
-`scripts/doom_image.py --indexed --soft-float --output-dir build/doom-palette-payload` 编译实验载荷。需要带调色板 CSR 与 BIOS features bit 5 的硬件/固件组合；BIOS 复位及文字模式使用 RGB565，旧服务编号和寄存器偏移保留。不要把实验载荷当作旧 BIOS 已支持的格式。
+`scripts/mini.py build doom --indexed --soft-float --output-dir build/doom-palette-payload` 编译实验载荷。需要带调色板 CSR 与 BIOS features bit 5 的硬件/固件组合；BIOS 复位及文字模式使用 RGB565，旧服务编号和寄存器偏移保留。不要把实验载荷当作旧 BIOS 已支持的格式。
 
 `I_SetPalette` 计算 gamma 后的 RGB565 表，`DG_SetPalette` 经 BIOS 上传非活动的 256 项调色板并逐项读回校验。`BIOS_VIDEO_PRESENT_INDEX8(slot,bank)` 用一个 CSR 提交帧缓冲和调色板；硬件在开始下一帧 DMA 时锁存，两组表共 512×16 bits，用一块 BSRAM。显示端每个 16-bit FIFO word 拆成先低后高的两个索引，再同步查表。
 
@@ -251,4 +251,4 @@ Doom 现在通过 `bios_payload.py --libc newlib` 静态链接工具链标准库
 
 已验收的默认硬件模板由 `scripts/mini.py builds show current` 查询；`scripts/mini.py build` 和 `board run` 默认使用该模板。当前配置为 RV32IMA/MMU、无F/C、60/120MHz、ROM8KiB、L2 8KiB、快速移位和流水乘法，支持 INDEX8 双调色板。CPU RTL 与完整参数保存在对应构建 recipe/提交快照，复现时使用模板输入，不能用未经验收的其它 CPU 变体替代。
 
-`scripts/doom_image.py` 默认生成 RV32IM/ILP32 的 INDEX8/Newlib 载荷。`--soft-float` 仍接受；只有另行验收的 FPU CPU 才使用 `--hard-float`。`--indexed` 仍接受；显式 `--rgb565` 用于旧 BIOS 或 RGB565 性能对照。BIOS 文字控制台仍使用 RGB565，应用退出时恢复文字模式。16KiB L2 调色板组合的时序失败记录保留；默认选择已经达到0/0并完成实板验收的8KiB配置。
+`scripts/mini.py build doom` 默认生成 RV32IM/ILP32 的 INDEX8/Newlib 载荷。`--soft-float` 仍接受；只有另行验收的 FPU CPU 才使用 `--hard-float`。`--indexed` 仍接受；显式 `--rgb565` 用于旧 BIOS 或 RGB565 性能对照。BIOS 文字控制台仍使用 RGB565，应用退出时恢复文字模式。16KiB L2 调色板组合的时序失败记录保留；默认选择已经达到0/0并完成实板验收的8KiB配置。

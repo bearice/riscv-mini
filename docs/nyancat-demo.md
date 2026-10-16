@@ -19,8 +19,8 @@
 
 ```powershell
 uv pip install --python .venv/Scripts/python.exe -r requirements-nyancat.txt
-.venv/Scripts/python.exe scripts/nyancat_assets.py --output-dir build/nyancat
-.venv/Scripts/python.exe scripts/bios_payload.py `
+.venv/Scripts/python.exe scripts/mini.py build nyancat --output-dir build/nyancat
+.venv/Scripts/python.exe scripts/mini.py build payload `
   --source firmware/examples/nyancat_demo.c `
   --include-dir build/nyancat `
   --extra-source build/nyancat/assets.S `

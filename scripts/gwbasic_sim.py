@@ -6,7 +6,7 @@ bios_info structure, services the ecalls from the 16550 UART and the test
 finisher of the QEMU virt machine, and catches traps so a crash is reported
 instead of silently hanging.
 
-The payload objects are the ones scripts/gwbasic_image.py builds for the board.
+The payload objects are the ones mini build gwbasic builds for the board.
 They are relinked at 0x80000000 here because that is where the QEMU virt machine
 puts RAM, and the payload is not position independent (the board link address is
 0x01000000).  The code paths and the compiled code are the same; only the

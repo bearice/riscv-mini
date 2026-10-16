@@ -65,7 +65,7 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 `firmware/examples/hal_demo.c` 是独立 UART 加载示例，不加入基础 monitor。它覆盖 ECALL 处理并返回、timer IRQ、在真实 DDR 栈上运行的确定性计算、deadline 回绕和 UART IRQ echo。
 
 ```powershell
-& $MiniPython scripts/build.py --app firmware/examples/hal_demo.c --output-dir build/m5a-demo
+& $MiniPython scripts/mini.py build system --source firmware/examples/hal_demo.c --output-dir build/m5a-demo
 & $MiniPython scripts/boot_upload.py --reset --mode uart --image build/m5a-demo/firmware/app.img
 # 示例输入 Q 返回 UART IRQ ECHO=00000051；! 返回 bootloader。
 & $MiniPython scripts/boot_upload.py --reset --mode uart

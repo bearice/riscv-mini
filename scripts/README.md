@@ -1,5 +1,7 @@
 # 操作入口
 
+独立构建和跨 build 复用使用 `mini.py build bios --hardware current` / `build system --hardware current`；自动环境发现用 `configure`，计划用 `plan bios`。完整参数包使用 `release export` / `release verify`，恢复用 `reproduce`。新构建、测试和板端操作统一记录在 `build/runs/`，历史 `build/operations/` 保留。详见 [组件构建操作](../docs/component-builds.md)。
+
 Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/mini.py`；Windows PowerShell 使用 `./mini.ps1`。
 
 在仓库根目录运行 `./mini.ps1`（自动选择本仓库 Python 和工作目录）。Python 等价入口是 `.venv/Scripts/python.exe scripts/mini.py`。从 `--help` 或 `guide` 开始，日常操作按任务选择命令；不需要先读底层脚本源码。
@@ -19,15 +21,15 @@ Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/m
 | --- | --- | --- |
 | 检查开发环境 | `./mini.ps1 doctor` | 主机依赖和工具检查，不接触板子 |
 | 找当前版本或候选 | `./mini.ps1 builds list` / `builds show current` | 查询 catalog 和校验产物身份 |
-| 按现役配置重建源码 | `./mini.ps1 build --from current` | 复用配置、CPU RTL 和应用路径；新建 run，不编程板子 |
-| 从零构建最小系统 | `./mini.ps1 build --minimal` | 无需已有 full CPU RTL；增加 `--synthesize` 才做 PnR |
+| 按现役配置重建源码 | `./mini.ps1 build system --hardware current` | 复用配置、CPU RTL 和应用路径；按组件闭包复用，记录 run，不编程板子 |
+| 从零构建最小系统 | `./mini.ps1 build system --profile minimal` | 无需已有 full CPU RTL；增加 `--synthesize` 才做 PnR |
 | 看板子目前有没有输出 | `./mini.ps1 board status` | 被动观察 UART，列出串口；静默显示 unknown，不推断为卡死 |
 | 恢复到启动菜单 | `./mini.ps1 board recover --build current` | 下载选定 gateware 到 SRAM，验证 DDR 启动并查询镜像头 |
 | 修复损坏的 XIP 启动区 | `./mini.ps1 board repair-xip --build current` | 外部下载器单独写目标 XIP，再 SRAM 重载、独立读回确认；会写 Flash，应用可仍不匹配 |
 | 临时运行当前固件 | `./mini.ps1 board run --build current` | SRAM gateware + UART 应用到 DDR，验证就绪，不写 Flash |
 | 启动并验收最小 Linux | `./mini.ps1 board linux --os-image <UBOOT.OSB> --kernel <Image> --tftp-python <已放行Python>` | SRAM/UART BIOS，经 TFTP 进入 Linux PID 1 并检查用户态；[构建与验收](../docs/linux-port.md) |
 | 验收 Linux 全外设 | 上述 `board linux` 命令追加 `--devices` | 在用户态/fb0 回归后测试 Linux Ethernet UDP、SD/FAT 只读、Flash MTD、GPIO/LED、ALSA、USB 枚举（SPI 控制器保留，不提供 SPI 屏幕 fb1）；详情与实际资格见 [Linux 移植](../docs/linux-port.md) |
-| 构建 BusyBox initrd | `./scripts/busybox_build.ps1` | 固定 BusyBox/musl 源码与 SHA，WSL ext4 编译静态 RV32 用户态；需要先构建 Linux 以生成 UAPI headers |
+| 构建 BusyBox initrd | `./mini.ps1 build busybox` | 固定 BusyBox/musl 源码与 SHA，自动 native/WSL runner 编译静态 RV32 用户态；需要先构建 Linux 以生成 UAPI headers |
 | 启动 BusyBox shell | 上述 `board linux` 命令追加 `--initrd build/linux/busybox/initrd.cpio.gz` | TFTP 校验外部 initramfs、检查 PID 1 init、串口/LCD tty1 shell、PTY、进程、tmpfs 与 loopback，记录 USB 键盘输入设备；不与 `--devices` 同时使用 |
 | 持久更新完整系统 | `./mini.ps1 board update --build current` | 编程器直接写配置与应用/XIP，关闭 SPI Verify 和读回，再从 Flash 启动 |
 | 验收 BIOS/monitor 功能 | `./mini.ps1 board verify --build current --suite firmware` | SRAM/UART 装载后执行固件命令测试；支持 `--soak-seconds 60` |
@@ -84,16 +86,16 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 | 任务 | 实现或专项工具 | 使用条件 / 文档 |
 | --- | --- | --- |
 | 环境初始化 | `bootstrap.ps1`、`configure_tools.py`、`env.ps1`、`doctor.py` | [开发环境](../README.md)；`keep_awake.ps1` 仅为长任务保持主机唤醒 |
-| FPGA 配置与 CPU 生成 | `build.py`、`build_matrix.py`、`cpu_generate.py`、`cpu_gcb_generate.py`、`cpu_qualify.py`、`test_cpu_fence.py` | [构建 skill](../.agents/skills/riscv-mini-build/SKILL.md)；参数扫描和 ISA 改动用这些专项工具 |
-| 构建身份、复现和清理 | `builds.py`、`build_records.py`、`build_recipe.py` | [产物组织](../docs/build-artifacts.md)；records/recipe 为内部模块；clean 默认仅列计划，保护固定版本和发布包 |
+| FPGA 配置与 CPU 生成 | `mini.py build system`、`mini.py build matrix`、`mini.py build cpu --generate`、`mini.py build cpu-gcb`、`mini.py build cpu-qualification`、`test_cpu_fence.py` | [构建 skill](../.agents/skills/riscv-mini-build/SKILL.md)；参数扫描和 ISA 改动用这些专项工具 |
+| 构建身份、复现和清理 | `mini.py builds`、`build_records.py`、`build_recipe.py` | [产物组织](../docs/build-artifacts.md)；records/recipe 为内部模块；clean 默认仅列计划，保护固定版本和发布包 |
 | 启动镜像与串口协议 | `boot_upload.py`、`boot_image.py`、`boot_size.py` | [bootloader](../docs/bootloader.md)；旧 install 仅适用于 ROM，XIP 更新用正式入口 |
 | 基础板测 | `firmware_verify.py`、`boot_verify.py`、`boot_repeat_verify.py`、`cold_boot.py` | [测试 skill](../.agents/skills/riscv-mini-test/SKILL.md)；分别为功能、协议、重复启动、外部冷启动 |
-| BIOS 载荷与网络装载 | `bios_image.py`、`bios_payload.py`、`bios_tftp.py`、`bios_verify.py`、`monitor_external_verify.py` | [BIOS](../docs/bios.md)、[给 BIOS 写二级程序](../docs/bios-payload-porting.md)；RPB/OSB 载荷与 bootloader app.img 是不同格式；TFTP 解释器需要防火墙放行 |
-| DOOM 载荷 | `doom_image.py`、`doom_sim.py`、`doom_verify.py`、`doom_debug.py` | [DOOM（BIOS 二级程序）](../docs/doom.md)；sim 在 QEMU 上跑同一份目标码作参考实现，debug 经 UART 暂停并取回帧 |
-| OpenSBI / U-Boot | `opensbi_build.py`、`opensbi_build.ps1`、`opensbi_verify.py`、`uboot_build.py`、`uboot_verify.py` | [OpenSBI 与 U-Boot 移植](../docs/opensbi-port.md)；需相应源树和工具链 |
+| BIOS 载荷与网络装载 | `bios_image.py`、`mini.py build payload`、`bios_tftp.py`、`bios_verify.py`、`monitor_external_verify.py` | [BIOS](../docs/bios.md)、[给 BIOS 写二级程序](../docs/bios-payload-porting.md)；RPB/OSB 载荷与 bootloader app.img 是不同格式；TFTP 解释器需要防火墙放行 |
+| DOOM 载荷 | `mini.py build doom`、`doom_sim.py`、`doom_verify.py`、`doom_debug.py` | [DOOM（BIOS 二级程序）](../docs/doom.md)；sim 在 QEMU 上跑同一份目标码作参考实现，debug 经 UART 暂停并取回帧 |
+| OpenSBI / U-Boot | `mini.py build opensbi`、`opensbi_verify.py`、`mini.py build uboot`、`uboot_verify.py` | [OpenSBI 与 U-Boot 移植](../docs/opensbi-port.md)；需相应源树和工具链 |
 | 外设专项验收 | `sd_verify.py`、`sd_clock_verify.py`、`ethernet_verify.py`、`raw_icmp.py`、`audio_verify.py`、`audio_capture.py` | 查工具 `--help`；raw_icmp 为网络验收实现；网络、音频、SD 的外部条件不会由一般板测推断 |
 | 性能测量与比较 | `benchmark.py`、`performance_report.py` | [性能 skill](../.agents/skills/riscv-mini-benchmark/SKILL.md)；加载身份与测量身份须匹配，显式候选/基线 |
-| 提交、版本与发布 | `prepare_commit.py`、`versions.py`、`release.py` | [提交 SOP](../docs/pre-commit-sop.md)、[版本历史](../docs/version-history.md)；与日常板子更新是不同任务 |
-| Nyan Cat 素材 | `nyancat_assets.py` | 生成应用素材，非板子更新入口 |
+| 提交、版本与发布 | `prepare_commit.py`、`versions.py`、`mini.py release create` | [提交 SOP](../docs/pre-commit-sop.md)、[版本历史](../docs/version-history.md)；与日常板子更新是不同任务 |
+| Nyan Cat 素材 | `mini.py build nyancat` | 生成应用素材，非板子更新入口 |
 
 `mini_ops/` 是正式入口的内部实现：产物解析、构建配置、板端流程和探针编译。不要另写临时 UART/Gowin 探针；补充能力时进入这些模块，给任务入口增加支持条件和回归。

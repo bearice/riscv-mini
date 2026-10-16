@@ -11,14 +11,14 @@
 在仓库根目录、依赖与工具已配置的环境下，当前 native 候选的构建命令为：
 
 ```powershell
-.venv/Scripts/python.exe scripts/build.py --profile full `
+.venv/Scripts/python.exe scripts/mini.py build system --profile full `
   --cpu-verilog <VexRiscv_MmuFpu.v> --rom-size 4096 --l2-size 4096 `
   --sd-profile lite --usb-backend ultra --audio-clock dds `
-  --without-audio --without-mic --with-eth-dma `
+  --feature audio=off --feature mic=off --feature eth_dma=on `
   --place-option 2 --route-option 2 --synthesize --output-dir build/eth-native-final
 ```
 
-CPU 输入须匹配机器记录中的 SHA256，不能用名称相同但内容不同的 CPU RTL 替代。当前 source 可通过 --without-eth-dma 构建 PIO；先前 Wishbone DMA 实现已被 native 实现替换，其复现需要先前捕获 recipe 的源码，不能仅切换当前 feature flag。
+CPU 输入须匹配机器记录中的 SHA256，不能用名称相同但内容不同的 CPU RTL 替代。当前 source 可通过 --feature eth_dma=off 构建 PIO；先前 Wishbone DMA 实现已被 native 实现替换，其复现需要先前捕获 recipe 的源码，不能仅切换当前 feature flag。
 
 ## 已保存结果
 

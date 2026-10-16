@@ -1,5 +1,7 @@
 # 模块化构建
 
+跨构建复用、独立 BIOS/HAL/bootloader 目标、store/run 目录与完整 lock 导出见 [组件构建操作](component-builds.md)。下面保留完整 SoC 生成器的硬件配置和历史验证说明。
+
 默认构建生成唯一的 `build/runs/<时间>-<Git版本>-<配置>-<用途>`，不再覆盖固定目录。
 查询当前/基线/最新构建、最终产物归档和中间目录清理见 [构建目录说明](build-artifacts.md)；提交流程见 [SOP](pre-commit-sop.md)。
 
@@ -20,7 +22,7 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 | NAME | 功能 | 依赖 |
 | --- | --- | --- |
 | `mmu` | Sv32、M/S/U；full 默认开启 | 匹配生成的 CPU RTL |
-| `fpu` | 单精度 FPU；默认关闭，显式 `--with-fpu` 启用，与 MMU 独立 | 匹配生成的 CPU RTL |
+| `fpu` | 单精度 FPU；默认关闭，显式 `--feature fpu=on` 启用，与 MMU 独立 | 匹配生成的 CPU RTL |
 | `flash` | 启动/应用 SPI Flash 驱动与控制器 | 内核 |
 | `spi-lcd` | 240×135 SPI LCD 控制器和驱动 | 无其他可选功能 |
 | `sd` | microSD 控制器、块读写驱动 | `--sd-profile none/spi/lite/full`，默认 lite |
@@ -34,9 +36,9 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 | `eth` | RTL8201F RMII、MAC、包 SRAM、HAL | `flash`，保留 Flash UID 派生 MAC |
 | `usb` | USB3317、PIO Host、HID HAL，sys60 串行 PHY；一颗初始化 PLL | 可选 OHCI 回退 |
 
-未明确启用的默认依赖项会随父功能一起关闭：例如 `--without-sd` 同时关闭
-默认的 FatFs，`--without-flash` 同时关闭默认 Ethernet。若明确指定互相冲突
-的开关，则构建立即报错；例如 `--with-filesystem --without-sd`。最小配置
+未明确启用的默认依赖项会随父功能一起关闭：例如 `--feature sd=off` 同时关闭
+默认的 FatFs，`--feature flash=off` 同时关闭默认 Ethernet。若明确指定互相冲突
+的开关，则构建立即报错；例如 `--feature filesystem=on --feature sd=off`。最小配置
 下启用依赖功能时需一起指定其父功能。
 
 CPU 能力、SD profile 和 DDS 音频配置的完整命令及验证边界见
@@ -45,22 +47,22 @@ MMU 默认开启、FPU 默认关闭；minimal 默认关闭两者，仍可分别�
 
 ```powershell
 # 全功能、独立模块 Verilog，运行 Gowin 综合/布局布线。
-.venv/Scripts/python.exe scripts/build.py --synthesize --output-dir build/full
+.venv/Scripts/python.exe scripts/mini.py build system --synthesize --output-dir build/full
 
 # 内核 + Flash；不占用显示和 USB PLL。
-.venv/Scripts/python.exe scripts/build.py --profile minimal --synthesize --output-dir build/minimal
+.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --synthesize --output-dir build/minimal
 
 # 只经 UART 启动。
-.venv/Scripts/python.exe scripts/build.py --profile minimal --without-flash --output-dir build/uart-only
+.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature flash=off --output-dir build/uart-only
 
 # 内核 + Flash + 原生 SD 块接口，不链接 FatFs。
-.venv/Scripts/python.exe scripts/build.py --profile minimal --with-sd --output-dir build/sd-blocks
+.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature sd=on --output-dir build/sd-blocks
 
-# 最小双麦克风波形系统；USB 按键控制可另加 --with-usb。
-.venv/Scripts/python.exe scripts/build.py --profile minimal --with-video --with-mic --with-mic-stereo --app firmware/examples/microphone_stereo_demo.c --output-dir build/mic-only
+# 最小双麦克风波形系统；USB 按键控制可另加 --feature usb=on。
+.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature video=on --feature mic=on --feature mic_stereo=on --source firmware/examples/microphone_stereo_demo.c --output-dir build/mic-only
 
 # 从全功能系统裁掉网络和音频输出。
-.venv/Scripts/python.exe scripts/build.py --without-eth --without-usb --without-audio --output-dir build/capture
+.venv/Scripts/python.exe scripts/mini.py build system --feature eth=off --feature usb=off --feature audio=off --output-dir build/capture
 ```
 
 `--synthesize` 才执行 Gowin；否则只生成 RTL 和编译固件。构建不下载 FPGA，
@@ -71,7 +73,7 @@ MMU 默认开启、FPU 默认关闭；minimal 默认关闭两者，仍可分别�
 
 默认使用 LiteX 的 hierarchical converter，保留 SoC 各功能块的模块实例和显式端口。
 块内的 FSM、FIFO、CSR 实现内联在所属模块中；实际模块清单由每次构建生成，
-外部 CPU 和 USB 核另列入源文件列表。`--deep-verilog` 可用于诊断完整内部层级，
+外部 CPU 和 USB 核另列入源文件列表。`--rtl-hierarchy deep` 可用于诊断完整内部层级，
 但完整层级的布线结果不能替代默认配置的验收。文件
 布局为：
 
@@ -94,7 +96,7 @@ gateware/
 这不是把扁平逻辑按文本片段分文件：模块层级先由 LiteX 生成，再将完整的
 `module...endmodule` 输出到不同文件。顶层仍含公共连接和 converter 必须
 内联的逻辑；综合器可跨层级优化，不承诺布局布线后的物理层级原样保留。
-`--flat-verilog` 保留兼容输出，适合比对或不支持层级转换的工具流程。
+`--rtl-hierarchy flat` 保留兼容输出，适合比对或不支持层级转换的工具流程。
 
 原有 CDC 和引脚时序约束会按实际模块路径限定：包括向量每一位的第一同步器
 级、USB reset net 和外部 OHCI 核内部路径。第二级同步器与数据通路继续参与
@@ -125,7 +127,7 @@ RTL 模式/manifest、固件大小、ABI，以及请求综合时的资源与时�
 
 ```powershell
 # 53 个功能开关、CPU×SD 和音频组合，无上板操作。
-.venv/Scripts/python.exe scripts/build_matrix.py --jobs 2
+.venv/Scripts/python.exe scripts/mini.py build matrix --jobs 2
 
 # 使用该构建配置筛选固件测试；关闭模块的命令也检查 UNSUPPORTED。
 .venv/Scripts/python.exe scripts/firmware_verify.py --program --output-dir build/minimal

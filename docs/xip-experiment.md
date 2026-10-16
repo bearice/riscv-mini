@@ -31,13 +31,13 @@ DDR BIOS 的软件 Flash 驱动继续保留。执行 XIP 代码期间不允许�
 在本 worktree 根目录执行，Python 使用主仓库的 `.venv/Scripts/python.exe`：
 
 ```powershell
-python scripts/cpu_generate.py --vexriscv-source <VexRiscv源码> --java <Java8> --sbt-launch <sbt-launch-1.9.7.jar> --pipelined-fetch --output-dir build/cpu-noc
-python scripts/build.py --profile full --cpu-rtl-dir build/cpu-noc --without-compressed --boot-mode xip --place-option 3 --route-option 2 --purpose noc-xip-p3-r2 --synthesize
+python scripts/mini.py build cpu --generate --source <VexRiscv源码> --java <Java8> --sbt-launch <sbt-launch-1.9.7.jar> --pipelined-fetch --output-dir build/cpu-noc
+python scripts/mini.py build system --profile full --cpu-verilog build/cpu-noc/VexRiscv_Mmu_s1m1.v --boot-mode xip --place-option 3 --route-option 2 --purpose noc-xip-p3-r2 --synthesize
 python tests/flash_xip_test.py
 python scripts/test_cpu_fence.py --cpu build/cpu-noc/VexRiscv_MmuFpu.v --iverilog <iverilog> --output-dir build/cpu-noc-fence-test
 ```
 
-`--without-compressed` 校验输入 RTL 元数据；真正关闭 C 由 CPU 生成器完成。
+C 能力由所选 CPU RTL 的配对生成元数据决定；关闭 C 必须在 `build cpu --generate` 时生成相应 CPU，不能用 SoC 功能 flag 改写 CPU 能力。
 `firmware/xip.bin` 与 `boot.bin` 内容相同，但链接地址为 XIP 地址，不能用原 UART
 boot upload 的 app/install 模式替代 XIP 启动代码安装。`app.img` 是另一个独立产物。
 

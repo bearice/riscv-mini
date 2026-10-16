@@ -18,7 +18,7 @@ from mini_ops.artifacts import Build, configuration_bytes
 from mini_ops.board import Board, Operation
 from mini import main
 from mini import parser
-from mini_ops.build import invocation
+from scripts.modular.configuration import configuration_arguments
 
 
 def digest(data):return hashlib.sha256(data).hexdigest()
@@ -98,6 +98,17 @@ class MiniOperationsTests(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def save(self):(self.path/'validation.json').write_text(json.dumps(self.v))
     def build(self):return Build(str(self.path))
+
+    def test_override_image_does_not_qualify_original_modular_system(self):
+        self.v['modular_system']={'component':'system','digest':'a'*64}
+        (self.path/'validation.json').write_text(json.dumps(self.v))
+        original=self.build()
+        op=Operation('verify',original,self.root)
+        self.assertEqual(op.report['system'],self.v['modular_system'])
+        override=self.root/'different.img';override.write_bytes(pack_image(b'different BIOS',42))
+        changed=Build(str(self.path),image=override)
+        other=Operation('verify',changed,self.root)
+        self.assertNotIn('system',other.report)
     def backend(self,corrupt=False,output_error=None):
         build=self.build();op=Operation('update',build,self.root);port=Port(build,corrupt)
         calls=[]
@@ -282,43 +293,26 @@ class MiniOperationsTests(unittest.TestCase):
         build=self.build()
         (self.path/'firmware/app.img').write_bytes(pack_image(b'replacement',42))
         with self.assertRaisesRegex(ValueError,'changed during preflight'):build.update_plan()
-    def test_minimal_build_needs_no_existing_cpu_or_board(self):
-        args=parser().parse_args(['build','--minimal'])
-        with patch('mini_ops.build.Build') as build:
-            command=invocation(args)
-        build.assert_not_called()
-        self.assertEqual(command[-4:],['--profile','minimal','--purpose','development'])
-    def test_build_template_preserves_xip_and_feature_configuration(self):
-        self.v.update(profile='full',application_source=str(ROOT/'firmware/bios/main.c'),
-                      cpu_verilog=str(self.path/'cpu.v'),cpu_variant='linux',rom_size_bytes=0,
-                      l2_size_bytes=4096,sd_profile='lite',usb_backend='ultra',audio_clock='dds',
-                      place_option=3,route_option=2)
-        (self.path/'cpu.v').write_text('// cpu')
-        self.save()
-        command=invocation(parser().parse_args(['build','--from',str(self.path),'--synthesize']))
-        self.assertEqual(command[command.index('--boot-mode')+1],'xip')
-        self.assertEqual(command[command.index('--place-option')+1],'3')
-        self.assertIn('--with-flash',command)
-        self.assertIn('--synthesize',command)
-    def test_cache_experiment_preserves_other_template_inputs(self):
-        self.v.update(profile='full',boot_mode='xip',place_option=3,route_option=2,
-                      cpu_variant='linux',rom_size_bytes=0,l2_size_bytes=4096,
-                      sd_profile='lite',usb_backend='ultra',audio_clock='dds',
-                      application_source=str(ROOT/'firmware/bios/main.c'),
-                      cpu_verilog=str(self.path/'cpu.v'))
-        (self.path/'cpu.v').write_text('// cpu')
-        self.save()
-        original=invocation(parser().parse_args(['build','--from',str(self.path)]))
-        candidate=invocation(parser().parse_args(['build','--from',str(self.path),
-                                                 '--l2-size','16384','--boot-mode','rom']))
-        expected=list(original)
-        expected[expected.index('--l2-size')+1]='16384'
-        expected[expected.index('--boot-mode')+1]='rom'
-        expected[expected.index('--rom-size')+1]='8192'
-        self.assertEqual(candidate,expected)
+    def test_minimal_build_has_explicit_target_and_profile(self):
+        args=parser().parse_args(['build','system','--profile','minimal'])
+        self.assertEqual(args.target,'system');self.assertEqual(args.profile,'minimal')
+
+    def test_hardware_flags_use_the_same_parser(self):
+        args=parser().parse_args(['build','system','--hardware',str(self.path),
+                                 '--l2-size','16384','--boot-mode','rom','--feature','audio=on'])
+        self.assertEqual(args.l2_size,16384);self.assertEqual(args.boot_mode,'rom')
+        self.assertEqual(args.feature,['audio=on'])
+
+    def test_old_ambiguous_build_spelling_is_rejected(self):
+        for command in (['build','--minimal'],['build','--from','current'],['build']):
+            with self.assertRaises(SystemExit):parser().parse_args(command)
+
+    def test_builds_are_registered_in_the_root_help(self):
+        args=parser().parse_args(['build','bios','--hardware','current'])
+        self.assertEqual((args.command,args.target,args.hardware),('build','bios','current'))
 
     def test_release_csr_is_self_contained_after_original_run_disappears(self):
-        import release
+        import scripts.mini_ops.release as release
         csr=dict(csr_registers={},memories={})
         tag=abi_tag(csr)
         image=pack_image(b'BIOS',tag)
@@ -343,7 +337,7 @@ class MiniOperationsTests(unittest.TestCase):
         with patch('mini_ops.board.Operation',side_effect=factory),patch('mini_ops.board.Board') as board:
             with self.assertRaisesRegex(ValueError,'PnR'):perform(args)
         board.assert_not_called()
-        receipt=next((self.root/'build/operations').glob('*/result.json'))
+        receipt=next((self.root/'build/runs').glob('*/result.json'))
         result=json.loads(receipt.read_text())
         self.assertFalse(result['passed']);self.assertIn('PnR',result['error'])
     def test_unsupported_suite_stops_before_sram_programming(self):

@@ -9,16 +9,20 @@ description: 在 TangPrimer-20K/riscv-mini 创建最小或完整系统构建、�
 
 构建身份与参数读取 `docs/build-artifacts.md`。
 
-基本构建入口读取 `scripts/README.md`：`scripts/mini.py build --from current` 复用已验收配置并编译当前源码，`--minimal` 从零构建最小系统，`--synthesize` 才执行 PnR。硬件参数实验继续使用下面的专项工具。
+所有构建统一使用 `scripts/mini.py build <target>`，计划使用 `scripts/mini.py plan <target>`。先看 `scripts/mini.py build --help` 和 `docs/component-builds.md`，不得恢复已删除的独立构建脚本或自行分解 prepare/execute/record 阶段。
 
 ```sh
-python scripts/builds.py list
-python scripts/builds.py show current
-python scripts/build.py --profile minimal --purpose <本次用途>
+python scripts/mini.py builds show current
+python scripts/mini.py plan bios --hardware current
+python scripts/mini.py build bios --hardware current
+python scripts/mini.py build system --profile minimal --purpose smoke
+python scripts/mini.py build system --hardware current --refresh-hardware --synthesize
 ```
 
-最后一条生成 RTL、boot/app 固件；增加 `--synthesize` 才执行 Gowin 综合和 PnR。默认创建独立 `build/runs/`，通过本次输出获取目录和完整 ID，保存 `build-info.json`、`validation.json` 和工具日志。
+固件目标复用选定 CPU/SoC/bootloader/位流；硬件参数修改统一使用 system、soc-description 或 gateware 目标。`--feature NAME=on|off` 控制功能，`--source` 选择应用，`--hardware` 选择硬件输入。只有 `--synthesize` 才运行 Gowin；构建不编程板子。
 
-full 候选根据指定模板的 `validation.json` 选择参数，显式保留 CPU RTL/生成元数据、CPU variant、功能开关、ROM/L2 大小、SD/USB 后端、音频时钟和 place/route 选项。带 C 的 CPU 使用已核验的 `--cpu-verilog` 或 `--cpu-rtl-dir`，不能靠 `--profile full` 推断 C 支持。调整 CPU 时再查 `scripts/cpu_generate.py --help`。
+CPU 生成使用 `mini.py build cpu --generate`；完整 CPU 输入和生成参数读取该目标的 `--help`。Java/sbt 自动发现，工具身份和全部 flags 写入 lock。消费新 CPU 用明确的 `--cpu-verilog` 及配对 metadata，不能靠文件名或 profile 推断 C、MMU、FPU 或流水线参数。profile minimal 可从零构建；full 需要明确的 CPU 输入。
 
-PnR 完成条件：实际目标配置的 setup/hold 均为 0；生成成功只证明编译完成。`latest-generated` / `latest-pnr` / `current` 分别代表最新生成、最新 PnR 通过和已固定的板测版本。
+Linux、BusyBox、OpenSBI、U-Boot、payload、DOOM、GW-BASIC、CPU qualification 和 matrix 同样是 build/plan 目标，参数查对应目标 help。Linux 工具由 native/WSL runner 自动绑定，HOSTCC 等角色写入 run；不要手动执行生成的 build.sh 或重复运行打包阶段。
+
+从本次输出取得 `build/runs/<id>/result.json`，确认 passed、system/artifact、resolved flags 与复用步骤。`--output-dir` 仅在需要显式输出视图时使用。PnR 完成条件是实际目标 setup/hold 均为 0，RTL/编译通过不代表板测通过。新候选保持 current 不变。

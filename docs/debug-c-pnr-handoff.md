@@ -5,9 +5,9 @@
 ## 当前代码状态
 
 - 默认 CPU 仍为无 C 的 `VexRiscv_MmuFpu.v`，默认 ROM 仍为 8 KiB。
-- `scripts/cpu_generate.py` 增加了 `--compressed`，可以生成四种 MMU/FPU 组合的 C 版本。
-- `scripts/cpu_generate.py` 增加了 `--pipelined-fetch`。它把 C 版本的 `twoCycleCache` 恢复为 `true`，并打开 `injectorStage`，用于缩短取指关键路径。
-- `scripts/build.py` 和 `firmware/bootloader/boot.ld` 支持 `--rom-size 4096/8192`；默认值仍为 8192。
+- `scripts/mini.py build cpu --generate` 增加了 `--compressed`，可以生成四种 MMU/FPU 组合的 C 版本。
+- `scripts/mini.py build cpu --generate` 增加了 `--pipelined-fetch`。它把 C 版本的 `twoCycleCache` 恢复为 `true`，并打开 `injectorStage`，用于缩短取指关键路径。
+- `scripts/mini.py build system` 和 `firmware/bootloader/boot.ld` 支持 `--rom-size 4096/8192`；默认值仍为 8192。
 - `scripts/test_cpu_fence.py` 支持 `--compressed`，`tests/cpu_fence_program.S` 增加了跨 cache line 的压缩指令测试。
 - CPU 外部 fence/atomic 补丁、L2 atomic bypass 和未使用的 posted write combiner 已删除；原生 CPU 的指令语义由 ACK-visible RTL 测试检查，旧候选仍保留在各自输出目录。
 - DDR 默认使用 1 项注册命令队列，关闭 auto precharge；`tests/ddr_queue_test.py` 默认验证生产深度，`tests/ddr_queue_structure_test.py` 检查实际 controller/crossbar 的组合反馈环。
@@ -31,8 +31,8 @@ $vex = 'build/opensbi-cpu-source'
 生成带 C、取指流水线的原生 CPU（没有外部 fence/atomic 补丁）：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/cpu_generate.py `
-  --vexriscv-source build/opensbi-cpu-source `
+.venv/Scripts/python.exe -X utf8 scripts/mini.py build cpu --generate `
+  --source build/opensbi-cpu-source `
   --java build/opensbi-jdk/jdk8u504-b01/bin/java.exe `
   --sbt-launch build/cpu-qualification/sbt-launch.jar `
   --output-dir build/c-fit/cpu-native `
@@ -42,8 +42,8 @@ $vex = 'build/opensbi-cpu-source'
 构建 full、MMU+FPU、SD lite、4 KiB boot ROM 并运行 Gowin PnR：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/build.py `
-  --cpu-rtl-dir build/c-fit/cpu-native `
+.venv/Scripts/python.exe -X utf8 scripts/mini.py build system `
+  --cpu-verilog build/c-fit/cpu-native/VexRiscv_Mmu_s1m1.v `
   --rom-size 4096 `
   --output-dir build/c-fit/<candidate> `
   --synthesize
@@ -153,7 +153,7 @@ C 版 boot ROM 为 3792 B，旧版无 C boot ROM 为 5292 B；当前结果为 `b
 LiteDRAM depth 0 的 lookahead FIFO 是组合直通，而 `req.lock = lookahead.valid | buffer.valid`。crossbar 又用其它 bank 的 lock 抑制本 bank 的 valid，形成跨 bank 的 `lock -> valid -> lock` 组合环。旧综合报告包含 `AG0100 Find logical loop`，零违例 STA 并不能使这个组合结构成立。DFI 行为仿真会把反馈环迭代到稳定值，旧的 depth 0 仿真 PASS 因而不足以确认硬件可用。
 
 1. `gateware/ddr_boot.py` 使用 `DDR_CMD_BUFFER_DEPTH=1`，保留最浅注册队列，保持 `with_auto_precharge=False`。实际 controller/crossbar 的组合依赖检查显示 depth 0 有环、depth 1/8 无环；新的 `tests/ddr_queue_structure_test.py --depth 0` 会明确失败，默认生产配置通过。
-2. `scripts/build.py` 和 SoC 默认 Gowin 参数改为 place 2/route 2。depth 1/place 3 有 128 setup、0 hold 违例，未下载；depth 1/place 2 零违例。没有修改时序例外来隐藏失败。
+2. `scripts/mini.py build system` 和 SoC 默认 Gowin 参数改为 place 2/route 2。depth 1/place 3 有 128 setup、0 hold 违例，未下载；depth 1/place 2 零违例。没有修改时序例外来隐藏失败。
 3. **不可把音频故障唯一归因于 DDR 环。** 同样的 depth 0/place 2 对照也零违例并通过音频 10/10；增加小型硬件采样器后的 depth 0/place 3 也通过。已确认旧失败 bitstream 对硬件布局敏感，已消除一个独立且明确的组合环缺陷；旧 bitstream 内部哪一个门级路径产生错误仍未唯一定位。
 
 | 配置 | PnR | 音频实板 |
@@ -176,9 +176,9 @@ LiteDRAM depth 0 的 lookahead FIFO 是组合直通，而 `req.lock = lookahead.
 复现构建：
 
 ```powershell
-.venv/Scripts/python.exe scripts/build.py --output-dir build/c-fit/ddr-depth1-p2 `
+.venv/Scripts/python.exe scripts/mini.py build system --output-dir build/c-fit/ddr-depth1-p2 `
   --cpu-variant linux --cpu-verilog build/c-fit/cpu-native/VexRiscv_MmuFpu.v `
-  --with-mmu --with-fpu --rom-size 4096 --l2-size 4096 `
+  --feature mmu=on --feature fpu=on --rom-size 4096 --l2-size 4096 `
   --usb-backend ultra --sd-profile lite --audio-clock dds --synthesize
 .venv/Scripts/python.exe tests/ddr_queue_structure_test.py
 .venv/Scripts/python.exe tests/ddr_queue_test.py

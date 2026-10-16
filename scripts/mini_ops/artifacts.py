@@ -1,7 +1,10 @@
 """Resolve and validate a complete operation before touching the board."""
 import hashlib
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from boot_image import FLASH_OFFSET, FLASH_SIZE, abi_tag, unpack_image
 from build_records import ROOT, artifact_identity, get_record, pnr_passed
@@ -29,6 +32,13 @@ def configuration_bytes(path):
 
 class Build:
     def __init__(self, name='current', image=None, root=ROOT):
+        # Resolve modular refs without changing the retained legacy catalog.
+        from scripts.modular.storage import Store
+        from scripts.modular.system import resolve_system, materialize
+        store = Store(root)
+        system = resolve_system(store, name)
+        if system:
+            name = str(materialize(store, system, store.build/'work/board-view'/system['digest']))
         candidate = Path(name)
         if (candidate / 'validation.json').is_file():
             self.path = candidate.resolve()

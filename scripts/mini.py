@@ -3,11 +3,16 @@ import argparse
 import sys
 import subprocess
 from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+sys.path.insert(0,str(ROOT/"scripts"))
 
 
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
-    sub=p.add_subparsers(dest='group',required=True)
+    sub=p.add_subparsers(dest='command',required=True)
+    from scripts.modular.cli import add_commands
+    add_commands(sub)
     board=sub.add_parser('board',help='Observe, recover, run, update or verify the board')
     operations=board.add_subparsers(dest='operation',required=True)
     for name,description in [
@@ -44,22 +49,6 @@ def parser():
             op.add_argument('--soak-seconds',type=int,default=0)
             op.add_argument('--timeout',type=int,default=300,help='External cold-boot observation timeout')
             op.add_argument('--mic',action='store_true',help='Firmware suite: test connected microphones')
-    builds=sub.add_parser('builds',help='Find a build without choosing directories by timestamp')
-    commands=builds.add_subparsers(dest='operation',required=True)
-    commands.add_parser('list')
-    show=commands.add_parser('show');show.add_argument('name',nargs='?',default='current')
-    build=sub.add_parser('build',help='Build current sources using the qualified configuration, or bootstrap minimal')
-    template=build.add_mutually_exclusive_group()
-    template.add_argument('--from',dest='template',default='current',help='Configuration template ID/reference/directory')
-    template.add_argument('--minimal',action='store_true',help='Bootstrap without existing full-system CPU RTL')
-    build.add_argument('--app',type=Path,help='Application source override')
-    build.add_argument('--purpose',default='development')
-    build.add_argument('--synthesize',action='store_true',help='Also synthesize and place/route; never programs the board')
-    build.add_argument('--l2-size',type=int,choices=(4096,8192,16384),help='Override only the template shared L2 size')
-    build.add_argument('--boot-mode',choices=('rom','xip'),help='Override boot mode for SRAM-only experiments with a new image ABI')
-    build.add_argument('--place-option',type=int,choices=range(5),help='Override template Gowin placement option')
-    build.add_argument('--route-option',type=int,choices=range(3),help='Override template Gowin routing option')
-    build.add_argument('--dry-run',action='store_true')
     sub.add_parser('doctor',help='Check host dependencies and configured toolchain; no board access')
     sub.add_parser('guide',help='Print the task guide and location of specialized operations')
     return p
@@ -71,7 +60,7 @@ def main(argv=None):
     if not argv:
         p.print_help();return
     args=p.parse_args(argv)
-    if args.group=='board':
+    if args.command=='board':
         if args.operation=='status' and not 0<args.seconds<=30:p.error('--seconds must be in (0,30]')
         if args.operation=='verify':
             if not 0<=args.soak_seconds<=300:p.error('--soak-seconds must be in 0..300')
@@ -82,21 +71,16 @@ def main(argv=None):
         try:perform(args)
         except (ValueError,RuntimeError,OSError,KeyError,TimeoutError,subprocess.SubprocessError) as error:
             p.exit(1,str(error)+'\n')
-    elif args.group=='builds':
-        from build_records import get_record, records
-        import json
-        if args.operation=='list':
-            for record in reversed(records()):print(record['status'],record['id'])
-        else:print(json.dumps(get_record(args.name),indent=2,ensure_ascii=False))
-    elif args.group=='doctor':
+    elif args.command=='doctor':
         from doctor import main as doctor
         doctor()
-    elif args.group=='build':
-        from mini_ops.build import perform
-        try:perform(args)
-        except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:p.exit(1,str(error)+'\n')
-    else:
+    elif args.command=='guide':
         print((Path(__file__).parent/'README.md').read_text(encoding='utf-8'))
+    else:
+        from scripts.modular.cli import perform
+        code=perform(args,p)
+        if code:raise SystemExit(code)
+
 
 
 if __name__=='__main__':

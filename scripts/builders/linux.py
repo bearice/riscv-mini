@@ -3,28 +3,25 @@
 Run the emitted build.sh through PowerShell's wsl entrypoint, then --record.
 No FPGA programming or SD/Flash writes are performed by this builder.
 """
-import argparse
 import hashlib
 import json
 import shlex
+import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 VERSION = '6.12.112'
 SHA256 = '164dc9d1f6c93c61a15e1f071c48379b467f2b17c469cce7223471968208ed03'
 
 
 def wsl_path(path):
     path = Path(path).resolve().as_posix()
+    if os.name != 'nt':
+        return path
     return '/mnt/' + path[0].lower() + path[2:]
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output-dir', type=Path, default=ROOT / 'build/linux/minimal')
-    parser.add_argument('--record', action='store_true')
-    parser.add_argument('--board-evidence', type=Path, help='Attach a passing board linux operation receipt')
-    args = parser.parse_args()
+def build(args, run=None):
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if args.record:
@@ -120,7 +117,3 @@ sha256sum "$OUT/Image"
 '''
     (out / 'build.sh').write_text(script, newline='\n')
     print('Prepared', out / 'build.sh')
-
-
-if __name__ == '__main__':
-    main()

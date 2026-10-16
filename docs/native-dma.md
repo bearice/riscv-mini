@@ -9,7 +9,7 @@
 | SD full | 32-bit Wishbone DMA | 通用读写引擎，保留较大传输配置；HAL 仍按最多八扇区分块 |
 | SD SPI | CPU 软件读写 | 没有 DDR DMA |
 | 音频 DAC | 32-bit Wishbone read | PCM ring，平均 48 kHz，带宽低，保持现有 HAL |
-| Ethernet | 默认 CPU PIO；可选 native copy DMA | DDR 经缓冲端口与 SharedL2，MAC SRAM 侧为 Wishbone；需显式 --with-eth-dma |
+| Ethernet | 默认 CPU PIO；可选 native copy DMA | DDR 经缓冲端口与 SharedL2，MAC SRAM 侧为 Wishbone；需显式 --feature eth_dma=on |
 | USB Ultra | CPU PIO | 小包 HID/Hub，未实现 DDR DMA；可选 OHCI 后端另有自己的描述符 DMA |
 | 双麦克风 | snapshot FIFO + CPU | 不使用连续 DDR DMA |
 

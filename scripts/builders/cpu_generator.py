@@ -4,35 +4,54 @@ Requires a VexRiscv source checkout compatible with the installed LiteX CPU
 generator (this trial used b6118e5cc2a33323425df6455697139021d50c72),
 Java 8 and sbt-launch 1.9.7. No installed packages are modified.
 """
-import argparse
 import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
+import platform
 from pathlib import Path
 
 import pythondata_cpu_vexriscv
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--vexriscv-source', required=True, type=Path)
-    parser.add_argument('--java', required=True, type=Path)
-    parser.add_argument('--sbt-launch', required=True, type=Path)
-    parser.add_argument('--output-dir', required=True, type=Path)
-    parser.add_argument('--relaxed-pc-calculation', action='store_true',
-                        help='Add VexRiscv fetch address calculation stage')
-    parser.add_argument('--compressed', action='store_true',
-                        help='Enable the RISC-V C compressed instruction extension')
-    parser.add_argument('--pipelined-fetch', action='store_true',
-                        help='Use a two-cycle I-cache and an instruction injector register')
-    parser.add_argument('--arithmetic-matrix', action='store_true',
-                        help='Generate MMU/no-FPU CPUs for all four single-cycle shift/multiply combinations')
-    args = parser.parse_args()
+
+def build(args, run=None):
+    if args.locked_config:
+        lock=json.loads(args.locked_config.read_text(encoding='utf-8'))
+        required=('relaxed_pc_calculation','compressed','pipelined_fetch','arithmetic_matrix')
+        if set(lock.get('flags',{})) != set(required) or any(type(lock['flags'][n]) is not bool for n in required):
+            raise ValueError('CPU lock must explicitly specify all generator flags: '+', '.join(required))
+        for name in required:setattr(args,name,lock['flags'][name])
+    base = Path(pythondata_cpu_vexriscv.data_location)
+    args.vexriscv_source=args.vexriscv_source or Path(os.environ.get('VEXRISCV_SOURCE',base/'ext/VexRiscv'))
+    from scripts.modular.environment import discover
+    if args.java is None:args.java=Path(discover(['java'])['bindings']['java'][0])
+    if args.sbt_launch is None:args.sbt_launch=Path(discover(['sbt-launch'])['bindings']['sbt-launch'][0])
+    for role,path in [('java',args.java),('sbt-launch',args.sbt_launch),('VexRiscv source',args.vexriscv_source)]:
+        if not path.exists():raise ValueError('Missing '+role+': '+str(path))
+    from scripts.modular.storage import file_hash, digest
+    source_files={p.relative_to(args.vexriscv_source).as_posix():file_hash(p)
+                  for folder in ('src','project') for p in (args.vexriscv_source/folder).rglob('*')
+                  if p.is_file() and 'target' not in p.parts}
+    for name in ('build.sbt',):
+        if (args.vexriscv_source/name).is_file():source_files[name]=file_hash(args.vexriscv_source/name)
+    source_lock=dict(generator_script_sha256=file_hash(__file__),upstream_files=source_files,
+                     java_binary_sha256=file_hash(args.java),sbt_launcher_sha256=file_hash(args.sbt_launch),
+                     java_version=subprocess.check_output([str(args.java),'-version'],stderr=subprocess.STDOUT,text=True).strip(),
+                     template_sha256=file_hash(base/'src/main/scala/vexriscv/GenCoreDefault.scala'))
+    source_lock['generator_files']={p.relative_to(base).as_posix():file_hash(p)
+                                   for folder in ('src','project') for p in (base/folder).rglob('*')
+                                   if p.is_file() and 'target' not in p.parts}
+    source_lock['generator_build_sbt_sha256']=file_hash(base/'build.sbt')
+    source_lock['requirements_sha256']=file_hash(Path(__file__).resolve().parents[2]/'requirements.lock')
+    if '"1.8.' not in source_lock['java_version']:raise ValueError('CPU generation requires Java 8')
+    if args.locked_config and lock.get('source_lock') != source_lock:
+        raise ValueError('CPU source/tool identities differ from locked config')
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    base = Path(pythondata_cpu_vexriscv.data_location)
     for name in ('src', 'project'):
         shutil.copytree(base/name, output/name, dirs_exist_ok=True)
     # Keep upstream checkout untouched. TM permission must exist even when
@@ -110,7 +129,9 @@ def main():
                         '-Dsbt.boot.directory='+str(output/'sbt-boot'),
                         '-jar', str(args.sbt_launch.resolve()), *commands],
                        cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True,
-                       env={**os.environ, 'TMP':str(java_tmp), 'TEMP':str(java_tmp)})
+                       env=__import__('scripts.modular.environment',fromlist=['process_environment']).process_environment(
+                           {'TMP':str(java_tmp),'TEMP':str(java_tmp),'TMPDIR':str(java_tmp),
+                            'JAVA_HOME':str(args.java.resolve().parent.parent),'COURSIER_CACHE':str(output/'coursier')}))
     report = {'commands': commands, 'high_mmio_xip': True, 'pipeline': {
                   'relaxed_pc_calculation': args.relaxed_pc_calculation,
                   'extra_fetch_stage': args.relaxed_pc_calculation},
@@ -120,6 +141,10 @@ def main():
                   (base/'src/main/scala/vexriscv/GenCoreDefault.scala').read_bytes()).hexdigest()}
     report['pipeline'].update(two_cycle_icache=args.pipelined_fetch or not args.compressed,
                               injector_register=args.pipelined_fetch)
+    report['source_lock']=source_lock
+    report['resolved_flags']={n:getattr(args,n) for n in ('relaxed_pc_calculation','compressed','pipelined_fetch','arithmetic_matrix')}
+    report['fixed_parameters']=dict(icache_bytes=2048,dcache_bytes=2048,java_heap='3G',
+                                    csr_permission_patch='time/TM',high_mmio_xip=True)
     for csr, fpu, name, shift, mul in variants:
         path = output/(name+'.v')
         report['cpu_rtls'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -127,8 +152,6 @@ def main():
                                   'compressed':args.compressed,'bitmanip':[],
                                   'single_cycle_shift':shift,'single_cycle_muldiv':mul}
     (output/'generator.json').write_text(json.dumps(report, indent=2)+'\n')
+    (output/'generator.lock.json').write_text(json.dumps(dict(schema=1,flags=report['resolved_flags'],source_lock=source_lock,
+                                                            fixed_parameters=report['fixed_parameters']),indent=2)+'\n')
     print(json.dumps(report, indent=2))
-
-
-if __name__ == '__main__':
-    main()

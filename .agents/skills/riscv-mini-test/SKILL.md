@@ -23,7 +23,7 @@ CPU/DDR/外设改动另外选择相关 `tests/*_verilog_test.py`、DFI 回归或
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py board verify --build <本次完整ID> --suite firmware
-.venv/Scripts/python.exe scripts/builds.py pin current <本次完整ID> --evidence <本次operation目录>/firmware-verification.json
+.venv/Scripts/python.exe scripts/mini.py builds pin current <本次完整ID> --evidence <本次operation目录>/firmware-verification.json
 ```
 
 对支持文件系统、视频、USB、音频的完整系统增加 `--soak-seconds 60`；连接麦克风且配置支持时再加 `--mic`。最小系统选择其实际支持的测试。匹配 FS/app 两个 hash 且板测通过后才 pin；记录未跑项和听音、屏幕、物理输入等观察限制。

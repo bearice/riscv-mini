@@ -2,7 +2,7 @@
 
 性能测试命令与计时边界见 [BIOS benchmark](benchmark.md)。
 
-默认固件是 `firmware/bios/main.c`。片上 ROM 负责软件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--app firmware/examples/monitor.c` 单独构建。
+默认固件是 `firmware/bios/main.c`。片上 ROM 负责软件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--source firmware/examples/monitor.c` 单独构建。
 
 ## 启动与内存
 
@@ -124,7 +124,7 @@ TFTP 为 512 B 停等协议，吞吐受逐块往返和软件轮询限制；最�
 
 ## 程序格式和 ABI
 
-[公开 C 接口](../firmware/bios/include/bios.h) 与 [程序 SDK](../scripts/bios_payload.py) 不依赖生成的 CSR 地址。ABI=1、ILP32：`a7=0x42494f53`，`a6=功能号`，`a0..a5=参数`，`a0=返回值`。负值表示错误（GETC/MOUSE 的 -1 也表示暂无输入）。TIME 返回毫秒计数的 32 位原始位模式，差值应按 uint32_t 处理。
+[公开 C 接口](../firmware/bios/include/bios.h) 与 [程序 SDK](../scripts/builders/payload.py) 不依赖生成的 CSR 地址。ABI=1、ILP32：`a7=0x42494f53`，`a6=功能号`，`a0..a5=参数`，`a0=返回值`。负值表示错误（GETC/MOUSE 的 -1 也表示暂无输入）。TIME 返回毫秒计数的 32 位原始位模式，差值应按 uint32_t 处理。
 
 | ID | 服务 | 参数 / 返回 |
 | --- | --- | --- |
@@ -174,11 +174,11 @@ RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version�
 
 ```powershell
 . .\scripts\env.ps1
-& $MiniPython scripts/build.py --output-dir build/bios
+& $MiniPython scripts/mini.py build system --output-dir build/bios
 # 重用已验收、CSR ABI 相同的 FPGA 配置，UART 运行 BIOS；不写 Flash。
 & $MiniPython scripts/boot_upload.py --reset --mode uart --output-dir build/base --image build/bios/firmware/app.img
-& $MiniPython scripts/bios_payload.py
-& $MiniPython scripts/bios_payload.py --source firmware/examples/bios_demo.c
+& $MiniPython scripts/mini.py build payload
+& $MiniPython scripts/mini.py build payload --source firmware/examples/bios_demo.c
 # 在接 Dock 的本机网卡地址上运行只读 TFTP；地址须替换为实际地址。
 & $MiniPython scripts/bios_tftp.py --bind 169.254.25.153 --file build/bios-payload/BOOT.RPB
 ```

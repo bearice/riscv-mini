@@ -4,7 +4,6 @@ The accepted boot ROM is embedded only to retain realistic ROM utilization.
 It is not adapted to data caches, FPU state or virtual memory. These outputs
 are deliberately qualification reports, not deployable validation manifests.
 """
-import argparse
 import hashlib
 import json
 import os
@@ -14,55 +13,34 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from gateware.features import Features
 from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, pll_count
 from gateware.soc import MiniSoC
 from gateware.rtl import split_verilog
 from litex.soc.integration.builder import Builder
-from scripts.build import pnr_report
+from scripts.modular.rtl import pnr_report
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--cpu-verilog', required=True, type=Path)
-    parser.add_argument('--cpu-variant', choices=('lite','full','linux'), default=None)
-    parser.add_argument('--usb-backend',choices=('ohci','ultra'),default='ultra')
-    parser.add_argument('--sd-backend', choices=('native','spi'), default=None)
-    parser.add_argument('--sd-profile',choices=SD_PROFILES,default=None)
-    parser.add_argument('--audio-clock',choices=('dds','sys','legacy'),default='dds')
-    parser.add_argument('--profile', choices=('full', 'minimal'), default='full')
-    parser.add_argument('--output-dir', required=True, type=Path)
-    parser.add_argument('--rom', type=Path, default=ROOT/'build/base/firmware/boot.bin',
-                        help='ROM image used to keep realistic ROM resource usage; build it first with scripts/build.py')
-    parser.add_argument('--without', action='append', choices=Features.names(), default=[])
-    parser.add_argument('--retiming', action='store_true',
-                        help='Emit set_option -retiming 1; verify native Gowin synthesis settings before claiming it is active')
-    parser.add_argument('--pipelining', action='store_true',
-                        help='Emit set_option -pipe 1; verify native Gowin synthesis settings before claiming it is active')
-    parser.add_argument('--retiming-resource', choices=('none','all','bsram','dsp'),
-                        default='none', help='PnR retiming target resources')
-    parser.add_argument('--place-option', type=int, choices=range(5), default=2,
-                        help='Gowin PnR placement algorithm (default: timing priority)')
-    parser.add_argument('--route-option', type=int, choices=range(3), default=1,
-                        help='Gowin PnR routing algorithm (default: timing priority)')
-    parser.add_argument('--synthesis-only', action='store_true',
-                        help='Run synthesis without placement and routing')
-    parser.add_argument('--l2-size', type=int, choices=(4096,8192,16384), default=4096)
-    parser.add_argument('--rom-size', type=int, choices=(4096,8192), default=8192)
-    parser.add_argument('--boot-mode', choices=('rom','xip'), default='rom')
-    args = parser.parse_args()
+def build(args, run=None):
     args.audio_clock = "dds" if args.audio_clock == "sys" else args.audio_clock
+    from scripts.modular.environment import discover
+    vendor=discover(['gowin'])['bindings']['gowin'][0]
+    os.environ['PATH']=str(Path(vendor).parent)+os.pathsep+os.environ.get('PATH','')
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     cpu = args.cpu_verilog.resolve()
     rom = args.rom.read_bytes()
     rom += bytes((-len(rom)) % 4)
     data = [int.from_bytes(rom[i:i+4], 'little') for i in range(0, len(rom), 4)]
-    overrides={name: False for name in args.without}
+    overrides={}
+    for item in args.feature:
+        name,_,value=item.partition('=');name=name.replace('-','_')
+        if name not in Features.names() or value not in ('on','off'):raise ValueError('Expected NAME=on|off: '+item)
+        overrides[name]=value=='on'
     features = Features.resolve(args.profile, overrides)
-    args.sd_profile,features=storage_profile(args.sd_profile,args.sd_backend,features,overrides)
+    args.sd_profile,features=storage_profile(args.sd_profile,None,features,overrides)
     args.sd_backend='native' if args.sd_profile in ('lite','full') else args.sd_profile
     features,args.cpu_variant,dcache=cpu_configuration(features,overrides,cpu,args.cpu_variant)
     expected_plls=pll_count(features,args.usb_backend,args.audio_clock)
@@ -165,7 +143,3 @@ def main():
     print(json.dumps(report, indent=2), flush=True)
     if error:
         raise error
-
-
-if __name__ == '__main__':
-    main()

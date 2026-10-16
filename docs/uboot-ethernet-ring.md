@@ -1,10 +1,10 @@
 # U-Boot native Ethernet ring
 
-2026-10-09，`codex/eth-ring-dma-no-fpu`。默认 full profile 保留 MMU、关闭 FPU，显式 `--with-fpu` 仍可用。Ethernet DMA 默认关闭，使用 `--with-eth-dma` 选择独占 ring。
+2026-10-09，`codex/eth-ring-dma-no-fpu`。默认 full profile 保留 MMU、关闭 FPU，显式 `--feature fpu=on` 仍可用。Ethernet DMA 默认关闭，使用 `--feature eth_dma=on` 选择独占 ring。
 
 U-Boot 使用与 HAL 相同的 16-byte DDR descriptors，RX/TX 各四个、1536-byte buffer。硬件通过 buffered native DDR 端口收发，MAC packet SRAM 是私有 staging，不映射到 CPU。RX 借用 DDR buffer，`free_pkt` 归还所有权；TX 复制到受驱动管理的 DDR buffer，发布 descriptor 并等待硬件完成。停止及移除设备前排空 DMA，超时保留缓冲，避免硬件访问已释放内存。
 
-驱动通过编译选项选择唯一后端。DMA 版二进制不包含 PIO compatible 或搬包循环；关闭 DMA 的独立 PIO 配置保留原功能。不存在 DMA 运行失败后转 PIO 的路径。`uboot_build.py --soc-dir <构建目录>` 从 CSR 选择后端及早期 UART 地址；OpenSBI 从相同构建生成 Ethernet/USB 中断、ring register offsets 和实际 CPU ISA。
+驱动通过编译选项选择唯一后端。DMA 版二进制不包含 PIO compatible 或搬包循环；关闭 DMA 的独立 PIO 配置保留原功能。不存在 DMA 运行失败后转 PIO 的路径。`mini.py build uboot --hardware <构建目录>` 从 CSR 选择后端及早期 UART 地址；OpenSBI 从相同构建生成 Ethernet/USB 中断、ring register offsets 和实际 CPU ISA。
 
 组件版本：RTL/HAL/BIOS 0.9.0、OpenSBI 0.10.0、U-Boot 0.4.0；bootloader 仍为 0.8.0。系统包及正式 current 仍是 v0.8.0。本分支作为独立参考，不合并或推送。
 
@@ -20,7 +20,7 @@ U-Boot 使用与 HAL 相同的 16-byte DDR descriptors，RX/TX 各四个、1536-
 
 ## 提交候选 gateware
 
-`build/ring-uboot-qualified` 按默认 full 配置选择无 FPU，启用 Ethernet DMA；没有传 `--without-fpu`。ISA 为 RV32IMA/Zicsr/Zifencei，音频及双麦克风保持启用。源码指纹 `1ae7edaf2cbd7695408542c73b7ec18701df4d6752304e6bd21ff26ee7ace4be`，PnR setup/hold 0/0，Logic 18885、Register 10370、CLS 10120、BSRAM 36。50 项固件检查和 60 秒 soak、双麦克风通过；证据位于 `build/operations/20261009T084949110476Z-verify`。性能对照上一版已验收的独占 ring，在 `build/ring-uboot-performance` 保存 all/cache 各三轮。
+`build/ring-uboot-qualified` 按默认 full 配置选择无 FPU，启用 Ethernet DMA；没有传 `--feature fpu=off`。ISA 为 RV32IMA/Zicsr/Zifencei，音频及双麦克风保持启用。源码指纹 `1ae7edaf2cbd7695408542c73b7ec18701df4d6752304e6bd21ff26ee7ace4be`，PnR setup/hold 0/0，Logic 18885、Register 10370、CLS 10120、BSRAM 36。50 项固件检查和 60 秒 soak、双麦克风通过；证据位于 `build/operations/20261009T084949110476Z-verify`。性能对照上一版已验收的独占 ring，在 `build/ring-uboot-performance` 保存 all/cache 各三轮。
 
 缓存压力测试的 LCD underflow 为 24，基线同为 24，普通 all 测试为零。第一次直接接续外部并发检查在 `test lcd start` 失败，因为压力测试累计计数尚未清零；自主 ring hold 已通过。保留失败现场于 `build/ring-uboot-evidence/cache-carryover`，重新装载相同 FS/app 后验证普通并发，不能把重载后的零计数用于掩盖压力测试结果。
 

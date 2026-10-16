@@ -13,7 +13,7 @@ description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码�
 
 核对干净 HEAD 与 `VERSIONS.yaml`；正式发布还需在 `RELEASES.yaml` 写好本次系统包（`system/v<版本>` 的 tag 指向 HEAD），版本不可覆盖。尚未提交时先完成同级 `riscv-mini-commit/SKILL.md`。涉及代码变更：先提交干净源码，再生成最终包。
 
-系统包声明六个组件的版本，但 `release.py` 从当前 HEAD 构建：它要求 `RELEASES.yaml` 的组件组合等于当前 `VERSIONS.yaml`，构建后还会把产物里的 `component_versions` 与组合再核对一次，不一致就拒绝。包只构建并板测 SoC/bootloader/应用；OpenSBI、U-Boot 等由各自流程（`uboot_verify.py` 等）单独构建与验收的组件，在 `RELEASES.yaml` 的 `external:` 里声明为"已声明兼容、不在本包内构建/验证"，避免用六个版本号暗示全部已验收。
+系统包声明六个组件的版本，但 `mini.py release create` 从当前 HEAD 构建：它要求 `RELEASES.yaml` 的组件组合等于当前 `VERSIONS.yaml`，构建后还会把产物里的 `component_versions` 与组合再核对一次，不一致就拒绝。包只构建并板测 SoC/bootloader/应用；OpenSBI、U-Boot 等由各自流程（`uboot_verify.py` 等）单独构建与验收的组件，在 `RELEASES.yaml` 的 `external:` 里声明为"已声明兼容、不在本包内构建/验证"，避免用六个版本号暗示全部已验收。
 
 顺序不可颠倒：
 
@@ -21,15 +21,15 @@ description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码�
 2. 在 `RELEASES.yaml` 写系统包：`components` 钉住六个组件版本（须等于 `VERSIONS.yaml`），`external` 列出不在本包构建/验证的组件。
 3. 提交，得到 git hash，打 `system/v<版本>` tag 指向该提交。
 4. 从该提交运行构建（干净工作树，产物身份不带 `.dirty`），并在实板完成测试。
-5. 归档 report/change 记录（`reports/changes/<commit7>.md` 与同名 `.json`），然后运行 `release.py` 生成最终包。
+5. 归档 report/change 记录（`reports/changes/<commit7>.md` 与同名 `.json`），然后运行 `mini.py release create` 生成最终包。
 
 被测试与被发布的 binary 必须来自已提交树；dirty 树的构建只能作为候选验证，不能作为发布验收。
 
 ```powershell
-.venv/Scripts/python.exe scripts/release.py --version <系统包版本> --build <配置模板ID> `
-  --app firmware/bios/main.c --board-check --baseline <基线ID> `
+.venv/Scripts/python.exe scripts/mini.py release create --version <系统包版本> --hardware <配置模板ID> `
+  --source firmware/bios/main.c --board-check --baseline <基线ID> `
   --baseline-results <基线all目录> --baseline-results <基线cache目录>
-.venv/Scripts/python.exe scripts/release.py --verify <生成的最终包目录>
+.venv/Scripts/python.exe scripts/mini.py release verify <生成的最终包目录>
 ```
 
 不发布新版本的代码提交加 `--snapshot --version <版本>`，输出 `build/archives/v<版本>-<Git>/`。纯文档提交无需 FPGA 重建。
@@ -44,10 +44,10 @@ git worktree add --detach build/worktrees/<tag> <tag>
 ```
 
 - worktree 必须在仓库内用 `git worktree add` 创建；`git worktree move` 带进来的安全描述符缺少沙箱写权限，手工补 ACE 也不能修复。
-- 构建用该提交自己的 `scripts/build.py --synthesize`。HEAD 的 build.py 不能表达集成 SRAM、硬编码 ROM、`--l2-mode` 等旧配置。
-- 子进程只能写仓库内：`TMP`/`TEMP` 指到 `<worktree>/build/.tmp`，sbt 的 Coursier 缓存放进 `build/java-cache/coursier`；CPU RTL 用该提交的 `scripts/cpu_generate.py` 生成（Java 8、sbt-launch 1.9.7、VexRiscv 固定 hash），旧版本还会把 sbt 临时目录写进 `--vexriscv-source`，需要把该源码目录也放进 worktree。
+- 历史构建只运行该提交保存的入口和参数，以 recipe 为准；旧提交可能包含现在已删除的 build.py。不能把当前 mini CLI 或当前默认配置套到历史源码上，尤其是集成 SRAM、硬编码 ROM、旧 L2 模式。
+- 子进程只能写仓库内：`TMP`/`TEMP` 指到 `<worktree>/build/.tmp`，sbt 的 Coursier 缓存放进 `build/java-cache/coursier`；CPU RTL 用该提交 recipe 保存的生成入口和参数生成（Java 8、sbt-launch 1.9.7、VexRiscv 固定 hash），旧版本还会把 sbt 临时目录写进其 VexRiscv source 路径，需要把该源码目录也放进 worktree。
 - 打包与登记用的 helper 不入库，按下列契约现写，复用 HEAD 的 `scripts/build_records.py`，输出 `build/releases/<tag>/<配置>/`：`release.json` 标记 `release_kind: "code-release"`、不哈希自身、保存逐文件 SHA256；`validation.json` 补写的字段列进 `annotated_fields`；`profile` 含空格或斜杠时用 `--profile-slug` 与 `--config` 生成可作目录名的配置名，catalog 记录 id 同样必须文件系统安全。
-- 每个包都要 `scripts/release.py --verify` 通过。
+- 每个包都要 `scripts/mini.py release verify` 通过。
 
 ## 实板与基准
 

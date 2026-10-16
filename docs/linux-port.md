@@ -45,8 +45,8 @@ linux-mini>
 最终镜像登记命令（与下文首次纯串口记录分开）：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/linux_build.py `
-  --output-dir build/linux/framebuffer-final/minimal --record `
+.venv/Scripts/python.exe -X utf8 scripts/mini.py build linux `
+  --output-dir build/linux/framebuffer-final/minimal `
   --board-evidence build/operations/20261010T020448816574Z-linux/result.json
 ```
 
@@ -55,14 +55,16 @@ linux-mini>
 Windows 仓库根目录：
 
 ```powershell
-./scripts/linux_build.ps1 -WithBootstrap
+./mini.ps1 build linux --output-dir build/linux/minimal
+./mini.ps1 build uboot --hardware current --feature video=off --output-dir build/linux/uboot
+./mini.ps1 build opensbi --hardware current --payload-path build/linux/uboot/u-boot.bin --osb-name UBOOT.OSB --output-dir build/linux/sbi
 ./mini.ps1 board linux --build current `
   --os-image build/linux/sbi/UBOOT.OSB `
   --kernel build/linux/minimal/Image `
   --tftp-python C:/Users/bearice/AppData/Local/Programs/Python/Python313/python.exe
 ```
 
-先用 `--dry-run` 可以检查镜像和所选构建，不接触板子。构建包装器每个阶段都检查退出码；编译失败不能继续打包或把旧镜像登记为新结果。只重编内核时去掉 `-WithBootstrap`，但更换 SoC/CSR 布局后必须重建 bootstrap。`-SocDir` 指定其 CSR 来源，`board linux --build` 必须选择同一硬件构建。
+先用 `--dry-run` 可以检查镜像和所选构建，不接触板子。统一 target 调度检查每个阶段的退出码，编译失败不能继续打包或把旧镜像登记为新结果。只重编内核时只执行 `build linux`；更换 SoC/CSR 布局后另外执行 `build uboot` 和 `build opensbi`，两者以 `--hardware` 选择同一输入，`board linux --build` 也必须选择该硬件构建。
 
 内核源树和 object tree 在 WSL archlinux 原生 ext4 的 `~/riscv-mini-linux/`；Windows 的 `build/linux/` 接收最终文件、配置、构建日志和 validation。工具为 clang/lld 23.1.1；需要 make、flex、bison、bc、dtc、curl、tar 和 U-Boot 所需的 riscv64-elf GCC。内核源码固定在 6.12.112，下载 SHA256 与 kernel.org 公布值核对：
 
@@ -74,7 +76,7 @@ linux-6.12.112.tar.xz
 首次纯串口验收镜像 Image 为 2525372 B（约 2.41 MiB），包括 5076 B 的静态 `/init`；Image SHA256 为 `486669a99fd7fa0ccb12a3391019474dfffba3464d11063cd8e23d11c72a3725`。同一源码重编可能因内核构建时间/序号变化而产生不同 hash，必须以新镜像的实测收据验收。该首次镜像的登记命令：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/linux_build.py --record `
+.venv/Scripts/python.exe -X utf8 scripts/mini.py build linux `
   --board-evidence build/operations/20261010T015336860606Z-linux/result.json
 ```
 
@@ -95,16 +97,18 @@ TFTP 服务器只导出本轮明确选定的 OSB 和 Image，并由任务入口�
 
 Linux 自 6.12 默认读取 `riscv,isa-base` 与 `riscv,isa-extensions`；设备树现在同时提供这些属性和原来的 `riscv,isa`，避免扩展探测为空。内置 `/init` 使用 ILP32、无浮点/压缩指令，直接发出 Linux ECALL。RV32 的当前调用表使用 `waitid`、`clock_gettime64`、`clock_nanosleep_time64`，不能沿用 RV64/旧表的 `wait4` 和 time32 编号。
 
-U-Boot 默认 SD 启动配置修正为 `CONFIG_USE_BOOTCOMMAND=y` 和 `CONFIG_BOOTCOMMAND=...`；此前的 `CONFIG_BOOT` 被 Kconfig 忽略。Linux bring-up 的 bootstrap 使用 `uboot_build.py --without-video`，并在加载 Image 前切换 stdout/stderr 到串口。初次启用视频的 bootstrap 没有到达预期提示；本轮同时修正 bootcommand 并关闭视频，尚未独立定位该现象，也未验收 Linux 视频交接。
+U-Boot 默认 SD 启动配置修正为 `CONFIG_USE_BOOTCOMMAND=y` 和 `CONFIG_BOOTCOMMAND=...`；此前的 `CONFIG_BOOT` 被 Kconfig 忽略。Linux bring-up 的 bootstrap 使用 `mini.py build uboot --feature video=off`，并在加载 Image 前切换 stdout/stderr 到串口。初次启用视频的 bootstrap 没有到达预期提示；本轮同时修正 bootcommand 并关闭视频，尚未独立定位该现象，也未验收 Linux 视频交接。
 
 ## BusyBox 外部 initrd
 
-`build/linux/busybox/initrd.cpio.gz` 是 gzip 压缩的 newc initramfs，使用 BusyBox 1.37.0 和 musl 1.2.5 静态链接。BusyBox 编译为 RV32IM，musl 的原子操作使用 RV32IMA；ABI 为 ILP32，无 C/FPU，无动态解释器。源码压缩包的 SHA256 固定在 `scripts/busybox_build.py`，归档内 `/bin/busybox` 必须与独立 ELF 完全相同，并检查 ELF32/RISC-V/flags=0，防止安装阶段误用主机编译器。
+`build/linux/busybox/initrd.cpio.gz` 是 gzip 压缩的 newc initramfs，使用 BusyBox 1.37.0 和 musl 1.2.5 静态链接。BusyBox 编译为 RV32IM，musl 的原子操作使用 RV32IMA；ABI 为 ILP32，无 C/FPU，无动态解释器。源码压缩包的 SHA256 固定在 `scripts/mini.py build busybox`，归档内 `/bin/busybox` 必须与独立 ELF 完全相同，并检查 ELF32/RISC-V/flags=0，防止安装阶段误用主机编译器。
 
 先构建上述 Linux 内核以取得 UAPI headers 和 `gen_init_cpio`，然后运行：
 
 ```powershell
-./scripts/busybox_build.ps1 -WithBootstrap
+./mini.ps1 build busybox --output-dir build/linux/busybox
+./mini.ps1 build uboot --hardware current --feature video=off --output-dir build/linux/busybox/uboot
+./mini.ps1 build opensbi --hardware current --payload-path build/linux/busybox/uboot/u-boot.bin --osb-name UBOOT.OSB --output-dir build/linux/busybox/sbi
 .venv/Scripts/python.exe -X utf8 scripts/mini.py board linux `
   --build 45398e9-full-rv32ima-rom0k-l24k-usb-enumeration-safe-ab5ad2e5-1c55f655 `
   --os-image build/linux/busybox/sbi/UBOOT.OSB `
@@ -113,9 +117,9 @@ U-Boot 默认 SD 启动配置修正为 `CONFIG_USE_BOOTCOMMAND=y` 和 `CONFIG_BO
   --tftp-python C:/Users/bearice/AppData/Local/Programs/Python/Python313/python.exe
 ```
 
-BusyBox/musl 在 WSL archlinux 的 `~/riscv-mini-linux/busybox-build` 编译，依赖 riscv64-elf GCC、make、tar、cpio 和前述内核构建目录。GCC 使用 `rv32im/ilp32` 的 libgcc/crt，通过 musl specs 替换裸机 newlib/libgloss 默认链接；链接器显式选择 `elf32lriscv`。`-WithBootstrap` 重建纯串口 U-Boot/OpenSBI，U-Boot 必须有 `CONFIG_SUPPORT_RAW_INITRD=y` 才能接受 raw cpio.gz。
+BusyBox/musl 在 WSL archlinux 的 `~/riscv-mini-linux/busybox-build` 编译，依赖 riscv64-elf GCC、make、tar、cpio 和前述内核构建目录。GCC 使用 `rv32im/ilp32` 的 libgcc/crt，通过 musl specs 替换裸机 newlib/libgloss 默认链接；链接器显式选择 `elf32lriscv`。`build uboot --feature video=off` 和 `build opensbi --payload-path <u-boot.bin>` 重建纯串口 bootstrap，U-Boot 必须有 `CONFIG_SUPPORT_RAW_INITRD=y` 才能接受 raw cpio.gz。
 
-仅修改初始化脚本或 `/etc` 时可用 `./scripts/busybox_build.ps1 -RootfsOnly` 复用已编译 ELF 并重新打包；它要求 BusyBox 配置未变且 WSL ELF 与输出文件一致。配置变化需要完整构建。当前内核开启 UNIX98 PTY，并挂载 `/dev/pts`；验收实际分配 `/dev/pts/0`，在子进程中验证控制终端。
+仅修改初始化脚本或 `/etc` 时可用 `./mini.ps1 build busybox --rootfs-only --output-dir build/linux/busybox` 复用已编译 ELF 并重新打包；它要求 BusyBox 配置未变且 WSL ELF 与输出文件一致。配置变化需要完整构建。当前内核开启 UNIX98 PTY，并挂载 `/dev/pts`；验收实际分配 `/dev/pts/0`，在子进程中验证控制终端。
 
 `/init` 挂载 devtmpfs、proc、sysfs、tmpfs，设置主机名后 exec BusyBox init 成为 PID 1；inittab 同时在原生 `ttyLXU0` 和 LCD 的 `tty1` 上 respawn 登录 ash，提示符 `mini-linux#`。启动时清除 LCD 内核日志，显示 `BusyBox LCD console tty1`；内核日志级别调低，光标启用。验收检查活动 VT、终端 shell 和 `/dev/vcs1` 中的提示符。BusyBox `ps` 的 TT 栏显示 `4,1`，不能把这个设备号当成缺少 tty1。内置的 freestanding `/init` 被外部归档覆盖，未提供外部归档时仍运行原来的自检控制台。根文件系统驻留 RAM，`/tmp` 和 `/run` 为 tmpfs；SD 卡不自动挂载。
 
@@ -124,7 +128,7 @@ initrd 先装载在 `0x04000000`，入口会检查与内核/高端保留 RAM 的
 每次构建保存静态 ELF、`.config`、源校验值、归档和 `validation.json`。板测后用匹配的收据登记：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/busybox_build.py --record `
+.venv/Scripts/python.exe -X utf8 scripts/mini.py build busybox `
   --board-evidence build/operations/<本次linux操作>/result.json
 ```
 

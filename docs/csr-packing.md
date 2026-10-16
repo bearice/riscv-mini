@@ -6,7 +6,7 @@ Controls, commands, DMA addresses and full-width counters retain their existing
 semantics. All field widths remain unchanged, including 16-bit microphone counts.
 
 `gateware/csr_layout.py` is the shared layout definition. Gateware packs live
-state Signals into CSRStatus words; `scripts/build.py` emits the original C
+state Signals into CSRStatus words; `scripts/mini.py build system` emits the original C
 read accessor names as field extraction functions. Existing HAL and application
 sources therefore retain their interfaces. Optional features emit aliases only
 when the corresponding packed word exists.

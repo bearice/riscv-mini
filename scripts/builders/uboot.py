@@ -4,7 +4,7 @@ The build runs inside the WSL archlinux toolchain (riscv64-elf-gcc) on a
 native ext4 tree, which is the verified environment; building on a
 Windows-mounted path is far too slow. The port is fully described under
 firmware/uboot/ and applied to the pinned source tree automatically,
-mirroring scripts/opensbi_build.py's platform-copy pattern:
+mirroring mini build opensbi's platform-copy pattern:
 
   * Added files (board dir, top-level defconfig, include/configs header,
     build-time fallback dts, and the own serial/Ethernet/MMC/USB drivers)
@@ -19,21 +19,20 @@ The result is reproducible from a clean clone: no manual tree edits are
 required. The Ethernet driver reuses upstream's LITEETH Kconfig/Makefile
 entry and only replaces drivers/net/liteeth.c with our 32-bit-CSR version.
 The produced u-boot.bin is copied back to the Windows build tree for
-scripts/opensbi_build.py to pack.
+mini build opensbi to pack.
 """
-import argparse, subprocess, sys, json
+import subprocess, sys, json
 import hashlib
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.versions import component_version
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 REV = "v2026.07"
-DISTRO = "archlinux"
 # WSL-native (ext4) build tree; never build on a /mnt/c path.
 WSL_SRC = "$HOME/uboot-port"
 WSL_OBJ = "$HOME/uboot-port-obj"
 CROSS = "riscv64-elf-"
-LIBGCC = "-L /usr/lib/gcc/riscv64-elf/16.2.0/rv32im/ilp32 -lgcc"
+LIBGCC = "$(riscv64-elf-gcc -march=rv32im -mabi=ilp32 -print-libgcc-file-name)"
 # LLD supports PIE; runtime relocation must also move command/data pointers.
 ARCH_FLAGS = "-march=rv32ima_zicsr_zifencei -mabi=ilp32"
 
@@ -53,20 +52,12 @@ COPIES = [
 def to_wsl(p):
     """Windows path -> WSL /mnt/<drive>/... path."""
     s = str(Path(p).resolve()).replace("\\", "/")
+    if sys.platform != 'win32':
+        return s
     return "/mnt/" + s[0].lower() + s[2:]
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", default=WSL_SRC,
-                        help="WSL-native source path (default $HOME/uboot-port)")
-    parser.add_argument("--obj", default=WSL_OBJ,
-                        help="WSL-native build output path (default $HOME/uboot-port-obj)")
-    parser.add_argument("--output-dir", type=Path, default=ROOT / "build/uboot/firmware",
-                        help="Windows dir to receive u-boot.bin")
-    parser.add_argument("--soc-dir", type=Path, help="Select the SoC Ethernet backend from csr.json")
-    parser.add_argument("--prepare-only", action="store_true", help="Write build.sh for direct WSL execution")
-    parser.add_argument("--without-video", action="store_true", help="Build a serial-only bootstrap (Linux bring-up)")
-    a = parser.parse_args()
+
+def build(a, run=None):
     out = a.output_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
     csr = json.loads((a.soc_dir/'csr.json').read_text()) if a.soc_dir else None
     ring = bool(csr and csr['constants'].get('mini_feature_eth_dma', 0))
@@ -125,11 +116,9 @@ echo "U-Boot payload: $OUT/u-boot.bin $(stat -c%s "$OUT/u-boot.bin") bytes"
     if a.prepare_only:
         print("Prepared", out / "build.sh")
         return
-    subprocess.run(["wsl", "-d", DISTRO, "-e", "bash", to_wsl(out / "build.sh")], check=True)
+    from scripts.modular.executor import execute
+    execute(out / 'build.sh', required=('cc','cxx','make','dtc','lld','riscv64-elf-gcc'),run=run)
     record = dict(component='uboot', version=version, ethernet_backend=backend,
         soc_dir=str(a.soc_dir.resolve()) if a.soc_dir else None,
         binary_sha256=hashlib.sha256((out/'u-boot.bin').read_bytes()).hexdigest())
     (out/'validation.json').write_text(json.dumps(record, indent=2)+'\n')
-
-if __name__ == "__main__":
-    main()

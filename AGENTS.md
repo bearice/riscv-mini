@@ -1,6 +1,8 @@
 # Repository workflow
 
-For basic operations (find/build artifacts, observe/recover the board, RAM run, persistent update, verification), start with `scripts/mini.py --help` and [the task guide](scripts/README.md). Use its operation workflows rather than composing programmer/UART calls or writing temporary probes. `board update` handles ROM/XIP and exact Flash readback; old UART `--mode install` is ROM-only. Operation receipts live in `build/operations/`.
+For basic operations (find/build artifacts, observe/recover the board, RAM run, persistent update, verification), start with `scripts/mini.py --help` and [the task guide](scripts/README.md). Use its operation workflows rather than composing programmer/UART calls or writing temporary probes. Operation and test receipts live in `build/runs/`; historical `build/operations/` is retained.
+
+For BIOS-only builds, component reuse, environment discovery, portable locks or source replay, read [component builds](docs/component-builds.md). Use `mini.py build bios --hardware current` to retain selected hardware; `plan` explains reuse. New candidates keep `current` unchanged. All builds use `mini.py build <target>` and `mini.py plan <target>`, including hardware generation, CPU and upstream OS/payload targets. Do not add standalone build entry points or prepare/record wrappers. Historical recipes execute their own preserved checkout through `mini.py builds reproduce`.
 
 Read the operation-specific skill when performing that operation: [构建与 PnR](.agents/skills/riscv-mini-build/SKILL.md), [测试与实板验收](.agents/skills/riscv-mini-test/SKILL.md), [性能测试与对比](.agents/skills/riscv-mini-benchmark/SKILL.md), [整理与提交](.agents/skills/riscv-mini-commit/SKILL.md), [发布与最终归档](.agents/skills/riscv-mini-release/SKILL.md), [清理中间构建](.agents/skills/riscv-mini-clean/SKILL.md), [复现构建](.agents/skills/riscv-mini-reproduce/SKILL.md). Load only the skills needed for the task.
 

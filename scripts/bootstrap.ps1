@@ -42,8 +42,8 @@ if (-not $SkipSmoke) {
     # Smoke build uses the minimal profile: the lite core ships inside
     # pythondata-cpu-vexriscv, so a fresh checkout needs no generated CPU RTL.
     # The default full profile (MMU+FPU) additionally requires
-    # scripts/cpu_generate.py output in build/cpu-features.
+    # mini build cpu --generate output in build/cpu-features.
     Invoke-MiniChecked -Executable $MiniPython -Arguments @(
-        (Join-Path $PSScriptRoot 'build.py'), '--profile', 'minimal',
+        (Join-Path $PSScriptRoot 'mini.py'), 'build', 'system', '--profile', 'minimal',
         '--output-dir', (Join-Path $MiniRoot 'build/bootstrap-smoke'))
 }

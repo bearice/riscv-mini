@@ -2,8 +2,10 @@
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 from build_records import ROOT, get_record, git, now, source_identity, write_json
+sys.path.insert(0,str(ROOT))
 from versions import COMPONENTS
 
 BOOKKEEPING = ('CHANGELOG.md', 'reports/changes/')
@@ -96,7 +98,7 @@ def main():
     if a.write_changelog and not (a.component and a.release_version):
         p.error('--write-changelog requires --component and an explicit --release-version; other commits use scope records only')
     if a.component and a.release_version:
-        from release import release_version
+        from scripts.mini_ops.release import release_version
         version = release_version(a.release_version)
         from versions import bundle_versions, component_version
         if a.component == 'system':
@@ -111,7 +113,7 @@ def main():
     record = prepare(a.title, a.change, a.revision, get_record(a.build) if a.build else None,
                      a.performance_report, json.loads(a.checks.read_text(encoding='utf-8')) if a.checks else None)
     if a.release_version:
-        from release import release_version
+        from scripts.mini_ops.release import release_version
         record['release_version']=release_version(a.release_version)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     identity=scope_identity(record.pop('scope'))

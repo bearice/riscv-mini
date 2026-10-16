@@ -48,13 +48,13 @@ CD 在每次等待与块操作中检查。检测无卡时标记介质不可用�
 ```powershell
 . .\scripts\env.ps1
 # 默认基础应用 + 原生 SD。
-& $MiniPython scripts/build.py --synthesize
+& $MiniPython scripts/mini.py build system --synthesize
 
 # 独立 SPI 回退；需要其自己的 FPGA 配置、boot ROM 和 app.img。
-& $MiniPython scripts/build.py --sd-backend spi --output-dir build/spi --synthesize
+& $MiniPython scripts/mini.py build system --sd-profile spi --output-dir build/spi --synthesize
 
 # 独立测试应用，保持基础 monitor 无写测/压力命令。
-& $MiniPython scripts/build.py --sd-backend native --app firmware/examples/sd_demo.c --output-dir build/m6-demo
+& $MiniPython scripts/mini.py build system --sd-profile lite --source firmware/examples/sd_demo.c --output-dir build/m6-demo
 & $MiniPython scripts/sd_verify.py --output-dir build/base --reset --write-test --soak-seconds 300
 
 # 恢复基础应用。

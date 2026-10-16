@@ -8,7 +8,7 @@ from pathlib import Path
 from scripts.build_records import ROOT, INPUT_DIRS, git, write_json
 
 
-def create_recipe(output, source, arguments, cpu=None, root=ROOT):
+def create_recipe(output, source, arguments, cpu=None, root=ROOT, entrypoint=None):
     key = output.name + '-' + hashlib.sha256(str(output).encode()).hexdigest()[:8]
     recipe = root / 'build/recipes' / key
     if recipe.exists():
@@ -35,7 +35,7 @@ def create_recipe(output, source, arguments, cpu=None, root=ROOT):
     arguments = [a.replace('\\', '/').replace(prefix, '$ROOT/') for a in arguments]
     files = {str(p.relative_to(recipe)).replace('\\', '/'):hashlib.sha256(p.read_bytes()).hexdigest()
              for p in recipe.rglob('*') if p.is_file()}
-    write_json(recipe/'recipe.json',dict(source=source, arguments=arguments, untracked=untracked, files=files))
+    write_json(recipe/'recipe.json',dict(source=source, arguments=arguments, untracked=untracked, files=files, **({'entrypoint':entrypoint} if entrypoint else {})))
     return recipe
 
 
@@ -65,5 +65,5 @@ def reproduce(recipe, python, output, root=ROOT):
     # Tool paths are machine-local; configure the same versions on another host.
     shutil.copy2(root/'.tools.local.json',checkout/'.tools.local.json')
     arguments = [a.replace('$ROOT',str(checkout)).replace('$RECIPE',str(recipe)) for a in data['arguments']]
-    subprocess.run([str(python),str(checkout/'scripts/build.py'),*arguments,'--output-dir',str(Path(output).resolve())],cwd=checkout,check=True)
+    subprocess.run([str(python),str(checkout/data.get('entrypoint','scripts/build.py')),*arguments,'--output-dir',str(Path(output).resolve())],cwd=checkout,check=True)
     return checkout

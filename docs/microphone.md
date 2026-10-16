@@ -53,8 +53,8 @@ HAL 提供 `hal_mic_start(right)`、`hal_mic_stop()`、`hal_mic_capture()`、
 `A` 切换自动增益，`+/-` 调整手动增益，空格冻结画面，`L/R` 切换声道。
 
 ```powershell
-.venv/Scripts/python.exe scripts/build.py --output-dir build/mic --synthesize
-.venv/Scripts/python.exe scripts/build.py --app firmware/examples/microphone_stereo_demo.c --output-dir build/mic-demo
+.venv/Scripts/python.exe scripts/mini.py build system --output-dir build/mic --synthesize
+.venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/microphone_stereo_demo.c --output-dir build/mic-demo
 .venv/Scripts/python.exe scripts/boot_upload.py --program --mode uart --output-dir build/mic --image build/mic-demo/firmware/app.img
 ```
 

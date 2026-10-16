@@ -1,21 +1,16 @@
 """Compile each optional module on/off and check emitted CSR/pin ownership. No downloads."""
-import argparse
-from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import subprocess
 import sys
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
 from gateware.features import Features
 
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--jobs',type=int,default=2)
-    parser.add_argument('--output-dir',type=Path,default=ROOT/'build/feature-matrix')
-    parser.add_argument('--configuration-only',action='store_true',help='CPU x SD profiles plus audio clock combinations')
-    args=parser.parse_args();directory=args.output_dir.resolve();directory.mkdir(parents=True,exist_ok=True)
+
+def build(args, run=None):
+    directory=args.output_dir.resolve();directory.mkdir(parents=True,exist_ok=True)
     cases=[('full',[]),('minimal',['--profile','minimal']),('uart-only',['--profile','minimal','--without-flash'])]
     dependencies={'filesystem':['--with-sd'],'mic_stereo':['--with-mic']}
     for name in Features.names():
@@ -40,7 +35,27 @@ def main():
               'ws2812':'ws2812','audio':'audio','mic':'mic','eth':'ethmac','usb':'usb_host'}
     def build(case):
         name,flags=case;output=directory/name;log=directory/(name+'.log')
-        command=[sys.executable,str(ROOT/'scripts/build.py'),'--flat-verilog','--output-dir',str(output),*flags]
+        converted=[];index=0
+        while index<len(flags):
+            flag=flags[index]
+            if flag.startswith('--with-') or flag.startswith('--without-'):
+                enabled=flag.startswith('--with-');prefix='--with-' if enabled else '--without-'
+                converted+=['--feature',flag[len(prefix):]+'='+('on' if enabled else 'off')]
+            elif flag=='--sd-backend':
+                index+=1;converted+=['--sd-profile',flags[index]]
+            else:converted.append(flag)
+            index+=1
+        overrides={converted[i+1].split('=')[0].replace('-','_'):converted[i+1].endswith('=on')
+                   for i,value in enumerate(converted) if value=='--feature'}
+        profile=converted[converted.index('--profile')+1] if '--profile' in converted else 'full'
+        features=Features.resolve(profile,overrides)
+        if '--profile' not in converted:converted=['--profile','full',*converted]
+        if features.mmu or features.fpu:
+            from gateware.config import cpu_filename
+            if not args.cpu_rtl_dir:raise ValueError('CPU matrix needs --cpu-rtl-dir with explicit locked CPU inputs')
+            converted+=['--cpu-verilog',str(args.cpu_rtl_dir/cpu_filename(features.mmu,features.fpu))]
+        command=[sys.executable,str(ROOT/'scripts/mini.py'),'build','system','--rtl-hierarchy','flat',
+                 '--output-dir',str(output),*converted]
         with log.open('w',encoding='utf-8') as stream:
             status=subprocess.run(command,cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT).returncode
         record={'name':name,'flags':flags,'passed':status==0,'log':str(log)}
@@ -64,8 +79,7 @@ def main():
             assert rtl.count('\nrPLL ')==validation['expected_plls'],(name,validation['expected_plls'])
             record.update(features=features,firmware_sizes=validation['firmware_sizes'],abi=validation['boot_image']['abi_tag'])
         print(name,'PASS' if record['passed'] else 'FAIL',flush=True);return record
-    with ThreadPoolExecutor(max_workers=args.jobs) as pool:records=list(pool.map(build,cases))
+    records=[build(case) for case in cases]
     report={'passed':all(r['passed'] for r in records),'cases':records,'board_test':'not performed'}
     (directory/'result.json').write_text(json.dumps(report,indent=2)+'\n')
     if not report['passed']:raise SystemExit('Feature matrix failed; see result.json and per-case logs')
-if __name__=='__main__':main()

@@ -6,10 +6,10 @@
 
 Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统。CPU 从片上 8 KiB boot ROM 或 4 MiB Flash XIP 启动（v0.8.0 默认 XIP，复位入口 0xf3100000 对应物理 Flash 1 MiB，无片内 ROM），在 L2 启动 RAM 上运行软件 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行；工作 SRAM 为 0，所有驱动与文件系统都在 DDR 应用里。板级验收统一由 BIOS 的 `test ...` 命令完成（见 [固件测试命令](firmware-tests.md) · [性能测试](benchmark.md)）。
 
-- CPU：默认 full 配置 VexRiscv MMU、无 FPU，RV32IMA，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/cpu_generate.py` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
+- CPU：默认 full 配置 VexRiscv MMU、无 FPU，RV32IMA，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/mini.py build cpu --generate` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
-- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，启动代码负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--app firmware/examples/monitor.c` 构建。
+- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，启动代码负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--source firmware/examples/monitor.c` 构建。
 
 MMU 配置另有 60 MHz 的独立 64 位机器定时器，接 MTIP；S-mode 外设 mask/pending CSR 为 `0x9c0` / `0xdc0`。OpenSBI 的 OSB1 一次性交接与保护边界见 [OpenSBI](opensbi-port.md)。
 
@@ -54,13 +54,13 @@ SD lite 与 LCD 分别使用 32-bit / 16-bit 客户端接口，由 [共享内存
 
 ## 功能开关与 profile
 
-`scripts/build.py` 默认启用全部功能；`--profile minimal` 或 `--without-NAME` 裁剪外设，关闭项同时从硬件与应用驱动移除。
+`scripts/mini.py build system` 默认启用全部功能；`--profile minimal` 或 `--without-NAME` 裁剪外设，关闭项同时从硬件与应用驱动移除。
 
-- `--with-mmu` / `--with-fpu`：独立开关，默认 full 开启两者；minimal 默认关闭。
+- `--feature mmu=on` / `--feature fpu=on`：独立开关，默认 full 开启两者；minimal 默认关闭。
 - `--sd-profile`：`none` / `spi` / `lite` / `full` 四种 profile，默认 lite 原生四位 SDR + 32-bit DMA 端口和内存侧 burst buffer，SPI 为回退（共用同一组 SD 引脚，需重新下载匹配的配置与应用）。
 - `--l2-size`：共享 writeback 缓存，默认 `4096`（4 KiB）；启动 RAM 要求至少 4 KiB，`8192` 提供但尚未实板验收。CPU 帧缓冲访问不分配缓存行。见 [L2 缓存](l2-cache.md)。
 - `--usb-backend`：默认轻量 Ultraembedded PIO Host + TinyUSB；OHCI 为可选回退（`gateware/usb.py` 在构建时把 Gowin IP 复制进 `build/vendor/`）。见 [轻量 USB](usb-light.md)。
-- 麦克风、Ethernet、音频、两块 LCD、board_io、WS2812 均为可裁剪功能；组合矩阵由 `scripts/build_matrix.py` 编译验证。
+- 麦克风、Ethernet、音频、两块 LCD、board_io、WS2812 均为可裁剪功能；组合矩阵由 `scripts/mini.py build matrix` 编译验证。
 
 各 profile 的资源与验证结果见 [功能配置](configuration-profiles.md)、[模块化构建](modular-build.md)。
 
@@ -71,12 +71,12 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 .\scripts\bootstrap.ps1          # 可重复执行；缺工具时传 -GowinBin / -RiscvBin
 . .\scripts\env.ps1
 & $MiniPython .\scripts\doctor.py
-& $MiniPython .\scripts\build.py --synthesize
+& $MiniPython .\scripts\mini.py build system --synthesize
 ```
 
 `build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件，两种方式都不自动下载板卡。默认产物在 `build/runs/<时间>-<Git版本>-<配置>-<用途>/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。`validation.json` 的 `firmware_sizes` 记录两级固件的 text/data/BSS 与二进制大小；综合构建记录实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 与全部时钟资源，缺失必要资源或 setup/hold 报告会使构建失败。`board_test` 字段只表示构建脚本未做上板测试。构建把编译器临时目录重定向到 `build/.tmp`，因此 `%TEMP%` 不可写也不会影响构建。
 
-CPU RTL 缺失时构建会提示先运行 `scripts/cpu_generate.py`（需要兼容的 VexRiscv 源码 checkout、Java 8、sbt-launch 1.9.7）。`bootstrap.ps1` 的 smoke 构建使用 `--profile minimal` 写入 `build/bootstrap-smoke`，只依赖 `pythondata-cpu-vexriscv` 自带的 lite CPU RTL，全新 checkout 无需先生成 CPU RTL。
+CPU RTL 缺失时构建会提示先运行 `scripts/mini.py build cpu --generate`（需要兼容的 VexRiscv 源码 checkout、Java 8、sbt-launch 1.9.7）。`bootstrap.ps1` 的 smoke 构建使用 `--profile minimal` 写入 `build/bootstrap-smoke`，只依赖 `pythondata-cpu-vexriscv` 自带的 lite CPU RTL，全新 checkout 无需先生成 CPU RTL。
 
 全新 checkout 在 Windows 上的环境前提：`git config --global core.longpaths true`（否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败：`Filename too long` → `fatal: fetch-pack: invalid index-pack output`）；全局 uv 缓存不可用时把 `UV_CACHE_DIR` 指到短路径，例如 `$env:UV_CACHE_DIR='C:\uv-cache-mini'`。
 

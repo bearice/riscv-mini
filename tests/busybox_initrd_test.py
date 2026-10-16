@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from busybox_build import validate_archive
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.builders.busybox import validate_archive
 
 
 def elf(machine=243, bits=1):

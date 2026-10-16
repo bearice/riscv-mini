@@ -5,8 +5,8 @@
 ## 构建与安装
 
 ```powershell
-& $MiniPython scripts/gwbasic_image.py                      # 硬浮点 rv32imaf/ilp32f（默认）
-& $MiniPython scripts/gwbasic_image.py --soft-float          # 软浮点 rv32im/ilp32
+& $MiniPython scripts/mini.py build gwbasic                      # 硬浮点 rv32imaf/ilp32f（默认）
+& $MiniPython scripts/mini.py build gwbasic --soft-float          # 软浮点 rv32im/ilp32
 ```
 
 产物是 `build/gwbasic/BOOT.RPB`（约 95 KiB，入口 `0x01000000`，另声明 4 MiB `.bss` 作为解释器堆）。把它放进 SD 卡根目录或让主机提供 TFTP，然后在 BIOS 里：
@@ -20,7 +20,7 @@ boot sd BASIC.RPB
 
 ### 硬浮点前提
 
-GW-BASIC payload 默认构建使用单精度 FPU，SoC 必须显式启用 `--with-fpu`（`-march=rv32imaf -mabi=ilp32f`）。RISC-V 上 `mstatus.FS=0` 时任何浮点指令（含 `frrm`）都会触发非法指令，而本机固件只在带 FPU 的构建里置位 `mstatus.FS`：
+GW-BASIC payload 默认构建使用单精度 FPU，SoC 必须显式启用 `--feature fpu=on`（`-march=rv32imaf -mabi=ilp32f`）。RISC-V 上 `mstatus.FS=0` 时任何浮点指令（含 `frrm`）都会触发非法指令，而本机固件只在带 FPU 的构建里置位 `mstatus.FS`：
 
 ```asm
 /* firmware/boot/start.S */

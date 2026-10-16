@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from build_records import ROOT, artifact_identity, configuration_name, get_record, git, now, pin, register, source_identity, write_json
 from versions import COMPONENTS, bundle_external, bundle_versions, read_versions
-from mini_ops.build import configuration_arguments
+from scripts.modular.configuration import configuration_arguments
 
 
 def release_version(value):
@@ -43,6 +43,10 @@ def verify_bundle(directory):
 def package(run, destination, source):
     """Select final outputs; implementation scratch files remain disposable."""
     v = artifact_identity(run)
+    if v.get('modular_system'):
+        from scripts.modular.storage import Store
+        from scripts.modular.system import export_bundle
+        export_bundle(Store(ROOT),v['modular_system'],destination/'components')
     for relative in ('firmware','reports'):
         (destination/relative).mkdir(parents=True,exist_ok=True)
     (destination/'gateware').mkdir(exist_ok=True)
@@ -85,26 +89,26 @@ def package(run, destination, source):
     return v
 
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--build', help='Explicit catalog template (configuration/input CPU RTL), e.g. current')
-    p.add_argument('--version',help='System bundle version to release; must be pinned in RELEASES.yaml and tagged system/v<version>')
-    p.add_argument('--snapshot',action='store_true',help='Archive a code commit without creating a new code release; retain version plus Git hash')
-    p.add_argument('--app',type=Path,help='Explicit application for legacy templates without application_source')
-    p.add_argument('--feature',action='append',default=[],metavar='NAME=on|off',
+def add_arguments(parser):
+    parser.add_argument('--hardware',dest='build', help='Explicit catalog template (configuration/input CPU RTL), e.g. current')
+    parser.add_argument('--version',help='System bundle version to release; must be pinned in RELEASES.yaml and tagged system/v<version>')
+    parser.add_argument('--snapshot',action='store_true',help='Archive a code commit without creating a new code release; retain version plus Git hash')
+    parser.add_argument('--source',dest='app',type=Path,help='Explicit application for legacy templates without application_source')
+    parser.add_argument('--feature',action='append',default=[],metavar='NAME=on|off',
                    help='Override a template feature for this release (repeatable), e.g. --feature audio=on')
-    p.add_argument('--boot-mode',choices=('rom','xip'),help='Override the template boot mode (rom boots from SRAM/ROM, xip runs resident in Flash)')
-    p.add_argument('--place-option',type=int,choices=range(0,4),help='Override the template placer option (0-3)')
-    p.add_argument('--route-option',type=int,choices=range(0,4),help='Override the template router option (0-3)')
-    p.add_argument('--board-check',action='store_true',help='Program the board, run firmware checks and 60 s soak')
-    p.add_argument('--baseline',help='Explicit baseline ID/reference; enables final all/cache measurements')
-    p.add_argument('--baseline-results',type=Path,action='append',default=[])
-    p.add_argument('--allow-legacy-results',action='store_true')
-    p.add_argument('--verify',type=Path,help='Read-only verify an existing final bundle')
-    a=p.parse_args()
-    if a.verify:
-        print(json.dumps(verify_bundle(a.verify),ensure_ascii=False,indent=2));return
-    if not a.build:p.error('--build required')
+    parser.add_argument('--boot-mode',choices=('rom','xip'),help='Override the template boot mode (rom boots from SRAM/ROM, xip runs resident in Flash)')
+    parser.add_argument('--place-option',type=int,choices=range(0,4),help='Override the template placer option (0-3)')
+    parser.add_argument('--route-option',type=int,choices=range(0,4),help='Override the template router option (0-3)')
+    parser.add_argument('--board-check',action='store_true',help='Program the board, run firmware checks and 60 s soak')
+    parser.add_argument('--baseline',help='Explicit baseline ID/reference; enables final all/cache measurements')
+    parser.add_argument('--baseline-results',type=Path,action='append',default=[])
+    parser.add_argument('--allow-legacy-results',action='store_true')
+
+
+
+def perform(a, parser):
+    p=parser
+    if not a.build:p.error('--hardware required')
     if a.baseline and (not a.board_check or not a.baseline_results):p.error('Performance requires --board-check and explicit baseline results')
     if git('status','--porcelain'):p.error('Commit code first; final artifacts require a clean checkout')
     if not a.version:p.error('--version required: the system bundle version to release; pin it in RELEASES.yaml first')
@@ -155,14 +159,14 @@ def main():
     if run.exists():p.error('Final build run already exists; preserve it for diagnosis')
     args=configuration_arguments(v,app,inputs/cpu.name if cpu is not None else None,'final-build',synthesize=True)
     args+=['--output-dir',str(run)]
-    write_json(final/'invocation.json',dict(commit=source['commit'],command=[sys.executable,'scripts/build.py',*args]))
+    write_json(final/'invocation.json',dict(commit=source['commit'],command=[sys.executable,'scripts/mini.py',*args]))
     def execute(name,command):
         print('Running',name,flush=True)
         with (final/(name+'.log')).open('w',encoding='utf-8') as log:
             result=subprocess.run([sys.executable,'-X','utf8',*command],cwd=ROOT,stdout=log,stderr=subprocess.STDOUT)
         if result.returncode:raise RuntimeError(f'{name} failed; see {final/(name+".log")}')
     try:
-        execute('build',['scripts/build.py',*args])
+        execute('build',['scripts/mini.py',*args])
         info=json.loads((run/'build-info.json').read_text(encoding='utf-8'));source=info['source']
         source['version']=version
         source['components']=components;source['external']=external
@@ -205,6 +209,3 @@ def main():
     except Exception as error:
         write_json(final/'release.json',dict(state='failed',**receipt,commit=source['commit'],error=str(error),created_at=now()))
         raise
-
-
-if __name__=='__main__':main()

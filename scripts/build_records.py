@@ -112,7 +112,17 @@ def records(root=ROOT):
 def get_record(name, root=ROOT):
     ref = root / 'build/refs' / (name + '.json')
     if ref.exists():
-        name = json.loads(ref.read_text(encoding='utf-8'))['id']
+        data=json.loads(ref.read_text(encoding='utf-8'))
+        if data.get('system'):
+            from scripts.modular.storage import Store
+            from scripts.modular.system import materialize
+            store=Store(root);system=data['system']
+            path=materialize(store,system,store.build/'work/board-view'/system['digest'])
+            v=artifact_identity(path)
+            return dict(id=system['digest'],path=str(path),status='pnr-pass' if pnr_passed(v) else 'generated',
+                        source={'kind':'modular-system'},configuration=v,image_sha256=v['boot_image']['sha256'],
+                        bitstream_sha256=v.get('bitstream_sha256'),registered_at='',system=system,evidence=[])
+        name = data['id']
     if name.startswith('latest-'):
         eligible = [r for r in records(root) if r['source'].get('kind') == 'captured' and r['status'] not in ('cleaned','cleanup-failed')
                     and (name == 'latest-generated' or r['status'] in ('pnr-pass', 'board-qualified'))]
@@ -156,7 +166,7 @@ def pin(name, record_id, evidence=None, root=ROOT):
 def refresh(root=ROOT):
     build = root / 'build'
     build.mkdir(exist_ok=True)
-    lines = ['# 构建导航', '', '此索引由 scripts/builds.py refresh 生成。目录更新时间不表示实板验收。', '',
+    lines = ['# 构建导航', '', '此索引由 scripts/mini.py builds refresh 生成。目录更新时间不表示实板验收。', '',
              '## 固定版本', '']
     for name in ('current', 'baseline'):
         ref = build / 'refs' / (name + '.json')

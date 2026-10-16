@@ -17,7 +17,7 @@ probe 先关闭并等待已有 DMA 排空，再将 `base0/base1` 都指向新 fr
 ## 设备树和构建
 
 `CONFIG_OF_BOARD=y` 使用 OpenSBI 在 a1 传入的运行时 DTB。
-`opensbi_build.py` 从选定 SoC 的 `csr.json` 生成 `riscv-mini,rgb-lcd` 节点；
+`mini.py build opensbi` 从选定 SoC 的 `csr.json` 生成 `riscv-mini,rgb-lcd` 节点；
 `bootph-all` 保证重定位前绑定和内存预留。
 `reg` 描述 CSR 空间，`riscv-mini,csr-offsets` 顺序为
 enable、select、base0、base1、packed state、address_error，每个寄存器为一个 32-bit 字。
@@ -28,16 +28,12 @@ enable、select、base0、base1、packed state、address_error，每个寄存器
 首次更新旧构建树的补丁时应使用新的 WSL 原生源码目录，保留之前的候选。
 
 ```powershell
-.venv/Scripts/python.exe scripts/uboot_build.py --prepare-only `
+.venv/Scripts/python.exe scripts/mini.py build uboot `
   --source /home/bearice/uboot-fb-source --obj /home/bearice/uboot-fb-obj `
   --output-dir build/uboot/framebuffer
-wsl -d archlinux -e bash /mnt/c/Users/bearice/Workspace/TangPrimer-20K/riscv-mini/build/uboot/framebuffer/build.sh
-.venv/Scripts/python.exe scripts/opensbi_build.py --soc-dir <匹配的SoC目录> `
+.venv/Scripts/python.exe scripts/mini.py build opensbi --hardware <匹配的SoC目录> `
   --output-dir build/uboot/framebuffer/sbi --payload-path build/uboot/framebuffer/u-boot.bin `
   --osb-name UBOOTFB.OSB
-wsl -d archlinux -e sh /mnt/c/Users/bearice/Workspace/TangPrimer-20K/riscv-mini/build/uboot/framebuffer/sbi/build.sh
-.venv/Scripts/python.exe scripts/opensbi_build.py --soc-dir <匹配的SoC目录> `
-  --output-dir build/uboot/framebuffer/sbi --pack-only --osb-name UBOOTFB.OSB
 ```
 
 ## 验证

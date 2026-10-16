@@ -14,10 +14,10 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT),str(ROOT/'scripts')]
 from scripts.build_records import get_record, pin, register, source_identity, write_json
 from scripts.build_recipe import create_recipe, reproduce, verify_recipe
-from builds import clean_build
+from scripts.mini_ops.catalog import clean_build
 from performance_report import compare, load_measurements
 from prepare_commit import scope
-from release import bundle_mismatch, release_version, verify_bundle
+from scripts.mini_ops.release import bundle_mismatch, release_version, verify_bundle
 from versions import COMPONENTS, bundle_external, bundle_versions, read_releases, read_versions
 
 
@@ -107,7 +107,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(Path(r['path']).exists())
     def test_interrupted_cleanup_can_be_retried(self):
         r,_=self.entry()
-        with patch('builds.shutil.rmtree',side_effect=PermissionError('in use')):
+        with patch('scripts.mini_ops.catalog.shutil.rmtree',side_effect=PermissionError('in use')):
             with self.assertRaises(PermissionError):clean_build(r['id'],True,self.root)
         (Path(r['path'])/'validation.json').unlink()
         clean_build(r['id'],True,self.root)

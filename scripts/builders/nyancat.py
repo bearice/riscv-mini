@@ -4,20 +4,17 @@ Downloads are cached in the output directory. Source media remain owned by
 their original creators; this script does not grant a redistribution license.
 The board plays lossless pixel-art frames and 48 kHz mono PCM in both channels.
 """
-import argparse, hashlib, json, subprocess, urllib.request
+import hashlib, json, subprocess, urllib.request
 from pathlib import Path
 from PIL import Image
 import imageio_ffmpeg
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCES = {'original.gif': 'https://www.nyan.cat/cats/original.gif',
            'original.mp3': 'https://www.nyan.cat/music/original.mp3'}
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output-dir', type=Path, default=ROOT/'build/nyancat')
-    args = parser.parse_args()
+def build(args, run=None):
     out = args.output_dir.resolve()
     media = out/'assets'
     media.mkdir(parents=True, exist_ok=True)
@@ -85,7 +82,3 @@ def main():
     preview.save(out/'preview.png')
     print(f'Assets: {len(frames)} frames, {len(palette)} colors, '
           f'{manifest["pcm_samples"]/48000:.3f}s music')
-
-
-if __name__ == '__main__':
-    main()

@@ -28,7 +28,7 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 
 **坑 1：硬浮点载荷在没有 F 扩展的配置上以非法指令死掉。** 现役 full 配置是 `rv32ima`（`FPU=0`），所以载荷必须用 `--soft-float`（`rv32im/ilp32`，浮点走 libgcc 软实现）。`mstatus.FS` 只在 `MINI_FEATURE_FPU` 的构建里由 `firmware/boot/start.S` 置位，载荷自己无法补救。
 
-- 硬浮点载荷 → `--with-fpu` 的 full 配置
+- 硬浮点载荷 → `--feature fpu=on` 的 full 配置
 - 软浮点载荷 → 任何配置
 
 ## 2. 平台层：只用 ecall 服务，别碰设备
@@ -42,9 +42,9 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 
 ## 3. 运行时：标准 libc 与历史手写 shim 的教训
 
-复杂 C app 使用 [静态 Newlib 运行库](payload-libc.md)，通过 `bios_payload.py --libc newlib` 构建；BIOS 不需要链接 Newlib。以下保留旧手写 shim 的历史教训。
+复杂 C app 使用 [静态 Newlib 运行库](payload-libc.md)，通过 `mini.py build payload --libc newlib` 构建；BIOS 不需要链接 Newlib。以下保留旧手写 shim 的历史教训。
 
-旧的 `-nostdlib -ffreestanding` 模式下，编译器仍会要 `memcpy/memset/strlen` 等（仓库里 `firmware/drivers/string.c` 已经提供，`bios_payload.py --helper string`），其余要自己实现。真实踩过的坑：
+旧的 `-nostdlib -ffreestanding` 模式下，编译器仍会要 `memcpy/memset/strlen` 等（仓库里 `firmware/drivers/string.c` 已经提供，`mini.py build payload --helper string`），其余要自己实现。真实踩过的坑：
 
 **坑 2（printf 精度）：** 症状 `W_GetNumForName: STCFN33 not found!`（lump 明明存在）。原因是 `printf("%.3d")` 的**整数精度**没实现，`"STCFN%.3d"` 输出成 `STCFN33` 而不是 `STCFN033`。→ 整数精度 = 最少位数、左侧补零；给了精度时忽略 `0` 标志。
 
@@ -61,14 +61,14 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 ## 5. 构建与内存约束
 
 ```powershell
-& $MiniPython scripts/<app>_image.py --soft-float        # 转调 bios_payload.py
+& $MiniPython scripts/mini.py build <app> --soft-float  # 已注册的应用 target，内部调用 payload backend
 ```
 
 - 镜像必须 RPB1：`magic=0x31425052`、`load=0x01000000`、entry 在文件内且 4 字节对齐、两个 CRC。`scripts/bios_image.py` 是格式定义，`tests/*_test.py` 里做主机断言。
 - 载荷窗口 `0x01000000..0x07deffff`；栈 `0x07df0000..0x07dfffff`，初始 `SP=0x07e00000`；**程序内存 `memory_bytes` 必须 ≤ `0x06000000`**，因为装载时 BIOS 一边从 `0x07000000` 的暂存区读、一边往程序内存写，超过就会自己覆盖自己。
 - `.bss` 也算进 `memory_bytes`，BIOS 会清零：板上日志里 `BOOT zero/cache sync:` 就是这笔开销（约 50 MiB → 5.6 s），不是卡死。
 - 载荷镜像装载上限 8 MiB（`BIOS_IMAGE_MAX`）；数据文件（IWAD 之类）不要塞进镜像，用 SD/TFTP 单独传。
-- 优化等级由 `<app>_image.py --optimize` 决定（DOOM 默认 `-O2`，`bios_payload.py` 默认仍是 `-Os`）。
+- 优化等级由 `mini.py build <app> --optimize` 决定（DOOM 默认 `-O2`，`mini.py build payload` 默认仍是 `-Os`）。
 
 **坑 15（优化等级改变的是行为，不只是速度）：** 两处实板测量。① `i_video.c` 的 `cmap_to_fb` 在 `-Os` 下每个像素重读一次 `s_Fb.bits_per_pixel`（对 `out` 的写可能与它别名，编译器不敢外提），一帧 blit 233 ms、占整帧 69%；改成"调色板预生成 16-bit 值 + 一次写两个像素"并开 `-O2` 后是 31 ms。② 反过来，`-O2` 让 C 写的 `setjmp` 包装不再尾调用，`longjmp` 于是回到一个返回地址早被游戏栈覆盖的栈帧：`exit()` 打完自己的日志，游戏照跑（`-Os` 恰好尾调用，所以看起来是好的）。→ 需要"捕获调用者上下文"的原语（setjmp）直接写成汇编，别赌编译器的尾调用；性能结论要带分段计时（DOOM 是调试通道的 `t` 命令），别拿一个总帧率定因。
 
@@ -182,4 +182,4 @@ BIOS 自身改动仍走 `board verify --suite firmware --image <app.img>`；提�
 **反例 7：没先读文档就动手。** 我是在用户点名之后才读 `scripts/README.md`、`docs/gwbasic.md`、`.agents/skills/riscv-mini-test/SKILL.md`、`docs/pre-commit-sop.md`（RTL 未变只需编译 + ABI/CRC + 主机回归 + 功能实板，不重跑 PnR）。
 → 正确做法：动手前读对应的 operation skill 与 `scripts/README.md`；验证矩阵看 SOP §3。
 
-**准备写新脚本前，先问自己三个问题**：① 现成入口（`mini.py` 操作、既有 `*_verify.py`、`bios_payload.py`）能不能完成？② 需要的新能力是不是应该进 `mini_ops/` 或 `scripts/` 并带主机回归？③ 它会抢串口/假设板子状态吗？三个问题有一个答不上来，就别写那个脚本。
+**准备写新脚本前，先问自己三个问题**：① 现成入口（`mini.py` 操作、既有 `*_verify.py`、`mini.py build payload`）能不能完成？② 需要的新能力是不是应该进 `mini_ops/` 或 `scripts/` 并带主机回归？③ 它会抢串口/假设板子状态吗？三个问题有一个答不上来，就别写那个脚本。

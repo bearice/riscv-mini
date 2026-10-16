@@ -1,6 +1,6 @@
 """Run the DOOM payload on QEMU with a shim that speaks the BIOS ecall ABI.
 
-The payload sources are the ones scripts/doom_image.py ships to the board: they
+The payload sources are the ones mini build doom ships to the board: they
 only ever talk to the board through the resident BIOS ecall interface, so a small
 shim can stand in for the BIOS (bios_info, console, panel, millisecond clock, SD
 file reads, raw USB HID key events from a script).  The objects are relinked at
@@ -605,7 +605,7 @@ def main():
                         '--uart 6200:f')
     p.add_argument('--soft-float', action='store_true')
     p.add_argument('--optimize', default='-O2',
-                   help='compile the same way the board image is built (doom_image.py default)')
+                   help='compile the same way the board image is built (mini build doom default)')
     p.add_argument('--cpu', default='rv32')
     p.add_argument('--define', action='append', default=[])
     p.add_argument('--cflag', action='append', default=[])

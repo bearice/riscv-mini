@@ -1,6 +1,6 @@
 # Verilog 模块边界与转换语义
 
-默认按 SoC 直接子模块输出独立 Verilog 文件，模块内部 FSM/FIFO/CSR 内联。CPU 与 USB 等外部核仍使用独立源文件；默认 full 当前生成 32 个 SoC 文件模块。`--deep-verilog` 保留内部完整层级，`--flat-verilog` 输出整体对照。文件映射见构建的 `gateware/rtl-manifest.json`。
+默认按 SoC 直接子模块输出独立 Verilog 文件，模块内部 FSM/FIFO/CSR 内联。CPU 与 USB 等外部核仍使用独立源文件；默认 full 当前生成 32 个 SoC 文件模块。`--rtl-hierarchy deep` 保留内部完整层级，`--rtl-hierarchy flat` 输出整体对照。文件映射见构建的 `gateware/rtl-manifest.json`。
 
 `gateware/rtl.py` 在层级转换期间维护三个语义约束：
 

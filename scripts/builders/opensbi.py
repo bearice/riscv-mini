@@ -1,13 +1,12 @@
 """Build pinned single-hart OpenSBI and its S-mode probe using WSL LLVM."""
-import argparse,json,shlex,shutil,subprocess,sys
+import json,shlex,shutil,subprocess,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
-from scripts.build import generate_csr
+from scripts.modular.rtl import generate_csr
 from scripts.bios_image import pack
 REV="6ad246a1494807ee91e36ffcf60e4c30bb309d45"
-def linux(p):
-    p=Path(p).resolve().as_posix();return '/mnt/'+p[0].lower()+p[2:]
+from scripts.modular.executor import linux_path as linux
 COMMANDS=[]
 
 def lcd_node(csr):
@@ -106,15 +105,10 @@ def peripheral_nodes(csr):
         flash=csr['memories']['spiflash']
         nodes.append(f'flash@{flash["base"]:x} {{ compatible="riscv-mini,flash-xip-ro"; reg=<0x{flash["base"]:x} 0x{flash["size"]:x}>,<0x{bases["flash_xip"]:x} 0x8>; }}; ')
     return ''.join(nodes)
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--soc-dir',type=Path,required=True)
-    parser.add_argument('--source',type=Path,default=ROOT/'build/vendor/opensbi')
-    parser.add_argument('--output-dir',type=Path,default=ROOT/'build/opensbi/firmware')
-    parser.add_argument('--pack-only',action='store_true')
-    parser.add_argument('--payload-path',type=Path,default=None,help='FW_PAYLOAD image (defaults to the S-mode probe)')
-    parser.add_argument('--osb-name',default='OPENSBI.OSB',help='Output OSB1 file name in --output-dir')
-    a=parser.parse_args();src=a.source.resolve();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
+
+
+def build(a, run=None):
+    src=a.source.resolve();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
     if not src.exists():
         subprocess.run(['git','clone','-c','core.autocrlf=false','https://github.com/riscv-software-src/opensbi',str(src)],check=True)
         subprocess.run(['git','-C',str(src),'checkout',REV],check=True)
@@ -181,10 +175,10 @@ def main():
          'FW_PAYLOAD_PATH='+linux(payload), 'FW_FDT_PATH='+linux(dtb)],out/'opensbi-build.log')
     (out/'build.sh').write_text('set -eu\n'+'\n'.join(COMMANDS)+'\n',newline='\n')
     print('Prepared',out/'build.sh')
+
 def pack_output(out,name='OPENSBI.OSB'):
     binary=out/'sbi-soft/platform/riscv_mini/firmware/fw_payload.bin'
     # Keep the ordinary RPB checksum/layout; OSB1 selects one-way BIOS entry.
     image=pack(binary.read_bytes(),0x200000,os_image=True)
     (out/name).write_bytes(image)
     print('OpenSBI OS image:',len(image),'bytes')
-if __name__=='__main__':main()

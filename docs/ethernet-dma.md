@@ -2,7 +2,7 @@
 
 本分支保存尚未通过完整实板验收的 native DMA 实验。`place=2 / route=2` 时序通过，但实板 SD 初始化失败；不得将先前 Wishbone DMA 对照的网络验收用于本实现。构建身份、资源、失败诊断和复现参数见 [实验记录](ethernet-dma-experiment.md)。
 
-`--with-eth-dma` 显式启用 DDR 与 LiteEth packet SRAM 之间的双向搬运引擎：DDR 侧使用与 SD 相同的 32-bit MemoryPort，内存控制器内部拼装 / 拆分 128-bit native burst；packet SRAM 侧使用 32-bit Wishbone，默认关闭。该开关依赖 `eth`，不改变 MAC / RMII / packet-slot 配置；两个 RX 和两个 TX slots 仍由原有 HAL 管理。
+`--feature eth_dma=on` 显式启用 DDR 与 LiteEth packet SRAM 之间的双向搬运引擎：DDR 侧使用与 SD 相同的 32-bit MemoryPort，内存控制器内部拼装 / 拆分 128-bit native burst；packet SRAM 侧使用 32-bit Wishbone，默认关闭。该开关依赖 `eth`，不改变 MAC / RMII / packet-slot 配置；两个 RX 和两个 TX slots 仍由原有 HAL 管理。
 
 本次实验关闭 `audio` 和 `mic`（同时关闭 `mic_stereo`），保持 RV32IMAFC、sys 60 MHz、DDR CK 120 MHz、4 KiB ROM/L2、SD lite、LCD 和 USB ultra。对应独立 worktree 分支为 `codex/eth-dma-no-audio`。
 

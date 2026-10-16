@@ -6,6 +6,11 @@ import json
 
 SD_PROFILES = ('none', 'spi', 'lite', 'full')
 
+# Software-visible semantic contracts. Append-only CSR additions keep these
+# revisions; incompatible access, IRQ or coherence behavior must bump its owner.
+HARDWARE_ABI_MAJOR = 1
+INTERFACE_REVISIONS = {'csr-access': 1, 'irq-dispatch': 1, 'shared-l2-coherence': 1}
+
 
 def storage_profile(profile, backend, features, overrides=None):
     if profile is not None and backend is not None:

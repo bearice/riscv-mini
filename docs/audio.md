@@ -52,8 +52,8 @@ PA_EN 开关及外部 AC 耦合输入会产生偏置/衰减瞬态，当前不实
 
 ```powershell
 . .\scripts\env.ps1
-& $MiniPython scripts/build.py --synthesize
-& $MiniPython scripts/build.py --app firmware/examples/audio_demo.c --output-dir build/m7-demo
+& $MiniPython scripts/mini.py build system --synthesize
+& $MiniPython scripts/mini.py build system --source firmware/examples/audio_demo.c --output-dir build/m7-demo
 & $MiniPython scripts/audio_verify.py --output-dir build/base --program --soak-seconds 300
 # 无 Windows line-in 环境时可加 --skip-capture，报告仅覆盖数字部分。
 & $MiniPython scripts/audio_capture.py --list

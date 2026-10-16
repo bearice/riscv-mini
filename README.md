@@ -42,7 +42,7 @@ MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/r
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 
 RGB LCD 默认显示 BIOS 的 80×34 字符终端；图形模式提供 RGB565 双帧槽。独立基础 monitor
-（`--app firmware/examples/monitor.c`）启动时显示黑色画布；扫描器和 DMA 保留，
+（`--source firmware/examples/monitor.c`）启动时显示黑色画布；扫描器和 DMA 保留，
 `video_frame()` / `video_present()` 提供写帧和换帧接口，见 [显示规格](docs/video-spec.md)。HDMI 暂缓。
 独立 [键鼠图形 demo](docs/usb-input-demo.md) 在大 LCD 上显示鼠标光标、键盘文字和输入状态，
 通过 UART 装入 DDR；源码为 `firmware/examples/usb_input_demo.c`。
@@ -98,7 +98,7 @@ flake 使用锁定的 Nixpkgs 26.05 提供 uv，由 uv 按 `.python-version` 安
 需要完整 MMU/FPU CPU RTL 时，在 shell 中运行：
 
 ```sh
-python scripts/cpu_generate.py --vexriscv-source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
+python scripts/mini.py build cpu --generate --source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
 ```
 
 Windows PowerShell 仍可使用独立 Python 环境、Gowin FPGA Designer 和 xPack RISC-V GCC。机器路径写入忽略提交的 `.tools.local.json`。
@@ -108,28 +108,25 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 .\scripts\bootstrap.ps1
 . .\scripts\env.ps1
 & $MiniPython .\scripts\doctor.py
-& $MiniPython .\scripts\build.py --synthesize
+& $MiniPython .\scripts\mini.py build system --synthesize
 # SPI 回退拥有相同 SD 引脚，需要重新下载匹配的 FPGA 配置和应用。
-& $MiniPython .\scripts\build.py --sd-backend spi --output-dir build/spi --synthesize
+& $MiniPython .\scripts\mini.py build system --sd-profile spi --output-dir build/spi --synthesize
 ```
 
-`bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。smoke 构建使用
-`--profile minimal` 写入 `build/bootstrap-smoke`，只依赖 `pythondata-cpu-vexriscv` 自带的 lite
-CPU RTL，因此全新 checkout 无需先生成 CPU RTL。`build.py` 不加
-`--synthesize` 时只生成 RTL/CSR 并编译软件；两种方式都不自动下载。默认产物位于 `build/runs/<时间>-<Git版本>-<配置>-<用途>/`：
-boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。
-正式发布的二进制、报告和参数保存在 `build/releases/v<版本>/<配置>/`，普通代码提交快照保存在 `build/archives/v<版本>-<Git hash>/<配置>/`；可清理的中间 run 与保留的复现 recipe 分开。`build/README.md` 和 `scripts/builds.py list` 提供当前验收版本、基线和最近构建入口。代码发布变化跟踪在 [CHANGELOG.md](CHANGELOG.md)，改动说明、验证和性能依据保存在 `reports/`；完整范围直接查 Git。
+`bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。smoke 调用统一的 `mini.py build system --profile minimal`，使用随依赖分发的 lite CPU，无需已有 CPU 生成产物。日常固件更新用 `mini.py build bios --hardware current`，硬件改动用 `build system --hardware current --refresh-hardware`；只有 `--synthesize` 才运行 Gowin，构建不编程板子。
+
+所有目标都通过 `mini.py build <target>` / `mini.py plan <target>` 调用，旧独立构建脚本已删除。组件默认保存到 `build/store`，临时对象在 `build/work`，请求、工具环境、完整 flags 和结果在 `build/runs/<run-id>`。`--output-dir` 可创建系统输出视图或指定上游输出目录。跨 build 复用、CPU 与上游目标、导出和复现详见 [组件构建](docs/component-builds.md)。历史 catalog/archives/recipes 保留，查询使用 `mini.py builds list`，发布使用 `mini.py release create/export/verify`。
 
 全新 checkout 在 Windows 上的两个环境前提：先执行 `git config --global core.longpaths true`，
 否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败
 （`Filename too long` → `invalid index-pack output`）；若全局 uv 缓存不可用
 （`Failed to initialize cache ... sdists-v9\.git`），把 `UV_CACHE_DIR` 指到短路径，例如
-`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。默认 full profile（MMU、无 FPU）还需要先生成 CPU RTL
+`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。从零使用 full profile（MMU、无 FPU）还需要先生成并明确选择 CPU RTL
 `build/cpu-features/VexRiscv_Mmu.v`，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)；
-未生成时 `build.py` 会直接报 `Missing CPU RTL`。构建把编译器临时目录重定向到 `build/.tmp`，
+消费 CPU 时必须通过 `--cpu-verilog` 选择 RTL 和配对元数据。构建把编译器临时目录重定向到组件 work/tmp，
 `%TEMP%` 不可写时也不会失败。
 
-`validation.json` 的 `firmware_sizes` 记录两级固件的 text/data/BSS 和二进制大小；综合构建还记录
+系统输出视图的 `validation.json` 记录两级固件的二进制大小；ELF 保留 text/data/BSS 信息，综合构建还记录
 实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 和所有时钟资源。缺失必要资源或 setup/hold 报告会使
 构建失败。`board_test` 字段只表示构建脚本未做上板测试，实板结果记录在独立验收 JSON 和验证文档中。
 软件构建不产生新的 PnR 证据，建议使用不同输出目录保存 FPGA 构建与独立示例。
@@ -141,7 +138,7 @@ boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 
 ```powershell
 # 找到已验收版本；按其配置编译当前源码（不编程板子）。
 ./mini.ps1 builds show current
-./mini.ps1 build --from current
+./mini.ps1 build system --hardware current
 
 # 静默表示 unknown；恢复/临时运行均使用 SRAM 和 DDR。
 ./mini.ps1 board status
@@ -157,7 +154,7 @@ boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 
 ./mini.ps1 board verify --build current --suite cold
 ```
 
-`--build` 接受 catalog ID、明确引用或产物目录。临时应用使用 `board run --image <app.img>`，入口检查 ABI；重建应用可用 `build --from current --app firmware/bios/main.c`。操作结果保存在 `build/operations/<时间>-<任务>/`，不覆盖发布包或上一轮日志。
+`--build` 接受 catalog ID、明确引用或产物目录。临时应用使用 `board run --image <app.img>`，入口检查 ABI；重建应用可用 `build system --hardware current --source firmware/bios/main.c`。操作结果保存在 `build/operations/<时间>-<任务>/`，不覆盖发布包或上一轮日志。
 
 XIP 持久更新包含 FPGA 配置、Flash 启动代码和应用三个产物。旧 `boot_upload.py --mode install` 与 `boot_verify.py --install` 仅支持 ROM，XIP 会在板端操作前拒绝。完整更新走 `board update`；不再手工拼接下载器调用。更新涉及单份 Flash，不是原子更新，失败时按本次 `result.json` 的恢复说明处理。
 

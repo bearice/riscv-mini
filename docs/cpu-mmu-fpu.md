@@ -17,20 +17,20 @@ MMU 核使用 Linux CSR 配置，硬件提供 M/S/U 特权级及 Sv32、页权�
 
 ## 生成与构建
 
-`scripts/cpu_generate.py` 使用兼容的 VexRiscv checkout（固定版本 `b6118e5cc2a33323425df6455697139021d50c72`）、Java 8 和 sbt-launch 1.9.7，生成四种 RTL 与能力/哈希元数据。构建检查显式 CPU RTL 与 feature flags 是否一致；不要只改编译器 ISA 而不改硬件。
+`scripts/mini.py build cpu --generate` 使用兼容的 VexRiscv checkout（固定版本 `b6118e5cc2a33323425df6455697139021d50c72`）、Java 8 和 sbt-launch 1.9.7，生成四种 RTL 与能力/哈希元数据。构建检查显式 CPU RTL 与 feature flags 是否一致；不要只改编译器 ISA 而不改硬件。
 
 ```powershell
-.venv/Scripts/python.exe scripts/cpu_generate.py --vexriscv-source <源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir build/cpu-features
-.venv/Scripts/python.exe scripts/build.py --profile full --l2-size 4096 --synthesize
+.venv/Scripts/python.exe scripts/mini.py build cpu --generate --source <源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir build/cpu-features
+.venv/Scripts/python.exe scripts/mini.py build system --profile full --cpu-verilog build/cpu-features/VexRiscv_Mmu.v --l2-size 4096 --synthesize
 ```
 
-CPU RTL 和能力元数据由 [`scripts/cpu_generate.py`](../scripts/cpu_generate.py) 生成；Java 8、sbt-launch 与 VexRiscv checkout 是外部构建依赖，不是仓库内归档。当前资源总量见 [系统设计](system-design.md)，缓存路径见 [L2](l2-cache.md)。不同 CPU/外设组合需要重新综合、布局布线和上板检查；full 通过不能替代其他组合的验证。
+CPU RTL 和能力元数据由 [`scripts/mini.py build cpu --generate`](../scripts/builders/cpu_generator.py) 生成；Java 8、sbt-launch 与 VexRiscv checkout 是外部构建依赖，不是仓库内归档。当前资源总量见 [系统设计](system-design.md)，缓存路径见 [L2](l2-cache.md)。不同 CPU/外设组合需要重新综合、布局布线和上板检查；full 通过不能替代其他组合的验证。
 
 生成器使用原生 VexRiscv cache 和 fence 实现，不再注入外部 fence/atomic 补丁或导出握手端口。`--compressed` 可启用 C 扩展；能力元数据记录 `compressed=true`，构建据此使用带 `c` 的 ISA 编译 ROM 和应用，MMU 核的 `misa.C` 同步启用。默认生成仍关闭 C。使用 C 时 I-cache 的上游配置会关闭 `twoCycleCache`，因此必须重新检查 CPU 时序，不能把它当作只有编译器的改动。
 
 ```powershell
-.venv/Scripts/python.exe scripts/cpu_generate.py --vexriscv-source <源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir <C核输出目录> --compressed
-.venv/Scripts/python.exe scripts/build.py --cpu-rtl-dir <C核输出目录> --rom-size 4096 --output-dir <构建输出目录> --synthesize
+.venv/Scripts/python.exe scripts/mini.py build cpu --generate --source <源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir <C核输出目录> --compressed
+.venv/Scripts/python.exe scripts/mini.py build system --cpu-verilog <C核输出目录>/VexRiscv_Mmu.v --rom-size 4096 --output-dir <构建输出目录> --synthesize
 ```
 
 如果完整外设组合的 C 版本在取指路径上出现 setup 违例，可在生成阶段加

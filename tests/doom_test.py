@@ -35,7 +35,7 @@ MAX_FILE = bios_image.MAX_FILE    # the BIOS refuses anything bigger
 
 
 def build_image():
-    subprocess.run([sys.executable, str(ROOT / 'scripts/doom_image.py'),
+    subprocess.run([sys.executable, str(ROOT / 'scripts/mini.py'), 'build', 'doom',
                     '--soft-float', '--output-dir', str(IMAGE_DIR)],
                    check=True, stdout=subprocess.DEVNULL)
 

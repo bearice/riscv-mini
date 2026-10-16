@@ -5,7 +5,7 @@ app 链接工具链的 Newlib、libm、libgcc，并链接 `firmware/libc/runtime
 ## 构建与入口
 
 ```powershell
-.venv/Scripts/python.exe scripts/bios_payload.py --libc newlib --soft-float `
+.venv/Scripts/python.exe scripts/mini.py build payload --libc newlib --soft-float `
   --source firmware/examples/libc_test.c --output-dir build/libc-test-app
 ```
 

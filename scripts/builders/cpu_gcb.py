@@ -4,7 +4,6 @@ Use generated Zba/Zbb/Zbs plugins from rdolbeau/VexRiscvBPluginGenerator,
 after auditing their patterns against the current RV32 encodings. The existing
 MMU/FPU generator and installed dependency sources are left unchanged.
 """
-import argparse
 import hashlib
 import json
 import re
@@ -43,16 +42,11 @@ def bridge_double_cpu(path):
     path.write_text(wrapper+'\n'+core)
 
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--base-generator',type=Path,required=True)
-    p.add_argument('--plugins',type=Path,required=True)
-    p.add_argument('--java',type=Path,required=True)
-    p.add_argument('--sbt-launch',type=Path,required=True)
-    p.add_argument('--output-dir',type=Path,required=True)
-    p.add_argument('--pipelined-fetch',action='store_true',help='Use two-cycle I-cache plus an instruction injector register')
-    p.add_argument('--single-precision-only',action='store_true',help='Skip the double-precision resource experiment')
-    a=p.parse_args();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
+def build(a, run=None):
+    from scripts.modular.environment import discover
+    if a.java is None:a.java=Path(discover(['java'])['bindings']['java'][0])
+    if a.sbt_launch is None:a.sbt_launch=Path(discover(['sbt-launch'])['bindings']['sbt-launch'][0])
+    out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
     base=a.base_generator.resolve()
     for name in ('src','project'):shutil.copytree(base/name,out/name,dirs_exist_ok=True)
     shutil.copy2(base/'build.sbt',out/'build.sbt')
@@ -121,6 +115,3 @@ def main():
             'width_converter':bool(d)}
     (out/'generator.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
-
-
-if __name__=='__main__':main()

@@ -1,7 +1,7 @@
 """Per-component release versions (VERSIONS.yaml).
 
-Compatibility between components is enforced by content hashes — the CSR abi_tag
-embedded in every image and rtl_sha256 in validation.json — not by these numbers.
+Versions label releases; modular.contracts checks directional interface requirements
+and exact dependency edges. The installed v1 loader also checks its CSR image tag.
 They are human-facing labels that each component bumps independently; new
 components start at 0.1.0. This module is the single reader for every script."""
 import re

@@ -1,5 +1,4 @@
 """Build a pinned static RV32 BusyBox initramfs in WSL ext4; never accesses hardware."""
-import argparse
 import gzip
 import hashlib
 import json
@@ -7,7 +6,7 @@ import shlex
 import struct
 import urllib.request
 from pathlib import Path
-from linux_build import ROOT, wsl_path
+from .linux import ROOT, wsl_path
 
 SOURCES = {
     'musl-1.2.5.tar.gz': ('https://musl.libc.org/releases/', 'a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4'),
@@ -50,14 +49,7 @@ def validate_archive(data, busybox):
     return len(entries)
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--output-dir', type=Path, default=ROOT/'build/linux/busybox')
-    p.add_argument('--prepare-only', action='store_true')
-    p.add_argument('--rootfs-only', action='store_true', help='Require an existing build with unchanged BusyBox config')
-    p.add_argument('--record', action='store_true', help='Package and record a completed WSL build')
-    p.add_argument('--board-evidence', type=Path, help='Attach a passing board linux --initrd receipt')
-    args = p.parse_args()
+def build(args, run=None):
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if args.rootfs_only:
@@ -66,7 +58,8 @@ def main():
         config = ROOT/'firmware/linux/busybox/busybox.config'
         if inputs.get('firmware/linux/busybox/busybox.config') != hashlib.sha256(config.read_bytes()).hexdigest():
             raise ValueError('BusyBox config changed; a full rebuild is required')
-    cache = ROOT/'build/linux'
+    cache = ROOT/'build/cache/upstream'
+    cache.mkdir(parents=True,exist_ok=True)
     for name, (url, digest) in SOURCES.items():
         path = cache/name
         if not path.exists():
@@ -154,7 +147,7 @@ riscv64-elf-gcc --version > "$OUT/toolchain.txt"
                     isa='RV32IM BusyBox + RV32IMA musl; no C/FPU', static=True, board_verified=False, archive_entries=entry_count,
                     sources={n:d for n,(_,d) in SOURCES.items()},
                     inputs={str(f.relative_to(ROOT)).replace('\\','/'):hashlib.sha256(f.read_bytes()).hexdigest()
-                            for f in list((ROOT/'firmware/linux/busybox').rglob('*'))+[Path(__file__),ROOT/'scripts/busybox_build.ps1'] if f.is_file()},
+                            for f in list((ROOT/'firmware/linux/busybox').rglob('*'))+[Path(__file__),ROOT/'scripts/mini.py'] if f.is_file()},
                     artifacts={n:dict(bytes=(out/n).stat().st_size,sha256=hashlib.sha256((out/n).read_bytes()).hexdigest())
                                for n in ('busybox','initrd.cpio','initrd.cpio.gz','.config')})
     if args.board_evidence:
@@ -172,7 +165,3 @@ riscv64-elf-gcc --version > "$OUT/toolchain.txt"
         metadata['board_pty_verified'] = lcd.get('pty') is True and lcd.get('passed') is True
     (out/'validation.json').write_text(json.dumps(metadata,indent=2)+'\n')
     print(json.dumps(metadata['artifacts'],indent=2))
-
-
-if __name__ == '__main__':
-    main()

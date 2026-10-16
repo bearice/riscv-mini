@@ -38,8 +38,8 @@ remains approximately 59.94 Hz at 9 MHz regardless of input/render rate.
 Build and load using PowerShell from `riscv-mini`:
 
 ```powershell
-& ./.venv/Scripts/python.exe scripts/build.py `
-    --app firmware/examples/usb_input_demo.c --output-dir build/usb-input-demo
+& ./.venv/Scripts/python.exe scripts/mini.py build system `
+    --source firmware/examples/usb_input_demo.c --output-dir build/usb-input-demo
 
 # Select an existing successfully routed FPGA build with the matching ABI.
 # The board must already be running that configuration.

@@ -1,13 +1,13 @@
 # Lightweight full-speed USB Host
 
-The default is `--usb-backend ultra` in `scripts/build.py` and `scripts/cpu_qualify.py`.
+The default is `--usb-backend ultra` in `scripts/mini.py build system` and `scripts/mini.py build cpu-qualification`.
 The alternative `--usb-backend ohci` retains the original Spinal controller.
 Disabling the USB feature removes either backend, including its PHY PLL.
 
 ```powershell
-.venv/Scripts/python.exe scripts/build.py --usb-backend ultra --synthesize --output-dir build/usb-pio
-.venv/Scripts/python.exe scripts/build.py --usb-backend ohci --synthesize --output-dir build/usb-ohci
-.venv/Scripts/python.exe scripts/build.py --without-usb --output-dir build/no-usb
+.venv/Scripts/python.exe scripts/mini.py build system --usb-backend ultra --synthesize --output-dir build/usb-pio
+.venv/Scripts/python.exe scripts/mini.py build system --usb-backend ohci --synthesize --output-dir build/usb-ohci
+.venv/Scripts/python.exe scripts/mini.py build system --feature usb=off --output-dir build/no-usb
 ```
 
 The retained OHCI backend and a USB-disabled minimal build both passed
