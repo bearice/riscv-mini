@@ -49,6 +49,9 @@ def add_commands(sub):
     pin = sub.add_parser('pin', help='Create an explicit named modular reference')
     pin.add_argument('name')
     pin.add_argument('system')
+    for command in (show, view, export, pin):
+        from .machines import MACHINES
+        command.add_argument('--machine', choices=MACHINES, help='Scope current/baseline; omitted means original 20K')
     compat = sub.add_parser('compat', help='Check directional hardware/software contract compatibility')
     compat.add_argument('--hardware', required=True)
     compat.add_argument('--software', required=True, type=Path, help='Software manifest.json or requirement JSON')
@@ -102,8 +105,14 @@ def perform(args, p):
             if args.command=='build' and not args.dry_run:
                 output_view(store,run,args,ref)
         elif args.command in ('show', 'materialize', 'export', 'pin'):
-            ref = resolve_system(store, args.system)
-            if ref is None: ref = import_legacy(store, args.system, run)
+            from .machines import select_hardware, check_system, reference_path, LEGACY
+            selection = select_hardware(store, args.system, args.machine)
+            ref = resolve_system(store, selection)
+            if ref is None:
+                if args.machine and args.machine != LEGACY:
+                    raise ValueError('No AE350 system bundle exists; P0 artifacts are descriptions only')
+                ref = import_legacy(store, selection, run)
+            check_system(store, ref, args.machine)
             if args.command == 'show':
                 print(__import__('json').dumps(read(store.path(ref) / 'bundle.lock.json'), indent=2))
             elif args.command == 'materialize':
@@ -113,7 +122,7 @@ def perform(args, p):
             elif args.command == 'pin':
                 if args.name not in ('current', 'baseline'):
                     raise ValueError('Only current/baseline references can be pinned')
-                old = store.build / 'refs' / (args.name + '.json')
+                old = reference_path(store, args.name, args.machine)
                 if old.is_file(): write(run.path / 'previous-ref.json', read(old))
                 # Preserve old catalog references until the user explicitly pins.
                 write(old, dict(system=ref, selected_by_run=run.id))

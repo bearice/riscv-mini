@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "mega138k_ae350",
+  "board": "mega138k_pro",
+  "stage": "P0-description-only",
+  "cpu": {
+    "kind": "hard",
+    "vendor": "Gowin/Andes",
+    "subsystem": "AE350",
+    "core": "A25",
+    "xlen": 32,
+    "hardware_isa": "rv32imafdc_zicsr_zifencei",
+    "initial_software_abi": "ilp32",
+    "software_qualification": "pending-P1",
+    "configuration_source": "src/riscv_ae350_soc/riscv_ae350_soc.ipc",
+    "core_clock_route": "PLL_R[0]/CLKOUT1"
+  },
+  "memory": {
+    "backend": "gowin-customized-ddr3-ahb",
+    "shared_l2": false,
+    "physical_geometry": {
+      "part": "H5TQ4G63EFR-RDC",
+      "chips": 2,
+      "chip_data_width": 16,
+      "data_width": 32,
+      "row_bits": 15,
+      "bank_bits": 3,
+      "column_bits": 10,
+      "size_bytes": 1073741824,
+      "status": "identified-from-photo-and-reference-not-memory-tested"
+    },
+    "published_ram_bytes": null,
+    "fabric_access": "pending-P3-arbitration",
+    "cache_dma_ownership": "pending-P3"
+  },
+  "clocks": {
+    "policy": "characterize-specification-limits",
+    "core": {"target_hz": 800000000, "max_hz": 800000000},
+    "data_memory_bus": {"reference_hz": 50000000, "exclusive_max_hz": 200000000},
+    "ahb": {"reference_hz": 100000000, "exclusive_max_hz": 200000000},
+    "apb": {"reference_hz": 100000000, "exclusive_max_hz": 200000000, "synchronous_with": "ahb", "ratio": "1:1"},
+    "ddr_ck": {"target_hz": 400000000, "max_hz": 400000000},
+    "ddr_rw": {"reference_hz": 100000000, "min_ddr_ck_ratio": "1:4"},
+    "ddr_reference": {"reference_hz": 50000000},
+    "rtc": {"required_hz": 32768, "demo_hz": 10000000, "status": "requires-correction-P1"}
+  },
+  "reference_project": "ae350_customized_demo.gprj",
+  "reference_scope": "P0 archived vendor integration candidate; not the final P1 netlist",
+  "runtime_abi": "unqualified",
+  "loader_format": "pending-platform-boot-bundle",
+  "video": "hdmi",
+  "pending": [
+    "physical-part-and-board-revisions",
+    "P1-boot-reset-clock-constraints-and-BSP",
+    "vendor-IP-regeneration-and-initialization-closure",
+    "P3-fabric-DDR-arbitration-and-DMA-ownership"
+  ]
+}

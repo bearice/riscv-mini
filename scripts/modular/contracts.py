@@ -117,6 +117,9 @@ def assembly(store, parts):
     override that on-wire restriction.
     """
     manifests = {name: store.get(ref, recursive=True) for name, ref in parts.items()}
+    for manifest in manifests.values():
+        if manifest['config'].get('kind') == 'hard' and manifest['config'].get('qualification') == 'description-only':
+            raise ValueError('P0 hard CPU description cannot be assembled into a runnable system')
     reports = []
     for name, manifest in manifests.items():
         if manifest['component'] != name:

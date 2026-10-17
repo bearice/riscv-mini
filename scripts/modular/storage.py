@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -34,6 +35,17 @@ def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
 
 
+def _windows_retry(operation, *args):
+    """Bound transient sharing denials while retaining atomic filesystem moves."""
+    for attempt in range(6):
+        try:
+            return operation(*args)
+        except PermissionError as error:
+            if os.name != 'nt' or getattr(error, 'winerror', None) not in (5, 32) or attempt == 5:
+                raise
+            time.sleep(0.05 * 2 ** attempt)
+
+
 def write(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +54,11 @@ def write(path, value):
         return
     temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
     temporary.write_text(data, encoding='utf-8')
-    os.replace(temporary, path)
+    try:
+        _windows_retry(os.replace, temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def text_file(path, text):
@@ -157,7 +173,10 @@ class Store:
                 if destination.exists():
                     self.get(ref)
                 else:
-                    temporary.rename(destination)
+                    # Windows can briefly deny renaming a newly hashed tree.
+                    # Keep the atomic rename and store lock; never copy over a
+                    # destination or publish an index before rename succeeds.
+                    _windows_retry(temporary.rename, destination)
                 index = self.build / 'index/build-keys' / component / (key + '.json')
                 if index.is_file() and read(index) != ref:
                     raise ValueError('Same build key produced different artifacts; preserved conflict: ' + str(destination))

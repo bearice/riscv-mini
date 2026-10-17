@@ -11,8 +11,10 @@ from .contracts import hardware
 
 
 def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
+    if store.get(cpu_ref)['config'].get('kind') == 'hard':
+        raise ValueError('Hard CPU requires its machine RTL backend; cannot generate VexRiscv RTL')
     v = validation if validation is not None else store.get(base_soc)['config']['validation']
-    inputs = source_files(store.root, ['gateware', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
+    inputs = source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                                       'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
                                       'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py'])
     env = discover(['python'], store.root)
@@ -62,7 +64,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
         for folder in ('gateware', 'software/include'):
             for p in (work / folder).rglob('*'):
                 if p.is_file(): files[p.relative_to(work).as_posix()] = p
-        if source_files(store.root, ['gateware', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
+        if source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                                     'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
                                     'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py']) != inputs:
             raise ValueError('Hardware inputs changed during generation')
@@ -74,7 +76,7 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
     soc_data = store.get(soc); v = soc_data['config']['validation']
     env = discover(['python', *(['gowin'] if synthesize else [])], store.root)
     config = dict(schema=1, options=v, environment=identity(env), packages=python_packages(), synthesize=synthesize,
-                  sources=source_files(store.root, ['gateware', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py']))
+                  sources=source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py']))
     deps = {'soc-description': soc}
     if v['boot_mode'] == 'rom': deps['bootloader'] = boot
     key = digest(dict(config=config, dependencies=deps))

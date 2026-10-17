@@ -31,6 +31,68 @@ class ModularTests(unittest.TestCase):
         self.assertEqual(a,b)
         self.assertEqual(self.store.lookup('cpu',digest(b'RTL'.hex())),a)
 
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Windows sharing semantics')
+    def test_publish_retries_transient_windows_rename_denial(self):
+        original = Path.rename
+        calls = []
+        def briefly_locked(source, destination):
+            calls.append(source)
+            if len(calls) == 1:
+                error = PermissionError('temporary sharing denial')
+                error.winerror = 5
+                raise error
+            return original(source, destination)
+        with mock.patch.object(Path, 'rename', briefly_locked):
+            ref = self.artifact(payload=b'retry')
+        self.store.get(ref)
+        self.assertGreaterEqual(len(calls), 2)
+
+    def test_publish_rename_failure_never_creates_index(self):
+        with mock.patch.object(Path, 'rename', side_effect=PermissionError('persistent denial')):
+            with self.assertRaises(PermissionError):
+                self.artifact(payload=b'not-published')
+        self.assertFalse((self.store.build/'index/build-keys/cpu').exists())
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Windows sharing semantics')
+    def test_windows_rename_retries_are_bounded(self):
+        error = PermissionError('persistent Windows denial')
+        error.winerror = 5
+        with mock.patch.object(Path, 'rename', side_effect=error) as rename, \
+             mock.patch('scripts.modular.storage.time.sleep') as sleep:
+            with self.assertRaises(PermissionError):
+                self.artifact(payload=b'bounded')
+        self.assertEqual(rename.call_count, 6)
+        self.assertEqual(sleep.call_count, 5)
+        self.assertFalse((self.store.build/'index/build-keys/cpu').exists())
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Windows sharing semantics')
+    def test_json_atomic_replace_retries_transient_denial(self):
+        import os
+        original = os.replace
+        calls = []
+        def briefly_locked(source, destination):
+            calls.append(source)
+            if len(calls) == 1:
+                error = PermissionError('temporary JSON sharing denial')
+                error.winerror = 5
+                raise error
+            return original(source, destination)
+        target = self.root/'result.json'
+        write(target, {'old': True})
+        with mock.patch('scripts.modular.storage.os.replace', briefly_locked):
+            write(target, {'new': True})
+        self.assertEqual(read(target), {'new': True})
+        self.assertEqual(len(calls), 2)
+
+    def test_failed_json_replace_preserves_previous_and_removes_temporary(self):
+        target = self.root/'result.json'
+        write(target, {'old': True})
+        with mock.patch('scripts.modular.storage.os.replace', side_effect=PermissionError('persistent JSON denial')):
+            with self.assertRaises(PermissionError):
+                write(target, {'new': True})
+        self.assertEqual(read(target), {'old': True})
+        self.assertFalse(list(self.root.glob('result.json.*.tmp')))
+
     def test_detect_tampered_file(self):
         ref=self.artifact();(self.store.path(ref)/'outputs/file').write_bytes(b'wrong')
         with self.assertRaisesRegex(ValueError,'file differs'):self.store.get(ref)

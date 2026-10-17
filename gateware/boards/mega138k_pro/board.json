@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "id": "mega138k_pro",
+  "name": "Tang Mega 138K Pro",
+  "reference_device": "GW5AST-138B",
+  "reference_part": "GW5AST-LV138FPG676AC1/I0",
+  "physical_identity": {
+    "part": null,
+    "core_revision": null,
+    "baseboard_revision": null,
+    "ddr_marking": "2 x SK hynix H5TQ4G63EFR; second line RDC 152V",
+    "ddr_identification": "user-photo-2026-10-17",
+    "status": "partially-confirmed"
+  },
+  "input_clock_hz": 50000000,
+  "resources": {
+    "clock": {"pins": ["P16"], "io_standard": "LVCMOS33"},
+    "core_reset": {"pins": ["U4"], "io_standard": "LVCMOS15", "active_low": true},
+    "debug_uart": {"rx": "N16", "tx": "P15", "io_standard": "LVCMOS33"},
+    "audio": {"bck": "E22", "ws": "F24", "data": "G24", "pa_en": "H17"},
+    "microphone": {"connector": "J28", "data_lines": 4, "shared_with": ["PMOD0", "SSPI"]},
+    "video": {"output": "hdmi", "lcd_migration": "deferred"}
+  },
+  "ddr_candidates": [
+    {"part": "H5TQ4G63EFR", "chips": 2, "data_width": 32, "row_bits": 15, "bank_bits": 3, "column_bits": 10, "size_bytes": 1073741824},
+    {"part": "Micron-custom-reference", "chips": 2, "data_width": 32, "row_bits": 14, "bank_bits": 3, "column_bits": 10, "size_bytes": 536870912}
+  ],
+  "conflicts": [
+    {"resource": "uart", "board_reference": "N16/P15", "customized_demo": "V16/U16", "resolution": "P1 must select and verify the BL616 route"},
+    {"resource": "reset", "board_reference": "U4 LVCMOS15", "customized_demo": "G16 LVCMOS33", "resolution": "Do not copy the demo CST as the board constraint"},
+    {"resource": "MIC-ARRAY", "owners": ["microphone", "PMOD0", "SSPI"], "resolution": "At most one active owner"},
+    {"resource": "part", "board_reference": "Confirm silicon marking/speed grade", "customized_demo": "GW5AST-LV138FPG676AC1/I0", "resolution": "Reference part is not physical confirmation"}
+  ],
+  "evidence": [
+    "docs/images/mega138k-pro-ddr-20261017.png",
+    "TangPrimer-138K/docs/02_Schematic",
+    "TangPrimer-138K/example/ae350_customized_demo",
+    "docs/ae350-migration-stages.md"
+  ]
+}

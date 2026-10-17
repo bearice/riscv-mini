@@ -19,6 +19,8 @@ python scripts/mini.py build system --hardware current
 
 ## 独立目标与硬件生成
 
+138K/AE350的P0输入锁使用`build/plan machine-description --machine mega138k_ae350`，硬核配置使用`build/plan cpu --machine mega138k_ae350`。省略机器仍为旧20K；AE350的RTL/BSP尚待P1，system计划会明确显示BLOCKED，不能生成可运行系统。输入闭包、机器引用与限制见[AE350 P0构建底座](ae350-p0-build-foundation.md)。
+
 ```text
 python scripts/mini.py build hal-sdk --hardware current
 python scripts/mini.py build bootloader --hardware current

@@ -67,6 +67,8 @@ def bundle(store, parts, configuration, origin, run):
 def import_legacy(store, name, run):
     existing = resolve_system(store, name)
     if existing:
+        from .machines import check_system
+        check_system(store, existing)
         run.step('system', 'REUSE', existing)
         return existing
     path = resolve_legacy(name, store.root)

@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from . import arguments, configuration
 from .storage import canonical, digest, read, write
+from . import machines
 
 CORE = ('system', 'bios', 'bootloader', 'hal-sdk', 'cpu', 'soc-description', 'gateware')
 BACKENDS = {'cpu-gcb':'cpu_gcb', 'cpu-qualification':'cpu_qualification', 'matrix':'matrix',
@@ -13,12 +14,18 @@ BACKENDS = {'cpu-gcb':'cpu_gcb', 'cpu-qualification':'cpu_qualification', 'matri
 
 def add_targets(parser):
     sub = parser.add_subparsers(dest='target', required=True)
-    for name in (*CORE, *BACKENDS):
+    for name in (*CORE, *BACKENDS, 'machine-description'):
         target = sub.add_parser(name)
+        target.add_argument('--machine', choices=machines.MACHINES,
+                            help='Machine selection; omitted means the original 20K')
         target.add_argument('--hardware', default='current', help='Exact system/ref or archived hardware inputs')
         target.add_argument('--output-dir', type=Path, help='Optional output view; default output is managed under build/')
         target.add_argument('--dry-run', action='store_true', help='Resolve a plan without executing build tools')
         target.add_argument('--purpose', default='candidate', help='Purpose recorded with this build request')
+        if name in CORE or name == 'machine-description':
+            target.add_argument('--reference-root', type=Path, help='AE350 vendor input directory; archived by content, never an unidentified dependency')
+        if name == 'machine-description':
+            continue
         if name in CORE:
             target.add_argument('--locked', type=Path)
             if name in ('system', 'gateware', 'soc-description'):
@@ -42,6 +49,13 @@ def add_targets(parser):
 
 def execute(store, run, args):
     dry = args.command == 'plan' or args.dry_run
+    machine = getattr(args, 'machine', None) or machines.LEGACY
+    if machine == machines.AE350:
+        return machines.execute(store, run, args, dry)
+    if getattr(args, 'reference_root', None):
+        raise ValueError('--reference-root requires --machine mega138k_ae350')
+    if args.target == 'machine-description':
+        raise ValueError('P0 machine-description requires --machine mega138k_ae350; 20K uses its existing soc-description')
     if args.target=='cpu' and not args.generate:
         generator_options=('vexriscv_source','java','sbt_launch','locked_config','relaxed_pc_calculation',
                            'compressed','pipelined_fetch','arithmetic_matrix')
