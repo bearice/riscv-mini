@@ -74,7 +74,7 @@ scripts/modular/          # 保留调度/store/replay，消费已解析机器描
 
 设备 register model 将 CSR/MMIO 访问转换为核心命令，并固定 W1C、read-pop、快照、计数器、配置提交等语义。同一语义不分别在 AHB 和 Wishbone wrapper 中实现一遍。
 
-首版沿用已使用的 LiteX CSR 设施，经现成总线桥接入新机器。只有两种实际接法确实需要时才增加另一个寄存器 Adapter，不先发明一个覆盖所有总线的自定义通用协议。
+20K保留现有LiteX CSR/Wishbone接法。138K直接使用AE350导出的AHB/APB，以原生从设备适配寄存器模型；P1 ROM/SRAM也直接连接AHB，不为复用SoCCore引入Wishbone桥或位宽转换。同一寄存器语义由测试约束，功能核心和DMA路径保持独立。
 
 ### 数据搬运
 
@@ -167,7 +167,7 @@ requires 至少支持：目标执行合同、所需设备类型/major/能力/参
 1. 固定现有 20K 代码/产物/板测参考；先定义 Board/Machine 与新 contract 的独立 schema，保留 legacy loader 行为。
 2. 调整输入闭包和构建 CPU kind，建立机器独立 refs、BSP/驱动选择及元数据生成；所有入口仍在 mini。
 3. 从 GPIO 和 mic 开始提取功能 core/register model，在原 20K Adapter 下证明外部行为不变；随后拆 audio，最后拆 LCD 的控制/扫描/reader/CDC。
-4. AE350 最小系统单独跑通，接入同一个 GPIO/mic/audio core；先验证单设备 FIFO/DMAC，再恢复 LCD 和上层软件。
+4. AE350最小系统单独跑通，接入共享GPIO/mic/audio core；先验证单设备FIFO/DMAC，再接HDMI和上层软件。
 5. 逐一接入 payload/OS 的完整 requires 检查；实际完成前保留当前工具的能力限制说明。
 
 验收矩阵至少包含：

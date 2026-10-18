@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "mega138k_ae350",
   "board": "mega138k_pro",
-  "stage": "P0-description-only",
+  "stage": "P1-host-generation",
   "cpu": {
     "kind": "hard",
     "vendor": "Gowin/Andes",
@@ -12,7 +12,7 @@
     "hardware_isa": "rv32imafdc_zicsr_zifencei",
     "initial_software_abi": "ilp32",
     "software_qualification": "pending-P1",
-    "configuration_source": "src/riscv_ae350_soc/riscv_ae350_soc.ipc",
+    "vendor_reference_configuration": "src/riscv_ae350_soc/riscv_ae350_soc.ipc",
     "core_clock_route": "PLL_R[0]/CLKOUT1"
   },
   "memory": {
@@ -51,7 +51,7 @@
   "video": "hdmi",
   "pending": [
     "physical-part-and-board-revisions",
-    "P1-boot-reset-clock-constraints-and-BSP",
+    "P1-PnR-board-startup-timer-IRQ-and-frequency-verification",
     "vendor-IP-regeneration-and-initialization-closure",
     "P3-fabric-DDR-arbitration-and-DMA-ownership"
   ]

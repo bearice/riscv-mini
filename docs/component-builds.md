@@ -19,7 +19,7 @@ python scripts/mini.py build system --hardware current
 
 ## 独立目标与硬件生成
 
-138K/AE350的P0输入锁使用`build/plan machine-description --machine mega138k_ae350`，硬核配置使用`build/plan cpu --machine mega138k_ae350`。省略机器仍为旧20K；AE350的RTL/BSP尚待P1，system计划会明确显示BLOCKED，不能生成可运行系统。输入闭包、机器引用与限制见[AE350 P0构建底座](ae350-p0-build-foundation.md)。
+138K/AE350使用`--machine mega138k_ae350`：`machine-description`与`cpu`锁定输入及硬核配置；P1的`bootloader`编译最小ROM monitor，`soc-description/gateware`生成原生AHB ROM/SRAM独立启动RTL。`gateware --synthesize`执行Gowin并校验setup/hold均为0；`board run --machine mega138k_ae350 --build <准确run> --port <串口>`进行SRAM板测，不能消费20K current。使用独立CPU JTAG时，另传`--location <FPGA位置> --cpu-jtag-location <CPU位置>`，执行完整ROM读回匹配和入口重启，日志明确记录JTAG辅助启动。完整system仍待接入。省略机器仍为现役20K。操作与限制见[P0底座](ae350-p0-build-foundation.md)和[P1启动](ae350-p1-bringup.md)。
 
 ```text
 python scripts/mini.py build hal-sdk --hardware current

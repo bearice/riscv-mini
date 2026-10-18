@@ -19,7 +19,7 @@ python scripts/mini.py plan system --machine mega138k_ae350
 
 CPU产物保存`kind=hard`、part、AE350/A25配置与机器输入key，并依赖准确的machine-description产物。它只有配置lock，不能当作软核RTL使用，也不能组装成可运行system bundle。重复输入为REUSE；修改CST/SDC/IP/JSON/init或工具身份触发BUILD。
 
-`plan system/soc-description/gateware`显示P1后端BLOCKED及`ready_for_execution=false`；对这些目标实际build会失败。旧软件和OS后端同样拒绝138K请求。旧20K配置参数或CPU生成参数不会被静默忽略。
+当前已进入[P1启动验收](ae350-p1-bringup.md)：`build/plan bootloader`编译整数ROM monitor，`build/plan soc-description/gateware`生成独立于DDR的原生AHB最小RTL；`gateware --synthesize`支持Gowin综合/PnR，板端入口支持显式选择138K候选执行SRAM测试。CPU JTAG与JTAG辅助的ROM读回、控制台、trap和恢复已通过。只有PnR 0/0候选可尝试下载，构建产物hardware_qualified仍为false，具体板测能力由独立验收记录限定。完整system、HAL/BIOS及OS后端仍未接入。旧20K配置参数及CPU生成参数不会被静默忽略。
 
 ## 身份与引用
 

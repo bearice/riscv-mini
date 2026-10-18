@@ -74,6 +74,15 @@ def resolve(store, reference=None):
     board_path = store.root / 'gateware/boards/mega138k_pro/board.json'
     machine_path = store.root / 'gateware/machines/mega138k_ae350.json'
     board, machine = read(board_path), read(machine_path)
+    camera = board['resources']['camera']
+    reserved = {pin for values in camera.values() if isinstance(values, list) for pin in values}
+    jtag = board['resources']['cpu_jtag']
+    assigned = {jtag[name]['pin'] for name in ('tck', 'tdi', 'tdo', 'tms')}
+    overlap = assigned & reserved
+    if overlap:
+        raise ValueError('CPU JTAG occupies reserved camera pins: ' + ', '.join(sorted(overlap)))
+    if len(assigned) != 4 or jtag['trst'] != {'mode': 'tied-high-internal'}:
+        raise ValueError('CPU JTAG requires four distinct pins and internal inactive TRSTn')
     if board['schema'] != 1 or machine['schema'] != 1 or machine['id'] != AE350 or machine['board'] != board['id']:
         raise ValueError('Unsupported Board/Machine description')
     if machine['cpu']['kind'] != 'hard' or machine['memory']['shared_l2']:
@@ -121,16 +130,18 @@ def execute(store, run, args, dry):
                    'usb_backend', 'audio_clock', 'boot_mode', 'rom_size', 'l2_size', 'place_option',
                    'route_option', 'rtl_hierarchy', 'source', 'vexriscv_source', 'java', 'sbt_launch',
                    'locked_config') if getattr(args, key, None) is not None]
-    unsupported += [key for key in ('generate', 'synthesize', 'refresh_hardware', 'relaxed_pc_calculation', 'compressed',
+    unsupported += [key for key in ('generate', 'refresh_hardware', 'relaxed_pc_calculation', 'compressed',
                                   'pipelined_fetch', 'arithmetic_matrix') if getattr(args, key, False)]
     if getattr(args, 'feature', []):
         unsupported.append('feature')
     if unsupported:
-        raise ValueError('AE350 P0 does not support these overrides: ' + ', '.join(unsupported))
-    if args.target not in ('machine-description', 'cpu', 'system', 'soc-description', 'gateware'):
+        raise ValueError('AE350 does not yet support these overrides: ' + ', '.join(unsupported))
+    if getattr(args, 'synthesize', False) and args.target != 'gateware':
+        raise ValueError('AE350 --synthesize requires the gateware target')
+    if args.target not in ('machine-description', 'cpu', 'bootloader', 'system', 'soc-description', 'gateware'):
         raise ValueError('AE350 ' + args.target + ' backend is pending P1; cannot use the 20K backend')
-    if args.target not in ('machine-description', 'cpu') and not dry:
-        raise ValueError('AE350 RTL/BSP backend is pending P1; build machine-description or cpu for P0')
+    if args.target == 'system' and not dry:
+        raise ValueError('AE350 complete system backend is pending P1; build bootloader or gateware for host bring-up')
     # A P0 description starts from explicit source inputs, never from 20K current.
     if args.hardware != 'current':
         raise ValueError('AE350 P0 describes source inputs; --hardware selection is pending P1')
@@ -160,6 +171,13 @@ def execute(store, run, args, dry):
         if not dry and not cpu:
             cpu = store.publish('cpu', cpu_key, {'cpu.lock.json': canonical(cpu_config)},
                                 config=cpu_config, dependencies={'machine-description': found})
+    if args.target in ('bootloader', 'soc-description', 'gateware'):
+        if cpu is None and dry:
+            run.step(args.target, 'BUILD', reason='requires exact hard CPU configuration')
+            run.finish(plan=True, artifact=None, qualification='host-generated-only', hardware_qualified=False)
+            return None
+        from .ae350 import build
+        return build(store, run, args, cpu, lock['board'], dry)
     pending = args.target not in ('machine-description', 'cpu')
     if pending:
         run.step(args.target, 'BLOCKED', reason='P1 backend not implemented; no generated RTL or runnable system')

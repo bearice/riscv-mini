@@ -17,6 +17,7 @@ def parser():
     operations=board.add_subparsers(dest='operation',required=True)
     for name,description in [
         ('status','Passively observe UART; silence is unknown, no reset'),
+        ('debug-scan','Read the AE350 board JTAG chain using OpenOCD; no programming'),
         ('recover','SRAM load selected gateware, enter loader and query Flash header'),
         ('repair-xip','Restore selected XIP boot region, then SRAM load and exact readback; writes Flash'),
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
@@ -24,12 +25,16 @@ def parser():
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
+        op.add_argument('--machine', choices=('primer20k_vexriscv', 'mega138k_ae350'), default='primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
             continue
         op.add_argument('--build',default='current',help='Catalog ID/reference or artifact directory; default qualified current')
         op.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
+        if name in ('run', 'recover', 'verify'):
+            op.add_argument('--cpu-jtag-location', type=int,
+                            help='AE350 independent D2XX JTAG location; verify ROM and restart entry after SRAM programming')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')
         if name=='linux':
             op.add_argument('--os-image',type=Path,required=True,help='Matching OpenSBI/U-Boot OSB1 image')
@@ -61,13 +66,18 @@ def main(argv=None):
         p.print_help();return
     args=p.parse_args(argv)
     if args.command=='board':
+        if getattr(args, 'cpu_jtag_location', None) is not None and args.machine != 'mega138k_ae350':
+            p.error('--cpu-jtag-location requires --machine mega138k_ae350')
         if args.operation=='status' and not 0<args.seconds<=30:p.error('--seconds must be in (0,30]')
         if args.operation=='verify':
             if not 0<=args.soak_seconds<=300:p.error('--soak-seconds must be in 0..300')
             if not 1<=args.timeout<=3600:p.error('--timeout must be in 1..3600')
             if args.image and args.suite in ('boot','spi','cold'):p.error('--image is supported by firmware/flash verification only')
             if args.mic and args.suite!='firmware':p.error('--mic requires --suite firmware')
-        from mini_ops.board import perform
+        if args.machine == 'mega138k_ae350':
+            from mini_ops.ae350 import perform
+        else:
+            from mini_ops.board import perform
         try:perform(args)
         except (ValueError,RuntimeError,OSError,KeyError,TimeoutError,subprocess.SubprocessError) as error:
             p.exit(1,str(error)+'\n')

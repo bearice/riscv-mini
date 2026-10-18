@@ -6,8 +6,15 @@ import sys
 from pathlib import Path
 from .storage import ROOT, canonical, digest, file_hash, read, write, workspace_lock
 from .environment import discover, identity, python_packages
-from .firmware import source_files
+from .firmware import source_files as collect_source_files
 from .contracts import hardware
+
+
+def source_files(root, names):
+    # This backend owns the active 20K RTL. Other machine implementations
+    # have their own closed inputs and must not invalidate its cache.
+    return {name: sha for name, sha in collect_source_files(root, names).items()
+            if not name.startswith(('gateware/machines/', 'gateware/boards/'))}
 
 
 def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):

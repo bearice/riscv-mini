@@ -1,6 +1,6 @@
 # AE350 平台分阶段移植与验收计划
 
-日期：2026-10-17。状态：P0主机实现与验证完成，见[P0构建底座](ae350-p0-build-foundation.md)及[验收记录](../reports/ae350-p0.md)；实物身份待确认，P0整体板级身份验收及P1后续硬件验收尚未完成。目标为 Tang Mega 138K Pro，复用 riscv-mini 构建框架及部分外围核心，替换 CPU 到总线/内存基础设施，首版不含旧 SharedL2。
+更新：2026-10-18。状态：P0主机底座完成，DDR丝印已确认；[P1](ae350-p1-bringup.md)原生ROM/SRAM系统已完成PnR、CPU JTAG与JTAG辅助启动/控制台/trap/恢复验收。timer/IRQ、实际测频与上限压力仍待完成，详见[上板记录](../reports/ae350-p1.md)。FPGA完整part及板卡版本待确认，P0板级身份与P1整体验收尚未完成。目标为Tang Mega 138K Pro，复用构建框架及部分外围核心，替换CPU到总线/内存基础设施，首版不含SharedL2。
 
 视频范围更新：用户明确要求138K使用HDMI输出，暂时搁置LCD相关移植。20K的RGB LCD实现继续保留；138K不迁移面板引脚、背光或触摸功能。P6改为单路HDMI连接器上的TMDS数字视频，首版先做DVI兼容视频，不把HDMI音频/CEC/完整HDMI协议列入通过条件；音频继续用PT8211。
 

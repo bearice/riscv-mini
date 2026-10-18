@@ -1,0 +1,41 @@
+{
+  "created_at": "2026-10-18T01:40:29+00:00",
+  "title": "AE350 P1 native startup and independent JTAG recovery",
+  "mode": "staged AE350 P1 phase review",
+  "base_revision": "c76bd34f13dc2d049da5a0a0a316eacb9f9e16d6",
+  "source_revision": null,
+  "source": {
+    "commit": "c76bd34f13dc2d049da5a0a0a316eacb9f9e16d6",
+    "dirty": true,
+    "inputs_sha256": "68e7b0e2872aa2ca7d4817c4a18b60bdecbbf85d38e113b9d1c00935f36cf3f9"
+  },
+  "machine": "mega138k_ae350",
+  "artifact": {
+    "component": "gateware",
+    "digest": "122d1d8ec77c4c274227d11142d569da073284d6137cb13bb0a35db7d0fb9f86"
+  },
+  "fs_sha256": "ac9f7c934f0ef8587dad7806dc82077637f5a2a36698335dbba8673b1603d8f2",
+  "rom_build_id": "736b81886a3c",
+  "qualification": "P1-JTAG-assisted-ROM-UART-trap-recovery",
+  "p1_complete": false,
+  "hardware_qualified": false,
+  "validation": {
+    "host_checks": "build/runs/20261018T013811303798Z-ae350-p1-commit-final-host-a3c977/result.json",
+    "host_checks_run": 93,
+    "build": "build/runs/20261018T013748121731Z-build-p1-commit-final-e1694d/result.json",
+    "board": "build/runs/20261018T013840070148Z-board-ae350-run/result.json",
+    "artifact_checks": "build/runs/20261018T013838324745Z-ae350-p1-artifact-534854/result.json",
+    "idle": "build/runs/20261018T013954879822Z-board-ae350-final-idle-jtag/result.json",
+    "timing": {
+      "setup": 0,
+      "hold": 0
+    }
+  },
+  "performance": {
+    "status": "not-applicable-to-this-phase-commit",
+    "reason": "No AE350 full-system benchmark or equivalent baseline; frequency and stress remain pending"
+  },
+  "review_policy": "Legacy prepare_commit generation requires 20K system catalog/performance; this phase review validates exact AE350 closure, scoped board evidence and current source hashes without promoting full hardware qualification.",
+  "flash_written": false,
+  "current_unchanged": true
+}

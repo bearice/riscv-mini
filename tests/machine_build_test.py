@@ -72,6 +72,14 @@ class MachineBuildTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(run.result['steps'][0]['status'], 'REUSE')
 
+    def test_jtag_cannot_take_camera_pins(self):
+        path = self.root / 'gateware/boards/mega138k_pro/board.json'
+        board = json.loads(path.read_text())
+        board['resources']['cpu_jtag']['tdi']['pin'] = 'E23'
+        path.write_text(json.dumps(board))
+        with self.assertRaisesRegex(ValueError, 'reserved camera pins: E23'):
+            machines.resolve(self.store, self.vendor)
+
     def test_cst_ip_sdc_json_and_init_each_invalidate(self):
         for path in (self.vendor / 'src/top.cst', self.vendor / 'src/cpu.ipc',
                      self.vendor / 'src/top.sdc', self.vendor / 'src/boot.init',
@@ -161,7 +169,7 @@ class MachineBuildTests(unittest.TestCase):
         self.assertFalse((self.store.build / 'store').exists())
 
     def test_unimplemented_targets_never_dispatch_to_legacy(self):
-        for target in ('system', 'gateware', 'soc-description', 'bios', 'bootloader', 'hal-sdk'):
+        for target in ('system', 'bios', 'hal-sdk'):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, 'pending P1'):
                 self.run_target(target)
 
@@ -211,6 +219,14 @@ class MachineBuildTests(unittest.TestCase):
                 self.run_target()
         self.assertFalse((self.store.build / 'store').exists())
 
+    def test_p1_targets_dispatch_to_ae350_backend(self):
+        for target in ('bootloader', 'soc-description', 'gateware'):
+            with mock.patch('scripts.modular.ae350.build') as build:
+                self.run_target(target)
+            self.assertEqual(build.call_args.args[2].target, target)
+            cpu = build.call_args.args[3]
+            self.assertEqual(self.store.get(cpu)['config']['kind'], 'hard')
+
     def test_138k_input_changes_do_not_invalidate_20k_but_20k_board_changes_do(self):
         for name in ('gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                      'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
@@ -230,6 +246,8 @@ class MachineBuildTests(unittest.TestCase):
         before = key()
         board = self.root / 'gateware/boards/mega138k_pro/board.json'
         board.write_bytes(board.read_bytes() + b'\n')
+        implementation = self.root/'gateware/machines/mega138k_ae350.py'
+        implementation.write_text('# 138K-only RTL implementation\n')
         (self.vendor / 'src/top.cst').write_bytes(b'changed 138K CST')
         self.assertEqual(before, key())
         legacy = self.root / 'gateware/board.json'
