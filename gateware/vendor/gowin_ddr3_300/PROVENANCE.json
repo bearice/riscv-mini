@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "vendor": "Gowin Semiconductor",
+  "component": "DDR3 Memory Interface IP + advanced PLL, 300 MHz CK point",
+  "generated_by": "gateware/vendor/gowin_ddr3_ipgen/gen_ddr3_ip.tcl",
+  "generation_command": "gw_sh gen_ddr3_ip.tcl <out> 300 D3_300",
+  "generation_parameters": "vendor Hynix_400MHz reference set; only MEMORY_CLK differs, so tCK scales and every absolute t* stays the same",
+  "module_rename": "the generated module D3_300 is renamed to DDR3_Memory_Interface_Top so the fabric adapter is point independent",
+  "pll": {
+    "input_mhz": 50,
+    "mdiv": 12,
+    "vco_mhz": 600,
+    "odiv0": 12,
+    "clk0_mhz": 50,
+    "odiv2": 2,
+    "clk2_mhz": 300,
+    "derived_from": "ae350_customized_demo gowin_pll_ddr3 (400 MHz point), only the divider defparams changed"
+  },
+  "files": {
+    "ddr3_memory_interface.v": {
+      "sha256": "517f2681ddd76c7e1c944b9fdf9628be3a43f1b4853bfa650e3be47e532376ca",
+      "bytes": 2562604
+    },
+    "ddr3_memory_interface.ipc": {
+      "sha256": "3c71385838ec1184dc9a2cf577fb4bce6ce05733e4cc20191dd63ae5035e0409",
+      "bytes": 891
+    },
+    "gowin_pll_ddr3.v": {
+      "sha256": "b294e786aad25e021e72d8787289a865cf9073690b605207a2afa7631199d6fe",
+      "bytes": 6185
+    },
+    "gowin_pll_ddr3.ipc": {
+      "sha256": "d1aa3c22039c70618ac7210aadf05072edc0094b5541c76a460f754dd8dfdcb6",
+      "bytes": 4884
+    }
+  },
+  "measured": "calibrates; short DDR probe 8/8 PASS"
+}

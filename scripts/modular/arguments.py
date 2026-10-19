@@ -107,7 +107,7 @@ def opensbi(parser):
     parser.add_argument('--osb-name',default='OPENSBI.OSB',help='Output OSB1 file name in --output-dir')
 
 def payload(parser):
-    parser.add_argument('--source',type=Path,default=ROOT/'firmware/examples/bios_demo.c')
+    parser.add_argument('--source',type=Path,default=None,help='application C source; machine-specific default when omitted')
     parser.add_argument('--source-dir',type=Path,help='compile every .c/.S in this directory instead of --source')
 
     parser.add_argument('--include-dir',type=Path,action='append',default=[])

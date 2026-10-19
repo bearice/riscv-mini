@@ -50,20 +50,22 @@ class BootSession:
         from uart_state import wait_for
         data,detail=wait_for(self.port,expected,timeout,abi,self.log)
         return data,detail
-    def fresh_banner(self,timeout=120):
+    def fresh_banner(self,timeout=120,pattern=None):
         # A previous binary readback may still be draining from the UART FIFO.
         # Log it, but do not interpret embedded firmware strings as status.
+        pattern=pattern or rb'(?:^|\n)(riscv-mini (?:ROM|XIP) [\x20-\x7e]+\r*\nDDR INIT [0-9]+\r*\n)$'
         data=bytearray();lines=bytearray();deadline=time.monotonic()+timeout
         while time.monotonic()<deadline:
             chunk=self.port.read(1)
             if not chunk:continue
             data.extend(chunk);lines.extend(chunk)
-            if chunk==b'\n':
-                match=re.search(rb'(?:^|\n)(riscv-mini (?:ROM|XIP) [\x20-\x7e]+\r*\nDDR INIT [0-9]+\r*\n)$',lines)
-                if match:
-                    self.note(data)
-                    return match.group(1)
-                lines=lines[-512:]
+            # Try on every byte: a loader prompt such as "BL> " has no trailing
+            # newline, so matching only at line ends would never fire.
+            match=re.search(pattern,lines)
+            if match:
+                self.note(data)
+                return match.group(1)
+            lines=lines[-512:]
         self.note(data)
         raise TimeoutError('Waiting for fresh loader banner; received '+repr(bytes(data[-1000:])))
     def menu(self,reset=False,fresh=False):
@@ -76,8 +78,8 @@ class BootSession:
     def command(self,value,timeout=120):
         self.port.write(value.encode());self.port.flush()
         return self.until(b'BL> ',timeout)
-    def upload(self,image,install=False):
-        _,payload=unpack_image(image)
+    def upload(self,image,install=False,load=None,abi=None):
+        _,payload=unpack_image(image,abi=abi,load=load)
         self.port.write(b'p' if install else b'u');self.port.flush()
         self.until(b'READY HEADER\r\n')
         self.port.write(image[:HEADER.size]);self.port.flush()
@@ -121,7 +123,7 @@ def program(output,location,configuration=False,log_dir=None):
             raise RuntimeError('Configuration image must fit below the firmware partition')
     tools=json.loads((ROOT/'.tools.local.json').read_text())
     selected_location=resolve_location(tools['programmer'],location,log_path=logs/'programmer-cables.log')
-    command=[tools['programmer'],'--cable-index','4','--location',selected_location,'--frequency','2MHz',
+    command=[tools['programmer'],'--location',selected_location,'--frequency','2MHz',
              '--device','GW2A-18C','--operation_index','8' if configuration else '2','--fsFile',str(fs)]
     if configuration: command+=['--spiaddr','0x000000']
     log=logs/('configuration-programmer.log' if configuration else 'programmer.log')

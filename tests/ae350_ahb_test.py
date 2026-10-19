@@ -25,6 +25,8 @@ class NativeMemoryTest(unittest.TestCase):
                 yield bus.trans.eq(0)
                 yield
                 self.assertEqual((yield bus.readyout), 0)
+                yield  # registered address -> synchronous memory -> response register
+                self.assertEqual((yield bus.readyout), 0)
                 self.assertEqual((yield bus.resp), error, hex(address))
                 yield
                 self.assertEqual((yield bus.readyout), 1)

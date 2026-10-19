@@ -31,7 +31,7 @@ def build(a, run=None):
         sources=sorted([x for x in directory.iterdir() if x.suffix in ('.c','.S')])
         if not sources:raise SystemExit(f'no sources in {directory}')
     else:
-        sources=[a.source.resolve()]
+        sources=[(a.source or ROOT/'firmware/examples/bios_demo.c').resolve()]
     runtime=[ROOT/'firmware/libc/runtime.c'] if a.libc=='newlib' else []
     libraries=newlib_link(gcc,march,mabi,out) if runtime else ['-lgcc']
     args=[str(gcc),'-march='+march,'-mabi='+mabi,a.optimize,'-Wall','-Wextra','-Werror','-ffreestanding','-fno-builtin','-ffunction-sections','-fdata-sections','-msmall-data-limit=0','-nostdlib','-nostartfiles',

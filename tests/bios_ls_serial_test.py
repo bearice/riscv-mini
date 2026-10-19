@@ -1,3 +1,6 @@
+import unittest
+if __name__ != '__main__':
+    raise unittest.SkipTest('simulation script; run directly, not under unittest discovery')
 """Board regression: ls must use BIOS listing output and return to its prompt.
 
 Run with the board already at the BIOS prompt and an SD card inserted.

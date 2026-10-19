@@ -8,6 +8,7 @@ class CPUJTAG:
         self.dll = c.WinDLL(str(dll))
         self.handle = c.c_void_p()
         self.check(self.dll.FT_OpenEx(c.c_void_p(int(location)), 4, c.byref(self.handle)))
+        self.closed = False
         self.active = False
         try:
             self.call('FT_SetTimeouts', 2000, 2000)
@@ -104,9 +105,14 @@ class CPUJTAG:
         raise RuntimeError(f'AE350 DMSTATUS timeout: {status:08x}')
 
     def halt(self):
+        # Keep haltreq asserted while the core is halted.  The measured DM
+        # sequence shows that clearing haltreq alone does NOT resume the hart
+        # (dmstatus stays allhalted=1), so this is a bookkeeping choice, not a
+        # workaround for a hardware quirk.  Abstract memory access returns
+        # cmderr=4 (08000404) whenever the hart is *running*, so callers must
+        # halt again before any memory access after a resume.
         self.write(0x10, 0x80000001)
-        self.wait_status(1 << 9)
-        self.write(0x10, 1)
+        return self.wait_status(1 << 9)
 
     def resume(self):
         self.write(0x10, 0x40000001)
@@ -122,12 +128,24 @@ class CPUJTAG:
             data.extend(self.read(4).to_bytes(4, 'little'))
         return bytes(data[:length])
 
-    def close(self):
+    def write_word(self, address, value):
+        if address & 3 or not 0 <= value <= 0xffffffff:
+            raise ValueError('Abstract word write requires an aligned address and uint32 value')
+        self.write(4, value)
+        self.write(5, address)
+        self.command(0x02210000)
+
+    def close(self, resume=True):
+        if self.closed:
+            return
         try:
-            if self.active:
+            if self.active and resume:
                 self.resume()
         finally:
-            self.dll.FT_Close(self.handle)
+            status = self.dll.FT_Close(self.handle)
+            self.closed = True
+            self.active = False
+            self.check(status)
 
 
 def restart(location, dll, expected_rom, before_resume):

@@ -56,6 +56,7 @@ class Tests(unittest.TestCase):
             output = Path(temp)
             (output / 'firmware').mkdir()
             (output / 'firmware/app.img').write_bytes(b'image')
+            (output / 'csr.json').write_text('{"csr_registers": {}}')
             validation = {'bitstream_sha256':'test', 'boot_image':{'abi_tag':0},
                           'features':{n:n == 'video' for n in ('video','filesystem','sd','flash','spi_lcd','board_io','ws2812','audio','eth','usb','mic')}}
             port = Port(bios)

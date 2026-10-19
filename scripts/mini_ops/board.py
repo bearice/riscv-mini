@@ -61,7 +61,7 @@ class Board:
                                     runner=self.runner,
                                     log_path=self.op.path/(name+'-cables.log'))
         command = [self.tools['programmer'],'--device','GW2A-18C',
-                   '--cable-index','4','--location',location,
+                   '--location',location,
                    '--frequency','2MHz','--operation_index',str(index)]
         if path is not None:
             command += ['--mcuFile' if raw else '--fsFile',str(Path(path).resolve())]

@@ -49,6 +49,10 @@ HDMI建议先640x480约60Hz跑通，再以1280x720/60作为提高分辨率的独
 
 ### 频率上限测试
 
+最新实施交接见[统一地址与自主UART loader任务](ae350-next-stage-agent-task.md)：先复用20K ROM上传协议完成AE350自主短POST/UART payload加载，Flash/XIP实现后置；正常成功路径不依赖JTAG。
+
+2026-10-18 最新决定：P2 的 DDR 仅以400MHz CK为强制交付频点；100/200/300MHz保留历史诊断，不再补测或要求通过。下文CPU/总线上限验证独立适用，DDR逐档扫描要求由本决定取代。下一版DDR零基址、fabric SRAM 0x40000000、ROM 0x80000000，见[P2任务书](ae350-p2-task.md)。
+
 CPU与DDR不承担旧20K的60MHz sys/120MHz DDR CK兼容要求。新平台按规格上限建立候选profile并进行上限表征，低频profile用于故障定位和扫频对照，不作为移植完成的性能目标。规格上限、PnR通过上限、实板稳定上限、最终完整系统运行频率分别记录；未达到目标时保留失败证据和限制因素，不能用低频功能通过替代上限测试。
 
 官方AE350硬件手册MUG1031 v1.3.1E表4-1/4-2给出的时钟边界如下；实际profile还需满足具体part/speed grade、PLL、DDR器件、控制器/PHY和板级条件的共同限制。
@@ -101,6 +105,8 @@ CPU与DDR不承担旧20K的60MHz sys/120MHz DDR CK兼容要求。新平台按规
 
 ### P2：DDR与CPU缓存正确性
 
+执行任务、分工边界、量化矩阵与交付合同见 [P2 agent任务书](ae350-p2-task.md)。该任务书为待执行计划，不代表本阶段已经验收。
+
 交付：匹配实物的x32 DDR配置、AHB memory path、校准状态/超时诊断；CPU可在DDR执行程序。暂时没有外设DMA。
 
 通过：
@@ -113,6 +119,8 @@ CPU与DDR不承担旧20K的60MHz sys/120MHz DDR CK兼容要求。新平台按规
 - 完成上述P2 DDR扫频，分别登记400MHz CK目标、最高通过点及失败点；逐档证据不能由单一低频结果代替。
 
 ### P3：互连、硬核DMAC与缓存所有权
+
+地址、CSR、DMA数据端点、共享buffer与兼容合同采用[AE350统一地址规划](ae350-address-map.md)作为待实施方案；沿用硬核DMAC原址，外设控制与数据口分离，不继承20K的CSR编号。
 
 交付：扩展MMIO/IRQ路径、DMA buffer映射/同步接口、测试FIFO/loopback外设、已冻结的fabric DDR访问拓扑。
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # AE350 primitive port defaults adapted from LiteX gowin_ae350/core.py.
 """Native hard-macro ports, without a fabric bus adapter."""
-from migen import Signal, Constant, ClockSignal, ResetSignal, Instance, Memory, FSM, If, NextValue, NextState, Case
+from migen import Signal, Constant, ClockSignal, ResetSignal, Instance, Memory, FSM, If, NextValue, NextState, Case, Mux
 from litex.gen import LiteXModule, Open
 from litex.soc.interconnect.ahb import AHBInterface
 
@@ -63,25 +63,100 @@ class AE350ROM(LiteXModule):
     selection is inside the hard macro. Do not apply generic word-alignment
     checks to this port. RAM continues to use the full AHB transfer size.
     """
-    def __init__(self, bus, size, base=0x80000000, init=None):
+    def __init__(self, bus, size, base=0x80000000, init=None, status=None, cycles=None, debug=None, debug_hi=None, dbg2=None, dbg3=None, windows=None):
         if bus.data_width != 32 or base % 4 or size % 4:
             raise ValueError('AE350 ROM requires 32-bit words and word-aligned bounds')
-        word = AHBInterface(data_width=32, address_width=32)
-        self.memory = AHBMemory(word, size, base=base, init=init, read_only=True)
-        self.comb += [word.addr.eq(bus.addr & 0xfffffffc), word.size.eq(2),
-                      word.trans.eq(bus.trans), word.write.eq(bus.write),
-                      bus.rdata.eq(word.rdata), bus.readyout.eq(word.readyout),
-                      bus.resp.eq(word.resp)]
+        self.status = status
+        self.memory = memory = Memory(32, size // 4, init=init)
+        rd = memory.get_port()
+        self.specials += memory, rd
+        address = Signal(32)
+        result = Signal(32)
+        error = Signal()
+        # The response mux must use the accepted address, not the following
+        # address phase.  A synchronous memory needs a full clock after its
+        # registered address changes before the output can be captured.
+        self.comb += rd.adr.eq((address - base) >> 2)
+        value = rd.dat_r
+        entries = [(size - 24, dbg3), *[(size + off, sig) for off, sig in (windows or [])],
+                   (size - 20, dbg2), (size - 16, debug_hi),
+                   (size - 12, debug), (size - 8, cycles), (size - 4, status)]
+        for off, sig in entries:
+            if sig is not None:
+                value = Mux((address & 0xfffffffc) == base + off, sig, value)
+        def accept():
+            return If(bus.trans[1],
+                      NextValue(address, bus.addr),
+                      NextValue(error, bus.write | (bus.addr < base) | (bus.addr >= base + size)),
+                      NextState('MEMORY')).Else(NextState('ADDRESS'))
+        self.fsm = fsm = FSM(reset_state='ADDRESS')
+        fsm.act('ADDRESS', bus.readyout.eq(1), accept())
+        fsm.act('MEMORY', NextState('CAPTURE'))
+        fsm.act('CAPTURE', bus.resp.eq(error), NextValue(result, value), NextState('COMPLETE'))
+        fsm.act('COMPLETE', bus.readyout.eq(1), bus.rdata.eq(result),
+                bus.resp.eq(error), accept())
 
 
 class NativeAE350(LiteXModule):
-    def __init__(self):
+    def __init__(self, wrapper=False):
+        self.wrapper = wrapper
         self.reset = Signal()
         self.ahb_rom = ahb_rom = AHBInterface(data_width=32, address_width=32)
         self.ahb_ram = ahb_ram = AHBInterface(data_width=64, address_width=32)
         ahb_exts = AHBInterface(data_width=32, address_width=32)
         self.interrupt = Signal(16)
-        self.cpu_params = dict(
+        if wrapper:
+            # The vendor-delivered ``RiscV_AE350_SOC_Top`` wrapper around the
+            # hard macro.  Its feature set comes from riscv_ae350_config.v, so
+            # the port list is the configured subset: fabric ROM, fabric
+            # DDR/SRAM AHB port, UART2, GPIO, debug JTAG.
+            self.cpu_params = dict(
+                i_CORE_CLK       = ClockSignal("cpu"),
+                i_DDR_CLK        = ClockSignal("sys"),
+                i_AHB_CLK        = ClockSignal("sys"),
+                i_APB_CLK        = ClockSignal("sys"),
+                i_RTC_CLK        = ClockSignal("sys"),
+                i_POR_RSTN       = 1,
+                i_HW_RSTN        = ~(ResetSignal("sys") | self.reset),
+                i_ROM_HRDATA     = ahb_rom.rdata,
+                i_ROM_HREADY     = ahb_rom.readyout,
+                i_ROM_HRESP      = ahb_rom.resp,
+                o_ROM_HADDR      = ahb_rom.addr,
+                o_ROM_HTRANS     = ahb_rom.trans,
+                o_ROM_HWRITE     = ahb_rom.write,
+                i_DDR_HRDATA     = ahb_ram.rdata,
+                i_DDR_HREADY     = ahb_ram.readyout,
+                i_DDR_HRESP      = ahb_ram.resp,
+                o_DDR_HADDR      = ahb_ram.addr,
+                o_DDR_HBURST     = ahb_ram.burst,
+                o_DDR_HPROT      = ahb_ram.prot,
+                o_DDR_HSIZE      = ahb_ram.size,
+                o_DDR_HTRANS     = ahb_ram.trans,
+                o_DDR_HWDATA     = ahb_ram.wdata,
+                o_DDR_HWRITE     = ahb_ram.write,
+                o_UART2_TXD      = Open(),
+                o_UART2_RTSN     = Open(),
+                i_UART2_RXD      = 0,
+                i_UART2_CTSN     = 1,
+                i_UART2_DCDN     = 1,
+                i_UART2_DSRN     = 1,
+                i_UART2_RIN      = 1,
+                o_UART2_DTRN     = Open(),
+                o_UART2_OUT1N    = Open(),
+                o_UART2_OUT2N    = Open(),
+                i_GPIO_IN        = Constant(0, 32),
+                o_GPIO_OE        = Open(32),
+                o_GPIO_OUT       = Open(32),
+                i_TCK_IN         = 1,
+                i_TMS_IN         = 1,
+                i_TRST_IN        = 1,
+                i_TDI_IN         = 0,
+                o_TDO_OUT        = Open(),
+                o_TDO_OE         = Open(),
+            )
+            self.ahb_exts = ahb_exts
+        else:
+            self.cpu_params = dict(
             # Clk/Rst.
             i_CORE_CLK       = ClockSignal("cpu"),
             i_DDR_CLK        = ClockSignal("sys"),
@@ -274,14 +349,19 @@ class NativeAE350(LiteXModule):
             i_TEST_CLK       = 0,
             i_TEST_MODE      = 0,
             i_TEST_RSTN      = 1,
-        )
+            )
 
-        self.cpu_params.update(i_EXTS_HREADYIN=1, i_EXTS_HRDATA=Constant(0, 32), i_EXTS_HRESP=0,
-                               i_APB_PREADY=1, i_APB_PSLVERR=1)
+            self.cpu_params.update(i_EXTS_HREADYIN=1, i_EXTS_HRDATA=Constant(0, 32), i_EXTS_HRESP=0,
+                                   i_APB_PREADY=1, i_APB_PSLVERR=1)
 
     def connect_jtag(self, pads):
-        self.cpu_params.update(i_DBG_TCK=pads.tck, i_TMS_IN=pads.tms, i_TRST_IN=1,
-                               i_TDI_IN=pads.tdi, o_TDO_OUT=pads.tdo)
+        if self.wrapper:
+            self.cpu_params.update(i_TCK_IN=pads.tck, i_TMS_IN=pads.tms, i_TRST_IN=1,
+                                   i_TDI_IN=pads.tdi, o_TDO_OUT=pads.tdo)
+        else:
+            self.cpu_params.update(i_DBG_TCK=pads.tck, i_TMS_IN=pads.tms, i_TRST_IN=1,
+                                   i_TDI_IN=pads.tdi, o_TDO_OUT=pads.tdo)
 
     def do_finalize(self):
-        self.specials += Instance('AE350_SOC', **self.cpu_params)
+        name = 'RiscV_AE350_SOC_Top' if self.wrapper else 'AE350_SOC'
+        self.specials += Instance(name, **self.cpu_params)

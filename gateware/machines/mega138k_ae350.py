@@ -9,7 +9,7 @@ from .ae350_native import NativeAE350, AHBMemory, AE350ROM, APB_CE_APB, APB_CE_U
 
 
 class ClockReset(LiteXModule):
-    def __init__(self, platform):
+    def __init__(self, platform, fabric_hz=100e6):
         self.cd_sys = ClockDomain('sys')
         self.cd_cpu = ClockDomain('cpu')
         self.cd_input = ClockDomain('input')
@@ -21,11 +21,15 @@ class ClockReset(LiteXModule):
         self.sync.input += If(reset_key, count.eq(65535)).Elif(count != 0, count.eq(count - 1))
         self.pll = pll = GW5APLL(platform.devicename, platform.device, name='ae350_pll')
         pll.register_clkin(clk, 50e6)
-        pll.create_clkout(self.cd_sys, 100e6)
+        pll.create_clkout(self.cd_sys, fabric_hz)
         pll.create_clkout(self.cd_cpu, 800e6, with_reset=False)
         self.comb += pll.reset.eq(reset_key | (count != 0))
         self.specials += AsyncResetSynchronizer(self.cd_cpu, ~pll.locked | pll.reset)
         platform.toolchain.additional_cst_commands.append('INS_LOC "ae350_pll" PLL_R[0];')
+        # Keep the fabric/BSRAM clock on the dedicated global clock network.
+        fabric_clock = pll.clkouts[0].clk
+        fabric_clock.attr.add(('syn_keep', 1))
+        platform.add_platform_command('CLOCK_LOC "{clock}" BUFG = CLK;', clock=fabric_clock)
         pll.add_generated_clock_constraints(platform)
         self.rtc = Signal()
         phase = Signal(32)

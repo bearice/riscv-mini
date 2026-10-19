@@ -27,8 +27,10 @@ def candidate(selection):
         raise ValueError('Board test requires synthesized AE350 gateware')
     root = store.path(ref)
     timing = read(root / 'timing.json')
-    if timing != dict(setup=0, hold=0):
-        raise ValueError('AE350 candidate must have setup/hold 0/0')
+    from modular.ae350 import timing_report
+    verified_timing = timing_report(root)
+    if timing != verified_timing:
+        raise ValueError('AE350 timing metadata differs from the implementation report')
     boot = store.get(manifest['dependencies']['bootloader'])
     return root, ref, boot['config']['build_id']
 
@@ -38,6 +40,11 @@ def perform(args):
         return debug_scan(args)
     if args.operation not in ('run', 'recover', 'verify'):
         raise ValueError('AE350 P1 supports SRAM run/recover/verify only')
+    root, ref, build_id = candidate(args.build)
+    from modular.storage import Store
+    if Store().get(ref, recursive=True)['config'].get('ddr_profile'):
+        from mini_ops.ae350_p2_ops import perform as perform_p2
+        return perform_p2(args, root, ref, build_id)
     if args.operation == 'verify' and args.suite != 'firmware':
         raise ValueError('AE350 P1 only supports the firmware verification suite')
     if getattr(args, 'image', None) or getattr(args, 'mic', False) or getattr(args, 'soak_seconds', 0):
@@ -45,7 +52,6 @@ def perform(args):
     op = Operation('ae350-' + args.operation)
     print('Operation logs:', op.path, flush=True)
     try:
-        root, ref, build_id = candidate(args.build)
         fs = root / 'gateware/impl/pnr/project.fs'
         expected = file_hash(fs)
         op.report.update(machine='mega138k_ae350', artifact=ref, fs_sha256=expected,
@@ -55,8 +61,8 @@ def perform(args):
             return op
         tools = json.loads((ROOT / '.tools.local.json').read_text(encoding='utf-8'))
         programmer = tools['programmer']
-        location = resolve_location(programmer, args.location, log_path=op.path / 'cables.log')
-        base = [programmer, '--cable-index', '4', '--location', location, '--frequency', '2MHz']
+        location = resolve_location(programmer, args.location, identity=0x0001081B, log_path=op.path / 'cables.log')
+        base = [programmer, '--location', location, '--frequency', '2MHz']
         scan = subprocess.run([*base, '--scan'], capture_output=True, text=True, timeout=30)
         (op.path / 'scan.log').write_text(scan.stdout + scan.stderr, encoding='utf-8')
         if scan.returncode or not re.search(r'ID:\s*0x0001081[Bb]', scan.stdout) or '1 device(s) found' not in scan.stdout:

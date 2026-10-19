@@ -1,3 +1,6 @@
+import unittest
+if __name__ != '__main__':
+    raise unittest.SkipTest('simulation script; run directly, not under unittest discovery')
 """Shared cache visibility, eviction, masks, maintenance and backpressure."""
 import argparse
 import random

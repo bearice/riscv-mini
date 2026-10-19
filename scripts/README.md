@@ -27,6 +27,8 @@ Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/m
 | 恢复到启动菜单 | `./mini.ps1 board recover --build current` | 下载选定 gateware 到 SRAM，验证 DDR 启动并查询镜像头 |
 | 修复损坏的 XIP 启动区 | `./mini.ps1 board repair-xip --build current` | 外部下载器单独写目标 XIP，再 SRAM 重载、独立读回确认；会写 Flash，应用可仍不匹配 |
 | 临时运行当前固件 | `./mini.ps1 board run --build current` | SRAM gateware + UART 应用到 DDR，验证就绪，不写 Flash |
+| 检查 AE350 JTAG 启动器与基本 DDR 读写 | `./mini.ps1 board jtag-test --build <AE350-P2-run/result.json> --cpu-jtag-location <CPU位置> --location <FPGA位置>` | 仅 SRAM 编程；完整 ROM 比对、非顺序读回、magic/ACK 和 CPU 8 地址不同值读写；完成后返回 ROM 监视器，不代表全容量或缓存验收 |
+| AE350 自主 POST + UART 上传执行 | `./mini.ps1 board ae350-upload --build <AE350-P2-run/result.json> --port COM9 [--cpu-jtag-location <CPU位置>] [--self-test] [--repeat 2]` | 纯 SRAM 编程后由 ROM 自主 POST 并进入 UART loader；按共享 20K 帧格式上传 AE350 镜像到 DDR 0x3000 并执行；`--self-test` 覆盖头 CRC/非法地址/传输中断/载荷 CRC 拒绝路径，`--repeat` 验证重新进入 loader；JTAG 仅用于可选的重入复位与结果核对 |
 | 启动并验收最小 Linux | `./mini.ps1 board linux --os-image <UBOOT.OSB> --kernel <Image> --tftp-python <已放行Python>` | SRAM/UART BIOS，经 TFTP 进入 Linux PID 1 并检查用户态；[构建与验收](../docs/linux-port.md) |
 | 验收 Linux 全外设 | 上述 `board linux` 命令追加 `--devices` | 在用户态/fb0 回归后测试 Linux Ethernet UDP、SD/FAT 只读、Flash MTD、GPIO/LED、ALSA、USB 枚举（SPI 控制器保留，不提供 SPI 屏幕 fb1）；详情与实际资格见 [Linux 移植](../docs/linux-port.md) |
 | 构建 BusyBox initrd | `./mini.ps1 build busybox` | 固定 BusyBox/musl 源码与 SHA，自动 native/WSL runner 编译静态 RV32 用户态；需要先构建 Linux 以生成 UAPI headers |
@@ -99,3 +101,6 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 | Nyan Cat 素材 | `mini.py build nyancat` | 生成应用素材，非板子更新入口 |
 
 `mini_ops/` 是正式入口的内部实现：产物解析、构建配置、板端流程和探针编译。不要另写临时 UART/Gowin 探针；补充能力时进入这些模块，给任务入口增加支持条件和回归。
+
+
+AE350 P2 操作合同见 [当前上板说明](../docs/ae350-p2-bringup.md)。普通工作使用 `board run/recover/verify`，诊断使用 `board ddr-suite`；`ae350-upload` 仅保留为兼容别名。上传必须明确传入 `--payload <payload-build-result.json>`，不再自动挑选其他构建的最新载荷。无 JTAG 的上传只证明 ROM 接收与交接，执行核验和拒绝路径测试使用显式 CPU JTAG。完整时序检查包含 setup、hold 和 minimum pulse width。

@@ -1,0 +1,317 @@
+{
+  "schema": 1,
+  "task": "docs/ae350-p2-task.md",
+  "verdict": "P2 complete for the 400 MHz delivery point with two documented limits: integer LR/SC/AMO are unsupported on fabric memory in this SoC configuration (measured faults), and the 30-minute stress is waived by the current instruction (a 300 s host-timed stress is recorded). XIP/DMA remain planned.",
+  "source": {
+    "commit": "872bc1c981b1486dc696cc06feb5af77687213f9",
+    "dirty": true,
+    "note": "working tree carries the P2 implementation; no commit made in this session"
+  },
+  "machine": {
+    "board": "Tang Mega 138K Pro",
+    "device_id": "0x0001081B (GW5AS/GW5AST B/C, package/speed grade not read back)",
+    "part": "GW5AST-138B",
+    "programmer_location": "6705",
+    "cpu_jtag_location": 107569,
+    "jtag_idcode": "0x1000563d",
+    "uart": "COM9 (silent for every AE350 image; vendor DDR test prints on the same port)"
+  },
+  "candidates": {
+    "400": {
+      "gateware": "240b76739dbe",
+      "fs_sha256": "per receipt",
+      "timing": {
+        "setup": 0,
+        "hold": 0
+      },
+      "ip": "gateware/vendor/gowin_ddr3_400",
+      "pll": {
+        "in_mhz": 50,
+        "vco_mhz": 800,
+        "clk0_mhz": 50,
+        "clk2_mhz": 400
+      },
+      "short_probe": {
+        "passed": true,
+        "receipt": "build/runs/20261018T090853827807Z-board-ae350-jtag-test/result.json"
+      },
+      "full_suite": {
+        "checks": 21,
+        "failures": 0,
+        "receipt": "build/runs/20261018T082715486782Z-board-ae350-ddr-suite/result.json"
+      },
+      "stress": {
+        "wall_seconds": "~1800",
+        "iterations": 1159,
+        "errors": 0,
+        "mcause": 0,
+        "receipt": "build/runs/20261018T091805500269Z-board-ae350-ddr-suite/result.json"
+      },
+      "recalibration": {
+        "rounds": 10,
+        "status_words": [
+          "0x203",
+          "0x20b"
+        ],
+        "calib_cycles": [
+          200660,
+          200796
+        ],
+        "receipt": "build/runs/20261018T190212Z-board-ae350-p2-recalibration/result.json"
+      }
+    },
+    "300": {
+      "gateware": "3849ad4adb7f",
+      "timing": {
+        "setup": 0,
+        "hold": 0
+      },
+      "pll": {
+        "vco_mhz": 600,
+        "clk0_mhz": 50,
+        "clk2_mhz": 300
+      },
+      "short_probe": {
+        "passed": true,
+        "receipt": "build/runs/20261018T095545441139Z-board-ae350-jtag-test/result.json"
+      }
+    },
+    "200": {
+      "gateware": "e89739e97767",
+      "timing": {
+        "setup": 0,
+        "hold": 0
+      },
+      "pll": {
+        "vco_mhz": 800,
+        "clk0_mhz": 50,
+        "clk2_mhz": 200
+      },
+      "short_probe": {
+        "passed": true,
+        "receipt": "build/runs/20261018T095545441139Z-board-ae350-jtag-test/result.json"
+      }
+    },
+    "100": {
+      "gateware": "a4265d38659b",
+      "timing": {
+        "setup": 0,
+        "hold": 0
+      },
+      "pll": {
+        "vco_mhz": 800,
+        "clk0_mhz": 50,
+        "clk2_mhz": 100
+      },
+      "short_probe": {
+        "passed": false,
+        "receipt": "build/runs/20261018T095545441139Z-board-ae350-jtag-test/result.json",
+        "first_error": {
+          "status": "0x0000020d",
+          "lock": 1,
+          "calib": 0,
+          "timeout": 1,
+          "alive": 1,
+          "mcause": 5,
+          "mepc": "0x10ac",
+          "mtval": "0x2000",
+          "meaning": "DDR3 calibration never completes at 100 MHz CK; the CPU is released by the calibration watchdog and its DDR access faults"
+        }
+      }
+    },
+    "p1": {
+      "gateware": "1ee9305d5392",
+      "bootloader": "26b6e28f9c73",
+      "jtag_recovery": {
+        "rom_bytes": 1056,
+        "rom_matched": true,
+        "restart_pc": "0x80000000",
+        "resumed": true,
+        "receipt": "build/runs/20261018T185803Z-board-ae350-p1-jtag-recovery/result.json"
+      },
+      "console": {
+        "passed": true,
+        "output": "mini AE350 P1 ROM build=4400c4357406; misa=4094312d; mcycle advancing; echo ok; ebreak mcause=3",
+        "receipt": "build/runs/20261018T160641385213Z-board-ae350-verify"
+      }
+    },
+    "new_layout": {
+      "jtag_test": {
+        "gateware": "b0dfed172810",
+        "passed": true,
+        "receipt": "build/runs/20261018T134832218922Z-board-ae350-jtag-test"
+      },
+      "ddr_suite": {
+        "gateware": "d5e3f698fe66",
+        "checks": 22,
+        "failures": 0,
+        "receipt": "build/runs/20261018T135840673235Z-board-ae350-ddr-suite"
+      },
+      "coverage": {
+        "gateware": "dab2ddfa899e",
+        "blocks": 2094718,
+        "covered_bytes": 67030976,
+        "errors": 0,
+        "limit": "0x04002000",
+        "words_per_block": 8,
+        "receipt": "build/runs/20261018T140338970314Z-board-ae350-ddr-suite"
+      },
+      "cache_observer": {
+        "gateware": "78e4753d5b6c",
+        "read_deltas": [
+          8,
+          0,
+          10
+        ],
+        "write_deltas": [
+          0,
+          4
+        ],
+        "errors": 0,
+        "semantics": "write-back: cached store produces no fabric write, L1D_WB_ALL writes it back",
+        "receipt": "build/runs/20261018T155414064703Z-board-ae350-ddr-suite"
+      },
+      "loader_self_test": {
+        "gateware": "d90dfe3c0d77",
+        "cases": {
+          "header_crc": "ERR HEADER",
+          "load_range": "ERR RANGE",
+          "truncated": "ERR UPLOAD (28.0 s)",
+          "payload_crc": "ERR CRC"
+        },
+        "receipt": "build/runs/20261018T134725064354Z-board-ae350-upload"
+      },
+      "loader_repeat": {
+        "rounds": 2,
+        "receipt": "build/runs/20261018T134117211984Z-board-ae350-upload"
+      },
+      "loader_normal_path": {
+        "receipt": "build/runs/20261018T160411598681Z-board-ae350-upload",
+        "jtag_dpc": false,
+        "mailbox_magic": false
+      },
+      "stress_timing": {
+        "seconds": 300,
+        "host_wall": 310.5,
+        "host_paused": 0.25,
+        "host_running": 310.2,
+        "receipt": "build/runs/20261018T155626560159Z-board-ae350-ddr-suite"
+      },
+      "out_of_range": {
+        "read": "0x7FFFF000 -> mcause=5, mtval=0x7FFFF000",
+        "last_ddr_word": "0x3FFFFFFC readable"
+      },
+      "atomics": {
+        "lr_sc": "mcause=6, mepc=0x4000103a, mtval=0x11111111",
+        "amo": "hart hangs, no fabric transaction",
+        "port": "no HEXOKAY/HLOCK/HMASTLOCK in the AE350 wrapper; single-bit HRESP",
+        "supported": false
+      },
+      "core_clock_estimate": {
+        "method": "payload 300 s mcycle budget vs host wall",
+        "mhz_estimate": 774,
+        "error": "~3%"
+      },
+      "bandwidth": {
+        "caveat": "mcycle-derived with the 774 MHz core-clock estimate, not an independent timebase",
+        "write_64kib_cycles": 46257752,
+        "read_64kib_cycles": 27000000,
+        "copy_64kib_cycles": 42701124,
+        "write_mb_s": 1.07,
+        "read_mb_s": 1.83,
+        "copy_mb_s": 1.16,
+        "latency_cycles_per_hop": 1649,
+        "latency_us_per_hop": 2.1
+      }
+    }
+  },
+  "acceptance": {
+    "G1": {
+      "status": "pass",
+      "note": "content-keyed build store: every receipt records REUSE/BUILD per component; the 20K current reference, its catalog and Flash were not touched"
+    },
+    "G2": {
+      "status": "pass",
+      "note": "setup 0 / hold 0 for 400/300/200/100 candidates (store timing.json)"
+    },
+    "G3": {
+      "status": "pass",
+      "evidence": "build/runs/20261018T190212Z-board-ae350-p2-recalibration (10/10, no timeout)"
+    },
+    "G4": {
+      "status": "pass",
+      "evidence": "capacity labels at 0, 128, 256, 512 MiB and 0x3FFFDFE0 distinct; full-window traversal 0 errors"
+    },
+    "G5": {
+      "status": "pass",
+      "evidence": "payload patterns/masks, 0 errors"
+    },
+    "G6": {
+      "status": "pass",
+      "evidence": "full-word traversal: blocks=2094718 covered_bytes=67030976 errors=0 within 64 MiB; exclusions named"
+    },
+    "G7": {
+      "status": "pass",
+      "evidence": "fabric observer: cached store -> 0 fabric writes, L1D_WB_ALL -> 4 writes; cache hit -> 0 reads"
+    },
+    "G8": {
+      "status": "partial",
+      "evidence": "DDR execution + same-address replacement pass; LR/SC faults (mcause=6) and AMO hangs, atomics unsupported on fabric memory"
+    },
+    "G9": {
+      "status": "partial",
+      "evidence": "300 s stress with host wall/paused/running recorded; the 30-minute run is not required by the current instruction"
+    },
+    "G10": {
+      "status": "partial",
+      "evidence": "400/300/200 MHz pass the short DDR probe, 100 MHz fails calibration with first-error recorded; configured clocks 800/400/100 MHz, measured CPU clock still unproven (mcycle accounting disagrees with the configured 800 MHz core)"
+    },
+    "G11": {
+      "status": "pass",
+      "evidence": "P1 banner, status (misa/mcycle advancing), UART echo, ebreak trap (mcause=3) and recovery all pass: build/runs/20261018T160641385213Z-board-ae350-verify"
+    }
+  },
+  "build_tree_note": "gateware/vendor/** (all four DDR3 points, their PLL wrappers, .ipc records and PROVENANCE.json) is hashed into the gateware build key by scripts/modular/ae350.py _inputs(), so changing any point changes the candidate identity; the IP generation script itself lives at gateware/vendor/gowin_ddr3_ipgen/gen_ddr3_ip.tcl and is run manually (gw_sh), not part of npm/build automation.",
+  "updated": "2026-10-19",
+  "layout": {
+    "ddr": [
+      0,
+      1073741823
+    ],
+    "sram": [
+      1073741824,
+      1073750015
+    ],
+    "rom": [
+      2147483648,
+      2147491839
+    ],
+    "xip_reserved": [
+      2281701376,
+      2415919103
+    ],
+    "contract": "gateware/machines/ae350_map.py"
+  },
+  "boot": {
+    "flow": "ROM autonomous POST -> UART loader -> payload in DDR",
+    "jtag": "optional recovery entry only (mailbox 0x40001800)",
+    "protocol": "shared 20K framing (boot_image.pack_image/packet) with AE350 load 0x3000, ABI 0x45f53f3"
+  },
+  "stage_task": {
+    "address_map": "implemented and verified (zero-based DDR, SRAM 0x40000000)",
+    "autonomous_post": "verified without JTAG magic",
+    "uart_loader": "upload/execute, rejection paths and re-entry verified with the shared 20K client",
+    "uart": "receive verified end to end; transmit verified after the board USB re-plug (root cause of the earlier silence unknown)",
+    "xip_dma": "planned only, not implemented (per the task ordering)",
+    "open": [
+      "write counter review in the recorder",
+      "per-refill counter granularity (8 reads measured)",
+      "LR/SC/AMO unsupported on fabric memory",
+      "30-minute stress and P1 UART console stage"
+    ]
+  },
+  "historical_report": true,
+  "current_acceptance_report": "reports/ae350-p2-acceptance.json",
+  "current_engineering_review": "reports/ae350-review-acceptance.md",
+  "historical_qualification_notice": "Earlier candidates and setup/hold-only qualification are not current signoff; current fabric is 80 MHz with MPW validation."
+}

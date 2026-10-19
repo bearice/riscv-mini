@@ -14,33 +14,177 @@
   },
   "input_clock_hz": 50000000,
   "resources": {
-    "clock": {"pins": ["P16"], "io_standard": "LVCMOS33"},
-    "core_reset": {"pins": ["U4"], "io_standard": "LVCMOS15", "active_low": false},
-    "debug_uart": {"rx": "N16", "tx": "P15", "io_standard": "LVCMOS33"},
-    "cpu_jtag": {"connector": "J23 SDRAM CONN.", "io_standard": "LVCMOS33", "tck": {"pin": "V16", "contact": 2}, "tdi": {"pin": "V17", "contact": 4}, "tdo": {"pin": "Y21", "contact": 6}, "tms": {"pin": "U17", "contact": 8}, "trst": {"mode": "tied-high-internal"}, "gnd_contact": 12, "forbidden_vref_contact": 11, "exclusive_with": ["J23 SDRAM module"]},
+    "clock": {
+      "pins": [
+        "P16"
+      ],
+      "io_standard": "LVCMOS33"
+    },
+    "core_reset": {
+      "pins": [
+        "U4"
+      ],
+      "io_standard": "LVCMOS15",
+      "active_low": false
+    },
+    "debug_uart": {
+      "rx": "N16",
+      "tx": "P15",
+      "io_standard": "LVCMOS33"
+    },
+    "cpu_jtag": {
+      "connector": "J23 SDRAM CONN.",
+      "io_standard": "LVCMOS33",
+      "tck": {
+        "pin": "V16",
+        "contact": 2
+      },
+      "tdi": {
+        "pin": "V17",
+        "contact": 4
+      },
+      "tdo": {
+        "pin": "Y21",
+        "contact": 6
+      },
+      "tms": {
+        "pin": "U17",
+        "contact": 8
+      },
+      "trst": {
+        "mode": "tied-high-internal"
+      },
+      "gnd_contact": 12,
+      "forbidden_vref_contact": 11,
+      "exclusive_with": [
+        "J23 SDRAM module"
+      ]
+    },
     "camera": {
       "status": "reserved-do-not-allocate",
-      "mipi0_lanes": ["V1", "W1", "Y2", "AA2", "Y3", "AA3", "V3", "W3", "V4", "W4"],
-      "mipi1_lanes": ["AB1", "AC1", "AD1", "AE1", "AE2", "AF2", "AE3", "AF3", "AE5", "AF5"],
-      "dock_control": ["M14", "L14", "E23", "F23"],
-      "dvp": ["E21", "A22", "E16", "G17", "D16", "F17", "C18", "D20", "B17", "C17", "D21", "E20", "D18", "B22"],
-      "shared_i2c_control": ["K25", "K26", "N19", "P19", "P26"],
+      "mipi0_lanes": [
+        "V1",
+        "W1",
+        "Y2",
+        "AA2",
+        "Y3",
+        "AA3",
+        "V3",
+        "W3",
+        "V4",
+        "W4"
+      ],
+      "mipi1_lanes": [
+        "AB1",
+        "AC1",
+        "AD1",
+        "AE1",
+        "AE2",
+        "AF2",
+        "AE3",
+        "AF3",
+        "AE5",
+        "AF5"
+      ],
+      "dock_control": [
+        "M14",
+        "L14",
+        "E23",
+        "F23"
+      ],
+      "dvp": [
+        "E21",
+        "A22",
+        "E16",
+        "G17",
+        "D16",
+        "F17",
+        "C18",
+        "D20",
+        "B17",
+        "C17",
+        "D21",
+        "E20",
+        "D18",
+        "B22"
+      ],
+      "shared_i2c_control": [
+        "K25",
+        "K26",
+        "N19",
+        "P19",
+        "P26"
+      ],
       "routing_note": "Reserve actual Dock camera connections; core MIPI_EXIO aliases routed to J23 SDRAM are not camera connector pins",
       "evidence": "Dock schematic sheets 5, 11, 12, 16"
     },
-    "audio": {"bck": "E22", "ws": "F24", "data": "G24", "pa_en": "H17"},
-    "microphone": {"connector": "J28", "data_lines": 4, "shared_with": ["PMOD0", "SSPI"]},
-    "video": {"output": "hdmi", "lcd_migration": "deferred"}
+    "audio": {
+      "bck": "E22",
+      "ws": "F24",
+      "data": "G24",
+      "pa_en": "H17"
+    },
+    "microphone": {
+      "connector": "J28",
+      "data_lines": 4,
+      "shared_with": [
+        "PMOD0",
+        "SSPI"
+      ]
+    },
+    "video": {
+      "output": "hdmi",
+      "lcd_migration": "deferred"
+    }
   },
   "ddr_candidates": [
-    {"part": "H5TQ4G63EFR", "chips": 2, "data_width": 32, "row_bits": 15, "bank_bits": 3, "column_bits": 10, "size_bytes": 1073741824},
-    {"part": "Micron-custom-reference", "chips": 2, "data_width": 32, "row_bits": 14, "bank_bits": 3, "column_bits": 10, "size_bytes": 536870912}
+    {
+      "part": "H5TQ4G63EFR",
+      "chips": 2,
+      "data_width": 32,
+      "row_bits": 15,
+      "bank_bits": 3,
+      "column_bits": 10,
+      "size_bytes": 1073741824
+    },
+    {
+      "part": "Micron-custom-reference",
+      "chips": 2,
+      "data_width": 32,
+      "row_bits": 14,
+      "bank_bits": 3,
+      "column_bits": 10,
+      "size_bytes": 536870912
+    }
   ],
   "conflicts": [
-    {"resource": "uart", "board_reference": "N16/P15", "customized_demo": "V16/U16", "resolution": "P1 must select and verify the BL616 route"},
-    {"resource": "reset", "board_reference": "U4 LVCMOS15", "customized_demo": "G16 LVCMOS33", "resolution": "Do not copy the demo CST as the board constraint"},
-    {"resource": "MIC-ARRAY", "owners": ["microphone", "PMOD0", "SSPI"], "resolution": "At most one active owner"},
-    {"resource": "part", "board_reference": "Confirm silicon marking/speed grade", "customized_demo": "GW5AST-LV138FPG676AC1/I0", "resolution": "Reference part is not physical confirmation"}
+    {
+      "resource": "uart",
+      "board_reference": "N16/P15",
+      "customized_demo": "V16/U16",
+      "resolution": "P1 must select and verify the BL616 route"
+    },
+    {
+      "resource": "reset",
+      "board_reference": "U4 LVCMOS15",
+      "customized_demo": "G16 LVCMOS33",
+      "resolution": "Do not copy the demo CST as the board constraint"
+    },
+    {
+      "resource": "MIC-ARRAY",
+      "owners": [
+        "microphone",
+        "PMOD0",
+        "SSPI"
+      ],
+      "resolution": "At most one active owner"
+    },
+    {
+      "resource": "part",
+      "board_reference": "Confirm silicon marking/speed grade",
+      "customized_demo": "GW5AST-LV138FPG676AC1/I0",
+      "resolution": "Reference part is not physical confirmation"
+    }
   ],
   "evidence": [
     "docs/images/mega138k-pro-ddr-20261017.png",

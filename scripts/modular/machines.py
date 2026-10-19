@@ -126,9 +126,9 @@ def resolve(store, reference=None):
 
 def execute(store, run, args, dry):
     """Build only the real P0 artifact; defer unimplemented machine backends."""
-    unsupported = [key for key in ('locked', 'profile', 'cpu_verilog', 'cpu_variant', 'sd_profile',
+    unsupported = [key for key in ('output_dir', 'locked', 'profile', 'cpu_verilog', 'cpu_variant', 'sd_profile',
                    'usb_backend', 'audio_clock', 'boot_mode', 'rom_size', 'l2_size', 'place_option',
-                   'route_option', 'rtl_hierarchy', 'source', 'vexriscv_source', 'java', 'sbt_launch',
+                   'route_option', 'rtl_hierarchy', 'vexriscv_source', 'java', 'sbt_launch',
                    'locked_config') if getattr(args, key, None) is not None]
     unsupported += [key for key in ('generate', 'refresh_hardware', 'relaxed_pc_calculation', 'compressed',
                                   'pipelined_fetch', 'arithmetic_matrix') if getattr(args, key, False)]
@@ -138,7 +138,9 @@ def execute(store, run, args, dry):
         raise ValueError('AE350 does not yet support these overrides: ' + ', '.join(unsupported))
     if getattr(args, 'synthesize', False) and args.target != 'gateware':
         raise ValueError('AE350 --synthesize requires the gateware target')
-    if args.target not in ('machine-description', 'cpu', 'bootloader', 'system', 'soc-description', 'gateware'):
+    if getattr(args, 'source', None) is not None and args.target != 'payload':
+        raise ValueError('AE350 --source is only meaningful for the payload target')
+    if args.target not in ('machine-description', 'cpu', 'bootloader', 'system', 'soc-description', 'gateware', 'payload'):
         raise ValueError('AE350 ' + args.target + ' backend is pending P1; cannot use the 20K backend')
     if args.target == 'system' and not dry:
         raise ValueError('AE350 complete system backend is pending P1; build bootloader or gateware for host bring-up')
@@ -171,7 +173,7 @@ def execute(store, run, args, dry):
         if not dry and not cpu:
             cpu = store.publish('cpu', cpu_key, {'cpu.lock.json': canonical(cpu_config)},
                                 config=cpu_config, dependencies={'machine-description': found})
-    if args.target in ('bootloader', 'soc-description', 'gateware'):
+    if args.target in ('bootloader', 'soc-description', 'gateware', 'payload'):
         if cpu is None and dry:
             run.step(args.target, 'BUILD', reason='requires exact hard CPU configuration')
             run.finish(plan=True, artifact=None, qualification='host-generated-only', hardware_qualified=False)

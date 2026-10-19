@@ -79,7 +79,11 @@ def perform(args, p):
     session_acquired = False
     try:
         from .storage import workspace_lock
-        if not (args.command in ('build','plan') and args.target=='matrix'):
+        # Only operations that mutate shared references need the session-wide
+        # lock.  A build or plan is serialised per work directory (the components
+        # take their own lock) and the content store serialises publishes, so
+        # independent targets can be built concurrently.
+        if args.command not in ('build', 'plan', 'test'):
             session = workspace_lock(store.build/'work/.session-lock')
             session.__enter__()
             session_acquired = True

@@ -23,9 +23,13 @@ def parser():
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
         ('update','Program complete Flash image directly, without SPI Verify, then Flash boot'),
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
+        ('jtag-test','AE350 P2: verify ROM and launch SRAM DDR probe through CPU JTAG'),
+        ('ddr-suite','AE350 P2: run the DDR payload from DDR through the JTAG launcher'),
+        ('ae350-upload','AE350 P2: autonomous ROM POST then UART image upload and execution'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
-        op.add_argument('--machine', choices=('primer20k_vexriscv', 'mega138k_ae350'), default='primer20k_vexriscv')
+        op.add_argument('--machine', choices=('primer20k_vexriscv', 'mega138k_ae350'),
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -35,6 +39,43 @@ def parser():
         if name in ('run', 'recover', 'verify'):
             op.add_argument('--cpu-jtag-location', type=int,
                             help='AE350 independent D2XX JTAG location; verify ROM and restart entry after SRAM programming')
+            if getattr(op, 'machine_default', None) is None:
+                pass
+        if name in ('run', 'verify', 'recover'):
+            # AE350 P2 named request options (ignored by the 20K path).
+            op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
+            op.add_argument('--repeat', type=int, default=1,
+                            help='upload the image this many times, restarting the ROM between rounds')
+            op.add_argument('--self-test', action='store_true',
+                            help='also exercise the loader rejection paths')
+        if name == 'jtag-test':
+            op.add_argument('--cpu-jtag-location', type=int, required=True)
+        if name == 'ae350-upload':
+            op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
+            op.add_argument('--cpu-jtag-location', type=int, default=None)
+            op.add_argument('--timeout', type=int, default=30)
+            op.add_argument('--self-test', action='store_true',
+                            help='also exercise the loader rejection paths before the good upload')
+            op.add_argument('--repeat', type=int, default=1,
+                            help='upload the image this many times, restarting the ROM between rounds')
+        if name == 'ddr-suite':
+            op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
+            op.add_argument('--cpu-jtag-location', type=int, required=True)
+            op.add_argument('--seed', type=int, default=0x12345678)
+            op.add_argument('--region-kb', type=int, default=1024)
+            op.add_argument('--flags', type=lambda x: int(x, 0), default=0,
+                            help='payload flag bits: 1=capacity/alias test, 2=traversal')
+            op.add_argument('--poll-interval', type=float, default=0.15,
+                            help='seconds between status polls; every poll pauses the CPU')
+            op.add_argument('--stress-seconds', type=int, default=0,
+                            help='stress duration handed to the payload (0 = payload default)')
+            op.add_argument('--traversal-mb', type=int, default=0,
+                            help='traversal window in MiB (0 = the whole 1 GiB-8 KiB)')
+            op.add_argument('--stack', type=lambda x: int(x, 0), default=0x80000)
+            op.add_argument('--entry', type=lambda x: int(x, 0), default=0x3000,
+                            help='CPU address the launcher jumps to (default payload entry)')
+            op.add_argument('--timeout', type=int, default=600,
+                            help='Overall wall-clock budget for the payload (1..3600 s)')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')
         if name=='linux':
             op.add_argument('--os-image',type=Path,required=True,help='Matching OpenSBI/U-Boot OSB1 image')
@@ -44,13 +85,15 @@ def parser():
             op.add_argument('--tftp-python',default=sys.executable,help='Firewall-allowed Python to run the existing read-only TFTP server')
             op.add_argument('--timeout',type=int,default=180)
             op.add_argument('--devices',action='store_true',help='Also verify native Linux device drivers and UDP echo; SD/Flash reads only')
+        if name == 'build' and 'gateware' in (getattr(op, 'choices', {}) or {}):
+            pass
         if name in ('run','update','verify'):
             op.add_argument('--image',type=Path,help='Compatible app.img override; default selected build image')
         if name=='update':
             op.add_argument('--method',choices=('auto','programmer'),default='programmer',
                             help='auto: DDR software SPI (needs a booting loader). programmer (default): direct Flash op8/op31, no SRAM download, SPI Verify or readback')
         if name=='verify':
-            op.add_argument('--suite',choices=('firmware','boot','flash','spi','cold'),default='firmware')
+            op.add_argument('--suite',choices=('firmware','boot','loader','flash','spi','cold'),default='firmware')
             op.add_argument('--soak-seconds',type=int,default=0)
             op.add_argument('--timeout',type=int,default=300,help='External cold-boot observation timeout')
             op.add_argument('--mic',action='store_true',help='Firmware suite: test connected microphones')
@@ -75,7 +118,15 @@ def main(argv=None):
             if args.image and args.suite in ('boot','spi','cold'):p.error('--image is supported by firmware/flash verification only')
             if args.mic and args.suite!='firmware':p.error('--mic requires --suite firmware')
         if args.machine == 'mega138k_ae350':
-            from mini_ops.ae350 import perform
+            if args.operation == 'jtag-test':
+                from mini_ops.ae350_jtag_test import perform
+            elif args.operation == 'ddr-suite':
+                from mini_ops.ae350_ddr_suite import perform
+            elif args.operation == 'ae350-upload':
+                from mini_ops.ae350_upload import perform_upload as perform
+
+            else:
+                from mini_ops.ae350 import perform
         else:
             from mini_ops.board import perform
         try:perform(args)
