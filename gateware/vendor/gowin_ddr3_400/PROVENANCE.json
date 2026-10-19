@@ -44,7 +44,10 @@
       "sha256": "9c2109dc672b745802d6e9237441e83ef5efeea13a17d59e54d3c27f258857aa",
       "bytes": 6185,
       "module": "Gowin_PLL_DDR3",
-      "outputs": {"clkout0": "50 MHz (DDR3_CLK_IN)", "clkout2": "400 MHz (memory_clk)"}
+      "outputs": {
+        "clkout0": "50 MHz (DDR3_CLK_IN)",
+        "clkout2": "400 MHz (memory_clk)"
+      }
     },
     "gowin_pll_ddr3.ipc": {
       "sha256": "d1aa3c22039c70618ac7210aadf05072edc0094b5541c76a460f754dd8dfdcb6"
@@ -63,7 +66,6 @@
     "cwl": 6
   },
   "verification": {
-    "reference_bitstream_checked": "pro_ddr_test/ddr_test_uart.fs (sha256 09a4cedcad27fc84c0550e34aea49b542803c39deec8d0d52c87100bce45ce9a) programmed to SRAM on 2026-10-18; UART verdict W R FF FF FF (16777215 correct 32-byte transfers = 512 MiB) captured in build/runs/20261018T020327922314Z-board-ae350-p2-vendor-ddr-probe",
     "user_interface_addr_unit": "4 bytes (verified from pro_ddr_test/src/ddr3_test.v: app_addr += 8 per 32-byte transfer, address range 2**27-8 = 512 MiB)"
   }
 }

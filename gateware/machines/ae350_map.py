@@ -1,4 +1,4 @@
-"""AE350 P2 address/ownership contract; generates C and linker inputs."""
+"""AE350 memory address/ownership contract; generates C and linker inputs."""
 DDR_BASE = 0
 DDR_SIZE = 1 << 30
 FABRIC_HZ = 80_000_000

@@ -52,6 +52,52 @@ def changelog_entry(component, title, changes, record, performance, checks):
     return '\n'.join(lines)
 
 
+def selected_build(selection, root=ROOT):
+    """Accept a catalog identity or a successful content-addressed board receipt."""
+    path = Path(selection)
+    if not path.is_file():
+        return get_record(selection, root)
+    receipt = json.loads(path.read_text(encoding='utf-8'))
+    if receipt.get('passed') is not True or receipt.get('dry_run'):
+        raise ValueError('Successful non-dry-run board receipt required')
+    from scripts.modular.storage import Store, file_hash
+    from scripts.modular.ae350 import timing_report
+    store = Store(root)
+    ref, payload = receipt['artifact'], receipt['payload_artifact']
+    hardware = store.get(ref, recursive=True)
+    application = store.get(payload, recursive=True)
+    if (ref['component'] != 'gateware' or hardware['config'].get('machine') != 'mega138k_ae350'
+            or not hardware['config'].get('synthesize')):
+        raise ValueError('Expected implemented AE350 gateware')
+    timing_report(store.path(ref))
+    fs = store.path(ref) / 'gateware/impl/pnr/project.fs'
+    binary = store.path(payload) / application['config']['binary']
+    if receipt.get('fs_sha256') != file_hash(fs) or receipt.get('payload_sha256') != file_hash(binary):
+        raise ValueError('Board receipt binary identities differ')
+    results = next((s for s in receipt.get('steps', []) if s.get('name') == 'results'), {})
+    if not results.get('checks') or results.get('failures') != 0 or int(results.get('registers', {}).get('mcause', '-1'), 16):
+        raise ValueError('Passing executed diagnostic results required')
+    seen = set()
+    def inputs(reference):
+        key = (reference['component'], reference['digest'])
+        if key in seen:
+            return
+        seen.add(key)
+        manifest = store.get(reference)
+        for name, expected in manifest['config'].get('sources', {}).items():
+            if name.startswith('inputs/source/'):
+                source = (root / name.removeprefix('inputs/source/')).resolve()
+                if not source.is_relative_to(root.resolve()) or file_hash(source) != expected:
+                    raise ValueError('Qualified source differs: ' + name)
+        for dependency in manifest['dependencies'].values():
+            inputs(dependency)
+    inputs(ref); inputs(payload)
+    return dict(id=ref['digest'], kind='modular', artifact=ref, payload_artifact=payload,
+                status='board-qualified', path=str(store.path(ref)), evidence=[str(path.resolve())],
+                bitstream_sha256=receipt['fs_sha256'], payload_sha256=receipt['payload_sha256'],
+                source=dict(source_identity(root), kind='modular-captured'))
+
+
 def prepare(title, changes, revision=None, build=None, performance=None, checks=None):
     selected = scope(revision)
     # Only RTL (gateware) changes re-qualify the hardware: they affect timing
@@ -64,7 +110,7 @@ def prepare(title, changes, revision=None, build=None, performance=None, checks=
         if not checks or checks.get('passed') is not True or checks.get('source_inputs_sha256') != source_identity()['inputs_sha256']:
             raise ValueError('Matching successful check record required; rerun checks after code edits')
         if rtl:
-            if not build or build['status'] != 'board-qualified' or build['source'].get('kind') != 'captured':
+            if not build or build['status'] != 'board-qualified' or build['source'].get('kind') not in ('captured', 'modular-captured'):
                 raise ValueError('RTL/gateware changes require a new captured and board-qualified build')
             if build['source']['inputs_sha256'] != source_identity()['inputs_sha256']:
                 raise ValueError('Build inputs no longer match the worktree')
@@ -72,8 +118,13 @@ def prepare(title, changes, revision=None, build=None, performance=None, checks=
                 raise ValueError('RTL/gateware changes require a performance report')
     if performance:
         data = json.loads(performance.with_suffix('.json').read_text(encoding='utf-8'))
-        if build and (data['candidate']['bitstream_sha256'] != build['bitstream_sha256'] or
-                      data['candidate']['image_sha256'] != build['image_sha256']):
+        if build and build.get('kind') == 'modular':
+            if (data.get('candidate_artifact') != build['artifact'] or
+                    data.get('payload_artifact') != build['payload_artifact'] or
+                    data.get('payload_sha256') != build['payload_sha256'] or not data.get('passed')):
+                raise ValueError('Performance report candidate does not match selected build')
+        elif build and (data['candidate']['bitstream_sha256'] != build['bitstream_sha256'] or
+                        data['candidate']['image_sha256'] != build['image_sha256']):
             raise ValueError('Performance report candidate does not match selected build')
     return dict(created_at=now(), title=title, changes=changes, scope=selected,
                 build=build, performance_report=str(performance) if performance else None,
@@ -85,7 +136,7 @@ def main():
     p.add_argument('--title', required=True)
     p.add_argument('--change', action='append', required=True, help='Reviewed behavior change; not inferred from filenames')
     p.add_argument('--revision', help='Document an existing commit instead of the staged scope')
-    p.add_argument('--build', help='Catalog identity/reference associated with this scope')
+    p.add_argument('--build', help='Catalog identity or successful content-addressed board receipt')
     p.add_argument('--performance-report', type=Path)
     p.add_argument('--checks', type=Path)
     p.add_argument('--output', type=Path, required=True, help='Tracked change-record Markdown; JSON beside it')
@@ -110,7 +161,7 @@ def main():
         if saved != scope_identity(scope(a.revision)):
             p.exit(1, 'Scope changed; regenerate change record and changelog before committing\n')
         print('Commit scope unchanged'); return
-    record = prepare(a.title, a.change, a.revision, get_record(a.build) if a.build else None,
+    record = prepare(a.title, a.change, a.revision, selected_build(a.build) if a.build else None,
                      a.performance_report, json.loads(a.checks.read_text(encoding='utf-8')) if a.checks else None)
     if a.release_version:
         from scripts.mini_ops.release import release_version

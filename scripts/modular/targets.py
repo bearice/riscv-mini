@@ -23,12 +23,8 @@ def add_targets(parser):
         target.add_argument('--dry-run', action='store_true', help='Resolve a plan without executing build tools')
         target.add_argument('--purpose', default='candidate', help='Purpose recorded with this build request')
         if name in CORE or name == 'payload':
-            target.add_argument('--ae350-profile', choices=('p1', 'p2'), default='p1',
-                                help='AE350 RTL/firmware profile; p2 builds the DDR3 system and payload')
-            if name in ('gateware', 'system', 'bitstream'):
-                target.add_argument('--ddr-ck', type=int, choices=(100, 200, 300, 400), default=None,
-                                    help='P2 DDR3 clock point in MHz; selects the matching IP netlist, '
-                                         'PLL divider and SDC (default: the machine profile, 400)')
+            target.add_argument('--ae350-profile', choices=('ddr',), default='ddr',
+                                help='AE350 DDR memory platform')
         if name in CORE or name == 'machine-description':
             target.add_argument('--reference-root', type=Path, help='AE350 vendor input directory; archived by content, never an unidentified dependency')
         if name == 'machine-description':

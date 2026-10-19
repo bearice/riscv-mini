@@ -74,8 +74,7 @@ _start:
     addi t1, t1, 4
     j 3b
 4:  fence.i
-    /* Caches off: the JTAG debug path writes the command block straight to
-       memory, so the monitor must poll uncached to see it. */
+    /* Bootloader starts with caches disabled before the DDR POST and upload. */
     csrw 0x7ca, zero
     fence.i
     call main

@@ -1,8 +1,8 @@
 # AE350 物理地址、CSR 与 DMA 规划
 
-更新：2026-10-19。当前 P2 使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，删除 fabric 工作 SRAM、JTAG mailbox 和 launcher。唯一实现合同为 `gateware/machines/ae350_map.py`；精确候选和验证范围见 [内存结构整改报告](../reports/ae350-p2-memory-redesign.md)。其余 DMA/外设槽仍为规划。旧 P1 位流保留其自身布局。这里的 CSR 指外设 MMIO；RISC-V CPU CSR 不属于此地址表。
+更新：2026-10-19。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，删除 fabric 工作 SRAM、JTAG mailbox 和 launcher。唯一实现合同为 `gateware/machines/ae350_map.py`；精确候选和验证范围见 [最终验收报告](../reports/ae350-p2.md)。其余 DMA/外设槽仍为规划。这里的 CSR 指外设 MMIO；RISC-V CPU CSR 不属于此地址表。
 
-最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。完整交接见[下一阶段实现任务](ae350-next-stage-agent-task.md)。
+最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。启动协议见[bootloader](ae350-bootloader.md)。
 
 ## 1. 全局窗口
 
@@ -96,30 +96,28 @@ minor只追加兼容能力/寄存器；移动地址、改变位语义、descript
 
 ## 6. XIP与Flash地址合同
 
-CPU XIP基址选择**0x88000000**，预留至0x8fffffff（128MiB），处于厂商0x80000000–0x8fffffff指令窗口内。保留0x80000000–0x80001fff的独立启动ROM，二者不覆盖。未实现区和Flash容量之外的地址不允许回绕。
+CPU XIP基址选择**0x88000000**，预留至0x8fffffff（128MiB），处于厂商0x80000000–0x8fffffff指令窗口内。保留0x80000000–0x80007fff的 ITCM 启动镜像，二者不覆盖。未实现区和Flash容量之外的地址不允许回绕。
 
 地址转换固定为：`Flash物理偏移 = CPU地址 - 0x88000000`。默认窗口基址对应所选Flash芯片偏移0；可执行分区的入口为`0x88000000 + 分区偏移 + 镜像入口偏移`。128MiB是地址预留，不是已确认的Flash容量；芯片容量、片选、引脚、3/4字节地址模式均须实测/资料确认。首16MiB之外的访问不得因仍使用3字节命令而回绕。多芯片不默认拼接为一片。
 
 Flash物理分区表是独立的镜像/存储合同，发布在设备表/镜像清单中。FPGA配置区、CPU固件、资源、元数据的归属待按实物布线确认；不继承20K的Flash偏移，不提前指定覆盖FPGA配置区的CPU镜像。未来可安排固件A/B槽，但当前不凭空发布固定分区大小。
 
-保留当前Customized Instruction Memory后端，在fabric的ROM_H接口按地址分流：小ROM由BSRAM响应，XIP由Flash reader响应，其他地址返回有界错误。XIP返回CPU请求所在的完整32位字，支持有界等待和连续取指；不能重现已修复的ROM地址/响应错位。可读常量数据与指令取址使用同一映射，不额外建立一个默认别名。
-
-这是待实现的选定拓扑，**不是宣称AE350硬核自带第二个Flash窗口**。厂商IP的SPI Flash Instruction Memory、ITCM、Customized是不同指令存储配置；直接切换到内置Flash模式，不能假定现有ROM_H和BSRAM ROM仍同时存在，也不能假定内置控制器会自动减去0x88000000。若将来采用内置Flash模式，须单独验证并明确变更启动布局/后端合同；当前不混用两种方案。
+当前启用厂商 ITCM 启动后端，XIP 尚未实例化。上述窗口只表达保留的地址语义，不承诺现有指令接口能够直接路由到该地址。实现 XIP 前须核对厂商 ITCM/Customized/Flash 指令存储模式的互斥关系，选择可实现的后端并验证启动、取指与常量数据访问；不得恢复旧自定义 ROM 桥后宣称与当前 ITCM 集成兼容。
 
 Flash/XIP管理CSR预留0xf8090000，由所选后端驱动适配。硬核普通SPI仍在0xf0f00000；它不自动等于专用启动Flash控制器。若使用厂商Flash Register R/W接口，显式桥接其FR_*端口并验证独占/仲裁，不把寄存器接口当成内存取指口。
 
 XIP初版是只读映射，store必须报错，编程/擦除通过显式命令完成。执行Flash擦写、修改读协议/时钟或退出XIP模式前，将执行代码、所需常量和异常/中断处理迁入可用ROM/SRAM/DDR，停止所有共享该Flash的读取；完成后按平台cache维护合同同步指令/数据视图再恢复执行。不能从正在擦写或切换模式的Flash执行命令处理程序。
 
-本轮默认启动为ROM→DDR检查/短POST→UART loader→DDR payload。后续增加Flash启动模式时，再实现ROM→初始化/校验Flash镜像→XIP或复制到DDR执行；XIP可在DDR失败时使用高地址SRAM工作。保留JTAG恢复能力，本规划不授权Flash写入。
+本轮默认启动为ROM→DDR检查/短POST→UART loader→DDR payload。后续增加Flash启动模式时，再实现ROM→初始化/校验Flash镜像→XIP或复制到DDR执行；XIP可在DDR失败时使用硬核 DLM 工作。保留JTAG恢复能力，本规划不授权Flash写入。
 
 XIP验收：ROM冷/热启动与恢复、只读拒写、随机/跨字取数、代码与rodata、独立镜像读回、地址最高位与容量边界、3/4字节模式、超时/忙状态、cache与fence.i、新镜像执行；物理写擦仅在单独授权后执行。先使用低速保守Flash协议定位，再按该Flash规格和板级信号验证目标速度，DDR仍固定400MHz CK。
 
 ## 7. 实施顺序与验收
 
-1. 新内存布局先完成：DDR零基址，高地址SRAM，原ROM入口；用统一地址描述生成RTL常量、C头、linker、runner和将来的设备树，加入区间重叠检查。本文是合同草案，不直接修改当前machine JSON的已实现值。
+1. 当前内存布局已采用零基址 DDR、厂商 ITCM 与硬核 ILM/DLM；RTL/C/linker/runner 共用地址合同并检查重叠。后续 SYSINFO/外设/DMAC/XIP 地址仍为预留，实例化后才发布存在和能力。
 2. P3先实例化SYSINFO、DDR/互连诊断、AHB loopback数据口；验证APB/AHB宽度、错误、背压、跨从设备连续事务以及合法空洞拒绝。
 3. 硬DMAC做DDR memcpy、DDR↔loopback、方向/固定递增地址、边界/取消/超时，再接audio TX与mic RX；每一步记录真实可达性。
-4. 加cache维护/独立外存观察、并发与中断测试；确认描述符和buffer所有权，任何失败不得破坏ROM/SRAM/JTAG恢复。
+4. 加cache维护/独立外存观察、并发与中断测试；确认描述符和buffer所有权，任何失败不得破坏 ITCM/DLM/JTAG 恢复。
 5. HDMI验证专用reader与CPU/DMAC共享仲裁、带宽与欠载；后续SD/网络/USB逐个启用。所有新布局和仲裁组合仅在400MHz CK交付点完成所需复验，不重新要求低频扫档。
 
 依据：[Gowin MUG1029 表3-1、第14章DMAC](https://www.gowinsemi.com/upload/database_doc/2688/document/67dd35b63d214.pdf)、[MUG1031 表3-3及扩展接口](https://www.gowinsemi.com/upload/database_doc/2725/document_ja/69811021aaeed.pdf)。厂商窗口为文档事实；本项目细分地址、共享池与IRQ槽为规划，均需按阶段实施和验收。

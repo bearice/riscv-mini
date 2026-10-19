@@ -11,7 +11,65 @@ sys.path.insert(0, str(ROOT))
 from scripts.build_recipe import reproduce, verify_recipe
 
 
+def clean_work(execute=False, root=ROOT):
+    """Drop rebuildable workspace caches; never touch immutable stores or receipts."""
+    from build_records import write_json
+    root = Path(root).resolve()
+    work = (root / 'build/work').resolve()
+    if not work.is_relative_to(root / 'build'):
+        raise ValueError('Work cache escapes build directory')
+    protected = []
+    for record in records(root):
+        path = Path(record['path']).resolve()
+        if path.is_relative_to(work):
+            protected.append(path)
+    if (root / '.git').exists():
+        import subprocess
+        result = subprocess.run(['git', 'worktree', 'list', '--porcelain'], cwd=root,
+                                capture_output=True, text=True, check=True)
+        for line in result.stdout.splitlines():
+            if line.startswith('worktree '):
+                protected.append(Path(line[9:]).resolve())
+    # Git-managed checkouts and acquisition/lock roots are not scratch output.
+    reserved = {'worktrees', 'replays', 'hardware', '.session-lock', '.store-lock', '.publish'}
+    targets, kept = [], []
+    if work.exists():
+        for target in sorted(work.iterdir()):
+            resolved = target.resolve()
+            if (not resolved.is_relative_to(work) or target.is_symlink() or
+                    target.name in reserved or (target / '.git').exists() or
+                    any(p == resolved or p.is_relative_to(resolved) for p in protected)):
+                kept.append(str(target)); continue
+            targets.append(str(resolved))
+    plan = dict(kind='rebuildable-work-cache', targets=targets, preserved=kept,
+                protected=['build/store', 'build/runs', 'build/archives', 'build/releases',
+                           'build/recipes', 'build/refs', 'build/vendor', 'build/reports'])
+    path = root / 'build/reports/cleanup/work-plan.json'
+    write_json(path, plan)
+    print(('Cleaning' if execute else 'Would clean'), len(targets), 'work caches; plan:', path)
+    if execute:
+        deleted = []
+        for name in targets:
+            target = Path(name)
+            if not target.resolve().is_relative_to(work) or target.resolve() == work:
+                raise ValueError('Unsafe work cleanup target')
+            try:
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+                deleted.append(name)
+            except OSError as error:
+                write_json(path.with_name('work-result.json'),
+                           dict(plan, passed=False, deleted=deleted, error=str(error), failed_target=name))
+                raise
+        write_json(path.with_name('work-result.json'), dict(plan, passed=True, deleted=deleted))
+    return plan
+
+
 def clean_build(record_id, execute=False, root=ROOT):
+    if record_id == 'work':
+        return clean_work(execute, root)
     matches=[r for r in records(root) if r['id']==record_id]
     if len(matches)!=1:raise ValueError('Unknown catalog ID')
     record=matches[0] if matches[0]['status']=='cleanup-failed' else get_record(record_id, root)
@@ -64,7 +122,7 @@ def add_arguments(parser):
     select.add_argument('id')
     select.add_argument('--evidence', type=Path, required=True)
     cleanup = sub.add_parser('clean')
-    cleanup.add_argument('id')
+    cleanup.add_argument('id', help='Registered intermediate build ID, or work for rebuildable caches')
     cleanup.add_argument('--execute', action='store_true', help='Default is a dry run; releases and pinned builds are protected')
     replay = sub.add_parser('reproduce')
     replay.add_argument('id')

@@ -11,6 +11,30 @@ RES = amap.RESULTS_BASE
 DONE = 0xd0000002
 
 
+class StressTimer:
+    """Host timestamps of firmware phase markers, independent of mcycle."""
+    def __init__(self):
+        self.buffer = b''
+        self.start = self.end = None
+
+    def observe(self, chunk, now):
+        self.buffer = (self.buffer + chunk)[-4096:]
+        if self.start is None and b'STRESS BEGIN\r\n' in self.buffer:
+            self.start = now
+        if self.end is None and b'STRESS END\r\n' in self.buffer:
+            self.end = now
+
+    def result(self, pauses):
+        if self.start is None or self.end is None:
+            return dict(source='UART phase markers', available=False)
+        paused = sum(max(0, min(b, self.end) - max(a, self.start)) for a, b in pauses)
+        return dict(source='UART phase markers / host monotonic', available=True,
+                    wall_seconds=self.end - self.start, paused_seconds=paused,
+                    running_seconds=self.end - self.start - paused,
+                    timestamp_resolution_seconds=.05,
+                    scope='marker receive times; UART latency and polling quantization included')
+
+
 def perform(args):
     op = Operation('ae350-ddr-suite')
     print('Operation logs:', op.path, flush=True)
@@ -29,7 +53,7 @@ def perform(args):
         if boot['config'].get('image_abi') != amap.image_abi():
             raise ValueError('Selected hardware uses a different address ABI')
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None))
-        if store.get(payload_ref)['config'].get('purpose') != 'P2-diagnostics':
+        if store.get(payload_ref)['config'].get('purpose') != 'AE350-memory-diagnostics':
             raise ValueError('DDR suite requires the diagnostic payload, not a user application')
         params = dict(stress_seconds=args.stress_seconds, seed=args.seed, region_kb=args.region_kb,
                       flags=args.flags, traversal_mb=args.traversal_mb)
@@ -67,6 +91,8 @@ def perform(args):
         seen = []
         done = 0
         paused = 0.0
+        pauses = []
+        stress_timer = StressTimer()
         # Poll infrequently: every halt pauses the CPU, so a frequent poll would
         # inflate a long stress run's wall time.  The paused total is recorded so
         # the host-measured duration can be corrected.
@@ -77,6 +103,7 @@ def perform(args):
                 chunk = hardware.port.read(hardware.port.in_waiting)
                 if chunk:
                     session.note(chunk)
+                    stress_timer.observe(chunk, time.monotonic())
                 time.sleep(min(.05, max(0, next_poll - time.monotonic())))
             before = time.monotonic()
             cpu.halt()
@@ -92,9 +119,16 @@ def perform(args):
             if done == DONE or time.monotonic() >= deadline:
                 break
             cpu.resume()
-            paused += time.monotonic() - resume_at
+            resumed = time.monotonic()
+            paused += resumed - resume_at
+            pauses.append((resume_at, resumed))
         ended = time.monotonic()
         paused += ended - before
+        pauses.append((before, ended))
+        chunk = hardware.port.read(hardware.port.in_waiting)
+        if chunk:
+            session.note(chunk)
+            stress_timer.observe(chunk, time.monotonic())
         counts = struct.unpack('<2I', cpu.read_memory(RES + 0x200, 8))
         flags = struct.unpack('<32I', cpu.read_memory(RES + 4, 128))
         regs = {name: hex(cpu.register(number)) for name, number in
@@ -107,15 +141,38 @@ def perform(args):
                   host_running_seconds=round(wall - paused, 1),
                   poll_interval=interval)
         performance = struct.unpack('<10I', cpu.read_memory(RES + 0x180, 40))
+        dependent_samples = struct.unpack('<3I', cpu.read_memory(RES + 0x480, 12))
         op.record('performance', sample_cycles=[dict(write=performance[i], read=performance[i+1], copy=performance[i+2])
                   for i in (0, 3, 6)], bytes_per_sample=65536,
                   dependent_load_cycles=performance[9], dependent_load_hops=1024,
+                  dependent_load_sample_cycles=list(dependent_samples),
+                  cache='I/D disabled', access='32-bit scalar volatile',
+                  code_location='DDR', stack_location='DLM',
                   configured_core_hz=800000000, measured_core_hz=None,
                   scope='raw measurements; not functional PASS checks or calibrated bandwidth')
         stress = struct.unpack('<4I', cpu.read_memory(RES + 0x1b0, 16))
+        stress_high = struct.unpack('<2I', cpu.read_memory(RES + 0x1a8, 8))
+        benchmark = struct.unpack('<57I', cpu.read_memory(RES + 0x4bc, 228))
+        if benchmark[0] != 0xbec00001:
+            raise RuntimeError('Diagnostic benchmark schema mismatch')
+        samples = []
+        for index in range(18):
+            cycles, reads, writes = benchmark[1 + index * 3:4 + index * 3]
+            samples.append(dict(cache='uncached' if index < 9 else 'write-back-cold',
+                repeat=(index % 9) // 3, operation=('write', 'read', 'copy')[index % 3],
+                cycles=cycles, ui_reads=reads, ui_writes=writes, bytes=65536))
+        op.record('bandwidth', samples=samples, integrity_errors=benchmark[56],
+                  code_location='ILM', stack_location='DLM', access='32-bit scalar volatile',
+                  cold_before_each_sample=True, timed_writeback=True,
+                  counter_width=16, schema=hex(benchmark[0]), checksum=benchmark[55])
+        if benchmark[56]:
+            raise RuntimeError('Bandwidth copy integrity failed')
         op.record('stress', requested_seconds=args.stress_seconds, iterations=stress[0],
                   errors=stress[1], start_mcycle=stress[2], end_mcycle=stress[3],
-                  timing='cycle budget at configured core clock; host wall covers the entire suite')
+                  start_mcycle64=(stress_high[0] << 32) | stress[2],
+                  end_mcycle64=(stress_high[1] << 32) | stress[3],
+                  host_phase=stress_timer.result(pauses),
+                  timing='configured-clock cycle budget; actual stress duration is host_phase, not suite wall')
         if args.flags & 2:
             coverage = struct.unpack('<4I', cpu.read_memory(RES + 0x440, 16))
             op.record('coverage', blocks=coverage[0], covered_bytes=coverage[1],

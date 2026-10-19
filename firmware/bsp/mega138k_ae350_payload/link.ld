@@ -12,6 +12,6 @@ SECTIONS {
     __global_pointer$ = 0x4000;
     .bss (NOLOAD) : { . = ALIGN(4); __bss_start = .; *(.bss*) *(.sbss*) *(COMMON) . = ALIGN(4); __bss_end = .; } > ddr
     __stack_top = __payload_stack_top;
-    ASSERT(__bss_end <= ORIGIN(ddr) + LENGTH(ddr), "P2 runtime image exceeds DDR load region")
+    ASSERT(__bss_end <= ORIGIN(ddr) + LENGTH(ddr), "Application runtime image exceeds DDR load region")
     /DISCARD/ : { *(.comment*) *(.eh_frame*) }
 }

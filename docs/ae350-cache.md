@@ -1,6 +1,9 @@
-# AE350 / A25 cache-control CSRs (read-only research)
+# AE350 / A25 cache-control contract and sources
 
-Date: 2026-10-18. Scope: Gowin `RiscV_AE350_SOC` hard macro (AndeStar V5 32-bit A25, rv32imafdc_zicsr_zifencei) under bare-metal firmware.
+Updated: 2026-10-19. Scope: Gowin `RiscV_AE350_SOC` hard macro (AndeStar V5 32-bit A25, rv32imafdc_zicsr_zifencei) under bare-metal firmware.
+
+Current platform observation: D-cache is write-back. An ILM-resident measurement with a DLM stack observes one UI read on refill, no read on a hit, one read after invalidate, no UI write on a cached store, and one UI write for the subsequent 32-byte line clean. See [final evidence](../reports/ae350-p2.md) and [performance baseline](../reports/performance/ae350-memory-baseline.md). This validates the selected control sequences; it does not promote sibling-core-only register semantics to verified A25 behavior.
+
 Legend: **[V]** = stated in the cited source; **[V*]** = verified for a sibling/spec source, not the A25 itself; **[I]** = inference; **[?]** = no source found.
 
 ## 0. Sources (all readable on this machine unless a URL is given)

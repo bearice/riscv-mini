@@ -23,9 +23,9 @@ def parser():
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
         ('update','Program complete Flash image directly, without SPI Verify, then Flash boot'),
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
-        ('jtag-test','AE350 P2: inspect ITCM identity, local memories and autonomous POST'),
-        ('ddr-suite','AE350 P2: upload DDR diagnostics over UART and observe results'),
-        ('ae350-upload','AE350 P2: autonomous ROM POST then UART image upload and execution'),
+        ('jtag-test','AE350 memory: inspect ITCM identity, local memories and autonomous POST'),
+        ('ddr-suite','AE350 memory: upload DDR diagnostics over UART and observe results'),
+        ('ae350-upload','AE350 memory: autonomous ROM POST then UART image upload and execution'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=('primer20k_vexriscv', 'mega138k_ae350'),
@@ -42,7 +42,7 @@ def parser():
             if getattr(op, 'machine_default', None) is None:
                 pass
         if name in ('run', 'verify', 'recover'):
-            # AE350 P2 named request options (ignored by the 20K path).
+            # AE350 memory named request options (ignored by the 20K path).
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--repeat', type=int, default=1,
                             help='upload the image this many times, restarting the ROM between rounds')
@@ -50,6 +50,8 @@ def parser():
                             help='also exercise the loader rejection paths')
         if name == 'jtag-test':
             op.add_argument('--cpu-jtag-location', type=int, required=True)
+            op.add_argument('--repeat', type=int, default=1,
+                            help='repeat SRAM configuration and autonomous calibration/POST')
         if name == 'ae350-upload':
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--cpu-jtag-location', type=int, default=None)

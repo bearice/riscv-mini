@@ -1,4 +1,4 @@
-"""Regression cases for independently reproduced P2 review failures."""
+"""Regression cases for independently reproduced memory protocol failures."""
 import json
 import sys
 import tempfile
@@ -19,7 +19,7 @@ from gateware.machines.ae350_native import AHBMemory
 from gateware.machines.ae350_interconnect import MemInterconnect, ErrorSlave
 from litex.soc.interconnect.ahb import AHBInterface
 from scripts.tests.test_ae350_interconnect import DUT as InterconnectDUT, xact
-from mini_ops.ae350_p2_ops import RunRequest, _engine_args
+from mini_ops.ae350_boot_ops import RunRequest, _engine_args
 from modular import ae350
 from modular.storage import Store
 import ae350_report
@@ -33,7 +33,7 @@ from argparse import Namespace
 
 
 class AdapterRecoveryTests(unittest.TestCase):
-    def test_production_memory_and_decoder_with_real_cdc_and_current_map(self):
+    def test_decoder_cross_slave_transactions_with_real_cdc(self):
         from gateware.machines import ae350_map
         self.assertEqual((ae350_map.DDR_BASE, ae350_map.DLM_BASE), (0, 0xa0200000))
         self.assertFalse(any(name == 'sram' for name, *_ in ae350_map.WINDOWS))
@@ -69,7 +69,7 @@ class AdapterRecoveryTests(unittest.TestCase):
                     yield
                     return result
                 yield
-            self.fail('production memory transaction timed out')
+            self.fail('cross-slave memory transaction timed out')
         def process():
             for address, value in [(0, 0x1122334455667788), (0x40000000, 0x8877665544332211),
                                    (24, 0xaabbccddeeff0011), (0x40000800, 0x123456789abcdef0)]:
@@ -193,14 +193,14 @@ class HostContractTests(unittest.TestCase):
             source = Path(directory) / 'app.c'
             source.write_text('void main(void) { for (;;) {} }')
             args.source = source
-            ae350.firmware(store, Mock(), {}, plan=True, profile='p2')
+            ae350.firmware(store, Mock(), {}, plan=True, profile='ddr')
             boot_before = store.lookup.call_args.args[1]
-            ae350.payload(store, Mock(), {}, args, 'p2', plan=True)
+            ae350.payload(store, Mock(), {}, args, 'ddr', plan=True)
             first = store.lookup.call_args.args[1]
             source.write_text('void main(void) { for (;;) __asm__("wfi"); }')
-            ae350.payload(store, Mock(), {}, args, 'p2', plan=True)
+            ae350.payload(store, Mock(), {}, args, 'ddr', plan=True)
             second = store.lookup.call_args.args[1]
-            ae350.firmware(store, Mock(), {}, plan=True, profile='p2')
+            ae350.firmware(store, Mock(), {}, plan=True, profile='ddr')
             boot_after = store.lookup.call_args.args[1]
         self.assertNotEqual(first, second)
         self.assertEqual(boot_before, boot_after)
@@ -237,9 +237,9 @@ class HostContractTests(unittest.TestCase):
              patch.object(ae350, 'discover', return_value={}), \
              patch.object(ae350, 'identity', return_value={}), \
              patch.object(ae350_map, 'image_abi', side_effect=[111, 222]):
-            ae350.firmware(store, run, {}, plan=True, profile='p2')
+            ae350.firmware(store, run, {}, plan=True, profile='ddr')
             first = store.lookup.call_args.args[1]
-            ae350.firmware(store, run, {}, plan=True, profile='p2')
+            ae350.firmware(store, run, {}, plan=True, profile='ddr')
             second = store.lookup.call_args.args[1]
         self.assertNotEqual(first, second)
 
@@ -357,8 +357,8 @@ class HostContractTests(unittest.TestCase):
         request = RunRequest(operation='run', build='selected', location=6705)
         self.assertEqual(_engine_args(request).location, 6705)
 
-    def test_p2_bootloader_hashes_address_contract(self):
-        paths = ae350._inputs(Store(ROOT), profile='p2')
+    def test_memory_bootloader_hashes_address_contract(self):
+        paths = ae350._inputs(Store(ROOT), profile='ddr')
         self.assertIn('inputs/source/gateware/machines/ae350_map.py', paths)
 
     def test_oversize_image_is_rejected_before_hardware(self):

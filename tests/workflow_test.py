@@ -160,6 +160,20 @@ class WorkflowTests(unittest.TestCase):
         replay=reproduce(recipe,sys.executable,self.root/'result',root=self.root)
         self.assertEqual((replay/'VERSIONS.yaml').read_text(),(self.root/'VERSIONS.yaml').read_text())
 
+    def test_work_cleanup_preserves_catalog_roots_and_final_artifacts(self):
+        registered, _ = self.entry(folder='build/work/registered')
+        scratch = self.root / 'build/work/cache'
+        scratch.mkdir(); (scratch / 'generated').write_bytes(b'cache')
+        final = self.root / 'build/archives/final.bin'
+        final.parent.mkdir(); final.write_bytes(b'final')
+        plan = clean_build('work', root=self.root)
+        self.assertTrue(scratch.exists())
+        self.assertNotIn(str(Path(registered['path']).resolve()), plan['targets'])
+        clean_build('work', execute=True, root=self.root)
+        self.assertFalse(scratch.exists())
+        self.assertTrue(Path(registered['path']).exists())
+        self.assertEqual(final.read_bytes(), b'final')
+
     def test_other_commits_cannot_implicitly_write_changelog(self):
         result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare_commit.py'),'--title','fixture',
             '--change','fixture','--write-changelog','--output',str(self.root/'scope.md')],capture_output=True)

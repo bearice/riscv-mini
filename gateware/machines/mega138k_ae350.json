@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "mega138k_ae350",
   "board": "mega138k_pro",
-  "stage": "P2-DDR3",
+  "stage": "native-memory",
   "cpu": {
     "kind": "hard",
     "vendor": "Gowin/Andes",
@@ -11,7 +11,7 @@
     "xlen": 32,
     "hardware_isa": "rv32imafdc_zicsr_zifencei",
     "initial_software_abi": "ilp32",
-    "software_qualification": "pending-P1",
+    "software_qualification": "integer ABI; floating-point, MMU and interrupt software outside memory qualification",
     "vendor_reference_configuration": "src/riscv_ae350_soc/riscv_ae350_soc.ipc",
     "core_clock_route": "PLL_R[0]/CLKOUT1"
   },
@@ -67,19 +67,19 @@
     "rtc": {
       "required_hz": 32768,
       "demo_hz": 10000000,
-      "status": "requires-correction-P1"
+      "status": "reference-only"
     }
   },
   "reference_project": "ae350_customized_demo.gprj",
-  "reference_scope": "P0 archived vendor integration candidate; not the final P1 netlist",
-  "runtime_abi": "unqualified",
-  "loader_format": "pending-platform-boot-bundle",
+  "reference_scope": "AE350 native bus, ITCM bootstrap and hard local memory with DDR3",
+  "runtime_abi": "rv32ima_zicsr_zifencei / ilp32; generated address ABI",
+  "loader_format": "ae350-20k-frame-v1; 48-byte header, 128-byte packets, ABI/range/CRC checks",
   "video": "hdmi",
   "pending": [
-    "physical-part-and-board-revisions",
-    "P1-PnR-board-startup-timer-IRQ-and-frequency-verification",
-    "vendor-IP-regeneration-and-initialization-closure",
-    "P3-fabric-DDR-arbitration-and-DMA-ownership"
+    "floating-point-and-MMU-software",
+    "timer-IRQ-software",
+    "DMAC-and-shared-DDR-arbitration",
+    "XIP-and-HDMI"
   ],
   "ddr3": {
     "ip_component": "gateware/vendor/gowin_ddr3_400 (Gowin DDR3 Memory Interface, 256-bit user interface)",
@@ -115,8 +115,7 @@
       "tREFI_ps": 7800000,
       "tRFC_ps": 260000,
       "tDLLK": 512,
-      "ip_source_sha256": "ae7db3c0bb476e4d132518c3b5f3824abfd02fe2b6a163b006752a74b4bb159e",
-      "proven_on_this_board": "build/runs/20261018T020327922314Z-board-ae350-p2-vendor-ddr-probe: vendor ddr_test_uart.fs wrote and verified 512 MiB at 400 MHz CK"
+      "ip_source_sha256": "ae7db3c0bb476e4d132518c3b5f3824abfd02fe2b6a163b006752a74b4bb159e"
     },
     "user_interface": {
       "data_width_bits": 256,

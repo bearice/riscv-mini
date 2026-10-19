@@ -1,4 +1,4 @@
-/* AE350 P2 DDR test payload: linked into and executed from DDR.
+/* AE350 memory DDR test payload: linked into and executed from DDR.
  *
  * Prints one `T <name> PASS|FAIL ...` line per test plus raw cycle counts; the
  * host retains raw cycles and UART output. Runtime parameters are declared
@@ -40,14 +40,10 @@ static uint32_t res_index;
 static void res_begin(void) { RES[0] = 0xd0000001u; }
 static void res_test(int ok) { RES[1 + (res_index++)] = ok ? 1u : 0u; if (res_index >= 0x7f) res_index = 0x7f; }
 
-#ifdef MINI_NO_UART
-static void putc_uart(char c) { (void)c; }
-#else
 static void putc_uart(char c) {
     while (!(UART_REG(UART_LSR) & 0x20u)) {}
     UART_REG(UART_DATA) = (uint8_t)c;
 }
-#endif
 static void puts_uart(const char *s) { while (*s) putc_uart(*s++); }
 static void hex32(uint32_t value) {
     for (int i = 28; i >= 0; i -= 4) putc_uart("0123456789abcdef"[(value >> i) & 15u]);
@@ -65,9 +61,20 @@ void trap_report(uint32_t cause, uint32_t pc, uint32_t value, uint32_t ra, uint3
     puts_uart("\r\nPTRAP HALTED\r\n");
 }
 
-static uint32_t mcycle(void) { uint32_t v; __asm__ volatile("csrr %0, mcycle" : "=r"(v)); return v; }
+static inline __attribute__((always_inline)) uint32_t mcycle(void) { uint32_t v; __asm__ volatile("csrr %0, mcycle" : "=r"(v)); return v; }
+/* Stable RV32 64-bit cycle snapshot. A stress iteration can exceed one
+ * low-word wrap, so accumulating uint32 deltas loses elapsed cycles. */
+static uint64_t mcycle64(void) {
+    uint32_t hi, lo, again;
+    do {
+        __asm__ volatile("csrr %0, mcycleh" : "=r"(hi));
+        __asm__ volatile("csrr %0, mcycle" : "=r"(lo));
+        __asm__ volatile("csrr %0, mcycleh" : "=r"(again));
+    } while (hi != again);
+    return ((uint64_t)hi << 32) | lo;
+}
 static void fence_i(void) { __asm__ volatile("fence.i" ::: "memory"); }
-static void fence(void) { __asm__ volatile("fence" ::: "memory"); }
+static inline __attribute__((always_inline)) void fence(void) { __asm__ volatile("fence" ::: "memory"); }
 
 static uint32_t rng_state;
 static uint32_t rng(void) {
@@ -78,7 +85,7 @@ static uint32_t rng(void) {
 }
 
 static void test_begin(const char *name) {
-    /* Progress marker for the JTAG-only flow: which test is running now. */
+    /* Progress marker for non-invasive observation of the running suite. */
     static uint32_t seq;
     RES[0x41] = ++seq;
     RES[0x42] = (uint32_t)(uint8_t)name[0] | ((uint32_t)(uint8_t)name[1] << 8) |
@@ -282,6 +289,8 @@ static void test_perf(void) {
     const uint32_t bytes = 65536;
     const uint32_t words = bytes / 4;
     uint32_t t0, t1, sum = 0;
+    /* Baseline: uncached 32-bit scalar accesses with DDR-resident code. */
+    __asm__ volatile("csrw 0x7ca, zero" ::: "memory");
 
     for (int rep = 0; rep < 3; rep++) {
         t0 = mcycle();
@@ -316,12 +325,16 @@ static void test_perf(void) {
         for (uint32_t i = 0; i < hops; i++) chase[i * (stride / 4)] = (uint32_t)(chase + ((i + 1) % hops) * (stride / 4));
         fence();
         volatile uint32_t *p = chase;
+        for (uint32_t rep = 0; rep < 3; rep++) {
+        p = chase;
         t0 = mcycle();
         for (uint32_t i = 0; i < hops; i++) p = (volatile uint32_t *)*p;
         t1 = mcycle();
-        RES[0x69] = t1 - t0;
+        RES[0x120 + rep] = t1 - t0;
+        if (rep == 0) RES[0x69] = t1 - t0;
     test_begin("perf.latency"); puts_uart("MEASURED\r\n");
         kv(" hops", hops); kv(" cycles", t1 - t0); kv(" last", (uint32_t)p); puts_uart("\r\n");
+        }
     }
 }
 
@@ -476,13 +489,12 @@ static void test_capacity(void) {
 
 /* ------------------------------------------------------ full traversal (G6)
  *
- * Walks every 32-byte block of the published window, writing a seeded value in
- * the first and last word of the block, then reads them back.  Ranges that hold
- * the running code, the parameter block and the stack are excluded and the
- * exclusion is reported.
+ * Writes then verifies each selected word of every 32-byte block. Full mode
+ * covers all eight words. Exclude the complete running DDR image; this loop
+ * and its stack use ILM/DLM. Cache is cleaned/invalidated between passes.
  */
 #define TRAV_SKIP(addr) ((addr) < (uint32_t)__bss_end && (addr) + 32u > (uint32_t)__text_start)
-static void test_traversal(void) {
+static __attribute__((section(".ilm.text"), noinline)) void test_traversal(void) {
     uint32_t blocks = 0, errs = 0, addr, seed = PARAMS[P_SEED] | 1u;
     uint32_t limit = 0x40000000u;
     if (PARAMS[P_TRAV_MB] && PARAMS[P_TRAV_MB] < 1024u) limit = PARAMS[P_TRAV_MB] * 0x100000u;
@@ -493,6 +505,10 @@ static void test_traversal(void) {
      * uses the first and last word of the block, full mode all eight. */
     static const uint32_t off_tab8[8] = {0u, 4u, 8u, 12u, 16u, 20u, 24u, 28u};
     static const uint32_t off_tab2[2] = {0u, 28u};
+    /* Clean/invalidate between full-window passes so verification refills
+     * DRAM rather than echoing dirty cache. Loop code/stack use ILM/DLM. */
+    cctl_cmd(CCTL_WBINVAL_ALL);
+    mcache_csrs(0x2u);
     /* pass 1: write */
     for (addr = AE350_DDR_BASE; addr < limit; addr += 32u) {
         if (TRAV_SKIP(addr)) continue;
@@ -506,7 +522,9 @@ static void test_traversal(void) {
         blocks++;
     }
     fence();
-    /* pass 2: verify */
+    cctl_cmd(CCTL_WBINVAL_ALL);
+    fence();
+    /* pass 2: verify (cold cache) */
     for (addr = AE350_DDR_BASE; addr < limit; addr += 32u) {
         if (TRAV_SKIP(addr)) continue;
         for (uint32_t w = 0; w < lanes; w++) {
@@ -520,22 +538,22 @@ static void test_traversal(void) {
             }
         }
     }
+    cctl_cmd(CCTL_WBINVAL_ALL);
+    mcache_csrc(0x2u);
     test_begin("traversal"); test_result(errs == 0);
     RES[0x110] = blocks; RES[0x111] = blocks * 4u * lanes; RES[0x112] = errs; RES[0x113] = limit;
     kv(" blocks", blocks); kv(" words_per_block", lanes);
     kv(" covered_bytes", blocks * 4u * lanes); kv(" errors", errs);
     kv(" limit", limit);
-    kv(" skip_code", (uint32_t)__text_start);
+    kv(" skip_code", (uint32_t)__text_start); kv(" skip_end", (uint32_t)__bss_end);
     kv(" stack_in_dlm", AE350_PAYLOAD_STACK_BOTTOM); puts_uart("\r\n");
 }
 
 /* Cache acceptance through the fabric observer (flag bit 4).
  *
- * The DDR adapter records every AHB transaction it performs in the ROM status
- * window (rec_w_n/rec_r_n counters).  The CPU JTAG is therefore not needed to
- * tell whether a read actually reached DRAM: a cache hit leaves the read
- * counter unchanged, a bypassed/refilled read increments it, and a store with
- * the cache enabled increments the write counter (write-through).
+ * The platform APB page counts UI handshakes. Cache hits leave the read
+ * count unchanged; a refill increments it. Dirty stores remain in L1 until
+ * clean/write-back. This code runs from ILM with its stack in DLM.
  */
 #define OBS_R (*(volatile uint32_t *)AE350_READ_COUNT_ADDR)
 #define OBS_W (*(volatile uint32_t *)AE350_WRITE_COUNT_ADDR)
@@ -544,7 +562,7 @@ static inline __attribute__((always_inline)) void dc_inval_all_cmd(void) {
     __asm__ volatile("csrw 0x7cc, %0" :: "r"(23u) : "memory");
 }
 
-/* The ROM exposes a coherent asynchronous snapshot, not live DDR wires.
+/* The APB bank exposes a coherent asynchronous snapshot, not live DDR wires.
  * Leave enough time for request/acknowledge round trips before observing it. */
 static inline __attribute__((always_inline)) uint32_t observer_read(volatile uint32_t *reg) {
     for (volatile uint32_t i = 0; i < 512u; ++i) __asm__ volatile("nop");
@@ -595,6 +613,60 @@ static void test_observer(void) {
     kv(" write_control", RES[0x108]); kv(" read_control", RES[0x109]); puts_uart("\r\n");
 }
 
+/* A reusable data-path baseline: hot loop in ILM, stack/results in DLM.
+ * Two explicit cache modes; every sample starts cold. Timed writes/copies
+ * include clean completion. APB counters are sampled outside the timer. */
+#define BENCH_SCHEMA 0xbec00001u
+#define BENCH_RESULTS (RES + 0x130)
+static __attribute__((section(".ilm.text"), noinline)) void measure_bandwidth(void) {
+    volatile uint32_t *src = (volatile uint32_t *)WORK_BASE;
+    volatile uint32_t *dst = (volatile uint32_t *)(WORK_BASE + 0x40000);
+    const uint32_t words = 65536u / 4u;
+    uint32_t index = 0, sum = 0;
+    RES[0x12f] = BENCH_SCHEMA;
+    for (uint32_t mode = 0; mode < 2; mode++) {
+        cctl_cmd(CCTL_WBINVAL_ALL);
+        mcache_csrc(3u);
+        if (mode) mcache_csrs(2u);
+        for (uint32_t rep = 0; rep < 3; rep++) {
+            for (uint32_t op = 0; op < 3; op++) {
+                cctl_cmd(CCTL_WBINVAL_ALL);
+                uint32_t r0 = observer_read(&OBS_R), w0 = observer_read(&OBS_W);
+                uint32_t t0 = mcycle();
+                if (op == 0) {
+                    for (uint32_t i = 0; i < words; i++) src[i] = i ^ 0x5a5a5a5au;
+                } else if (op == 1) {
+                    for (uint32_t i = 0; i < words; i++) sum += src[i];
+                } else {
+                    for (uint32_t i = 0; i < words; i++) dst[i] = src[i];
+                }
+                if (mode) cctl_cmd(CCTL_CLEAN_ALL);
+                fence();
+                uint32_t cycles = mcycle() - t0;
+                uint32_t r1 = observer_read(&OBS_R), w1 = observer_read(&OBS_W);
+                BENCH_RESULTS[index++] = cycles;
+                BENCH_RESULTS[index++] = (r1 - r0) & 0xffffu;
+                BENCH_RESULTS[index++] = (w1 - w0) & 0xffffu;
+            }
+        }
+    }
+    cctl_cmd(CCTL_WBINVAL_ALL);
+    mcache_csrc(3u);
+    RES[0x166] = sum;
+    uint32_t errors = 0;
+    for (uint32_t i = 0; i < words; i++) if (dst[i] != (i ^ 0x5a5a5a5au)) errors++;
+    RES[0x167] = errors;
+}
+static void test_bandwidth(void) {
+    measure_bandwidth();
+    test_begin("bandwidth.integrity"); test_result(RES[0x167] == 0);
+    for (uint32_t i = 0; i < 18; i++) {
+        kv(" sample", i); kv(" cycles", BENCH_RESULTS[i * 3]);
+        kv(" reads", BENCH_RESULTS[i * 3 + 1]); kv(" writes", BENCH_RESULTS[i * 3 + 2]);
+        puts_uart("\r\n");
+    }
+}
+
 static void test_stress(void) {
     uint32_t seconds = PARAMS[P_STRESS_SECONDS];
     uint32_t seed = PARAMS[P_SEED];
@@ -604,29 +676,30 @@ static void test_stress(void) {
     volatile uint32_t *base = (volatile uint32_t *)WORK_BASE;
     uint32_t words = (kb * 1024u) / 4u;
     uint64_t deadline = (uint64_t)seconds * 800000000ull;
-    uint64_t elapsed = 0;
-    uint32_t last = mcycle(), started = last, iterations = 0, errs = 0;
+    puts_uart("STRESS BEGIN\r\n");
+    uint64_t started = mcycle64();
+    uint32_t iterations = 0, errs = 0;
 
-    while (elapsed < deadline) {
+    while (mcycle64() - started < deadline) {
         fill_block(base, words, seed + iterations);
         fence();
         errs += verify_block(base, words, seed + iterations);
         iterations++;
-        uint32_t now = mcycle();
-        elapsed += (uint32_t)(now - last);
-        last = now;
     }
     RES[0x6C] = iterations; RES[0x6D] = errs;
-    RES[0x6E] = started; RES[0x6F] = mcycle();
+    uint64_t ended = mcycle64();
+    RES[0x6A] = (uint32_t)(started >> 32); RES[0x6B] = (uint32_t)(ended >> 32);
+    RES[0x6E] = (uint32_t)started; RES[0x6F] = (uint32_t)ended;
+    puts_uart("STRESS END\r\n");
     test_begin("stress"); test_result(errs == 0);
     kv(" seconds", seconds); kv(" iterations", iterations);
     kv(" bytes_per_iter", words * 4); kv(" errors", errs);
-    kv(" start_mcycle", started); kv(" end_mcycle", mcycle()); puts_uart("\r\n");
+    kv(" start_mcycle", (uint32_t)started); kv(" end_mcycle", (uint32_t)ended); puts_uart("\r\n");
 }
 
 void main(void) {
     res_begin();
-    puts_uart("\r\nP2TESTS start\r\n");
+    puts_uart("\r\nAE350-MEMORY start\r\n");
     kv("params", PARAMS[0]); puts_uart("\r\n");
     test_begin("payload"); puts_uart("ENTERED\r\n");
     kv(" text_start", (uint32_t)__text_start); kv(" text_end", (uint32_t)__text_end);
@@ -640,6 +713,7 @@ void main(void) {
     test_nonatomic_rmw();
     test_perf();
     test_cache();
+    test_bandwidth();
     if (PARAMS[P_FLAGS] & 4u) test_observer();
     if (PARAMS[P_FLAGS] & 1u) test_capacity();
     if (PARAMS[P_FLAGS] & 2u) test_traversal();
@@ -648,9 +722,9 @@ void main(void) {
     test_begin("summary"); test_result(failures == 0);
     RES[0x80] = checks; RES[0x81] = failures;
     kv(" checks", checks); kv(" failures", failures); puts_uart("\r\n");
-    puts_uart(failures ? "P2TESTS FAIL\r\n" : "P2TESTS PASS\r\n");
+    puts_uart(failures ? "AE350-MEMORY FAIL\r\n" : "AE350-MEMORY PASS\r\n");
     RES[0x82] = 0xd0000002u;
     for (;;) { __asm__ volatile("wfi"); }
 }
 
-/* decoupling probe: payload-only change */
+

@@ -1,4 +1,4 @@
-"""Native P1 memory protocol: byte lanes, bursts, waits and bounded errors."""
+"""Native monitor memory protocol: byte lanes, bursts, waits and bounded errors."""
 import sys
 import unittest
 from pathlib import Path

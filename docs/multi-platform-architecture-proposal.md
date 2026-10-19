@@ -1,6 +1,6 @@
 # 多平台组织、外设解耦与兼容性设计提案
 
-日期：2026-10-17。状态：P0的Board/Machine描述、硬核配置及构建隔离已落实，见[P0构建底座](ae350-p0-build-foundation.md)；其余分层接口与RTL/BSP重构仍为设计提案。用户已确定复用构建框架、为AE350更换CPU到总线基础设施，选择性复用audio、mic、GPIO及通用视频逻辑；LCD输出迁移暂缓。本文未实施部分不能视为已有能力。
+日期：2026-10-17。状态：P0的Board/Machine描述、硬核配置及构建隔离已落实，见[P0构建底座](ae350-platform.md)；其余分层接口与RTL/BSP重构仍为设计提案。用户已确定复用构建框架、为AE350更换CPU到总线基础设施，选择性复用audio、mic、GPIO及通用视频逻辑；LCD输出迁移暂缓。本文未实施部分不能视为已有能力。
 
 视频范围更新：用户随后明确138K使用HDMI，暂时搁置LCD移植。下文涉及LCD的现状分析仍适用于20K；138K仅复用通用像素/调色板/framebuffer/换帧逻辑，输出层采用TMDS encoder/serializer。建议设备组织为video公共逻辑加rgb_lcd/hdmi输出Adapter，设备及运行时描述区分输出能力与像素模式，不将HDMI绑定为旧RGB LCD寄存器布局。具体阶段见 [AE350分阶段移植与验收计划](ae350-migration-stages.md)。
 

@@ -1,0 +1,599 @@
+{
+  "schema": 1,
+  "kind": "AE350-memory-performance-baseline",
+  "passed": true,
+  "date": "2026-10-19",
+  "candidate_artifact": {
+    "component": "gateware",
+    "digest": "92c86afd1768d27351e5819a4c7eb8a9d9c068ee660fe3e0f50a57fb61badc60"
+  },
+  "comparison_artifact": {
+    "component": "gateware",
+    "digest": "6a2e1381d170b6b33f61aa094106c6f29c5714e93063b7c62bdfd46a6cbc1fac"
+  },
+  "payload_artifact": {
+    "component": "payload",
+    "digest": "8e204917c296b9a036cda43ebba9505ad17b91b4ede358dfbc34ccc36fc5ea6d"
+  },
+  "payload_sha256": "ff49f05277c6422ac6ede1038f4da9c089794b62ed314e80f3c09c081cc5bcc1",
+  "candidate_receipt": "build\\runs\\20261019T135924612116Z-board-ae350-ddr-suite\\result.json",
+  "comparison_receipt": "build\\runs\\20261019T140142019606Z-board-ae350-ddr-suite\\result.json",
+  "clock_receipt": "build\\runs\\20261019T140431107382Z-board-ae350-jtag-test\\result.json",
+  "clock": {
+    "name": "counter-clock",
+    "source": "mcycle versus host QueryPerformanceCounter",
+    "samples": [
+      {
+        "cycles": 807198952,
+        "seconds_lower": 1.0054776999750175,
+        "seconds_upper": 1.0113911000080407,
+        "hz_lower": 798107628.1901064,
+        "hz_upper": 802801446.5363638,
+        "hz": 800447656.2945299
+      },
+      {
+        "cycles": 803804172,
+        "seconds_lower": 1.00086009997176,
+        "seconds_upper": 1.0071714000077918,
+        "hz_lower": 798080815.2354023,
+        "hz_upper": 803113414.1751478,
+        "hz": 800589205.904574
+      },
+      {
+        "cycles": 811423932,
+        "seconds_lower": 1.0104774999781512,
+        "seconds_upper": 1.016751499962993,
+        "hz_lower": 798055308.5287149,
+        "hz_upper": 803010390.6495146,
+        "hz": 800525181.9341158
+      }
+    ],
+    "hz": 800520681.3777399,
+    "counter_runs_while_halted": false,
+    "clock_resolution_seconds": 1e-07,
+    "scope": "counter rate estimate; debug command brackets, not physical oscillator metrology"
+  },
+  "conditions": {
+    "core_target_hz": 800000000,
+    "data_ahb_hz": 100000000,
+    "peripheral_itcm_hz": 80000000,
+    "ddr_ui_hz": 100000000,
+    "ddr_ck_hz": 400000000,
+    "working_bytes": 65536,
+    "access": "32-bit scalar volatile",
+    "code": "ILM",
+    "stack_results": "DLM",
+    "cache": [
+      "off",
+      "D on cold; I off"
+    ],
+    "timed_writeback": true,
+    "copy_logical_bytes": "copied length, not read+write traffic",
+    "samples": 3,
+    "measurement_order": "bandwidth precedes capacity/traversal/stress",
+    "counter_bits": 16
+  },
+  "bandwidth": [
+    {
+      "cache": "uncached",
+      "operation": "write",
+      "bytes": 65536,
+      "candidate_samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1835103,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1835103,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1835103,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        }
+      ],
+      "comparison_samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1572959,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1572959,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1572959,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        }
+      ],
+      "candidate_median_cycles": 1835103,
+      "comparison_median_cycles": 1572959,
+      "throughput_ratio": 0.8571502526016251,
+      "candidate_estimated_mib_s": 27.264160423752095,
+      "ui_reads": 0,
+      "ui_writes": 16384,
+      "ui_transfer_bytes": 524288,
+      "expected_enabled_write_bytes": 65536,
+      "write_payload_utilization": 0.125,
+      "mask_scope": "expected from workload and verified lane contract; UI command counts are observed, no live per-byte mask accumulator"
+    },
+    {
+      "cache": "uncached",
+      "operation": "read",
+      "bytes": 65536,
+      "candidate_samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 7378865,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 7378729,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 7378769,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        }
+      ],
+      "comparison_samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 7378729,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 7378901,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 7378749,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        }
+      ],
+      "candidate_median_cycles": 7378769,
+      "comparison_median_cycles": 7378749,
+      "throughput_ratio": 0.9999972895207859,
+      "candidate_estimated_mib_s": 6.780608335361731,
+      "ui_reads": 16384,
+      "ui_writes": 0,
+      "ui_transfer_bytes": 524288,
+      "expected_enabled_write_bytes": 0,
+      "write_payload_utilization": null,
+      "mask_scope": "expected from workload and verified lane contract; UI command counts are observed, no live per-byte mask accumulator"
+    },
+    {
+      "cache": "uncached",
+      "operation": "copy",
+      "bytes": 65536,
+      "candidate_samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 9961455,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 9961311,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 9961199,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        }
+      ],
+      "comparison_samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 9684991,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 9684675,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 9685027,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        }
+      ],
+      "candidate_median_cycles": 9961311,
+      "comparison_median_cycles": 9684991,
+      "throughput_ratio": 0.9722606793423074,
+      "candidate_estimated_mib_s": 5.022686530528837,
+      "ui_reads": 16384,
+      "ui_writes": 16384,
+      "ui_transfer_bytes": 1048576,
+      "expected_enabled_write_bytes": 65536,
+      "write_payload_utilization": 0.125,
+      "mask_scope": "expected from workload and verified lane contract; UI command counts are observed, no live per-byte mask accumulator"
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "write",
+      "bytes": 65536,
+      "candidate_samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1973677,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1973813,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1973777,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536
+        }
+      ],
+      "comparison_samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 2283183,
+          "ui_reads": 2048,
+          "ui_writes": 8192,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 2282603,
+          "ui_reads": 2048,
+          "ui_writes": 8192,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 2282603,
+          "ui_reads": 2048,
+          "ui_writes": 8192,
+          "bytes": 65536
+        }
+      ],
+      "candidate_median_cycles": 1973777,
+      "comparison_median_cycles": 2282603,
+      "throughput_ratio": 1.156464484083055,
+      "candidate_estimated_mib_s": 25.348629853376924,
+      "ui_reads": 2048,
+      "ui_writes": 2048,
+      "ui_transfer_bytes": 131072,
+      "expected_enabled_write_bytes": 65536,
+      "write_payload_utilization": 1.0,
+      "mask_scope": "expected from workload and verified lane contract; UI command counts are observed, no live per-byte mask accumulator"
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "read",
+      "bytes": 65536,
+      "candidate_samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 1470719,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 1470535,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 1470431,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        }
+      ],
+      "comparison_samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 1470815,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 1470815,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 1470815,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        }
+      ],
+      "candidate_median_cycles": 1470535,
+      "comparison_median_cycles": 1470815,
+      "throughput_ratio": 1.0001904068927294,
+      "candidate_estimated_mib_s": 34.02336060420782,
+      "ui_reads": 2048,
+      "ui_writes": 0,
+      "ui_transfer_bytes": 65536,
+      "expected_enabled_write_bytes": 0,
+      "write_payload_utilization": null,
+      "mask_scope": "expected from workload and verified lane contract; UI command counts are observed, no live per-byte mask accumulator"
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "copy",
+      "bytes": 65536,
+      "candidate_samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 3491101,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 3491233,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 3491397,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536
+        }
+      ],
+      "comparison_samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 3804767,
+          "ui_reads": 4096,
+          "ui_writes": 8192,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 3804767,
+          "ui_reads": 4096,
+          "ui_writes": 8192,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 3804767,
+          "ui_reads": 4096,
+          "ui_writes": 8192,
+          "bytes": 65536
+        }
+      ],
+      "candidate_median_cycles": 3491233,
+      "comparison_median_cycles": 3804767,
+      "throughput_ratio": 1.089806094293907,
+      "candidate_estimated_mib_s": 14.330909047350533,
+      "ui_reads": 4096,
+      "ui_writes": 2048,
+      "ui_transfer_bytes": 196608,
+      "expected_enabled_write_bytes": 65536,
+      "write_payload_utilization": 1.0,
+      "mask_scope": "expected from workload and verified lane contract; UI command counts are observed, no live per-byte mask accumulator"
+    }
+  ],
+  "dependent_load": {
+    "samples": [
+      1780840,
+      1780560,
+      1780512
+    ],
+    "median_cycles": 1780560,
+    "hops": 1024,
+    "cycles_per_hop": 1738.828125,
+    "estimated_ns_per_hop": 2172.1214272782827,
+    "footprint_bytes": 16384,
+    "code": "DDR, I/D cache off; instruction-fetch contention included",
+    "stack": "DLM"
+  },
+  "ddr_code_reference": {
+    "name": "performance",
+    "sample_cycles": [
+      {
+        "write": 45983360,
+        "read": 35579048,
+        "copy": 44290488
+      },
+      {
+        "write": 45984416,
+        "read": 35578560,
+        "copy": 44289656
+      },
+      {
+        "write": 45983896,
+        "read": 35578560,
+        "copy": 45989000
+      }
+    ],
+    "bytes_per_sample": 65536,
+    "dependent_load_cycles": 1780840,
+    "dependent_load_hops": 1024,
+    "dependent_load_sample_cycles": [
+      1780840,
+      1780560,
+      1780512
+    ],
+    "cache": "I/D disabled",
+    "access": "32-bit scalar volatile",
+    "code_location": "DDR",
+    "stack_location": "DLM",
+    "configured_core_hz": 800000000,
+    "measured_core_hz": null,
+    "scope": "raw measurements; not functional PASS checks or calibrated bandwidth"
+  },
+  "stress": {
+    "name": "stress",
+    "requested_seconds": 5,
+    "iterations": 1,
+    "errors": 0,
+    "start_mcycle": 2545774347,
+    "end_mcycle": 3544774515,
+    "start_mcycle64": 62675316491,
+    "end_mcycle64": 67969283955,
+    "host_phase": {
+      "source": "UART phase markers / host monotonic",
+      "available": true,
+      "wall_seconds": 6.594000000040978,
+      "paused_seconds": 0.030999999959021807,
+      "running_seconds": 6.563000000081956,
+      "timestamp_resolution_seconds": 0.05,
+      "scope": "marker receive times; UART latency and polling quantization included"
+    },
+    "timing": "configured-clock cycle budget; actual stress duration is host_phase, not suite wall"
+  },
+  "evidence_hashes": {
+    "build\\runs\\20261019T135924612116Z-board-ae350-ddr-suite\\result.json": "0055e77d88930704cfd0d99ba89acf127d60c966492b3ad9681790a24bdbd2b8",
+    "build\\runs\\20261019T140142019606Z-board-ae350-ddr-suite\\result.json": "c30494ecb5885a112ee02df3b8d21f47a366cf5dc4f91b43188b7c651a8f0c4b",
+    "build\\runs\\20261019T140431107382Z-board-ae350-jtag-test\\result.json": "19552b081b3b36442799bb8c0d22f7d2f7f30536eb291b984d503b0c91514b41"
+  },
+  "limitations": [
+    "counter-rate conversion is a host/debug estimate, not oscillator or maximum-frequency qualification",
+    "comparison configuration targets the same clock rates; performance ratio compares cycles",
+    "uncached 32-bit NONSEQ still uses a 32-byte UI command per 4-byte access",
+    "cached writes are write-allocate; clean is included",
+    "copy logical bandwidth is not physical DDR pin bandwidth",
+    "independent uncached write regression is retained, not hidden",
+    "JTAG polling can pause a benchmark; samples are cycle-based and pause times separately recorded"
+  ]
+}

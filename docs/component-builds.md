@@ -19,7 +19,7 @@ python scripts/mini.py build system --hardware current
 
 ## 独立目标与硬件生成
 
-138K/AE350使用`--machine mega138k_ae350`：`machine-description`与`cpu`锁定输入及硬核配置；P1的`bootloader`编译最小ROM monitor，`soc-description/gateware`生成原生AHB ROM/SRAM独立启动RTL。`gateware --synthesize`执行Gowin并校验setup/hold均为0；`board run --machine mega138k_ae350 --build <准确run> --port <串口>`进行SRAM板测，不能消费20K current。使用独立CPU JTAG时，另传`--location <FPGA位置> --cpu-jtag-location <CPU位置>`，执行完整ROM读回匹配和入口重启，日志明确记录JTAG辅助启动。完整system仍待接入。省略机器仍为现役20K。操作与限制见[P0底座](ae350-p0-build-foundation.md)和[P1启动](ae350-p1-bringup.md)。
+138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建厂商 ITCM 启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断。构建与板测使用准确产物身份，不消费 20K current。恢复在当前平台执行，不再构建或切换到已退役的 P1 ROM/SRAM 镜像。
 
 ```text
 python scripts/mini.py build hal-sdk --hardware current
@@ -140,3 +140,8 @@ python scripts/mini.py clean --execute
 端到端结果：`build/runs/20261016T154609225204Z-single-build-entrypoint-131d39/result.json`。验证了 BIOS 构建及无改动全部 REUSE、最小系统 RTL/ROM/固件构建及 plan 全复用、普通 payload 和 GW-BASIC 编译、所有构建目标的帮助、上游 plan、release export/verify，以及从包内保存源码执行 reproduce --rebuild。隔离源码的 BIOS-only 验收在 `build/runs/20261016T154630262263Z-modular-reuse-f00232/result.json`，只编译变更文件及身份 main.c 两个对象，其余组件复用。
 
 候选 system 为 `a85beb451b43fa4ce9af59df391fd6b419212d08b2ed132a218b4de96824130f`；最小系统为 `0132b59e30d169de5836a3a6b929a0f4d59fe55e4970e2dfb280d3916f32ddbf`。未访问板子、未执行新 PnR、未修改 current，未提交或创建正式代码 release。CPU 生成和上游 OS 的完整重编不在本轮真实执行范围内；它们的入口注册、plan/调度协议和现有功能回归通过，不等同于完成了一次全量 OS 构建或板测。
+
+
+提交硬件变更时，`prepare_commit.py --build` 也可接收内容寻址平台的成功板测 `result.json`。它核对实际 bitstream/payload、PnR、执行结果与当前源码闭包，不生成伪造的旧 catalog 身份。性能报告必须指向同一组 artifact。
+
+`mini.py builds clean work` 先显示可重建工作缓存的清理计划，`--execute` 才执行。它保留 store、原始 runs/证据、归档、recipes、refs、vendor、已登记工作目录和 Git worktree；单个旧式中间 run 仍用 `builds clean <catalog-id>`。未知历史顶层目录不自动删除。

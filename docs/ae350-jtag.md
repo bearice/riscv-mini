@@ -37,9 +37,7 @@ CPU TAP与FPGA配置TAP没有在当前网表中串链。当前资料尚未确认
 
 Windows当前板载下载器使用FTDI驱动；本机Gowin OpenOCD的FTDI后端实测报`LIBUSB_ERROR_NOT_FOUND`，而Gowin Programmer可以扫描和下载。没有修改USB驱动。该错误发生在USB打开阶段，不能据此判断CPU TAP是否正常。
 
-2026-10-17按用户要求仅接入FPGA板载USB做身份基线扫描：VID:PID为0403:6010，USB序列号2025030317；通道A序列号2025030317A（COM7）为FPGA JTAG，通道B序列号2025030317B（COM9）为板载UART。Gowin在2MHz下扫描到单个ID 0x0001081B；该ID由GW5AS/GW5AST-138B/C共用，不确认具体封装和速度等级。收据为`build/runs/20261017T101457035844Z-board-ae350-fpga-usb-identify/result.json`，未写SRAM或Flash。本次location为6705，重插后可能变化；后续第二台调试器接入时按新增设备及独立序列号区分，不能仅凭0403:6010选择。
-
-独立RV-Debugger Plus正常枚举的USB parent序列号为FACTORYAIOT_PRO，当前A/B串口为COM10/COM4，额外UART无需插入即可使用JTAG。其D2XX通道序列返回A/B，本轮A通道location107569；不可把它与FPGA下载通道6705混用，也不可固定location跨重插使用。现有FTDIBUS驱动已通过D2XX直接MPSSE测试：CPU ID连续三次0x1000563d、IR Capture=1、BYPASS正确，DTMCS=0x7071；halt、读取DPC/SP/mcause/mepc/mtval/misa、单步和resume已通过，见[当前板测](../reports/ae350-p1.md)。OpenOCD/GDB入口尚未打通，无需为使用当前D2XX路径而更换驱动。
+FPGA 配置 TAP 身份为 `0x0001081b`，CPU TAP 身份为 `0x1000563d`。COM 和 D2XX location 随重插变化，执行前用 `board debug-scan` 获取，不能照搬历史数字。独立 RV-Debugger Plus 不需额外 UART 连接即可调试 CPU。当前 D2XX 后端支持 halt、CSR/内存、单步和 resume；未宣称已打通 OpenOCD/GDB。
 
 2026-10-18已将D2XX ROM验证/重启纳入统一板测入口：`mini.py board run --machine mega138k_ae350 --build <准确run> --port COM9 --location <FPGA位置> --cpu-jtag-location <CPU位置>`。recover和verify同样支持该参数。后端为scripts/mini_ops/ae350_jtag.py，使用Programmer目录的ftd2xx.dll，检查CPU TAP身份，暂停并完整读回所选ROM，与boot.bin比较后才设DPC=0x80000000并恢复执行。每次SRAM加载分别记录ROM匹配、重启前异常寄存器和恢复状态；ROM不匹配不会改PC重启。正常UART用于功能验收，已移除额外UART诊断发送器。
 

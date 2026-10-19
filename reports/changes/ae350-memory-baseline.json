@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-10-19T14:26:39+00:00",
+  "title": "Finalize reusable AE350 memory platform and baseline",
+  "changes": [
+    "Retire the fabric ROM/SRAM monitor and phase-specific integration paths; retain ITCM boot, hard local memory and the qualified DDR platform as the current implementation.",
+    "Preserve reproducible full-window, loader/recovery, CDC and three-sample performance evidence, including uncached regressions and supported reset limits.",
+    "Validate content-addressed board receipts in commit checks and expose dry-run cleanup for rebuildable work caches without deleting stores, evidence or final archives."
+  ],
+  "build": {
+    "id": "92c86afd1768d27351e5819a4c7eb8a9d9c068ee660fe3e0f50a57fb61badc60",
+    "kind": "modular",
+    "artifact": {
+      "component": "gateware",
+      "digest": "92c86afd1768d27351e5819a4c7eb8a9d9c068ee660fe3e0f50a57fb61badc60"
+    },
+    "payload_artifact": {
+      "component": "payload",
+      "digest": "8e204917c296b9a036cda43ebba9505ad17b91b4ede358dfbc34ccc36fc5ea6d"
+    },
+    "status": "board-qualified",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\store\\gateware\\92c86afd1768d27351e5819a4c7eb8a9d9c068ee660fe3e0f50a57fb61badc60",
+    "evidence": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261019T135924612116Z-board-ae350-ddr-suite\\result.json"
+    ],
+    "bitstream_sha256": "ae7386a61715bf9ad558ed728dd13388dca2e726e21214b31b0b534910d7baf5",
+    "payload_sha256": "ff49f05277c6422ac6ede1038f4da9c089794b62ed314e80f3c09c081cc5bcc1",
+    "source": {
+      "commit": "e3c59316b8fce4fad5949a308313d947360637b4",
+      "dirty": true,
+      "inputs_sha256": "b99981324716b6abdbba584c62abbd0ffa1e9b5f89c25580b462dea151e253af",
+      "kind": "modular-captured"
+    }
+  },
+  "performance_report": "reports\\performance\\ae350-memory-baseline.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 19,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/ae350-final-commit.json"
+    ],
+    "source_inputs_sha256": "b99981324716b6abdbba584c62abbd0ffa1e9b5f89c25580b462dea151e253af"
+  },
+  "mode": "staged review",
+  "base_revision": "e3c59316b8fce4fad5949a308313d947360637b4",
+  "source_revision": null
+}

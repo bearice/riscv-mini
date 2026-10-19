@@ -1,4 +1,4 @@
-"""P2 AE350 system with the Gowin DDR3 hard memory interface.
+"""AE350 DDR system with the Gowin DDR3 hard memory interface.
 
 Topology
 --------
@@ -27,7 +27,7 @@ from litex.soc.interconnect.ahb import AHBInterface
 from .ae350_native import NativeAE350
 from .ae350_interconnect import MemInterconnect, ErrorSlave
 from . import ae350_map
-from .mega138k_ae350 import ClockReset
+from .ae350_clock import ClockReset
 from .ddr3_ahb import DDR3UI, DDR3AHB
 
 # DDR3 pin map (Tang Mega 138K Pro, vendor ae350_customized_demo.cst).
@@ -147,17 +147,9 @@ class GowinDDR3(LiteXModule):
 
 
 class DDRSoC(LiteXModule):
-    def _select_ip(self, ddr_ck):  # keeps the vendor IP point and its clock together
-        if not ddr_ck:
-            self.ddr_ip_dir = DDR_IP_DIR
-            self.ddr_ck_hz = 400e6
-            return
-        self.ddr_ck_hz = float(ddr_ck) * 1e6
-        self.ddr_ip_dir = os.path.join(os.path.dirname(__file__), '..', 'vendor',
-                                       'gowin_ddr3_%d' % int(ddr_ck))
-
-    def __init__(self, board, ddr_ck=None, soc_sources_dir=None):
-        self._select_ip(ddr_ck)
+    def __init__(self, board, soc_sources_dir=None):
+        self.ddr_ip_dir = DDR_IP_DIR
+        self.ddr_ck_hz = 400e6
         ae350_map.require()
         resources = board['resources']
         uart = resources['debug_uart']

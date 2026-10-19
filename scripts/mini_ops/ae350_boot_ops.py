@@ -1,4 +1,4 @@
-"""AE350 P2 run/recover/verify: one machine-selected implementation.
+"""AE350 memory run/recover/verify: one machine-selected implementation.
 
 The public entry points are the ordinary ``board run``/``recover``/``verify``
 commands; JTAG and the serial port are internal transports and the diagnostics
@@ -62,9 +62,9 @@ class RunRequest:
 
 
 def perform(args, root, ref, build_id):
-    """Dispatch a P2 board operation; ``root`` is the gateware artifact dir."""
+    """Dispatch a boot board operation; ``root`` is the gateware artifact dir."""
     if getattr(args, 'image', None) or getattr(args, 'mic', False) or getattr(args, 'soak_seconds', 0):
-        raise ValueError('AE350 P2 uses --payload artifact selection; legacy image/mic/soak overrides are unsupported')
+        raise ValueError('AE350 memory uses --payload artifact selection; legacy image/mic/soak overrides are unsupported')
     request = RunRequest(
         operation=args.operation, build=args.build, port=args.port,
         cpu_jtag_location=getattr(args, 'cpu_jtag_location', None),

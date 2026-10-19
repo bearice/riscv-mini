@@ -1,20 +1,17 @@
-"""Explicit AE350 P1 SRAM-only board qualification with immutable artifact checks."""
+"""AE350 platform board operations with immutable artifact checks."""
 import json
 import re
 import subprocess
-import time
 from pathlib import Path
 
 from build_records import ROOT
-from boot_upload import programmer_succeeded
 from modular.storage import Store, read, file_hash
-from programmer_cable import resolve_location
 from mini_ops.board import Operation
 
 
 def candidate(selection):
     if selection == 'current':
-        raise ValueError('AE350 P1 requires an explicit gateware build run; 20K current is not applicable')
+        raise ValueError('AE350 requires an explicit gateware build run; 20K current is not applicable')
     path = Path(selection)
     if path.is_dir():
         path /= 'result.json'
@@ -39,108 +36,12 @@ def perform(args):
     if args.operation == 'debug-scan':
         return debug_scan(args)
     if args.operation not in ('run', 'recover', 'verify'):
-        raise ValueError('AE350 P1 supports SRAM run/recover/verify only')
+        raise ValueError('AE350 supports SRAM run/recover/verify only')
     root, ref, build_id = candidate(args.build)
-    from modular.storage import Store
-    if Store().get(ref, recursive=True)['config'].get('ddr_profile'):
-        from mini_ops.ae350_p2_ops import perform as perform_p2
-        return perform_p2(args, root, ref, build_id)
-    if args.operation == 'verify' and args.suite != 'firmware':
-        raise ValueError('AE350 P1 only supports the firmware verification suite')
-    if getattr(args, 'image', None) or getattr(args, 'mic', False) or getattr(args, 'soak_seconds', 0):
-        raise ValueError('AE350 P1 does not support legacy application/peripheral overrides')
-    op = Operation('ae350-' + args.operation)
-    print('Operation logs:', op.path, flush=True)
-    try:
-        fs = root / 'gateware/impl/pnr/project.fs'
-        expected = file_hash(fs)
-        op.report.update(machine='mega138k_ae350', artifact=ref, fs_sha256=expected,
-                         rom_build_id=build_id, flash_written=False, timing=dict(setup=0, hold=0))
-        if args.dry_run:
-            op.report.update(dry_run=True, passed=True)
-            return op
-        tools = json.loads((ROOT / '.tools.local.json').read_text(encoding='utf-8'))
-        programmer = tools['programmer']
-        location = resolve_location(programmer, args.location, identity=0x0001081B, log_path=op.path / 'cables.log')
-        base = [programmer, '--location', location, '--frequency', '2MHz']
-        scan = subprocess.run([*base, '--scan'], capture_output=True, text=True, timeout=30)
-        (op.path / 'scan.log').write_text(scan.stdout + scan.stderr, encoding='utf-8')
-        if scan.returncode or not re.search(r'ID:\s*0x0001081[Bb]', scan.stdout) or '1 device(s) found' not in scan.stdout:
-            raise ValueError('JTAG scan does not identify one compatible GW5AS/GW5AST 138 device')
-        op.record('jtag_identity', idcode='0x0001081B', location=location,
-                  note='ID is shared by GW5AS/GW5AST B/C; package and speed grade remain unconfirmed')
-        import serial
-        with serial.Serial(args.port, 115200, timeout=.1) as port, (op.path / 'uart.log').open('wb') as log:
-            def receive(token, timeout=12):
-                data = bytearray()
-                deadline = time.monotonic() + timeout
-                while token not in data and time.monotonic() < deadline:
-                    chunk = port.read(4096)
-                    data.extend(chunk); log.write(chunk); log.flush()
-                if token not in data:
-                    raise RuntimeError('AE350 UART timeout waiting for ' + repr(token) + ': ' + data[-512:].decode(errors='replace'))
-                return bytes(data)
-
-            def program(name):
-                if file_hash(fs) != expected:
-                    raise ValueError('AE350 bitstream changed since preflight')
-                port.reset_input_buffer()
-                command = [*base, '--device', 'GW5AST-138B', '--operation_index', '2', '--fsFile', str(fs)]
-                print('SRAM program:', name, flush=True)
-                result = subprocess.run(command, capture_output=True, text=True, timeout=120)
-                (op.path / (name + '.log')).write_text(result.stdout + result.stderr, encoding='utf-8')
-                if not programmer_succeeded(result):
-                    raise RuntimeError('SRAM programming failed; inspect ' + str(op.path / (name + '.log')))
-                op.record(name, command=command, programmer_passed=True)
-                if getattr(args, 'cpu_jtag_location', None) is not None:
-                    from mini_ops.ae350_jtag import restart
-                    store = Store()
-                    boot = store.get(ref)['dependencies']['bootloader']
-                    binary = (store.path(boot) / 'outputs/boot.bin').read_bytes()
-                    debug = restart(args.cpu_jtag_location,
-                                    Path(programmer).with_name('ftd2xx.dll'), binary,
-                                    port.reset_input_buffer)
-                    op.record(name + '-cpu-jtag-restart', location=args.cpu_jtag_location, **debug)
-                banner = receive(b'mcycle=')
-                banner += receive(b'\r\n') if not banner.endswith(b'\r\n') else b''
-                if ('build=' + build_id).encode() not in banner or b'DDR=off' not in banner:
-                    raise RuntimeError('AE350 UART build identity does not match selected ROM')
-                op.record(name + '-boot', output=banner.decode(errors='replace'))
-                print(banner.decode(errors='replace'), flush=True)
-
-            program('sram')
-            cycles = []
-            for _ in range(3):
-                port.write(b's'); port.flush()
-                reply = receive(b'\r\n')
-                match = re.search(rb'misa=([0-9a-f]{8}) mcycle=([0-9a-f]{8})', reply)
-                if not match:
-                    raise RuntimeError('Malformed AE350 status: ' + repr(reply))
-                cycles.append(int(match[2], 16))
-                time.sleep(.1)
-            if any(a == b for a, b in zip(cycles, cycles[1:])):
-                raise RuntimeError('AE350 cycle counter did not advance')
-            op.record('status', misa=match[1].decode(), cycles=cycles, frequency_measured=False)
-            marker = b'AE350-P1-ECHO-0123456789\r\n'
-            port.write(marker); port.flush()
-            receive(marker)
-            op.record('uart_echo', passed=True)
-            port.write(b'e'); port.flush()
-            trap = receive(b'HALTED; recover with JTAG/reset\r\n')
-            if b'TRAP mcause=00000003' not in trap:
-                raise RuntimeError('AE350 ebreak trap cause differs: ' + repr(trap))
-            op.record('ebreak', output=trap.decode(errors='replace'))
-            program('recovery-sram')
-        op.report.update(passed=True, device_identity='SRAM programmed and ROM build ID matched over UART',
-                         qualification='P1-ROM-UART-trap-recovery',
-                         remaining=['timer-IRQ', 'CPU-frequency-measurement-and-stress', 'DDR'])
-        print('PASS:', op.path / 'result.json', flush=True)
-    except Exception as error:
-        op.report['error'] = str(error)
-        raise
-    finally:
-        op.save()
-    return op
+    if not Store().get(ref, recursive=True)['config'].get('ddr_profile'):
+        raise ValueError('Retired fabric ROM/SRAM monitor is unsupported; select current AE350 DDR gateware')
+    from mini_ops.ae350_boot_ops import perform as perform_boot
+    return perform_boot(args, root, ref, build_id)
 
 
 def debug_scan(args):

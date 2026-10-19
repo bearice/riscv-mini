@@ -1,7 +1,7 @@
 """Resolve the AE350 diagnostic payload artifact.
 
 The payload is built on its own (`mini.py build payload --machine
-mega138k_ae350 --ae350-profile p2`) so changing it never rebuilds the ROM or the
+mega138k_ae350 --ae350-profile ddr`) so changing it never rebuilds the ROM or the
 gateware. Operations require an explicit selection and verify the complete
 artifact closure, machine and address ABI before touching hardware.
 """

@@ -1,5 +1,7 @@
 # riscv-mini
 
+仓库同时维护 `mega138k_ae350` 平台：厂商 ITCM 启动、硬核 ILM/DLM、零基址 DDR 与统一 UART loader。入口见 [AE350 平台](docs/ae350-platform.md)、[当前内存验收](reports/ae350-p2.md) 和 [内存性能 baseline](reports/performance/ae350-memory-baseline.md)。旧 AE350 P1 ROM/SRAM 系统已退役；以下配置表仍描述 20K，两个机器的产物与 baseline 分开。
+
 Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 KiB boot ROM 或 Flash XIP 启动（v0.8.0 默认 XIP，片内 ROM 为 0），使用 L2 RAM 作为启动栈，
 由软件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。
 默认 DDR 固件为常驻 BIOS，提供 POST、LCD/UART 文字终端、USB 键盘、图形与 IO 服务，
