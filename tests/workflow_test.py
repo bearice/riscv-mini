@@ -174,6 +174,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(Path(registered['path']).exists())
         self.assertEqual(final.read_bytes(), b'final')
 
+    def test_work_cleanup_continues_after_inaccessible_root(self):
+        a = self.root / 'build/work/a-blocked'
+        b = self.root / 'build/work/b-cache'
+        a.mkdir(parents=True); b.mkdir()
+        remove = __import__('shutil').rmtree
+        def guarded(path):
+            if path == a:
+                raise PermissionError('fixture access denied')
+            return remove(path)
+        with patch('scripts.mini_ops.catalog.shutil.rmtree', side_effect=guarded):
+            with self.assertRaisesRegex(RuntimeError, 'retained 1'):
+                clean_build('work', execute=True, root=self.root)
+        self.assertTrue(a.exists())
+        self.assertFalse(b.exists())
+
     def test_other_commits_cannot_implicitly_write_changelog(self):
         result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare_commit.py'),'--title','fixture',
             '--change','fixture','--write-changelog','--output',str(self.root/'scope.md')],capture_output=True)

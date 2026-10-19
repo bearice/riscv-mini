@@ -48,7 +48,7 @@ def clean_work(execute=False, root=ROOT):
     write_json(path, plan)
     print(('Cleaning' if execute else 'Would clean'), len(targets), 'work caches; plan:', path)
     if execute:
-        deleted = []
+        deleted, errors = [], []
         for name in targets:
             target = Path(name)
             if not target.resolve().is_relative_to(work) or target.resolve() == work:
@@ -60,10 +60,14 @@ def clean_work(execute=False, root=ROOT):
                     target.unlink()
                 deleted.append(name)
             except OSError as error:
-                write_json(path.with_name('work-result.json'),
-                           dict(plan, passed=False, deleted=deleted, error=str(error), failed_target=name))
-                raise
-        write_json(path.with_name('work-result.json'), dict(plan, passed=True, deleted=deleted))
+                errors.append(dict(target=name, error=str(error)))
+                # Preserve access-denied roots; do not stop other independent
+                # cache cleanup or rewrite ACLs/attributes to force deletion.
+        write_json(path.with_name('work-result.json'),
+                   dict(plan, passed=not errors, deleted=deleted, retained_errors=errors))
+        if errors:
+            raise RuntimeError('Cleaned %d cache roots; retained %d inaccessible roots; see work-result.json' %
+                               (len(deleted), len(errors)))
     return plan
 
 

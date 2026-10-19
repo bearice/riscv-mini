@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-10-19T14:32:57+00:00",
+  "title": "Continue cache cleanup past inaccessible scratch roots",
+  "changes": [
+    "Keep independent work-cache cleanup progressing when a root cannot be deleted, preserve failure details, and do not rewrite ACLs or attributes."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 20,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/cache-cleanup-resume.json"
+    ],
+    "source_inputs_sha256": "e63fd8fdbbef1bddc65bac72e99813fb6fb451ce329a4f89b100a281ad5bd1d3"
+  },
+  "mode": "staged review",
+  "base_revision": "2a232eb3d096432ab0a7d2caff2fbd936f4f4a72",
+  "source_revision": null
+}
