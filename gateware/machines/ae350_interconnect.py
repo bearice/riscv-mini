@@ -22,7 +22,7 @@ from litex.gen import LiteXModule
 
 
 class MemInterconnect(LiteXModule):
-    def __init__(self, master, slaves):
+    def __init__(self, master, slaves, registered=False):
         """slaves: list of (base, size, bus) with disjoint windows."""
         self.master = master
         self.slaves = slaves
@@ -36,6 +36,9 @@ class MemInterconnect(LiteXModule):
         addr_lat = self.addr_lat = Signal(32)
         write_lat = self.write_lat = Signal()
         size_lat = self.size_lat = Signal(3)
+        burst_lat = Signal(3)
+        prot_lat = Signal(4)
+        trans_lat = Signal(2)
         sel_lat = self.sel_lat = Signal(nslaves)
 
         # Priority decode: the first matching window owns the address, so a
@@ -52,12 +55,15 @@ class MemInterconnect(LiteXModule):
                 self.comb += sel_hit[i].eq(hit[i] & ~previous)
 
         state = self.state = Signal()       # 0 = IDLE, 1 = DATA
+        dispatched = Signal()
+        dispatch = Signal()
+        self.comb += dispatch.eq(state & ~dispatched)
         ready = Signal()
         self.comb += [
             # The data phase always belongs to the slave captured at acceptance;
             # the live address only affects the *next* acceptance.
             self.sel.eq(sel_lat),
-            master.readyout.eq(Mux(state, ready, 1)),
+            master.readyout.eq(Mux(state, ready & (dispatched if registered else 1), 1)),
         ]
         accept_now = Signal()
         self.comb += accept_now.eq(master.trans[1] & reduce(or_, [sel_hit[i] for i in range(nslaves)])
@@ -74,19 +80,20 @@ class MemInterconnect(LiteXModule):
         # Slave-side wiring: the accepted address is held for the whole data
         # phase; during an acceptance cycle the live address is presented.
         slave_addr = Signal(32)
-        self.comb += slave_addr.eq(Mux(accept_now, master.addr, addr_lat))
+        self.comb += slave_addr.eq(addr_lat if registered else Mux(accept_now, master.addr, addr_lat))
         for i, (base, size, bus) in enumerate(slaves):
             self.comb += [
                 bus.addr.eq(slave_addr),
-                bus.write.eq(Mux(accept_now, master.write, write_lat)),
-                bus.size.eq(Mux(accept_now, master.size, size_lat)),
-                bus.burst.eq(master.burst),
-                bus.prot.eq(master.prot),
+                bus.write.eq(write_lat if registered else Mux(accept_now, master.write, write_lat)),
+                bus.size.eq(size_lat if registered else Mux(accept_now, master.size, size_lat)),
+                bus.burst.eq(burst_lat if registered else master.burst),
+                bus.prot.eq(prot_lat if registered else master.prot),
                 bus.wdata.eq(master.wdata),
                 # HTRANS only carries meaning in the address phase: a slave
                 # sees it for exactly the cycle in which its address is
                 # accepted, never during its data phase.
-                bus.trans.eq(Mux(accept_now & sel_hit[i], master.trans, Constant(0, 2))),
+                bus.trans.eq(Mux(dispatch & sel_lat[i], trans_lat, 0) if registered else
+                             Mux(accept_now & sel_hit[i], master.trans, Constant(0, 2))),
                 bus.sel.eq(Mux(master.readyout, sel_hit[i], sel_lat[i])),
             ]
         self.sync += [
@@ -94,6 +101,7 @@ class MemInterconnect(LiteXModule):
                addr_lat.eq(master.addr),
                write_lat.eq(master.write),
                size_lat.eq(master.size),
+               burst_lat.eq(master.burst), prot_lat.eq(master.prot), trans_lat.eq(master.trans),
                sel_lat.eq(sel_hit),
                self.accepted.eq(1),
                self.n_accepted.eq(self.n_accepted + 1),
@@ -107,11 +115,13 @@ class MemInterconnect(LiteXModule):
                # in DATA so that its own data phase starts immediately.
                If(accept_now,
                   state.eq(1),
-               ).Elif(ready,
+               ).Elif(master.readyout,
                   state.eq(0),
                ),
             ),
         ]
+        if registered:
+            self.sync += If(accept_now, dispatched.eq(0)).Elif(dispatch, dispatched.eq(1))
         for i in range(nslaves):
             self.sync += If(accept_now & sel_hit[i], self.n_slave[i].eq(self.n_slave[i] + 1))
 

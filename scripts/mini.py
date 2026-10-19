@@ -23,8 +23,8 @@ def parser():
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
         ('update','Program complete Flash image directly, without SPI Verify, then Flash boot'),
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
-        ('jtag-test','AE350 P2: verify ROM and launch SRAM DDR probe through CPU JTAG'),
-        ('ddr-suite','AE350 P2: run the DDR payload from DDR through the JTAG launcher'),
+        ('jtag-test','AE350 P2: inspect ITCM identity, local memories and autonomous POST'),
+        ('ddr-suite','AE350 P2: upload DDR diagnostics over UART and observe results'),
         ('ae350-upload','AE350 P2: autonomous ROM POST then UART image upload and execution'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
@@ -59,6 +59,7 @@ def parser():
             op.add_argument('--repeat', type=int, default=1,
                             help='upload the image this many times, restarting the ROM between rounds')
         if name == 'ddr-suite':
+            from gateware.machines import ae350_map
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--cpu-jtag-location', type=int, required=True)
             op.add_argument('--seed', type=int, default=0x12345678)
@@ -71,9 +72,6 @@ def parser():
                             help='stress duration handed to the payload (0 = payload default)')
             op.add_argument('--traversal-mb', type=int, default=0,
                             help='traversal window in MiB (0 = the whole 1 GiB-8 KiB)')
-            op.add_argument('--stack', type=lambda x: int(x, 0), default=0x80000)
-            op.add_argument('--entry', type=lambda x: int(x, 0), default=0x3000,
-                            help='CPU address the launcher jumps to (default payload entry)')
             op.add_argument('--timeout', type=int, default=600,
                             help='Overall wall-clock budget for the payload (1..3600 s)')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')

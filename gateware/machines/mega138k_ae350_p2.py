@@ -2,9 +2,8 @@
 
 Topology
 --------
-* AE350 hard macro, zero-based 1 GiB DDR window, 8 KiB fabric SRAM at
-  0x40000000, and ROM at 0x80000000; ae350_map owns all addresses.
-* 64-bit AHB at the configured fabric clock crosses asynchronous FIFOs into
+* Vendor ITCM boot image, hard ILM/DLM and zero-based DDR; no work SRAM.
+* Independent 64-bit data AHB crosses asynchronous FIFOs into
   the 256-bit DDR user interface (100 MHz for 400 MHz CK).
 * CPU reset release uses synchronized calibration status and a bounded
   fabric watchdog; the ROM still boots if calibration fails.
@@ -25,15 +24,11 @@ from litex.build.generic_platform import Pins, IOStandard, Subsignal, Misc
 from litex.build.gowin.platform import GowinPlatform
 from litex.soc.interconnect.ahb import AHBInterface
 
-from .ae350_native import NativeAE350, AHBMemory, AE350ROM, APB_CE_APB, APB_CE_UART2, APB_CE_PIT, APB_CE_GPIO
+from .ae350_native import NativeAE350
 from .ae350_interconnect import MemInterconnect, ErrorSlave
 from . import ae350_map
 from .mega138k_ae350 import ClockReset
 from .ddr3_ahb import DDR3UI, DDR3AHB
-
-# CPU-visible DRAM window: the AE350 external AHB slave region.
-DDR_WINDOW_BASE = 0xE8000000
-DDR_WINDOW_SIZE = 1 << 27
 
 # DDR3 pin map (Tang Mega 138K Pro, vendor ae350_customized_demo.cst).
 DDR3_ADDR = 'N1 R1 R2 N2 P1 T2 N4 U1 T4 T3 M1 P4 N3 U2 U5'.split()
@@ -77,42 +72,6 @@ def _ddr3_io():
         io.append((f'ddr3_dqs{i}_n', 0, Pins('X')))
     return io
 
-
-class FabricUART(LiteXModule):
-    """Minimal 8N1 transmitter, used only to probe the console pin path."""
-    def __init__(self, pad, clk_hz=100e6, baud=115200, text=b"FABRIC-UART-OK\r\n"):
-        div = max(1, int(round(clk_hz / baud)))
-        cnt = Signal(max=div)
-        tick = Signal()
-        byte = Signal(8)
-        bitc = Signal(4)
-        shift = Signal(10)
-        cur = Signal(8)
-        self.comb += [tick.eq(cnt == div - 1), cur.eq(0)]
-        for i, ch in enumerate(text):
-            self.comb += If(byte == i, cur.eq(ch if isinstance(ch, int) else ord(ch)))
-        self.sync += If(tick, cnt.eq(0)).Else(cnt.eq(cnt + 1))
-        fsm = FSM(reset_state="IDLE")
-        self.submodules += fsm
-        fsm.act("IDLE",
-            pad.eq(1),
-            If(tick,
-               If(byte >= len(text), NextValue(byte, 0)),
-               NextValue(shift, Cat(C(0, 1), cur, C(1, 1))),
-               NextValue(bitc, 0),
-               NextState("SEND"),
-            ),
-        )
-        fsm.act("SEND",
-            pad.eq(shift[0]),
-            If(tick,
-               NextValue(shift, shift >> 1),
-               If(bitc == 9,
-                  NextValue(byte, byte + 1),
-                  NextState("IDLE"),
-               ).Else(NextValue(bitc, bitc + 1)),
-            ),
-        )
 
 
 class GowinDDR3(LiteXModule):
@@ -197,7 +156,7 @@ class DDRSoC(LiteXModule):
         self.ddr_ip_dir = os.path.join(os.path.dirname(__file__), '..', 'vendor',
                                        'gowin_ddr3_%d' % int(ddr_ck))
 
-    def __init__(self, board, rom, ddr_ck=None):
+    def __init__(self, board, ddr_ck=None, soc_sources_dir=None):
         self._select_ip(ddr_ck)
         ae350_map.require()
         resources = board['resources']
@@ -248,8 +207,8 @@ class DDRSoC(LiteXModule):
             platform.add_platform_command(f'IO_LOC "ddr3_dqs{i}" {pp},{pn};')
             platform.add_platform_command(f'IO_PORT "ddr3_dqs{i}" IO_TYPE=SSTL15D PULL_MODE=NONE DRIVE=8 BANK_VCCIO=1.5;')
 
-        self.crg = ClockReset(platform, fabric_hz=ae350_map.FABRIC_HZ)
-        self.cpu = NativeAE350(wrapper=True)
+        self.crg = ClockReset(platform, fabric_hz=ae350_map.FABRIC_HZ, data_hz=ae350_map.DATA_HZ)
+        self.cpu = NativeAE350(wrapper=True, data_domain='mem', vendor_itcm=True)
         self.ddr = GowinDDR3(platform, pads, ck_hz=self.ddr_ck_hz)
 
         # DDR UI clock domain and its asynchronous reset.
@@ -260,6 +219,8 @@ class DDRSoC(LiteXModule):
         lock_sys = Signal()
         self.specials += [MultiReg(self.ddr.init_calib_complete, calib_sys, 'sys'),
                           MultiReg(self.ddr.pll_lock, lock_sys, 'sys')]
+        calib_mem = Signal()
+        self.specials += MultiReg(self.ddr.init_calib_complete, calib_mem, 'mem')
 
         # Calibration watchdog and CPU release in the always-running sys domain.
         self.calib_timeout = calib_timeout = Signal()
@@ -294,36 +255,36 @@ class DDRSoC(LiteXModule):
 
         self.comb += [self.cpu.ahb_rom.sel.eq(1), self.cpu.ahb_ram.sel.eq(1)]
 
-        sram_bus = AHBInterface(data_width=64, address_width=32)
         ddr_bus = AHBInterface(data_width=64, address_width=32)
         err_bus = AHBInterface(data_width=64, address_width=32)
 
-        # Zero-based DDR and high SRAM: the CPU byte address of a DRAM word is
-        # its DRAM offset (no -0x2000 shift), see gateware/machines/ae350_map.py.
-        self.sram = AHBMemory(sram_bus, ae350_map.SRAM_SIZE, base=ae350_map.SRAM_BASE)
-        self.ddr_port = DDR3AHB(ddr_bus, self.ddr.ui,
-                                ready_i=calib_sys,
+        # The hard macro resolves ILM/DLM internally. This port owns only DDR.
+        self.ddr_port = ClockDomainsRenamer({'sys': 'mem'})(DDR3AHB(ddr_bus, self.ddr.ui,
+                                ready_i=calib_mem,
                                 accepted_i=ddr_bus.trans[1],
-                                base=ae350_map.DDR_BASE, size=ae350_map.DDR_SIZE)
-        self.err = ErrorSlave(err_bus)
+                                end_burst_i=self.cpu.ahb_ram.readyout & (self.cpu.ahb_ram.trans == 0),
+                                lookahead=self.cpu.ahb_ram,
+                                base=ae350_map.DDR_BASE, size=ae350_map.DDR_SIZE))
+        self.err = ClockDomainsRenamer({'sys': 'mem'})(ErrorSlave(err_bus))
         # One interconnect, one address-acceptance rule for every slave: the
         # address, direction and selected slave are captured together at the
         # acceptance edge, and the response mux uses that captured slave.
-        self.ic = MemInterconnect(self.cpu.ahb_ram, [
+        self.ic = ClockDomainsRenamer({'sys': 'mem'})(MemInterconnect(self.cpu.ahb_ram, [
             (ae350_map.DDR_BASE, ae350_map.DDR_SIZE, ddr_bus),
-            (ae350_map.SRAM_BASE, ae350_map.SRAM_SIZE, sram_bus),
             (0, 1 << 32, err_bus),
-        ])
-        self.submodules += self.sram, self.ddr_port, self.err, self.ic
+        ], registered=True))
+        self.submodules += self.ddr_port, self.err, self.ic
 
-        # Status words readable from the ROM window.
+        # Status is on the platform APB extension, not in boot memory.
         self.status = status = Signal(32)
+        error_sys = Signal()
+        self.specials += MultiReg(self.ddr_port.error_sticky, error_sys, 'sys')
         self.comb += status.eq(Cat(
             lock_sys,                     # [0]
             calib_sys,                    # [1]
             calib_timeout,                 # [2]
             alive_sys,                     # [3]
-            self.ddr_port.error_sticky,    # [4]
+            error_sys,                    # [4]
             cpu_hold,                      # [5]
             Constant(0, 2),                # [7:6]
             Constant(0x02, 8),             # [15:8] status format version
@@ -340,42 +301,53 @@ class DDRSoC(LiteXModule):
         self.recorder_cdc = BusSynchronizer(256, 'ddr', 'sys')
         self.comb += self.recorder_cdc.i.eq(Cat(*recorder))
         snapshot = [self.recorder_cdc.o[i*32:(i+1)*32] for i in range(8)]
-        self.rom = AE350ROM(self.cpu.ahb_rom, 8192, init=rom,
-                            status=status, cycles=calib_cycles,
-                            debug=self.ddr_port.debug, debug_hi=self.ddr_port.debug_hi,
-                            windows=[
-                                # Per-transaction recorder (read over CPU JTAG):
-                                # -20 write cmd|addr, -24 write byte mask,
-                                # -28 write data low word, -32 read cmd|addr,
-                                # -36 selected 64-bit beat low word,
-                                # -40/-44 returned block words 0 and 1,
-                                # -48 write/read counters.
-                                (-20, snapshot[0]),
-                                (-24, snapshot[1]),
-                                (-28, snapshot[2]),
-                                (-32, snapshot[3]),
-                                (-36, snapshot[4]),
-                                (-40, snapshot[5]),
-                                (-44, snapshot[6]),
-                                (-48, snapshot[7]),
-                                # Explicit 16-bit counters for the fabric observer.
-                                (-52, snapshot[7][16:32]),
-                                (-56, snapshot[7][:16]),
-                            ])
+        self.data_cdc = BusSynchronizer(112, 'mem', 'sys')
+        self.comb += self.data_cdc.i.eq(Cat(self.ddr_port.debug, self.ddr_port.debug_hi,
+                                          self.ddr_port.last_control,
+                                          self.ddr_port.write_control, self.ddr_port.read_control))
+        # Read-only platform CSR bank on the hard subsystem's APB extension.
+        # Diagnostics never override initialized boot ITCM contents.
+        registers = {0: status, 4: calib_cycles, 8: self.data_cdc.o[:32],
+            12: self.data_cdc.o[32:64], 16: self.data_cdc.o[64:80],
+            20: snapshot[7][:16], 24: snapshot[7][16:32],
+            28: self.data_cdc.o[80:96], 64: self.data_cdc.o[96:112],
+            **{32 + 4*i: word for i, word in enumerate(snapshot)}}
+        # APB has a setup cycle before ENABLE. Latch the address then, decode
+        # it on the following cycle while PREADY is low, and complete the
+        # access with registered data. The hard-macro address never drives the
+        # response mux in the same cycle the macro samples PRDATA.
+        apb_addr_q = Signal(32)
+        apb_wait = Signal()
+        self.comb += self.cpu.apb_ready.eq(~apb_wait)
+        self.sync += [
+            If(~self.cpu.apb_select,
+                apb_wait.eq(0),
+            ).Elif(~self.cpu.apb_enable,
+                apb_addr_q.eq(self.cpu.apb_addr),
+                apb_wait.eq(1),
+            ).Elif(apb_wait,
+                apb_wait.eq(0),
+                self.cpu.apb_data.eq(0),
+                Case(apb_addr_q, {
+                    ae350_map.DDR_CSR_BASE + offset: self.cpu.apb_data.eq(value)
+                    for offset, value in registers.items()}),
+            ),
+        ]
 
         serial = platform.request('serial')
         self.cpu.cpu_params.update(i_UART2_RXD=serial.rx, o_UART2_TXD=serial.tx,
                                    i_RTC_CLK=self.crg.rtc)
         # The configured AE350 subsystem hardens UART2/PIT/GPIO/RTC internally
         # (see gateware/vendor/ae350_soc/riscv_ae350_config.v), so there is no
-        # fabric-facing APB port and no port-level peripheral clock enable.
+        # fabric UART implementation or port-level peripheral clock enable.
         # Only the sources the configured subsystem actually needs: the
         # embedded SPI-flash/DDR3 paths stay out (their DDR3 IP would collide
         # with the standalone 400 MHz IP instance and they are not enabled).
         soc_sources = ('riscv_ae350_top.v', 'riscv_ae350_soc.v', 'gw_dtcm.v', 'gw_itcm.v')
+        soc_sources_dir = Path(soc_sources_dir)
         for name in soc_sources:
-            platform.add_source(str(Path(__file__).resolve().parents[1] / 'vendor' / 'ae350_soc' / name))
-        platform.add_verilog_include_path(str((Path(__file__).resolve().parents[1] / 'vendor' / 'ae350_soc')))
+            platform.add_source(str(soc_sources_dir / name))
+        platform.add_verilog_include_path(str(soc_sources_dir))
         self.cpu.connect_jtag(platform.request('cpu_jtag'))
         platform.add_period_constraint(platform.lookup_request('cpu_jtag').tck, 10000)
         self.comb += platform.request('fan_pwm').eq(1)
@@ -395,6 +367,7 @@ class DDRSoC(LiteXModule):
                 'create_clock -name ddr_clk_ref -period 20 -waveform {0 10} [get_nets {ddr3_clk_ref}]',
                 'set_clock_groups -asynchronous '
                 '-group [get_clocks {sys_clk}] -group [get_clocks {cpu_clk}] '
+                '-group [get_clocks {mem_clk}] '
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '
                 '-group [get_clocks {ddr_clk_ref}]',
             ]

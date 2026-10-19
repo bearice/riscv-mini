@@ -1,10 +1,8 @@
 /* AE350 P2 DDR test payload: linked into and executed from DDR.
  *
  * Prints one `T <name> PASS|FAIL ...` line per test plus raw cycle counts; the
- * host operation (scripts/mini_ops/ae350.py) parses those lines, converts
- * cycles to rates with the *configured* clock and stores the log as evidence.
- * Parameters arrive in the first 64 bytes of the DDR window (CPU 0x2000),
- * written with the ROM monitor's `p` command.
+ * host retains raw cycles and UART output. Runtime parameters are declared
+ * in this image, patched by layout metadata and protected by upload CRC.
  */
 #include <stdint.h>
 #include "ae350_address_map.h"
@@ -15,7 +13,10 @@
 #define UART_REG(offset) (*(volatile uint32_t *)(UART2_BASE + (offset)))
 
 #define CPU_ADDR(dram_off) ((uint32_t)(dram_off))   /* zero-based DDR */
-#define PARAMS ((volatile uint32_t *)0x2000u)
+/* Host patches this declared application parameter block before applying the
+ * ordinary image CRC. No second loader or debug-memory write protocol. */
+volatile uint32_t mini_app_parameters[5] = {0, 0x12345678u, 1024, 0, 0};
+#define PARAMS mini_app_parameters
 #define P_STRESS_SECONDS 0u
 #define P_SEED           1u
 #define P_REGION_KB      2u
@@ -30,11 +31,11 @@ extern char __text_start[], __text_end[], __data_start[], __data_end[], __bss_st
 static uint32_t failures;
 static uint32_t checks;
 
-/* Results are mirrored into the always-mapped 8 KiB SRAM so the CPU JTAG can
- * read them when no console exists.  Layout: [0]=0xd0000001 started,
+/* Results occupy reserved hard DLM for debug observation independent of DDR.
+ * Layout: [0]=0xd0000001 started,
  * [1..N]=per-test ok flags in call order, [0x80]=checks, [0x81]=failures,
  * [0x82]=0xd0000002 done. */
-#define RES ((volatile uint32_t *)AE350_SRAM_RESULTS)
+#define RES ((volatile uint32_t *)AE350_RESULTS_BASE)
 static uint32_t res_index;
 static void res_begin(void) { RES[0] = 0xd0000001u; }
 static void res_test(int ok) { RES[1 + (res_index++)] = ok ? 1u : 0u; if (res_index >= 0x7f) res_index = 0x7f; }
@@ -229,7 +230,7 @@ static void test_exec(void) {
     uint32_t sp; __asm__ volatile("mv %0, sp" : "=r"(sp));
     if ((uint32_t)add_one < 0x2000u || (uint32_t)add_one >= 0x40000000u) errs++;
     if ((uint32_t)WORK_BASE < 0x2000u) errs++;
-    if (sp < 0x2000u || sp >= 0x40000000u) errs++;
+    if (sp < AE350_PAYLOAD_STACK_BOTTOM || sp >= AE350_PAYLOAD_STACK_TOP) errs++;
     if (text_len < 1024u) errs++;
     test_begin("exec"); test_result(errs == 0);
     kv(" fn", (uint32_t)add_one); kv(" pc_main", (uint32_t)test_exec);
@@ -480,9 +481,7 @@ static void test_capacity(void) {
  * the running code, the parameter block and the stack are excluded and the
  * exclusion is reported.
  */
-#define TRAV_SKIP(addr) (((addr) < AE350_DDR_PARAMS + 0x40u && (addr) + 32u > AE350_DDR_PARAMS) || \
-                         ((addr) < (uint32_t)__bss_end && (addr) + 32u > (uint32_t)__text_start) || \
-                         ((addr) >= 0x70000u && (addr) < 0x80000u))
+#define TRAV_SKIP(addr) ((addr) < (uint32_t)__bss_end && (addr) + 32u > (uint32_t)__text_start)
 static void test_traversal(void) {
     uint32_t blocks = 0, errs = 0, addr, seed = PARAMS[P_SEED] | 1u;
     uint32_t limit = 0x40000000u;
@@ -526,8 +525,8 @@ static void test_traversal(void) {
     kv(" blocks", blocks); kv(" words_per_block", lanes);
     kv(" covered_bytes", blocks * 4u * lanes); kv(" errors", errs);
     kv(" limit", limit);
-    kv(" skip_params", 0x2000u); kv(" skip_code", 0x3000u);
-    kv(" skip_stack", 0x70000u); puts_uart("\r\n");
+    kv(" skip_code", (uint32_t)__text_start);
+    kv(" stack_in_dlm", AE350_PAYLOAD_STACK_BOTTOM); puts_uart("\r\n");
 }
 
 /* Cache acceptance through the fabric observer (flag bit 4).
@@ -538,8 +537,8 @@ static void test_traversal(void) {
  * counter unchanged, a bypassed/refilled read increments it, and a store with
  * the cache enabled increments the write counter (write-through).
  */
-#define OBS_R (*(volatile uint32_t *)0x80001fccu)   /* fabric read transactions */
-#define OBS_W (*(volatile uint32_t *)0x80001fc8u)   /* fabric write transactions */
+#define OBS_R (*(volatile uint32_t *)AE350_READ_COUNT_ADDR)
+#define OBS_W (*(volatile uint32_t *)AE350_WRITE_COUNT_ADDR)
 
 static inline __attribute__((always_inline)) void dc_inval_all_cmd(void) {
     __asm__ volatile("csrw 0x7cc, %0" :: "r"(23u) : "memory");
@@ -547,11 +546,14 @@ static inline __attribute__((always_inline)) void dc_inval_all_cmd(void) {
 
 /* The ROM exposes a coherent asynchronous snapshot, not live DDR wires.
  * Leave enough time for request/acknowledge round trips before observing it. */
-static uint32_t observer_read(volatile uint32_t *reg) {
+static inline __attribute__((always_inline)) uint32_t observer_read(volatile uint32_t *reg) {
     for (volatile uint32_t i = 0; i < 512u; ++i) __asm__ volatile("nop");
     return *reg;
 }
-static void test_observer(void) {
+/* Run the complete measurement from ILM with a DLM stack. Instruction fetches
+ * and compiler spills must not increment the DDR counter we are observing. */
+__attribute__((section(".ilm.text"), noinline))
+static void measure_cache_traffic(void) {
     volatile uint32_t *p = (volatile uint32_t *)CPU_ADDR(0x206000u);
     uint32_t c0, c1, c2, c3, w0, w1, w2, errs = 0;
     mcache_csrc(0x3u);
@@ -581,9 +583,16 @@ static void test_observer(void) {
     if (w2 == w1) errs |= 16u;
     RES[0x100] = c0; RES[0x101] = c1; RES[0x102] = c2; RES[0x103] = c3;
     RES[0x104] = w0; RES[0x105] = w1; RES[0x106] = w2; RES[0x107] = errs;
-    test_begin("cache.observer"); test_result(errs == 0);
-    kv(" r0", c0); kv(" r1", c1); kv(" r2", c2); kv(" r3", c3);
-    kv(" w0", w0); kv(" w1", w1); kv(" w2", w2); kv(" errors", errs); puts_uart("\r\n");
+    RES[0x108] = *(volatile uint32_t *)AE350_WRITE_TRACE_ADDR;
+    RES[0x109] = *(volatile uint32_t *)AE350_READ_TRACE_ADDR;
+}
+static void test_observer(void) {
+    measure_cache_traffic();
+    test_begin("cache.observer"); test_result(RES[0x107] == 0);
+    for (uint32_t i = 0; i < 4; i++) { kv(" r", RES[0x100 + i]); }
+    for (uint32_t i = 0; i < 3; i++) { kv(" w", RES[0x104 + i]); }
+    kv(" errors", RES[0x107]);
+    kv(" write_control", RES[0x108]); kv(" read_control", RES[0x109]); puts_uart("\r\n");
 }
 
 static void test_stress(void) {

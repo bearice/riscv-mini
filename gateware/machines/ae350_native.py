@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # AE350 primitive port defaults adapted from LiteX gowin_ae350/core.py.
 """Native hard-macro ports, without a fabric bus adapter."""
-from migen import Signal, Constant, ClockSignal, ResetSignal, Instance, Memory, FSM, If, NextValue, NextState, Case, Mux
+from migen import Signal, Constant, ClockSignal, ResetSignal, Instance, Memory, FSM, If, NextValue, NextState, Case, Mux, Cat, ClockDomainsRenamer
 from litex.gen import LiteXModule, Open
 from litex.soc.interconnect.ahb import AHBInterface
 
@@ -77,13 +77,12 @@ class AE350ROM(LiteXModule):
         # address phase.  A synchronous memory needs a full clock after its
         # registered address changes before the output can be captured.
         self.comb += rd.adr.eq((address - base) >> 2)
-        value = rd.dat_r
+        value = Signal(32)
         entries = [(size - 24, dbg3), *[(size + off, sig) for off, sig in (windows or [])],
                    (size - 20, dbg2), (size - 16, debug_hi),
                    (size - 12, debug), (size - 8, cycles), (size - 4, status)]
-        for off, sig in entries:
-            if sig is not None:
-                value = Mux((address & 0xfffffffc) == base + off, sig, value)
+        self.comb += [value.eq(rd.dat_r), Case(address[2:], {
+            (base + off) >> 2: value.eq(sig) for off, sig in entries if sig is not None})]
         def accept():
             return If(bus.trans[1],
                       NextValue(address, bus.addr),
@@ -97,8 +96,9 @@ class AE350ROM(LiteXModule):
                 bus.resp.eq(error), accept())
 
 
+
 class NativeAE350(LiteXModule):
-    def __init__(self, wrapper=False):
+    def __init__(self, wrapper=False, data_domain='sys', vendor_itcm=False):
         self.wrapper = wrapper
         self.reset = Signal()
         self.ahb_rom = ahb_rom = AHBInterface(data_width=32, address_width=32)
@@ -112,7 +112,7 @@ class NativeAE350(LiteXModule):
             # DDR/SRAM AHB port, UART2, GPIO, debug JTAG.
             self.cpu_params = dict(
                 i_CORE_CLK       = ClockSignal("cpu"),
-                i_DDR_CLK        = ClockSignal("sys"),
+                i_DDR_CLK        = ClockSignal(data_domain),
                 i_AHB_CLK        = ClockSignal("sys"),
                 i_APB_CLK        = ClockSignal("sys"),
                 i_RTC_CLK        = ClockSignal("sys"),
@@ -155,11 +155,26 @@ class NativeAE350(LiteXModule):
                 o_TDO_OE         = Open(),
             )
             self.ahb_exts = ahb_exts
+            if vendor_itcm:
+                for port in ('i_ROM_HRDATA', 'i_ROM_HREADY', 'i_ROM_HRESP',
+                             'o_ROM_HADDR', 'o_ROM_HTRANS', 'o_ROM_HWRITE'):
+                    self.cpu_params.pop(port)
+                self.apb_addr = Signal(32)
+                self.apb_data = Signal(32)
+                self.apb_select = Signal()
+                self.apb_enable = Signal()
+                self.apb_write = Signal()
+                self.apb_ready = Signal(reset=1)
+                self.cpu_params.update(o_APB_PADDR=self.apb_addr, o_APB_PSEL=self.apb_select,
+                    o_APB_PENABLE=self.apb_enable, o_APB_PWRITE=self.apb_write,
+                    o_APB_PWDATA=Open(32), o_APB_PPROT=Open(3), o_APB_PSTRB=Open(4),
+                    i_APB_PRDATA=self.apb_data, i_APB_PREADY=self.apb_ready,
+                    i_APB_PSLVERR=self.apb_write)
         else:
             self.cpu_params = dict(
             # Clk/Rst.
             i_CORE_CLK       = ClockSignal("cpu"),
-            i_DDR_CLK        = ClockSignal("sys"),
+            i_DDR_CLK        = ClockSignal(data_domain),
             i_AHB_CLK        = ClockSignal("sys"),
             i_APB_CLK        = ClockSignal("sys"),
             i_POR_N          = 1,

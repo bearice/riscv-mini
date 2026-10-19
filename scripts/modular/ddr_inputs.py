@@ -7,7 +7,7 @@ Changing anything here changes the gateware build key (the module is part of
 the hashed source closure).
 """
 
-from gateware.machines.ae350_map import FABRIC_HZ
+from gateware.machines.ae350_map import FABRIC_HZ, DATA_HZ
 
 DDR_PROFILE = dict(
     name='400MHz',
@@ -38,10 +38,12 @@ DDR_PROFILE = dict(
     clocks=dict(
         ck_hz=400000000, ui_hz=100000000, ref_hz=50000000,
         sys_hz=FABRIC_HZ, cpu_hz=800000000, apb_hz=FABRIC_HZ,
+        data_hz=DATA_HZ,
         ui_ratio='CK/4', pll='Gowin_PLL_DDR3 (IDIV 1, FBDIV 1, ODIV0 16, ODIV2 2)',
     ),
     user_interface=dict(data_bits=256, bytes_per_beat=32, addr_unit_bytes=4, single_beat=True),
     cache=dict(line_bytes=32, sets=256, ways=4, size_bytes=32768, i_and_d=True),
     adapter=dict(read_line_cache=False, response_timeout_cycles=200000, ui_timeout_cycles=262144,
-                 mask_polarity='bit=1 masks byte', burst='one 32-byte beat per 64-bit AHB beat'),
+                 mask_polarity='bit=1 masks byte',
+                 burst='32-byte line: one validated read burst reuses one block; sequential writes merge into one masked UI write with early OKAY; the closing beat or idle flush waits for DRAM; a transfer already accepted by the decoder stays owned across that flush, and a flush failure is reported on that access'),
 )

@@ -1,14 +1,13 @@
-/* AE350 P2 ROM: autonomous POST, then UART payload loader.
+/* AE350 platform ROM bootloader: autonomous POST, then UART payload loader.
  *
  * Boot flow (no JTAG, no host magic):
  *   reset -> _start -> main
- *     -> short POST: SRAM pattern, DDR calibration status, DDR word check, ROM CRC
- *     -> results mirrored in SRAM AE350_SRAM_RESULTS
+ *     -> short POST: DLM scratch pattern, DDR calibration status, DDR word check, ROM CRC
+ *     -> results mirrored in DLM AE350_RESULTS_BASE
  *     -> UART identity banner and loader menu (20K framing, AE350 ABI)
- *     -> optional JTAG mailbox at AE350_SRAM_MAILBOX remains as a recovery path only
  *
- * The ROM is 8 KiB; stack, data and the result block live in the fabric SRAM
- * window at 0x40000000 (see gateware/machines/ae350_map.py).
+ * ROM-private stack/data use DLM. CRC runs in explicitly ROM-loaded ILM.
+ * Diagnostic results occupy a reserved DLM region; no fabric work SRAM.
  */
 #include <stdint.h>
 #include "ae350_address_map.h"
@@ -24,17 +23,13 @@
 #define UART_APB_HZ  AE350_FABRIC_HZ
 #define UART_BAUD    115200u
 
-#define RES          ((volatile uint32_t *)AE350_SRAM_RESULTS)
-#define CMD          ((volatile uint32_t *)AE350_SRAM_MAILBOX)
-#define CMD_MAGIC    0x5aa5c001u
-#define CMD_ACK      0xa55a0001u
+#define RES          ((volatile uint32_t *)AE350_RESULTS_BASE)
 
-#define ROM_STATUS   (*(volatile uint32_t *)(AE350_ROM_BASE + AE350_ROM_SIZE - 4u))
-#define ROM_CYCLES   (*(volatile uint32_t *)(AE350_ROM_BASE + AE350_ROM_SIZE - 8u))
+#define ROM_STATUS   (*(volatile uint32_t *)AE350_STATUS_ADDR)
+#define ROM_CYCLES   (*(volatile uint32_t *)AE350_CALIB_CYCLES_ADDR)
 #define DDR_BASE     0x00000000u
 #define DDR_PROBE    0x00100000u
 
-#define MINI_P2_BUILD_ID_STR MINI_P2_BUILD_ID
 
 static void putc(char c) {
     while (!(UART_REG(UART_LSR) & 0x20u)) { }
@@ -68,9 +63,9 @@ void trap_report(uint32_t cause, uint32_t pc, uint32_t value, uint32_t ra, uint3
 }
 
 /* ------------------------------------------------------------------ POST --- */
-static uint32_t post_sram(void) {
+static uint32_t post_dlm(void) {
     /* The reserved params block: the stack lives above it (linker-asserted). */
-    volatile uint32_t *p = (volatile uint32_t *)AE350_SRAM_PARAMS;
+    volatile uint32_t *p = (volatile uint32_t *)AE350_LOCAL_PARAMS;
     for (uint32_t i = 0; i < 64u; i++) p[i] = 0xa5a50000u | i;
     for (uint32_t i = 0; i < 64u; i++) if (p[i] != (0xa5a50000u | i)) return 1;
     for (uint32_t i = 0; i < 64u; i++) p[i] = ~(0x5a5a0000u | i);
@@ -115,6 +110,7 @@ static uint32_t load_addr;
 static uint32_t seq_expected;
 static uint32_t run_crc;
 
+__attribute__((section(".ilm.text"), noinline))
 static uint32_t crc32_step(uint32_t crc, uint32_t byte) {
     crc ^= byte & 0xffu;
     for (int i = 0; i < 8; i++) crc = (crc >> 1) ^ (0xedb88320u & (~(crc & 1u) + 1u));
@@ -144,8 +140,7 @@ static int recv_word(uint32_t *w) {
 static int ddr_usable;
 
 static void loader(void) {
-    /* One bounded idle wait per call so the caller can keep servicing the JTAG
-     * mailbox; a started upload runs to completion here. */
+    /* A started upload runs to completion before accepting another command. */
     for (;;) {
         uint32_t c = 0;
         if (!getc_timeout(&c, 5000u)) return;   /* ~tens of microseconds per slice */
@@ -226,8 +221,12 @@ static void loader(void) {
 void main(void) {
     uint32_t errs = 0;
     uart_init();
+    __asm__ volatile("csrr %0, 0x7c0" : "=r"(RES[8]));
+    __asm__ volatile("csrr %0, 0x7c1" : "=r"(RES[9]));
+    __asm__ volatile("csrr %0, 0xfc0" : "=r"(RES[10]));
+    __asm__ volatile("csrr %0, 0xfc1" : "=r"(RES[11]));
     RES[0] = 0xd0b00001u;                 /* POST started */
-    RES[1] = post_sram();                 /* 0 = pass */
+    RES[1] = post_dlm();                 /* 0 = pass */
     errs += RES[1] ? 1u : 0u;
     RES[2] = post_rom();          /* digest reported, not compared */
     {
@@ -247,19 +246,11 @@ void main(void) {
     RES[6] = errs;
     RES[7] = 0xd0b00002u;                 /* POST done */
 
-    puts("\r\nriscv-mini AE350 ROM " MINI_P2_BUILD_ID_STR "\r\n");
+    puts("\r\nriscv-mini AE350 ROM " MINI_AE350_BOOT_BUILD_ID "\r\n");
     puts("POST ");
     hex32(errs ? 0xbad00000u : 0x600d0000u); puts("\r\n");
-    if (RES[3] & 2u) puts("DDR INIT OK\r\n"); else puts("ERR DDR INIT; SRAM/JTAG only\r\n");
+    if (RES[3] & 2u) puts("DDR INIT OK\r\n"); else puts("ERR DDR INIT; DLM/JTAG only\r\n");
     puts("BL> ");
 
-    /* JTAG mailbox stays available as an optional recovery entry. */
-    for (;;) {
-        if (CMD[0] == CMD_MAGIC) {
-            uint32_t entry = CMD[1], sp = CMD[2];
-            CMD[0] = CMD_ACK;
-            __asm__ volatile("mv sp, %0\n\tfence.i\n\tjalr %1" ::"r"(sp), "r"(entry));
-        }
-        loader();
-    }
+    for (;;) loader();
 }

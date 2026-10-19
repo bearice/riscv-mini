@@ -31,3 +31,5 @@
 [GW-BASIC 解释器](../docs/gwbasic.md) 是 `apps/` 下的完整应用，同样由 BIOS 从 SD/TFTP 装载；它只用 BIOS 的 ecall 服务，所以主机侧可以用 `scripts/gwbasic_sim.py` 在 QEMU 上跑真实产物，验收见 `tests/gwbasic_test.py`。
 
 OpenSBI 的构建工具、镜像布局、CSR timer 和验收边界见 [OpenSBI 平台](../docs/opensbi-port.md)。它不链接 BIOS 的设备 HAL，普通 RPB1 程序仍使用原来的可返回 BIOS ABI。
+
+AE350 平台的常驻 ROM 启动固件位于 `bootloader/ae350/`，由统一构建入口生成独立 bootloader 产物，供各阶段共用。`bsp/mega138k_ae350_payload/` 是应用启动运行时；`payload/ae350_p2_tests/` 是阶段诊断。

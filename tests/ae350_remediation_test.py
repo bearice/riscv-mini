@@ -28,14 +28,15 @@ from programmer_cable import resolve_location
 from mini_ops import ae350_upload
 from mini_ops.ae350_session import HardwareSession, SessionError
 from mini_ops.ae350_jtag import CPUJTAG
-from mini_ops.ae350_payload import payload_file
+from mini_ops.ae350_payload import payload_file, application_parameters
 from argparse import Namespace
 
 
 class AdapterRecoveryTests(unittest.TestCase):
     def test_production_memory_and_decoder_with_real_cdc_and_current_map(self):
         from gateware.machines import ae350_map
-        self.assertEqual((ae350_map.DDR_BASE, ae350_map.SRAM_BASE), (0, 0x40000000))
+        self.assertEqual((ae350_map.DDR_BASE, ae350_map.DLM_BASE), (0, 0xa0200000))
+        self.assertFalse(any(name == 'sram' for name, *_ in ae350_map.WINDOWS))
         dut = Module()
         master, sram, ddr, error = [AHBInterface(data_width=64) for _ in range(4)]
         ui = DDR3UI()
@@ -284,7 +285,11 @@ class HostContractTests(unittest.TestCase):
         session = Mock()
         session.fresh_banner.return_value = b'riscv-mini AE350 ROM expected\r\nPOST 600d0000\r\nDDR INIT OK\r\nBL> '
         session.upload.return_value = b'SYSTEM READY'
+        store = Mock()
+        store.get.return_value = dict(dependencies={'bootloader': {}},
+                                     config={'image_abi': ae350_image.abi_tag()})
         for target, value in [
+            ('mini_ops.ae350_upload.Store', Mock(return_value=store)),
             ('mini_ops.ae350_upload.Operation', Mock(return_value=op)),
             ('mini_ops.ae350_upload.candidate', Mock(return_value=(root, {}, 'expected'))),
             ('mini_ops.ae350_upload.resolve_payload', Mock(return_value=({}, root))),
@@ -303,6 +308,14 @@ class HostContractTests(unittest.TestCase):
         ae350_upload.perform_upload(args)
         self.assertEqual(op.report['phase'], 'uploaded-and-handoff')
         hardware.close.assert_called_once()
+
+    def test_hardware_abi_mismatch_is_rejected_before_programming(self):
+        args, op, hardware = self.upload_fixture()
+        with patch('mini_ops.ae350_upload.Store') as store:
+            store.return_value.get.return_value = dict(dependencies={'bootloader': {}}, config={'image_abi': 0})
+            with self.assertRaisesRegex(ValueError, 'different address ABI'):
+                ae350_upload.perform_upload(args)
+        hardware.program.assert_not_called()
 
     def test_pc_outside_actual_image_is_not_execution(self):
         args, op, hardware = self.upload_fixture(location=107569, pc=0x70000)
@@ -376,6 +389,54 @@ class HostContractTests(unittest.TestCase):
                                    completed('ID: 0x0001081B\n1 device(s) found')])
         with self.assertRaisesRegex(RuntimeError, 'Multiple matching'):
             resolve_location('programmer', identity=0x1081b, runner=runner)
+
+
+class ApplicationParameterTests(unittest.TestCase):
+    def fixture(self, root, offset=8):
+        (root / 'app.bin').write_bytes(bytes(range(64)))
+        (root / 'manifest.json').write_text(json.dumps({'config': {
+            'binary': 'app.bin', 'parameters': 'params.json'}}))
+        layout = dict(offset=offset, size=20, format='5I-le',
+                      fields=['stress_seconds', 'seed', 'region_kb', 'flags', 'traversal_mb'])
+        (root / 'params.json').write_text(json.dumps(layout))
+        return dict(stress_seconds=2, seed=0xabcdef01, region_kb=1024, flags=15, traversal_mb=1)
+
+    def test_only_declared_bytes_change_and_uart_crc_covers_parameters(self):
+        import struct
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = self.fixture(root)
+            data = application_parameters(root, values)
+            self.assertEqual(data[:8], bytes(range(8)))
+            self.assertEqual(data[28:], bytes(range(28, 64)))
+            self.assertEqual(struct.unpack('<5I', data[8:28]), tuple(values.values()))
+            _, decoded = ae350_image.parse(ae350_image.build(data))
+            self.assertEqual(decoded, data)
+            self.assertEqual((root / 'app.bin').read_bytes(), bytes(range(64)))
+
+    def test_bad_parameter_offsets_are_rejected(self):
+        for offset in (-1, 45, 1000):
+            with self.subTest(offset=offset), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                values = self.fixture(root, offset)
+                with self.assertRaisesRegex(ValueError, 'outside'):
+                    application_parameters(root, values)
+
+    def test_unknown_or_missing_parameters_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = self.fixture(root)
+            values['entry'] = 0x1234
+            with self.assertRaisesRegex(ValueError, 'contract'):
+                application_parameters(root, values)
+
+    def test_no_unsigned_wrapping_of_parameters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = self.fixture(root)
+            values['seed'] = -1
+            with self.assertRaisesRegex(ValueError, 'unsigned'):
+                application_parameters(root, values)
 
 
 if __name__ == '__main__':

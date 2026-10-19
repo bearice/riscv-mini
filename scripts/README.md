@@ -104,3 +104,5 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 
 
 AE350 P2 操作合同见 [当前上板说明](../docs/ae350-p2-bringup.md)。普通工作使用 `board run/recover/verify`，诊断使用 `board ddr-suite`；`ae350-upload` 仅保留为兼容别名。上传必须明确传入 `--payload <payload-build-result.json>`，不再自动挑选其他构建的最新载荷。无 JTAG 的上传只证明 ROM 接收与交接，执行核验和拒绝路径测试使用显式 CPU JTAG。完整时序检查包含 setup、hold 和 minimum pulse width。
+
+AE350 ROM bootloader 的源目录为 `firmware/bootloader/ae350/`，独立于 P2 诊断。普通应用和 DDR suite 都经同一 UART loader 装载；`board jtag-test` 只读核验 ITCM、本地内存和 POST，`board recover` 执行显式恢复。

@@ -19,7 +19,14 @@ import ae350_image
 from mini_ops.ae350_payload import resolve_payload, payload_file
 
 # The AE350 ROM identity banner, matched through the shared 20K client.
-BANNER = rb'(?:^|\n)(riscv-mini AE350 ROM [0-9a-f]+\r\nPOST [0-9a-f]+\r\n(?:DDR INIT OK|ERR DDR INIT; SRAM/JTAG only)\r\nBL> )$'
+BANNER = rb'(?:^|\n)(riscv-mini AE350 ROM [0-9a-f]+\r\nPOST [0-9a-f]+\r\n(?:DDR INIT OK|ERR DDR INIT; DLM/JTAG only)\r\nBL> )$'
+
+
+def wait_loader(session, build_id, timeout):
+    text = session.fresh_banner(timeout, pattern=BANNER).decode('ascii', 'replace')
+    if 'POST 600d0000' not in text or ('ROM ' + build_id) not in text:
+        raise RuntimeError('ROM POST/build identity mismatch: ' + text[-240:])
+    return text
 
 
 def perform_upload(args, selected=None):
@@ -34,6 +41,9 @@ def perform_upload(args, selected=None):
     try:
         root, ref, build_id = selected if selected is not None else candidate(args.build)
         store = Store()
+        boot_ref = store.get(ref)['dependencies']['bootloader']
+        if store.get(boot_ref)['config'].get('image_abi') != amap.image_abi():
+            raise ValueError('Selected hardware uses a different address ABI')
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None))
         payload = payload_file(payload_root).read_bytes()
         image = ae350_image.build(payload)
@@ -61,12 +71,7 @@ def perform_upload(args, selected=None):
             hardware.restart_rom(expected_rom=(store.path(boot) / 'outputs/boot.bin').read_bytes())
 
         def wait_banner():
-            text = session.fresh_banner(args.timeout, pattern=BANNER).decode('ascii', 'replace')
-            if 'POST 600d0000' not in text:
-                raise RuntimeError('POST did not report success: ' + text[-200:])
-            if ('ROM ' + build_id) not in text:
-                raise RuntimeError('ROM build identity mismatch: banner=%r expected=%r' % (text[-80:], build_id))
-            return text
+            return wait_loader(session, build_id, args.timeout)
 
         try:
             # No JTAG on the success path: the port is already open, so the ROM's
@@ -91,7 +96,7 @@ def perform_upload(args, selected=None):
             cpu = hardware.halt()
             pc = cpu.register(0x7b1)
             mcause = cpu.register(0x342)
-            sr = [int.from_bytes(cpu.read_memory(amap.SRAM_BASE + amap.SRAM_RESULTS + 4 * i, 4), 'little') for i in range(8)]
+            sr = [int.from_bytes(cpu.read_memory(amap.RESULTS_BASE + 4 * i, 4), 'little') for i in range(8)]
             running_in_payload = ae350_image.LOAD <= pc < ae350_image.LOAD + len(payload)
             op.record('cpu', pc=hex(pc), mcause=hex(mcause), results=[hex(v) for v in sr],
                       phase='executing' if (running_in_payload and mcause == 0) else 'handoff-only')

@@ -2,25 +2,90 @@
 
 The vendor IP exposes a 256-bit, 32-byte single-beat user interface clocked by
 its own ``clk_out`` (100 MHz at 400 MHz CK).  The AE350 data-memory port is a
-64-bit AHB-Lite master clocked by the configured fabric ``sys`` clock.  Two asynchronous
-FIFOs cross between the domains; every AHB beat becomes exactly one 32-byte
-DRAM transfer (with byte masks for sub-word writes), so reads always observe
-DRAM and no invisible adapter cache can hide a maintenance bug.
+64-bit AHB-Lite master clocked by the configured fabric ``sys`` clock.  Two
+asynchronous FIFOs cross between the domains. A returned 32-byte block can
+serve subsequent beats of the same validated AHB read burst. Independent
+NONSEQ reads refetch DRAM; there is no persistent cache.
+
+Write aggregation
+-----------------
+Measured cache write-back is WRAP4, HSIZE=64-bit, HPROT=0xf: four beats, one
+32-byte line. The master presents the next address only after the current beat
+is acknowledged, and the registered decoder hides that address from the slave
+until HREADY, so a beat cannot wait to *collect* later beats.
+
+* A write beat whose already-visible successor is the next sequential beat of
+  the same burst, with the same size and protection and inside the same
+  32-byte line, is acknowledged OKAY as soon as its bytes enter the adapter
+  buffer. Those bytes belong to the adapter, not to DRAM. HREADY is not held
+  for a later beat or for the UI.
+* BUSY keeps that buffer and does not issue a command. The current beat is
+  still acknowledged once its bytes are buffered.
+* The beat that closes the line (IDLE, NONSEQ, a read, a different block, or
+  a different burst attribute) is acknowledged only after one masked UI write
+  of the whole buffer has been accepted or has failed. Its HRESP is that
+  result. Waiting here is for DRAM, not for a future beat: the successor is
+  already visible, and the master holds it while HREADY is low.
+* An idle flush (BUSY, then IDLE, with no further data beat) commits the
+  buffer before any new transfer. Those beats were already acknowledged, so a
+  flush failure cannot rewrite their HRESP. ``error_sticky`` records it and
+  ``write_fault`` makes the next DDR access return ERROR once.
+* A transfer the decoder has already accepted stays owned through that flush:
+  its address, control and write data are captured on the one-cycle dispatch
+  and are not completed by raising HREADY. The flush runs first. The owned
+  transfer is then performed, or is the access that reports a flush failure.
+* A later read is not forwarded from the buffer. The buffer is committed
+  first, the read-block cache is invalidated, and the read is then a new UI
+  command. One outstanding command preserves order.
+* Independent NONSEQ writes do not merge, even in the same line. A reset
+  clears the buffer; bytes acknowledged but not yet accepted by the UI are
+  discarded. Calibration loss or a timeout at commit issues no further
+  command, drops the buffer, and reports the error on the closing beat or,
+  for an idle flush, on the next access. A late UI response is consumed by
+  the existing recovery drain and cannot complete a later request.
+* ``wr_data_mask`` bit 1 leaves that byte unchanged. Partial lines and tails
+  set strobes only for bytes the master actually wrote.
 
 Contracts (verified against the vendor reference):
   * ``ui.addr`` counts 4-byte words, so ``addr = (cpu_byte - base) >> 2``.
   * one command transfers 32 bytes; ``wr_data_mask`` bit = 1 masks a byte.
   * ``ui.cmd`` 0 = write, 1 = read.
-  * request payload: write, size, byte address, wdata;
-    response payload: rdata in bits [0:64], error in bit 64.
+  * request: write, size, addr, wdata[64], reuse, line, line_data[256], line_mask[32].
+    Reads use the low fields and leave ``line`` clear. A write commit sets
+    ``line`` and carries the assembled 32-byte buffer. Response: rdata[64], error.
 """
 from migen import *
 from migen.genlib.fifo import AsyncFIFO
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 
-REQ_WIDTH = 1 + 3 + 32 + 64
+
+def _or_tree(nodes):
+    """Balanced OR. A flat reduce becomes a carry chain on this FPGA."""
+    nodes = list(nodes)
+    if not nodes:
+        return Constant(0)
+    while len(nodes) > 1:
+        reduced = []
+        pending = iter(nodes)
+        for left in pending:
+            right = next(pending, None)
+            reduced.append(left if right is None else (left | right))
+        nodes = reduced
+    return nodes[0]
+
+
+def _equal(left, right):
+    """Equality via a XOR tree. A 32-bit ``==`` was a carry chain on HREADY."""
+    width = len(left)
+    return ~_or_tree([left[index] ^ right[index] for index in range(width)])
+
+# write, size, addr, wdata, reuse, line, line_data, line_mask
+REQ_WIDTH = 1 + 3 + 32 + 64 + 1 + 1 + 256 + 32
 RESP_WIDTH = 64 + 1
+_REQ_LINE = 101
+_REQ_LINE_DATA = slice(102, 358)
+_REQ_LINE_MASK = slice(358, 390)
 
 
 class DDR3UI:
@@ -41,7 +106,7 @@ class DDR3UI:
 
 
 class DDR3AHB(LiteXModule):
-    """AHB-Lite slave that turns each 64-bit beat into one 32-byte DDR transfer.
+    """AHB-Lite slave with transaction-scoped 256-bit read width conversion.
 
     ``ready_i`` is the DDR calibration status; while low every access returns a
     two-cycle ERROR without touching the IP.  Out-of-range and unaligned accesses also return ERROR.  Every wait state is bounded by
@@ -49,12 +114,14 @@ class DDR3AHB(LiteXModule):
     """
     def __init__(self, bus, ui, ready_i, base=0x2000, size=1 << 30,
                  response_timeout=200_000, ui_timeout=1 << 18, fifo_cls=None,
-                 accepted_i=None):
+                 accepted_i=None, end_burst_i=None, lookahead=None):
         assert bus.data_width in (32, 64)
         self.bus = bus
         self.base = base
         self.size = size
         self.error_sticky = Signal()
+        self.write_fault = Signal()
+        self.wbuf_valid = Signal()
         self.recovering = Signal()
         self.recovery_failed = Signal()
         self.ui_idle_ddr = Signal()
@@ -71,6 +138,9 @@ class DDR3AHB(LiteXModule):
         self.last_write = Signal()
         self.last_size = Signal(3)
         self.last_addr = Signal(32)
+        self.last_control = Signal(16)  # accepted HTRANS/HBURST/HSIZE/HPROT/HWRITE
+        self.write_control = Signal(16)
+        self.read_control = Signal(16)
         self.debug = Signal(32)
         self.debug_hi = Signal(32)
         # Per-transaction recorder (ddr domain): last accepted command and the
@@ -85,8 +155,10 @@ class DDR3AHB(LiteXModule):
         self.rec_r_n = Signal(16)
 
         fifo_cls = fifo_cls or AsyncFIFO
-        req = ClockDomainsRenamer({"write": "sys", "read": "ddr"})(fifo_cls(REQ_WIDTH, 8))
-        resp = ClockDomainsRenamer({"write": "ddr", "read": "sys"})(fifo_cls(RESP_WIDTH, 8))
+        # This engine has one transaction in flight. Two slots allow the
+        # Gray-pointer round trip without a fictitious eight-entry pipeline.
+        req = ClockDomainsRenamer({"write": "sys", "read": "ddr"})(fifo_cls(REQ_WIDTH, 2))
+        resp = ClockDomainsRenamer({"write": "ddr", "read": "sys"})(fifo_cls(RESP_WIDTH, 2))
         self.submodules += req, resp
 
         # ----
@@ -98,6 +170,159 @@ class DDR3AHB(LiteXModule):
         lifetime = Signal(32)
         resp_data = Signal(64)
         resp_error = Signal()
+        reuse = Signal()
+        chain = Signal()
+        expected = Signal(32)
+        burst_type = Signal(3)
+        burst_size = Signal(3)
+        burst_prot = Signal(4)
+        burst_write = Signal()
+        beats_left = Signal(5)
+        step = Signal(32)
+        wrap_mask = Signal(32)
+        next_address = Signal(32)
+        sequential = Signal()
+        burst_continue = Signal()
+        owned = Signal()
+        owned_addr = Signal(32)
+        owned_write = Signal()
+        owned_size = Signal(3)
+        owned_burst = Signal(3)
+        owned_prot = Signal(4)
+        owned_trans = Signal(2)
+        owned_wdata = Signal(bus.data_width)
+        saved_wdata = Signal()
+        data_word = Signal(bus.data_width)
+        # Owned-phase comparisons stay off the live HREADY equation. Mixing
+        # them through must_flush pulled a carry chain into DDR_HREADY.
+        o_step = Signal(32)
+        o_wrap = Signal(32)
+        o_next = Signal(32)
+        o_continue = Signal()
+        o_sequential = Signal()
+        o_aligned = Signal()
+        o_in_range = Signal()
+        o_bad = Signal()
+        self.comb += [
+            data_word.eq(Mux(saved_wdata, owned_wdata, bus.wdata)),
+            step.eq(Constant(1, 32) << bus.size),
+            wrap_mask.eq(Mux(bus.burst == 2, (step << 2) - 1,
+                         Mux(bus.burst == 4, (step << 3) - 1, (step << 4) - 1))),
+            next_address.eq(Mux((bus.burst != 0) & ~bus.burst[0],
+                (bus.addr & ~wrap_mask) | ((bus.addr + step) & wrap_mask), bus.addr + step)),
+            burst_continue.eq(chain & (bus.trans == 3) & _equal(bus.addr, expected)
+                & (bus.burst == burst_type) & (bus.size == burst_size)
+                & (bus.prot == burst_prot) & (bus.write == burst_write)),
+            # Read reuse only. Write beats use the same chain but merge below.
+            sequential.eq(burst_continue & ~bus.write),
+            o_step.eq(Constant(1, 32) << owned_size),
+            o_wrap.eq(Mux(owned_burst == 2, (o_step << 2) - 1,
+                      Mux(owned_burst == 4, (o_step << 3) - 1, (o_step << 4) - 1))),
+            o_next.eq(Mux((owned_burst != 0) & ~owned_burst[0],
+                (owned_addr & ~o_wrap) | ((owned_addr + o_step) & o_wrap), owned_addr + o_step)),
+            o_continue.eq(chain & (owned_trans == 3) & _equal(owned_addr, expected)
+                & (owned_burst == burst_type) & (owned_size == burst_size)
+                & (owned_prot == burst_prot) & (owned_write == burst_write)),
+            o_sequential.eq(o_continue & ~owned_write),
+            o_aligned.eq((owned_addr & ((1 << owned_size) - 1)) == 0),
+            o_in_range.eq((owned_addr >= self.base) & (owned_addr < self.base + self.size)),
+            o_bad.eq(~o_in_range | ~o_aligned | (owned_size > (bus.data_width // 8).bit_length() - 1)
+                     | ~ready_i | self.recovering | self.recovery_failed),
+        ]
+        # The registered decoder presents HTRANS only on the acceptance cycle.
+        # Sample the master's live controls so a data phase can see its
+        # successor without a combinational path from the hard macro.
+        peek_trans = Signal(2)
+        peek_addr = Signal(32)
+        peek_write = Signal()
+        peek_burst = Signal(3)
+        peek_size = Signal(3)
+        peek_prot = Signal(4)
+        if lookahead is None:
+            self.comb += [peek_trans.eq(bus.trans), peek_addr.eq(bus.addr),
+                          peek_write.eq(bus.write), peek_burst.eq(bus.burst),
+                          peek_size.eq(bus.size), peek_prot.eq(bus.prot)]
+        else:
+            self.sync += [peek_trans.eq(lookahead.trans), peek_addr.eq(lookahead.addr),
+                          peek_write.eq(lookahead.write), peek_burst.eq(lookahead.burst),
+                          peek_size.eq(lookahead.size), peek_prot.eq(lookahead.prot)]
+        wbuf_data = Signal(256)
+        wbuf_strb = Signal(32)
+        wbuf_block = Signal(27)
+        rel = Signal(32)
+        peek_rel = Signal(32)
+        beat_lane = Signal(3)
+        same_line = Signal()
+        write_merge = Signal()
+        write_busy = Signal()
+        must_flush = Signal()
+        retire = Signal()
+        commit_addr = Signal(32)
+        # An aligned beat fits in one data-bus lane of the 32-byte line.
+        # Shift only inside that lane; a 32-bit barrel fans out across the buffer.
+        lane_bytes = bus.data_width // 8
+        nlanes = 32 // lane_bytes
+        lane_shift = (lane_bytes - 1).bit_length()
+        lane_ones = Signal(lane_bytes)
+        lane_strb = Signal(lane_bytes)
+        self.comb += [
+            rel.eq(addr - self.base),
+            peek_rel.eq(peek_addr - self.base),
+            lane_ones.eq(Mux(tsize == 0, 0x01,
+                        Mux(tsize == 1, 0x03,
+                        Mux(tsize == 2, 0x0f, (1 << lane_bytes) - 1)))),
+            lane_strb.eq(lane_ones << rel[:lane_shift]),
+            beat_lane.eq(rel[lane_shift:lane_shift + (nlanes - 1).bit_length()]),
+            same_line.eq(self.wbuf_valid & _equal(wbuf_block, rel[5:32])),
+            write_merge.eq(is_write & chain & (peek_trans == 3) & peek_write
+                & _equal(peek_addr, expected) & (peek_burst == burst_type)
+                & (peek_size == burst_size) & (peek_prot == burst_prot)
+                & _equal(peek_rel[5:32], rel[5:32])),
+            write_busy.eq(is_write & chain & (peek_trans == 1)),
+            must_flush.eq(self.wbuf_valid
+                & ~((peek_trans == 3) & peek_write & chain & _equal(peek_addr, expected)
+                    & (peek_burst == burst_type) & (peek_size == burst_size)
+                    & (peek_prot == burst_prot) & _equal(peek_rel[5:32], wbuf_block))
+                & ~((peek_trans == 1) & chain)),
+            commit_addr.eq(self.base + Cat(Constant(0, 5), wbuf_block)),
+        ]
+        # DATA samples the beat. CAPTURE then writes one lane of the buffer
+        # from these registers, so the 256-bit merge is not a barrel shift.
+        hold_data = Signal(bus.data_width)
+        hold_strb = Signal(lane_bytes)
+        hold_lane = Signal(3)
+        hold_same = Signal()
+        next_bytes = []
+        next_bits = []
+        for lane in range(nlanes):
+            hit = Signal(name=f"wbuf_lane_hit{lane}")
+            same_l = Signal(name=f"wbuf_same{lane}")
+            hit.attr.add(("syn_keep", 1))
+            hit.attr.add(("syn_maxfan", 8))
+            same_l.attr.add(("syn_keep", 1))
+            same_l.attr.add(("syn_maxfan", 8))
+            self.comb += [hit.eq(hold_lane == lane), same_l.eq(hold_same)]
+            for byte in range(lane_bytes):
+                index = lane * lane_bytes + byte
+                fresh = Mux(hit, hold_data[8 * byte:8 * byte + 8], 0)
+                take = hold_strb[byte] & hit
+                kept = Mux(take, fresh, wbuf_data[8 * index:8 * index + 8])
+                # Nested muxes avoid inverting same_l: a one-bit ``~`` is not
+                # a one-bit select. A new line clears every other lane.
+                next_bytes.append(Mux(same_l, kept, fresh))
+                next_bits.append(Mux(same_l, wbuf_strb[index] | take, take))
+        # HREADY is this register, so the hard-macro pin is a flip-flop output.
+        # ready_d is the level the *next* state will present. Loading it now
+        # makes the pin match that state on arrival: DATA is already low, and
+        # EARLY/COMPLETE are already high. Using the current level instead
+        # would leave the pin high through DATA and complete the beat early.
+        ready_d = Signal()
+        ready_q = Signal(reset=1)
+        self.sync += ready_q.eq(ready_d)
+        # IDLE ends a burst; BUSY is allowed to retain its context. A decoder
+        # passes the master's real IDLE indication because slave HTRANS is gated.
+        end_burst = end_burst_i if end_burst_i is not None else ((bus.trans == 0) & bus.readyout)
+        self.sync += If(end_burst, chain.eq(0))
 
         aligned = Signal()
         in_range = Signal()
@@ -113,27 +338,80 @@ class DDR3AHB(LiteXModule):
                    | ~ready_i | self.recovering | self.recovery_failed),
         ]
 
-        def accept():
+        def accept(src_trans, src_addr, src_write, src_size, src_burst, src_prot,
+                   src_bad, src_in_range, src_aligned, src_sequential, src_next,
+                   src_continue, save_data):
             return [
                 NextValue(self.n_req, self.n_req + 1),
-                NextValue(self.n_write, self.n_write + bus.write),
-                NextValue(self.n_read, self.n_read + ~bus.write),
-                NextValue(self.last_bad, bad),
-                NextValue(self.last_in_range, in_range),
-                NextValue(self.last_aligned, aligned),
-                NextValue(self.last_write, bus.write),
-                NextValue(self.last_size, bus.size),
-                NextValue(self.last_addr, bus.addr),
-                NextValue(addr, bus.addr),
-                NextValue(is_write, bus.write),
-                NextValue(tsize, bus.size),
+                NextValue(self.n_write, self.n_write + src_write),
+                NextValue(self.n_read, self.n_read + ~src_write),
+                NextValue(self.last_bad, src_bad),
+                NextValue(self.last_in_range, src_in_range),
+                NextValue(self.last_aligned, src_aligned),
+                NextValue(self.last_write, src_write),
+                NextValue(self.last_size, src_size),
+                NextValue(self.last_addr, src_addr),
+                NextValue(addr, src_addr),
+                NextValue(self.last_control, Cat(src_trans, src_burst, src_size, src_prot, src_write)),
+                If(src_write,
+                    NextValue(self.write_control, Cat(src_trans, src_burst, src_size, src_prot, src_write)),
+                ).Else(
+                    NextValue(self.read_control, Cat(src_trans, src_burst, src_size, src_prot, src_write)),
+                ),
+                NextValue(reuse, src_sequential & ~src_bad),
+                NextValue(expected, src_next),
+                NextValue(burst_type, src_burst),
+                NextValue(burst_size, src_size),
+                NextValue(burst_prot, src_prot),
+                NextValue(burst_write, src_write),
+                If(src_continue,
+                    NextValue(beats_left, beats_left - 1),
+                    NextValue(chain, ~src_bad & ((src_burst == 1) | (beats_left > 1))),
+                ).Else(
+                    NextValue(beats_left, Mux(src_burst <= 3, 3, Mux(src_burst <= 5, 7, 15))),
+                    NextValue(chain, ~src_bad & (src_trans == 2) & (src_burst != 0)),
+                ),
+                NextValue(is_write, src_write),
+                NextValue(tsize, src_size),
                 NextValue(lifetime, 0),
-                If(bad,
+                If(self.write_fault & ~src_bad,
+                    NextValue(self.write_fault, 0),
+                    NextValue(saved_wdata, 0),
+                    NextState("REJECT1"),
+                ).Elif(src_bad,
+                    NextValue(self.write_fault, 0),
                     NextValue(self.n_error, self.n_error + 1),
+                    NextValue(saved_wdata, 0),
                     NextState("REJECT1"),
                 ).Else(
+                    # Owned write data is consumed two cycles later, in CAPTURE.
+                    NextValue(saved_wdata, save_data),
                     NextState("DATA"),
                 ),
+            ]
+
+        def accept_bus():
+            return accept(bus.trans, bus.addr, bus.write, bus.size, bus.burst, bus.prot,
+                          bad, in_range, aligned, sequential, next_address, burst_continue, 0)
+
+        def accept_owned():
+            return accept(owned_trans, owned_addr, owned_write, owned_size, owned_burst,
+                          owned_prot, o_bad, o_in_range, o_aligned, o_sequential, o_next,
+                          o_continue, owned_write)
+
+        def capture():
+            # The registered decoder presents an accepted transfer for one cycle.
+            # Keep its address, control and write data until this adapter can
+            # run it; the live bus will not still be offering them.
+            return [
+                NextValue(owned, 1),
+                NextValue(owned_addr, bus.addr),
+                NextValue(owned_write, bus.write),
+                NextValue(owned_size, bus.size),
+                NextValue(owned_burst, bus.burst),
+                NextValue(owned_prot, bus.prot),
+                NextValue(owned_trans, bus.trans),
+                NextValue(owned_wdata, bus.wdata),
             ]
 
         fsm = FSM(reset_state="ADDRESS")
@@ -144,86 +422,210 @@ class DDR3AHB(LiteXModule):
         # Its acceptance pulse is authoritative; a directly connected master
         # instead uses this slave's own HREADY address handshake.
         incoming = accepted_i if accepted_i is not None else (bus.trans[1] & bus.readyout)
+        wdata64 = Signal(64)
+        self.comb += wdata64.eq(bus.wdata)
+        drain = Signal(32)
+        # A closing beat reports the failure as its own HRESP. An idle flush
+        # has already acknowledged its beats, so the next access reports it.
+        def note_fault():
+            return [
+                NextValue(self.wbuf_valid, 0),
+                NextValue(chain, 0),
+                NextValue(self.error_sticky, 1),
+                NextValue(self.n_error, self.n_error + 1),
+                If(retire,
+                    NextState("ERROR1"),
+                ).Else(
+                    NextValue(self.write_fault, 1),
+                    NextValue(self.recovering, 1),
+                    NextValue(drain, 0),
+                    NextState("DRAIN"),
+                ),
+            ]
+        # Pin is ready_q. Each state loads the level the next state will show.
+        self.comb += bus.readyout.eq(ready_q)
+        # ADDRESS is ready only when it will actually accept. flush of the line
+        # decision is the compare from the previous cycle, which is must_flush
+        # while that previous state is still running.
+        def address_level(owned_next, pending_next):
+            return ~pending_next & ~must_flush & ~owned_next
         fsm.act("ADDRESS",
-            bus.readyout.eq(~pending),
-            # A normal address phase, or the data phase of a transfer the
-            # interconnect accepted at the error completion edge (``pending``):
-            # both capture the held address, only the handshake differs.
-            If(bus.trans[1] | pending,
+            # A dirty line must reach DRAM before a new transfer is accepted.
+            # BUSY and an in-block sequential write keep the buffer open.
+            # An owned transfer waits here with HREADY low, then runs from its
+            # captured phase rather than the live bus.
+            If(must_flush,
+               If(bus.trans[1] & ~owned, *capture()),
+               NextValue(retire, 0),
+               NextState("COMMIT"),
+               ready_d.eq(0),
+            ).Elif(owned,
+               NextValue(owned, 0),
                NextValue(pending, 0),
-               *accept(),
+               *accept_owned(),
+               ready_d.eq(0),
+            ).Elif(bus.trans[1] | pending,
+               NextValue(pending, 0),
+               *accept_bus(),
+               ready_d.eq(0),
+            ).Else(
+               ready_d.eq(1),
             ),
         )
         fsm.act("DATA",
-            bus.readyout.eq(0),
+            # Address and size are stable. The master presents this beat's
+            # HWDATA only after the predecessor acknowledge, so CAPTURE
+            # samples the data and WBUF merges it.
+            NextValue(hold_strb, lane_strb),
+            NextValue(hold_lane, beat_lane),
+            NextValue(hold_same, same_line),
             NextState("CAPTURE"),
+            ready_d.eq(0),
         )
         fsm.act("CAPTURE",
-            bus.readyout.eq(0),
-            req.din.eq(Cat(is_write, tsize, addr, bus.wdata)),
-            req.we.eq(1),
-            NextValue(lifetime, lifetime + 1),
-            If(req.writable,
+            NextValue(saved_wdata, 0),
+            If(is_write,
+                NextValue(hold_data, data_word),
+                NextState("WBUF"),
+                ready_d.eq(0),
+            ).Else(
+                req.din.eq(Cat(is_write, tsize, addr, wdata64, reuse,
+                               Constant(0, 1 + 256 + 32))),
+                req.we.eq(1),
+                NextValue(retire, 1),
+                NextValue(lifetime, lifetime + 1),
+                If(req.writable,
+                    NextValue(lifetime, 0),
+                    NextState("WAIT"),
+                    ready_d.eq(0),
+                ).Elif(lifetime == response_timeout,
+                    NextValue(self.error_sticky, 1),
+                    NextValue(self.n_error, self.n_error + 1),
+                    NextState("ERROR1"),
+                    ready_d.eq(0),
+                ).Else(
+                    ready_d.eq(0),
+                ),
+            ),
+        )
+        # Lane, strobe and write data are all registers. The buffer update is
+        # one mux from those registers, then EARLY or COMMIT.
+        fsm.act("WBUF",
+            NextValue(wbuf_data, Cat(*next_bytes)),
+            NextValue(wbuf_strb, Cat(*next_bits)),
+            NextValue(wbuf_block, rel[5:32]),
+            NextValue(self.wbuf_valid, 1),
+            If(write_merge | write_busy,
+                NextState("EARLY"),
+                ready_d.eq(1),
+            ).Else(
+                NextValue(retire, 1),
+                NextState("COMMIT"),
+                ready_d.eq(0),
+            ),
+        )
+        # The line is already complete. One UI write, then retire the beat
+        # that closed it, or return to ADDRESS if the beats were early-acked.
+        fsm.act("COMMIT",
+            # A closing beat (retire) reaches COMPLETE and accepts the next
+            # address there. Only an idle flush has no such acceptance point.
+            # Every exit is a not-ready state, so the pin stays low.
+            ready_d.eq(0),
+            If(bus.trans[1] & ~owned & ~retire, *capture()),
+            req.din.eq(Cat(Constant(1, 1), Constant(0, 3), commit_addr, Constant(0, 64),
+                           Constant(0, 1), Constant(1, 1), wbuf_data, wbuf_strb)),
+            req.we.eq(ready_i),
+            If(~ready_i,
+                *note_fault(),
+            ).Elif(req.writable,
+                NextValue(self.wbuf_valid, 0),
                 NextValue(lifetime, 0),
                 NextState("WAIT"),
-            ).Elif(lifetime == response_timeout,
-                NextValue(self.error_sticky, 1),
-                NextValue(self.n_error, self.n_error + 1),
-                NextState("ERROR1"),
+            ).Else(
+                NextValue(lifetime, lifetime + 1),
+                If(lifetime == response_timeout, *note_fault()),
+            ),
+        )
+        fsm.act("EARLY",
+            bus.resp.eq(0),
+            bus.rdata.eq(0),
+            If(bus.trans[1],
+                *accept_bus(),
+                ready_d.eq(0),
+            ).Else(
+                NextState("ADDRESS"),
+                ready_d.eq(address_level(owned, pending)),
             ),
         )
         fsm.act("WAIT",
-            bus.readyout.eq(0),
+            If(bus.trans[1] & ~owned & ~retire, *capture()),
             NextValue(lifetime, lifetime + 1),
             If(resp.readable,
                 NextValue(resp_data, resp.dout[0:64]),
                 NextValue(resp_error, resp.dout[64]),
                 If(resp.dout[64],
                     resp.re.eq(1),
-                    NextValue(self.error_sticky, 1),
-                    NextValue(self.n_error, self.n_error + 1),
-                    NextState("ERROR1"),
-                ).Else(NextState("COMPLETE")),
+                    *note_fault(),
+                    ready_d.eq(0),
+                ).Elif(retire,
+                    NextState("COMPLETE"),
+                    ready_d.eq(1),
+                ).Else(
+                    resp.re.eq(1),
+                    NextState("ADDRESS"),
+                    # retire is 0 in this branch, so a visible transfer is owned.
+                    ready_d.eq(address_level(owned | bus.trans[1], pending)),
+                ),
             ).Elif(lifetime == response_timeout,
-                NextValue(self.error_sticky, 1),
-                NextValue(self.n_error, self.n_error + 1),
-                NextState("ERROR1"),
+                *note_fault(),
+                ready_d.eq(0),
+            ).Else(
+                ready_d.eq(0),
             ),
         )
-        # One completion cycle: HREADY high and data valid.  A valid address
-        # presented in this cycle is accepted here (standard AHB pipelining);
-        # no extra cycle is imposed on the master.
+        # One completion cycle: HREADY high and data valid. A valid address
+        # presented in this cycle is accepted here.
         fsm.act("COMPLETE",
-            bus.readyout.eq(1),
             bus.rdata.eq(resp_data[:bus.data_width]),
             bus.resp.eq(resp_error),
             NextValue(self.error_sticky, self.error_sticky | resp_error),
             resp.re.eq(1),
-            If(bus.trans[1], *accept()).Else(NextState("ADDRESS")),
+            If(bus.trans[1],
+                *accept_bus(),
+                ready_d.eq(0),
+            ).Else(
+                NextState("ADDRESS"),
+                ready_d.eq(address_level(owned, pending)),
+            ),
         )
         fsm.act("REJECT1",
-            bus.readyout.eq(0),
             bus.resp.eq(1),
             NextState("REJECT2"),
+            ready_d.eq(1),
         )
         fsm.act("REJECT2",
-            bus.readyout.eq(1),
             bus.resp.eq(1),
-            If(bus.trans[1], *accept()).Else(NextState("ADDRESS")),
+            If(bus.trans[1],
+                *accept_bus(),
+                ready_d.eq(0),
+            ).Else(
+                NextState("ADDRESS"),
+                ready_d.eq(address_level(owned, pending)),
+            ),
         )
         fsm.act("ERROR1",
-            bus.readyout.eq(0),
+            NextValue(chain, 0),
+            NextValue(self.wbuf_valid, 0),
             bus.resp.eq(1),
             NextState("ERROR2"),
+            ready_d.eq(1),
         )
         # Recovery after an error: the DDR side may still be working on the
         # aborted command (the UI has no transaction tags), so no new DDR
         # transfer may start until the worst-case response latency has passed.
         # Every response that shows up in that window is consumed here, and
         # DDR accesses meanwhile return ERROR; SRAM traffic is unaffected.
-        drain = Signal(32)
         fsm.act("ERROR2",
-            bus.readyout.eq(1),
             bus.resp.eq(1),
             NextValue(drain, 0),
             NextValue(self.recovering, 1),
@@ -231,6 +633,7 @@ class DDR3AHB(LiteXModule):
             # the interconnect; remember whether a data phase will be pending.
             NextValue(pending, bus.trans[1]),
             NextState("DRAIN"),
+            ready_d.eq(0),
         )
         # HREADY is held low for the whole recovery: the master cannot
         # complete or present a new data phase, so no address is silently
@@ -238,34 +641,56 @@ class DDR3AHB(LiteXModule):
         # transfer (synchronised into the fabric domain) and at least a few
         # cycles have elapsed; a bounded fail-safe declares the window dead.
         fsm.act("DRAIN",
-            bus.readyout.eq(0),
             bus.resp.eq(0),
             resp.re.eq(resp.readable),
             NextValue(drain, drain + 1),
+            If(bus.trans[1] & ~owned, *capture()),
             If(incoming, NextValue(pending, 1)),
             If(drain >= 8,
                 If(self.ui_idle_sys,
                     NextValue(self.recovering, 0),
                     NextState("ADDRESS"),
+                    ready_d.eq(address_level(owned | bus.trans[1], pending | incoming)),
                 ).Elif(drain >= 4 * ui_timeout,
                     NextValue(self.recovery_failed, 1),
-                    If(pending | incoming, NextState("DEAD1")).Else(NextState("DEAD")),
+                    If(pending | incoming,
+                        NextState("DEAD1"),
+                        ready_d.eq(0),
+                    ).Else(
+                        NextState("DEAD"),
+                        ready_d.eq(1),
+                    ),
+                ).Else(
+                    ready_d.eq(0),
                 ),
+            ).Else(
+                ready_d.eq(0),
             ),
         )
         # A permanently failed adapter must still let the CPU make progress:
         # every later transfer gets a bounded ERROR response, not a hang.
         fsm.act("DEAD",
-            bus.readyout.eq(1),
-            If(bus.trans[1], NextState("DEAD1")),
+            If(bus.trans[1],
+                NextState("DEAD1"),
+                ready_d.eq(0),
+            ).Else(
+                ready_d.eq(1),
+            ),
         )
         fsm.act("DEAD1",
-            bus.readyout.eq(0), bus.resp.eq(1),
+            bus.resp.eq(1),
             NextState("DEAD2"),
+            ready_d.eq(1),
         )
         fsm.act("DEAD2",
-            bus.readyout.eq(1), bus.resp.eq(1),
-            If(bus.trans[1], NextState("DEAD1")).Else(NextState("DEAD")),
+            bus.resp.eq(1),
+            If(bus.trans[1],
+                NextState("DEAD1"),
+                ready_d.eq(0),
+            ).Else(
+                NextState("DEAD"),
+                ready_d.eq(1),
+            ),
         )
 
         self.comb += [
@@ -297,6 +722,13 @@ class _UIEngine(LiteXModule):
         uisize = Signal(3)
         uiaddr = Signal(32)
         uidata = Signal(64)
+        reuse = Signal()
+        line = Signal()
+        line_data = Signal(256)
+        line_mask = Signal(32)
+        block_valid = Signal()
+        block_addr = Signal(27)
+        block_data = Signal(256)
         rdata = Signal(64)
         counter = Signal(24)
         self.state = uistate = FSM(reset_state="IDLE")
@@ -316,9 +748,12 @@ class _UIEngine(LiteXModule):
             ones.eq(Mux(uisize == 0, 0x01,
                   Mux(uisize == 1, 0x03,
                   Mux(uisize == 2, 0x0f, 0xff)))),
-            wr_bytes.eq(ones << offset[0:5]),
+            # A line write already carries the assembled bytes. A read still
+            # selects one lane of the returned block.
+            wr_bytes.eq(Mux(line, line_mask, ones << offset[0:5])),
             ui.burst.eq(0),
             ui.cmd.eq(Mux(is_write, 0, 1)),
+            ui.wr_data.eq(Mux(line, line_data, uidata << lane_shift)),
             # BL8 burst: the IP command address selects the 32-byte block,
             # the low word bits select the lane inside the returned block.
             ui.addr.eq(offset[2:31] & ~Constant(7, 29)),
@@ -356,8 +791,12 @@ class _UIEngine(LiteXModule):
                 NextValue(uisize, req.dout[1:4]),
                 NextValue(uiaddr, req.dout[4:36]),
                 NextValue(uidata, req.dout[36:100]),
+                NextValue(reuse, req.dout[100]),
+                NextValue(line, req.dout[_REQ_LINE]),
+                NextValue(line_data, req.dout[_REQ_LINE_DATA]),
+                NextValue(line_mask, req.dout[_REQ_LINE_MASK]),
                 NextValue(counter, 0),
-                NextState("SEND"),
+                NextState("LOOKUP"),
             ),
         )
         cmd_fire = Signal()
@@ -365,9 +804,21 @@ class _UIEngine(LiteXModule):
         self.sync += If(cmd_fire, outstanding.eq(outstanding + 1))
         if idle_out is not None:
             self.comb += idle_out.eq(uistate.ongoing("IDLE") & ~req.readable & (outstanding == 0))
+        uistate.act("LOOKUP",
+            If(~is_write & reuse & block_valid & (block_addr == offset[5:32]),
+                NextValue(rdata, (block_data >> lane_shift)[0:64]),
+                NextState("HIT"),
+            ).Else(
+                NextValue(block_valid, 0),
+                NextState("SEND"),
+            ),
+        )
+        uistate.act("HIT",
+            resp.din.eq(Cat(rdata, Constant(0, 1))), resp.we.eq(1),
+            If(resp.writable, NextState("DONE")),
+        )
         uistate.act("SEND",
             ui.cmd_en.eq(Mux(is_write, write_accept, 1)),
-            ui.wr_data.eq(uidata << lane_shift),
             ui.wr_data_mask.eq(~wr_bytes),
             ui.wr_data_en.eq(write_accept),
             ui.wr_data_end.eq(write_accept),
@@ -394,6 +845,9 @@ class _UIEngine(LiteXModule):
         )
         uistate.act("WAITDATA",
             If(ui.rd_data_valid,
+                NextValue(block_data, ui.rd_data),
+                NextValue(block_addr, offset[5:32]),
+                NextValue(block_valid, 1),
                 NextValue(rdata, (ui.rd_data >> lane_shift)[0:64]),
                 NextState("PUSH"),
             ).Elif(counter == ui_timeout,
@@ -411,6 +865,7 @@ class _UIEngine(LiteXModule):
             ),
         )
         uistate.act("FAIL",
+            NextValue(block_valid, 0),
             resp.din.eq(Cat(Constant(0, 64), Constant(1, 1))),
             resp.we.eq(1),
             If(resp.writable,

@@ -1,6 +1,6 @@
 # AE350 物理地址、CSR 与 DMA 规划
 
-更新：2026-10-18。状态：前四个窗口（DDR 零基址、SRAM 0x40000000、ROM 0x80000000、XIP 预留）已在 RTL/BSP/loader/payload/主机工具中统一实现，并在实板候选 b0dfed172810 上验证（ROM 身份、零基址 DDR 8/8、UART 上传执行 58 包、22 项载荷检查）。其余窗口（ILM/DLM、ExtAHB/ExtAPB、自定义 CSR 族）仍是规划。旧 P1 位流保留其自身布局。这里的 CSR 指外设 MMIO 寄存器；RISC-V 的 mstatus/mcache_ctl 等 CPU CSR 不属于此地址表。
+更新：2026-10-19。当前 P2 使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，删除 fabric 工作 SRAM、JTAG mailbox 和 launcher。唯一实现合同为 `gateware/machines/ae350_map.py`；精确候选和验证范围见 [内存结构整改报告](../reports/ae350-p2-memory-redesign.md)。其余 DMA/外设槽仍为规划。旧 P1 位流保留其自身布局。这里的 CSR 指外设 MMIO；RISC-V CPU CSR 不属于此地址表。
 
 最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。完整交接见[下一阶段实现任务](ae350-next-stage-agent-task.md)。
 
@@ -9,12 +9,11 @@
 | 地址范围（含端点） | 用途 | 合同 |
 | --- | --- | --- |
 | 0x00000000–0x3fffffff | DDR，预期 1GiB | CPU/fabric/DMAC 使用相同的物理字节地址；容量按实测发布，无减 0x2000 的转换 |
-| 0x40000000–0x40001fff | fabric SRAM，初始8KiB | ROM启动栈、启动数据、JTAG mailbox和诊断；集中分配，禁止相互重叠 |
-| 0x40002000–0x7fffffff | 保留数据内存窗口 | 不默认映射为 DDR 镜像；后续 SRAM 扩容只增加已声明区间 |
-| 0x80000000–0x80001fff | fabric ROM，初始8KiB | 保留默认启动路径；其他 ROM 窗口地址当前不发布 |
+| 0x40000000–0x7fffffff | 未映射数据窗口 | 有界 ERROR；无 fabric 工作 SRAM，不映射 DDR 镜像 |
+| 0x80000000–0x80007fff | 厂商 ITCM，32KiB | BSRAM 初始化启动镜像，替代自定义 ROM AHB 桥 |
 | 0x88000000–0x8fffffff | XIP地址窗口，预留128MiB | 只映射所选Flash已确认容量/分区；实际容量之外有界报错，不镜像 |
-| 0xa0000000–0xa000ffff | 硬核 ILM | 厂商窗口，不与 fabric SRAM 混同；启用、初始化和 DMA 可达性独立验收 |
-| 0xa0200000–0xa020ffff | 硬核 DLM | 同上 |
+| 0xa0000000–0xa000ffff | 硬核 ILM | 启动/应用关键代码，显式复制；DMA 可达性待 P3 |
+| 0xa0200000–0xa020ffff | 硬核 DLM | 工作数据、独立栈与保留诊断结果；无 JTAG mailbox |
 | 0xc0000000、0xe0000000 等 | 厂商 BMC/译码保留区 | 不安排项目外设 |
 | 0xe4000000 | 硬核 PLIC | 沿用厂商定义 |
 | 0xe6000000 / 0xe6400000 / 0xe6800000 | PLMT / PLIC软件中断 / Debug Module | 沿用厂商定义 |
@@ -37,7 +36,7 @@ ROM 保持0x80000000是本项目的启动选择，并非硬核复位向量不可
 | 0xf8002000 | 4KiB | fabric IRQ聚合：pending、mask、ack、来源诊断 |
 | 0xf8003000 | 4KiB | DDR/互连诊断：校准、超时、首错、仲裁与观测 |
 | 0xf8004000 | 4KiB | DMA fabric服务：端点能力、握手映射、仲裁QoS/错误；不复制硬DMAC通道寄存器 |
-| 0xf8005000 | 4KiB | 启动/调试控制与冻结快照窗口；启动mailbox仍在明确分配的SRAM中 |
+| 0xf8005000 | 4KiB | 预留调试控制窗口；不建立第二套启动/装载协议 |
 | 0xf8006000 | 4KiB | 性能计数器与一致性快照 |
 | 0xf8007000–0xf800ffff | 36KiB | 平台保留 |
 | 0xf8010000 | 64KiB | audio TX：格式、时钟、FIFO状态、静音、DMA握手 |
