@@ -74,6 +74,9 @@ def clean_work(execute=False, root=ROOT):
 def clean_build(record_id, execute=False, root=ROOT):
     if record_id == 'work':
         return clean_work(execute, root)
+    if record_id == 'obsolete':
+        from scripts.build_cleanup import clean
+        return clean(root, execute)
     matches=[r for r in records(root) if r['id']==record_id]
     if len(matches)!=1:raise ValueError('Unknown catalog ID')
     record=matches[0] if matches[0]['status']=='cleanup-failed' else get_record(record_id, root)
@@ -126,7 +129,7 @@ def add_arguments(parser):
     select.add_argument('id')
     select.add_argument('--evidence', type=Path, required=True)
     cleanup = sub.add_parser('clean')
-    cleanup.add_argument('id', help='Registered intermediate build ID, or work for rebuildable caches')
+    cleanup.add_argument('id', help='Registered intermediate build ID, work for rebuildable caches, or obsolete for unreferenced outputs')
     cleanup.add_argument('--execute', action='store_true', help='Default is a dry run; releases and pinned builds are protected')
     replay = sub.add_parser('reproduce')
     replay.add_argument('id')
