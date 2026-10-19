@@ -726,5 +726,3 @@ void main(void) {
     RES[0x82] = 0xd0000002u;
     for (;;) { __asm__ volatile("wfi"); }
 }
-
-

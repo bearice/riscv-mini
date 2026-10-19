@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-10-19T14:28:40+00:00",
+  "title": "Normalize memory diagnostic source ending",
+  "changes": [
+    "Remove the redundant trailing blank line. Rebuilt diagnostic bytes are identical to the full-window qualified payload; equivalence receipt is build/reports/checks/ae350-format-equivalence.json."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 19,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/ae350-format-commit.json"
+    ],
+    "source_inputs_sha256": "c00c99ff5258b8cda2abdecfd96409be956c8c6eb417a2ca3edd5c9ed92f1eb4"
+  },
+  "mode": "staged review",
+  "base_revision": "d20d3146a57492e7c57d59aa827a6c21a53a88e9",
+  "source_revision": null
+}
