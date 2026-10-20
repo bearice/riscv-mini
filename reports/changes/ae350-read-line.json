@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-10-20T10:10:05+00:00",
+  "title": "AE350 mem-domain burst read-line return",
+  "changes": [
+    "Return the full DDR block once across CDC, serve continuing read-burst beats in mem, and remove UI-side reuse state. Preserve NONSEQ isolation, write aggregation and registered interconnect; expose coherent diagnostic counters. Qualify the selected operating point with SRAM board receipts and nine samples per performance row; retain the original baseline and document 10 ps setup margin."
+  ],
+  "build": {
+    "id": "8ac7e645d40cf4d5db6ef4672a1244a9c0bfeba93a27f28c10cb645f02d8646f",
+    "kind": "modular",
+    "artifact": {
+      "component": "gateware",
+      "digest": "8ac7e645d40cf4d5db6ef4672a1244a9c0bfeba93a27f28c10cb645f02d8646f"
+    },
+    "payload_artifact": {
+      "component": "payload",
+      "digest": "90e68ee8d8ec3ab3fa735368b8e4a3e9a2f9c640d058f8371fd87fc5364907bb"
+    },
+    "status": "board-qualified",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\store\\gateware\\8ac7e645d40cf4d5db6ef4672a1244a9c0bfeba93a27f28c10cb645f02d8646f",
+    "evidence": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261020T100856282108Z-board-ae350-ddr-suite\\result.json"
+    ],
+    "bitstream_sha256": "8e6673b8154fc311f9bcc12ba0c84d09b787a36db765d3055567900c6b733429",
+    "payload_sha256": "ff49f05277c6422ac6ede1038f4da9c089794b62ed314e80f3c09c081cc5bcc1",
+    "source": {
+      "commit": "e26ae87e91492c985139918d586e193cf5c61c45",
+      "dirty": true,
+      "inputs_sha256": "bff445b6fbae366ef7553969e1090414813a50a998f65a5a880fd36811344dcc",
+      "kind": "modular-captured"
+    }
+  },
+  "performance_report": "reports\\performance\\ae350-read-line.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 20,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "bff445b6fbae366ef7553969e1090414813a50a998f65a5a880fd36811344dcc"
+  },
+  "mode": "staged review",
+  "base_revision": "e26ae87e91492c985139918d586e193cf5c61c45",
+  "source_revision": null
+}

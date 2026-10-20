@@ -3,9 +3,10 @@
 The vendor IP exposes a 256-bit, 32-byte single-beat user interface clocked by
 its own ``clk_out`` (100 MHz at 400 MHz CK).  The AE350 data-memory port is a
 64-bit AHB-Lite master clocked by the configured fabric ``sys`` clock.  Two
-asynchronous FIFOs cross between the domains. A returned 32-byte block can
-serve subsequent beats of the same validated AHB read burst. Independent
-NONSEQ reads refetch DRAM; there is no persistent cache.
+asynchronous FIFOs cross between the domains. The UI returns one 32-byte
+block. Later beats of that same validated AHB read burst are served from a
+line buffer in the memory-port clock domain, so they do not cross back to
+the UI. Independent NONSEQ reads refetch DRAM; there is no persistent cache.
 
 Write aggregation
 -----------------
@@ -50,9 +51,11 @@ Contracts (verified against the vendor reference):
   * ``ui.addr`` counts 4-byte words, so ``addr = (cpu_byte - base) >> 2``.
   * one command transfers 32 bytes; ``wr_data_mask`` bit = 1 masks a byte.
   * ``ui.cmd`` 0 = write, 1 = read.
-  * request: write, size, addr, wdata[64], reuse, line, line_data[256], line_mask[32].
+  * request: write, size, addr, wdata[64], unused, line, line_data[256], line_mask[32].
     Reads use the low fields and leave ``line`` clear. A write commit sets
-    ``line`` and carries the assembled 32-byte buffer. Response: rdata[64], error.
+    ``line`` and carries the assembled 32-byte buffer. The unused bit used to
+    request a UI-side read hit; the memory port now owns that decision.
+    Response: rdata[256], error. A write response drives the data bits to 0.
 """
 from migen import *
 from migen.genlib.fifo import AsyncFIFO
@@ -80,9 +83,9 @@ def _equal(left, right):
     width = len(left)
     return ~_or_tree([left[index] ^ right[index] for index in range(width)])
 
-# write, size, addr, wdata, reuse, line, line_data, line_mask
+# write, size, addr, wdata, unused, line, line_data, line_mask
 REQ_WIDTH = 1 + 3 + 32 + 64 + 1 + 1 + 256 + 32
-RESP_WIDTH = 64 + 1
+RESP_WIDTH = 256 + 1
 _REQ_LINE = 101
 _REQ_LINE_DATA = slice(102, 358)
 _REQ_LINE_MASK = slice(358, 390)
@@ -132,6 +135,10 @@ class DDR3AHB(LiteXModule):
         self.n_read = Signal(16)
         self.n_write = Signal(16)
         self.n_error = Signal(16)
+        # Mem-domain line hits, and cycles this adapter presents HREADY low.
+        # Both wrap. They are exported beside the image ABI, not inside it.
+        self.n_rline_hit = Signal(32)
+        self.n_wait_cycles = Signal(32)
         self.last_bad = Signal()
         self.last_in_range = Signal()
         self.last_aligned = Signal()
@@ -159,7 +166,8 @@ class DDR3AHB(LiteXModule):
         # Gray-pointer round trip without a fictitious eight-entry pipeline.
         req = ClockDomainsRenamer({"write": "sys", "read": "ddr"})(fifo_cls(REQ_WIDTH, 2))
         resp = ClockDomainsRenamer({"write": "ddr", "read": "sys"})(fifo_cls(RESP_WIDTH, 2))
-        self.submodules += req, resp
+        self.submodules.req = req
+        self.submodules.resp = resp
 
         # ----
         # AHB.
@@ -170,8 +178,13 @@ class DDR3AHB(LiteXModule):
         lifetime = Signal(32)
         resp_data = Signal(64)
         resp_error = Signal()
-        reuse = Signal()
+        resp_hold = Signal()
         chain = Signal()
+        # One 32-byte read line, valid only inside the burst that fetched it.
+        self.rline_valid = rline_valid = Signal()
+        self.rline_block = rline_block = Signal(27)
+        self.rline_data = rline_data = Signal(256)
+        rline_hit = Signal()
         expected = Signal(32)
         burst_type = Signal(3)
         burst_size = Signal(3)
@@ -213,7 +226,7 @@ class DDR3AHB(LiteXModule):
             burst_continue.eq(chain & (bus.trans == 3) & _equal(bus.addr, expected)
                 & (bus.burst == burst_type) & (bus.size == burst_size)
                 & (bus.prot == burst_prot) & (bus.write == burst_write)),
-            # Read reuse only. Write beats use the same chain but merge below.
+            # Read-line hits use this same chain. Writes merge through the buffer below.
             sequential.eq(burst_continue & ~bus.write),
             o_step.eq(Constant(1, 32) << owned_size),
             o_wrap.eq(Mux(owned_burst == 2, (o_step << 2) - 1,
@@ -311,6 +324,25 @@ class DDR3AHB(LiteXModule):
                 # a one-bit select. A new line clears every other lane.
                 next_bytes.append(Mux(same_l, kept, fresh))
                 next_bits.append(Mux(same_l, wbuf_strb[index] | take, take))
+        # Fixed lane mux. A 256-bit barrel shift was the long path this avoids.
+        lane_hit = []
+        for lane in range(nlanes):
+            hit = Signal(name=f"rline_lane_hit{lane}")
+            hit.attr.add(("syn_keep", 1))
+            hit.attr.add(("syn_maxfan", 8))
+            self.comb += hit.eq(beat_lane == lane)
+            lane_hit.append(hit)
+
+        def lane_word(source):
+            width = bus.data_width
+            chosen = source[(nlanes - 1) * width:nlanes * width]
+            for index in reversed(range(nlanes - 1)):
+                sl = source[index * width:(index + 1) * width]
+                chosen = Mux(lane_hit[index], sl, chosen)
+            if width < 64:
+                chosen = Cat(chosen, Constant(0, 64 - width))
+            return chosen
+
         # HREADY is this register, so the hard-macro pin is a flip-flop output.
         # ready_d is the level the *next* state will present. Loading it now
         # makes the pin match that state on arrival: DATA is already low, and
@@ -322,7 +354,12 @@ class DDR3AHB(LiteXModule):
         # IDLE ends a burst; BUSY is allowed to retain its context. A decoder
         # passes the master's real IDLE indication because slave HTRANS is gated.
         end_burst = end_burst_i if end_burst_i is not None else ((bus.trans == 0) & bus.readyout)
-        self.sync += If(end_burst, chain.eq(0))
+        # BUSY (HTRANS == 1) matches neither term, so chain and the line stay.
+        self.sync += [
+            If(end_burst, chain.eq(0)),
+            If(end_burst | ~ready_i, rline_valid.eq(0)),
+            If(~ready_q, self.n_wait_cycles.eq(self.n_wait_cycles + 1)),
+        ]
 
         aligned = Signal()
         in_range = Signal()
@@ -341,6 +378,10 @@ class DDR3AHB(LiteXModule):
         def accept(src_trans, src_addr, src_write, src_size, src_burst, src_prot,
                    src_bad, src_in_range, src_aligned, src_sequential, src_next,
                    src_continue, save_data):
+            # The only legal hit: this beat continues the open read burst and
+            # names the 32-byte block already held. Anything else drops the line.
+            read_hit = (~src_write & ~src_bad & ~self.write_fault & src_sequential
+                        & rline_valid & _equal(rline_block, (src_addr - self.base)[5:32]))
             return [
                 NextValue(self.n_req, self.n_req + 1),
                 NextValue(self.n_write, self.n_write + src_write),
@@ -358,7 +399,12 @@ class DDR3AHB(LiteXModule):
                 ).Else(
                     NextValue(self.read_control, Cat(src_trans, src_burst, src_size, src_prot, src_write)),
                 ),
-                NextValue(reuse, src_sequential & ~src_bad),
+                NextValue(rline_hit, read_hit),
+                If(read_hit,
+                    NextValue(self.n_rline_hit, self.n_rline_hit + 1),
+                ).Else(
+                    NextValue(rline_valid, 0),
+                ),
                 NextValue(expected, src_next),
                 NextValue(burst_type, src_burst),
                 NextValue(burst_size, src_size),
@@ -431,6 +477,7 @@ class DDR3AHB(LiteXModule):
             return [
                 NextValue(self.wbuf_valid, 0),
                 NextValue(chain, 0),
+                NextValue(rline_valid, 0),
                 NextValue(self.error_sticky, 1),
                 NextValue(self.n_error, self.n_error + 1),
                 If(retire,
@@ -475,12 +522,21 @@ class DDR3AHB(LiteXModule):
         fsm.act("DATA",
             # Address and size are stable. The master presents this beat's
             # HWDATA only after the predecessor acknowledge, so CAPTURE
-            # samples the data and WBUF merges it.
+            # samples the data and WBUF merges it. A read hit already has
+            # the line: select its lane and complete on the next cycle.
             NextValue(hold_strb, lane_strb),
             NextValue(hold_lane, beat_lane),
             NextValue(hold_same, same_line),
-            NextState("CAPTURE"),
-            ready_d.eq(0),
+            If(~is_write & rline_hit,
+                NextValue(resp_data, lane_word(rline_data)),
+                NextValue(resp_error, 0),
+                NextValue(resp_hold, 0),
+                NextState("COMPLETE"),
+                ready_d.eq(1),
+            ).Else(
+                NextState("CAPTURE"),
+                ready_d.eq(0),
+            ),
         )
         fsm.act("CAPTURE",
             NextValue(saved_wdata, 0),
@@ -489,7 +545,7 @@ class DDR3AHB(LiteXModule):
                 NextState("WBUF"),
                 ready_d.eq(0),
             ).Else(
-                req.din.eq(Cat(is_write, tsize, addr, wdata64, reuse,
+                req.din.eq(Cat(is_write, tsize, addr, wdata64, Constant(0, 1),
                                Constant(0, 1 + 256 + 32))),
                 req.we.eq(1),
                 NextValue(retire, 1),
@@ -530,6 +586,9 @@ class DDR3AHB(LiteXModule):
             # A closing beat (retire) reaches COMPLETE and accepts the next
             # address there. Only an idle flush has no such acceptance point.
             # Every exit is a not-ready state, so the pin stays low.
+            # The open read line dies with the write buffer: the next read
+            # has to observe DRAM, not the block fetched before this write.
+            NextValue(rline_valid, 0),
             ready_d.eq(0),
             If(bus.trans[1] & ~owned & ~retire, *capture()),
             req.din.eq(Cat(Constant(1, 1), Constant(0, 3), commit_addr, Constant(0, 64),
@@ -561,20 +620,45 @@ class DDR3AHB(LiteXModule):
             If(bus.trans[1] & ~owned & ~retire, *capture()),
             NextValue(lifetime, lifetime + 1),
             If(resp.readable,
-                NextValue(resp_data, resp.dout[0:64]),
-                NextValue(resp_error, resp.dout[64]),
-                If(resp.dout[64],
+                If(resp.dout[256],
                     resp.re.eq(1),
                     *note_fault(),
                     ready_d.eq(0),
-                ).Elif(retire,
-                    NextState("COMPLETE"),
-                    ready_d.eq(1),
+                ).Elif(is_write,
+                    NextValue(resp_data, 0),
+                    NextValue(resp_error, 0),
+                    If(retire,
+                        NextValue(resp_hold, 1),
+                        NextState("COMPLETE"),
+                        ready_d.eq(1),
+                    ).Else(
+                        resp.re.eq(1),
+                        NextState("ADDRESS"),
+                        # retire is 0 in this branch, so a visible transfer is owned.
+                        ready_d.eq(address_level(owned | bus.trans[1], pending)),
+                    ),
                 ).Else(
-                    resp.re.eq(1),
-                    NextState("ADDRESS"),
-                    # retire is 0 in this branch, so a visible transfer is owned.
-                    ready_d.eq(address_level(owned | bus.trans[1], pending)),
+                    # Latch the whole block, then the beat lane, in this cycle.
+                    # A lost calibration or an idle master must not publish it.
+                    If(ready_i & ~end_burst,
+                        NextValue(rline_data, resp.dout[:256]),
+                        NextValue(rline_block, rel[5:32]),
+                        NextValue(rline_valid, 1),
+                    ).Else(
+                        NextValue(rline_valid, 0),
+                    ),
+                    NextValue(resp_data, lane_word(resp.dout[:256])),
+                    NextValue(resp_error, 0),
+                    If(retire,
+                        NextValue(resp_hold, 1),
+                        NextState("COMPLETE"),
+                        ready_d.eq(1),
+                    ).Else(
+                        resp.re.eq(1),
+                        NextValue(rline_valid, 0),
+                        NextState("ADDRESS"),
+                        ready_d.eq(address_level(owned | bus.trans[1], pending)),
+                    ),
                 ),
             ).Elif(lifetime == response_timeout,
                 *note_fault(),
@@ -589,7 +673,9 @@ class DDR3AHB(LiteXModule):
             bus.rdata.eq(resp_data[:bus.data_width]),
             bus.resp.eq(resp_error),
             NextValue(self.error_sticky, self.error_sticky | resp_error),
-            resp.re.eq(1),
+            # A line hit never pushed a response. Popping here would steal
+            # the next miss.
+            If(resp_hold, resp.re.eq(1)),
             If(bus.trans[1],
                 *accept_bus(),
                 ready_d.eq(0),
@@ -600,6 +686,7 @@ class DDR3AHB(LiteXModule):
         )
         fsm.act("REJECT1",
             bus.resp.eq(1),
+            NextValue(rline_valid, 0),
             NextState("REJECT2"),
             ready_d.eq(1),
         )
@@ -616,6 +703,7 @@ class DDR3AHB(LiteXModule):
         fsm.act("ERROR1",
             NextValue(chain, 0),
             NextValue(self.wbuf_valid, 0),
+            NextValue(rline_valid, 0),
             bus.resp.eq(1),
             NextState("ERROR2"),
             ready_d.eq(1),
@@ -642,6 +730,7 @@ class DDR3AHB(LiteXModule):
         # cycles have elapsed; a bounded fail-safe declares the window dead.
         fsm.act("DRAIN",
             bus.resp.eq(0),
+            NextValue(rline_valid, 0),
             resp.re.eq(resp.readable),
             NextValue(drain, drain + 1),
             If(bus.trans[1] & ~owned, *capture()),
@@ -722,14 +811,10 @@ class _UIEngine(LiteXModule):
         uisize = Signal(3)
         uiaddr = Signal(32)
         uidata = Signal(64)
-        reuse = Signal()
         line = Signal()
         line_data = Signal(256)
         line_mask = Signal(32)
-        block_valid = Signal()
-        block_addr = Signal(27)
-        block_data = Signal(256)
-        rdata = Signal(64)
+        rd_block = Signal(256)
         counter = Signal(24)
         self.state = uistate = FSM(reset_state="IDLE")
         wr_bytes = Signal(32)
@@ -748,8 +833,8 @@ class _UIEngine(LiteXModule):
             ones.eq(Mux(uisize == 0, 0x01,
                   Mux(uisize == 1, 0x03,
                   Mux(uisize == 2, 0x0f, 0xff)))),
-            # A line write already carries the assembled bytes. A read still
-            # selects one lane of the returned block.
+            # A line write already carries the assembled bytes. A read returns
+            # the whole 32-byte block; the memory port selects the beat.
             wr_bytes.eq(Mux(line, line_mask, ones << offset[0:5])),
             ui.burst.eq(0),
             ui.cmd.eq(Mux(is_write, 0, 1)),
@@ -776,6 +861,8 @@ class _UIEngine(LiteXModule):
                 ),
                 If(ui.rd_data_valid,
                    rec_r_blk.eq(ui.rd_data),
+                   # First-beat lane only. The external status window publishes
+                   # the low 32 bits of this beat at the existing offset.
                    rec_r_sel.eq((ui.rd_data >> lane_shift)[0:64]),
                    rec_r_n.eq(rec_r_n + 1),
                 ),
@@ -791,12 +878,11 @@ class _UIEngine(LiteXModule):
                 NextValue(uisize, req.dout[1:4]),
                 NextValue(uiaddr, req.dout[4:36]),
                 NextValue(uidata, req.dout[36:100]),
-                NextValue(reuse, req.dout[100]),
                 NextValue(line, req.dout[_REQ_LINE]),
                 NextValue(line_data, req.dout[_REQ_LINE_DATA]),
                 NextValue(line_mask, req.dout[_REQ_LINE_MASK]),
                 NextValue(counter, 0),
-                NextState("LOOKUP"),
+                NextState("SEND"),
             ),
         )
         cmd_fire = Signal()
@@ -804,19 +890,6 @@ class _UIEngine(LiteXModule):
         self.sync += If(cmd_fire, outstanding.eq(outstanding + 1))
         if idle_out is not None:
             self.comb += idle_out.eq(uistate.ongoing("IDLE") & ~req.readable & (outstanding == 0))
-        uistate.act("LOOKUP",
-            If(~is_write & reuse & block_valid & (block_addr == offset[5:32]),
-                NextValue(rdata, (block_data >> lane_shift)[0:64]),
-                NextState("HIT"),
-            ).Else(
-                NextValue(block_valid, 0),
-                NextState("SEND"),
-            ),
-        )
-        uistate.act("HIT",
-            resp.din.eq(Cat(rdata, Constant(0, 1))), resp.we.eq(1),
-            If(resp.writable, NextState("DONE")),
-        )
         uistate.act("SEND",
             ui.cmd_en.eq(Mux(is_write, write_accept, 1)),
             ui.wr_data_mask.eq(~wr_bytes),
@@ -836,7 +909,7 @@ class _UIEngine(LiteXModule):
             ),
         )
         uistate.act("WPUSH",
-            resp.din.eq(Cat(Constant(0, 64), Constant(0, 1))),
+            resp.din.eq(Cat(Constant(0, 256), Constant(0, 1))),
             resp.we.eq(1),
             If(resp.writable,
                 NextValue(outstanding, outstanding - 1),
@@ -845,10 +918,7 @@ class _UIEngine(LiteXModule):
         )
         uistate.act("WAITDATA",
             If(ui.rd_data_valid,
-                NextValue(block_data, ui.rd_data),
-                NextValue(block_addr, offset[5:32]),
-                NextValue(block_valid, 1),
-                NextValue(rdata, (ui.rd_data >> lane_shift)[0:64]),
+                NextValue(rd_block, ui.rd_data),
                 NextState("PUSH"),
             ).Elif(counter == ui_timeout,
                 NextState("FAIL"),
@@ -857,7 +927,7 @@ class _UIEngine(LiteXModule):
             ),
         )
         uistate.act("PUSH",
-            resp.din.eq(Cat(rdata, Constant(0, 1))),
+            resp.din.eq(Cat(rd_block, Constant(0, 1))),
             resp.we.eq(1),
             If(resp.writable,
                 NextValue(outstanding, outstanding - 1),
@@ -865,8 +935,7 @@ class _UIEngine(LiteXModule):
             ),
         )
         uistate.act("FAIL",
-            NextValue(block_valid, 0),
-            resp.din.eq(Cat(Constant(0, 64), Constant(1, 1))),
+            resp.din.eq(Cat(Constant(0, 256), Constant(1, 1))),
             resp.we.eq(1),
             If(resp.writable,
                 # Saturating: a timeout that happened before the command

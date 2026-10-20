@@ -1,0 +1,759 @@
+{
+  "schema": 1,
+  "kind": "AE350 mem-domain read-line comparison",
+  "passed": true,
+  "candidate_artifact": {
+    "component": "gateware",
+    "digest": "8ac7e645d40cf4d5db6ef4672a1244a9c0bfeba93a27f28c10cb645f02d8646f"
+  },
+  "payload_artifact": {
+    "component": "payload",
+    "digest": "90e68ee8d8ec3ab3fa735368b8e4a3e9a2f9c640d058f8371fd87fc5364907bb"
+  },
+  "payload_sha256": "ff49f05277c6422ac6ede1038f4da9c089794b62ed314e80f3c09c081cc5bcc1",
+  "baseline": "reports/performance/ae350-memory-baseline.json",
+  "baseline_sha256": "c5c4947456c942a904e7c3411d0acbeab670b6708847f531a7b7d157bcbad447",
+  "clock": {
+    "name": "counter-clock",
+    "source": "mcycle versus host QueryPerformanceCounter",
+    "samples": [
+      {
+        "cycles": 807045136,
+        "seconds_lower": 1.004749100015033,
+        "seconds_upper": 1.0114918000181206,
+        "hz_lower": 797876103.3807116,
+        "hz_upper": 803230513.9541056,
+        "hz": 800544355.5745045
+      },
+      {
+        "cycles": 807357556,
+        "seconds_lower": 1.00538129999768,
+        "seconds_upper": 1.0118601999711245,
+        "hz_lower": 797894369.2251554,
+        "hz_upper": 803036177.4203112,
+        "hz": 800457016.190164
+      },
+      {
+        "cycles": 813476400,
+        "seconds_lower": 1.0128737000050023,
+        "seconds_upper": 1.0194507999694906,
+        "hz_lower": 797955526.6662649,
+        "hz_upper": 803137054.497498,
+        "hz": 800537906.2351605
+      }
+    ],
+    "hz": 800513092.6666096,
+    "counter_runs_while_halted": false,
+    "clock_resolution_seconds": 1e-07,
+    "scope": "counter rate estimate; debug command brackets, not physical oscillator metrology"
+  },
+  "conditions": {
+    "sys_hz": 80000000,
+    "mem_hz": 100000000,
+    "ddr_ui_hz": 100000000,
+    "ddr_ck_hz": 400000000,
+    "code": "ILM",
+    "stack": "DLM",
+    "access": "32-bit scalar volatile",
+    "cold_before_each_sample": true,
+    "timed_writeback": true
+  },
+  "rows": [
+    {
+      "cache": "uncached",
+      "operation": "write",
+      "bytes": 65536,
+      "samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1704031,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1704027,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1704027,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1704031,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1704031,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1704027,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1704031,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1704027,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1704027,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        }
+      ],
+      "cycles_median": 1704027,
+      "baseline_cycles": 1835103,
+      "cycles_reduction_percent": 7.1427053413350645,
+      "throughput_increase_percent": 7.6921316387592364,
+      "estimated_mib_s": 29.36107719634906,
+      "ui_reads": 0,
+      "ui_writes": 16384
+    },
+    {
+      "cache": "uncached",
+      "operation": "read",
+      "bytes": 65536,
+      "samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 7116681,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 7116645,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 7116561,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 7116673,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 7116645,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 7116565,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 7116681,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 7116645,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 7116561,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        }
+      ],
+      "cycles_median": 7116645,
+      "baseline_cycles": 7378769,
+      "cycles_reduction_percent": 3.552408267557905,
+      "throughput_increase_percent": 3.683252431447692,
+      "estimated_mib_s": 7.030288610948432,
+      "ui_reads": 16384,
+      "ui_writes": 0
+    },
+    {
+      "cache": "uncached",
+      "operation": "copy",
+      "bytes": 65536,
+      "samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 9685607,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 9684727,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 9684835,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 9685611,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 9684719,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 9684839,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 9685607,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 9684727,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 9684835,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        }
+      ],
+      "cycles_median": 9684835,
+      "baseline_cycles": 9961311,
+      "cycles_reduction_percent": 2.775498124694631,
+      "throughput_increase_percent": 2.8547311337776993,
+      "estimated_mib_s": 5.16602175376897,
+      "ui_reads": 16384,
+      "ui_writes": 16384
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "write",
+      "bytes": 65536,
+      "samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1521993,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1522141,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1521913,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1521993,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1522145,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1521913,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1521993,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1522141,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1521913,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        }
+      ],
+      "cycles_median": 1521993,
+      "baseline_cycles": 1973777,
+      "cycles_reduction_percent": 22.88931323042066,
+      "throughput_increase_percent": 29.68371076608105,
+      "estimated_mib_s": 32.872732194998996,
+      "ui_reads": 2048,
+      "ui_writes": 2048
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "read",
+      "bytes": 65536,
+      "samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 1069003,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 1069115,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 1069019,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 1069007,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 1069119,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 1069023,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 1069003,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 1069115,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 1069019,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        }
+      ],
+      "cycles_median": 1069019,
+      "baseline_cycles": 1470535,
+      "cycles_reduction_percent": 27.304076407565958,
+      "throughput_increase_percent": 37.55929501720736,
+      "estimated_mib_s": 46.801851315704496,
+      "ui_reads": 2048,
+      "ui_writes": 0
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "copy",
+      "bytes": 65536,
+      "samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 2655801,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 2655681,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 2655837,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 2655801,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 2655685,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 2655841,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 2655801,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 2655681,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 2655837,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536,
+          "receipt": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json"
+        }
+      ],
+      "cycles_median": 2655801,
+      "baseline_cycles": 3491233,
+      "cycles_reduction_percent": 23.929425506690617,
+      "throughput_increase_percent": 31.456874969171267,
+      "estimated_mib_s": 18.838786600224605,
+      "ui_reads": 4096,
+      "ui_writes": 2048
+    }
+  ],
+  "dependent_load": {
+    "samples": [
+      1731520,
+      1731152,
+      1731104,
+      1731520,
+      1730928,
+      1731232,
+      1731520,
+      1731152,
+      1731104
+    ],
+    "median_cycles": 1731152,
+    "baseline_cycles": 1780560,
+    "hops": 1024,
+    "code": "DDR; I/D disabled; instruction fetch contention included"
+  },
+  "evidence": [
+    {
+      "path": "build/runs/20261020T094746064778Z-board-ae350-jtag-test/result.json",
+      "sha256": "3c31513716317838079a426c7c28730a4c2cbf88ebb6e98b0cda4bea785683ce",
+      "operation": "ae350-jtag-test",
+      "passed": true
+    },
+    {
+      "path": "build/runs/20261020T095157927218Z-board-ae350-ddr-suite/result.json",
+      "sha256": "f18dfe3c83b8d673e0da35bbc19d4e7f6bdff6ce08579e33a02dea0d170a0b88",
+      "operation": "ae350-ddr-suite",
+      "passed": true
+    },
+    {
+      "path": "build/runs/20261020T095413237536Z-board-ae350-dma-suite/result.json",
+      "sha256": "b6632097544b4ce360caabf313a721109cfc837255f7dc5be5420d30c6577ad4",
+      "operation": "ae350-dma-suite",
+      "passed": true
+    },
+    {
+      "path": "build/runs/20261020T095503782700Z-board-ae350-ddr-suite/result.json",
+      "sha256": "e58cb79460f6898d4d15ff664ed2644c3a90fa60d1be0bc3d0be0d30cd3ea04e",
+      "operation": "ae350-ddr-suite",
+      "passed": true
+    },
+    {
+      "path": "build/runs/20261020T095545125606Z-board-ae350-ddr-suite/result.json",
+      "sha256": "da30eaa0f0ab4227c11f187d3370f6a8aeb00398b992b10e279631212f3ebb1a",
+      "operation": "ae350-ddr-suite",
+      "passed": true
+    },
+    {
+      "path": "build/runs/20261020T095626426074Z-board-ae350-ddr-suite/result.json",
+      "sha256": "d5f89fb29097ba063a8e858f33f4e4b143426b33b9467adac79dcb7f57b22895",
+      "operation": "ae350-ddr-suite",
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "Incremental regression: 1 MiB traversal and short stress, not full capacity or long stress requalification.",
+    "Throughput is an estimate using the JTAG counter-clock bracket measurement. Copy reports logical bytes, not combined read/write bus traffic.",
+    "Cycle differences support the expected mechanism but are not a measured per-stage CDC decomposition.",
+    "STA passes at the selected operating point with only 0.010 ns mem setup slack. No higher-frequency qualification.",
+    "New counters are additive diagnostics outside image_abi; baseline receipt is ABI-incompatible but its payload bytes match.",
+    "No Flash write, current promotion, dual write buffer or clock-domain merge."
+  ],
+  "measurement_payload_artifact": {
+    "component": "payload",
+    "digest": "18be1b4b39f16c6625eed2eea40b44758e259b872d12d2a3604f920f5c4f85eb"
+  },
+  "source_closure_validation": {
+    "receipt": "build/runs/20261020T100856282108Z-board-ae350-ddr-suite/result.json",
+    "sha256": "db3784a24f8c7a9f9ef39525c0fafd7878216fc59f70eea87f88d5c0ae202b20",
+    "scope": "Current-source payload rebuilt and executed; byte-identical to all performance samples, original receipts retained"
+  }
+}

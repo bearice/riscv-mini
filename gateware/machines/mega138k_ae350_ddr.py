@@ -294,16 +294,20 @@ class DDRSoC(LiteXModule):
         self.recorder_cdc = BusSynchronizer(256, 'ddr', 'sys')
         self.comb += self.recorder_cdc.i.eq(Cat(*recorder))
         snapshot = [self.recorder_cdc.o[i*32:(i+1)*32] for i in range(8)]
-        self.data_cdc = BusSynchronizer(112, 'mem', 'sys')
+        # 112 bits are the existing diagnostic words. The next two 32-bit
+        # words are mem-domain counters at 0x44 and 0x48, outside the image ABI.
+        self.data_cdc = BusSynchronizer(176, 'mem', 'sys')
         self.comb += self.data_cdc.i.eq(Cat(self.ddr_port.debug, self.ddr_port.debug_hi,
                                           self.ddr_port.last_control,
-                                          self.ddr_port.write_control, self.ddr_port.read_control))
+                                          self.ddr_port.write_control, self.ddr_port.read_control,
+                                          self.ddr_port.n_rline_hit, self.ddr_port.n_wait_cycles))
         # Platform CSR and the extended-AHB loopback. DDR diagnostics stay at
         # their P2 offsets; writes to that page still return an error.
         registers = {0: status, 4: calib_cycles, 8: self.data_cdc.o[:32],
             12: self.data_cdc.o[32:64], 16: self.data_cdc.o[64:80],
             20: snapshot[7][:16], 24: snapshot[7][16:32],
             28: self.data_cdc.o[80:96], 64: self.data_cdc.o[96:112],
+            0x44: self.data_cdc.o[112:144], 0x48: self.data_cdc.o[144:176],
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
         # Not self.platform: that attribute is the Gowin board platform.
         self.ext = Ae350Platform(self.cpu, registers)

@@ -61,12 +61,14 @@ class Mon(LiteXModule):
 
 
 class DUT(LiteXModule):
-    def __init__(self, base=0x2000, size=1 << 30, fifo_cls=StubFIFO, data_width=64):
+    def __init__(self, base=0x2000, size=1 << 30, fifo_cls=StubFIFO, data_width=64,
+                 response_timeout=64, ui_timeout=32):
         self.bus = AHBInterface(data_width=data_width, address_width=32)
         self.ui = DDR3UI()
         self.ready = Signal(reset=1)
         self.ddr = DDR3AHB(self.bus, self.ui, ready_i=self.ready, base=base, size=size,
-                           response_timeout=64, ui_timeout=32, fifo_cls=fifo_cls)
+                           response_timeout=response_timeout, ui_timeout=ui_timeout,
+                           fifo_cls=fifo_cls)
         self.mon = ClockDomainsRenamer({"sys": "ddr"})(Mon(self.ui))
 
 

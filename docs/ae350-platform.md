@@ -25,7 +25,9 @@ FPGA SRAM 编程后，Gowin DDR3 IP 自动初始化/校准。状态经同步器�
 
 外设 AHB/APB 和厂商 ITCM 为 80 MHz；数据 AHB 为独立 100 MHz；DDR UI 100 MHz，物理 CK 400 MHz。同一 P3 位流上 mcycle 约为 800.5 MHz。把 sys 提到 100 MHz 时，STA 给出 sys Fmax 84.8 MHz、451 个 setup 终点，并且 `u_vc_ilm_ram` 高脉冲只有 0.221 ns，要求 0.900 ns；同一次 PLL 下 mem 时钟 Fmax 也降到 86.7 MHz。因此 80 MHz 是当前 ITCM 块 RAM 的通过点，不只是已退役监视器的历史配置。数据口 133.333 MHz 曾在全时序上同时失败最小脉宽和 setup，不能把单域目标或该失败点说成组合上限。最终候选要求 setup/hold 和 minimum pulse width 全通过。仅验收 DDR CK 400 MHz，不重新扫低频。
 
-读适配保留完整 32 B，只对同一合法 AHB burst 分片返回；NONSEQ 不复用前一次块。WRAP、跨块、BUSY、属性/尺寸及固定 burst 长度均有检查。写方向按实际 cache write-back burst 聚合同一 32 B 块，一次完整 32 B 写回对应一条 UI 写。独立写、提前结束会排空；排空期间到达的请求被保留，失败返回 ERROR。提前完成表示写缓冲已接收，不表示 DDR 已完成；通过 fence/排空后观察状态。错误、超时、迟到响应隔离与 CDC 回归继续适用。
+读适配将完整 32 B 通过响应 FIFO 一次返回 mem 域，同一合法 AHB burst 的后续 beat 在 mem 域选择数据，不再逐 beat 跨域；UI 域不保留另一套读行复用状态。NONSEQ 不复用前一次块。WRAP、跨块、BUSY、属性/尺寸及固定 burst 长度均有检查。写方向按实际 cache write-back burst 聚合同一 32 B 块，一次完整 32 B 写回对应一条 UI 写。独立写、提前结束会排空；排空期间到达的请求被保留，失败返回 ERROR。提前完成表示写缓冲已接收，不表示 DDR 已完成；通过 fence/排空后观察状态。错误、超时、迟到响应隔离与 CDC 回归继续适用。
+
+DDR 状态页新增只读诊断：偏移 `0x44` 为被接收的读行命中数，`0x48` 为适配器 HREADY 低的 mem 周期数，均为自然回绕的 32 位计数，通过一致快照跨域导出，不在读取时清零，也不改变 image ABI。优化后的候选、三轮性能对照与增量验收范围见[读行优化报告](../reports/performance/ae350-read-line.md)。原性能 baseline 保留；该候选尚未提升 catalog 的 `current`。
 
 ## 唯一装载路径
 
