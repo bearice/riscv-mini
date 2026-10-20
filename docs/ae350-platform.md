@@ -1,5 +1,7 @@
 # AE350 平台启动与内存操作
 
+硬核 DMAC 的公共 API、通道/缓存所有权限制及 `board dma-suite` 入口见 [DMA 服务](ae350-dma.md)。P3 在当前 80/100/400 MHz 运行点完成轮询式功能交付；PLIC 到 CPU 中断服务未验收。
+
 准确候选和证据见[最终验收报告](../reports/ae350-p2.md)，回归范围见[内存验证合同](ae350-memory-validation.md)。
 
 ## 内存分工
@@ -21,7 +23,7 @@
 
 FPGA SRAM 编程后，Gowin DDR3 IP 自动初始化/校准。状态经同步器进入控制域和数据域，看门狗保证校准失败仍可进入启动恢复。CPU 从初始化 ITCM 执行，检查 ILM/DLM 配置，做本地 RAM 双极性地址图案测试、清零和代码/data 装载，然后完成短 POST 并进入 UART loader。ECC 检查目前显式关闭，未宣称验证 ECC 纠错。
 
-CPU 目标 800 MHz（尚未独立标定）；数据 AHB 为独立 100 MHz；外设 AHB/APB 和 ITCM 80 MHz；DDR UI 100 MHz，物理 CK 400 MHz。最终候选要求 setup/hold 和 minimum pulse width 全通过。仅验收 DDR CK 400 MHz，不重新扫低频。
+外设 AHB/APB 和厂商 ITCM 为 80 MHz；数据 AHB 为独立 100 MHz；DDR UI 100 MHz，物理 CK 400 MHz。同一 P3 位流上 mcycle 约为 800.5 MHz。把 sys 提到 100 MHz 时，STA 给出 sys Fmax 84.8 MHz、451 个 setup 终点，并且 `u_vc_ilm_ram` 高脉冲只有 0.221 ns，要求 0.900 ns；同一次 PLL 下 mem 时钟 Fmax 也降到 86.7 MHz。因此 80 MHz 是当前 ITCM 块 RAM 的通过点，不只是已退役监视器的历史配置。数据口 133.333 MHz 曾在全时序上同时失败最小脉宽和 setup，不能把单域目标或该失败点说成组合上限。最终候选要求 setup/hold 和 minimum pulse width 全通过。仅验收 DDR CK 400 MHz，不重新扫低频。
 
 读适配保留完整 32 B，只对同一合法 AHB burst 分片返回；NONSEQ 不复用前一次块。WRAP、跨块、BUSY、属性/尺寸及固定 burst 长度均有检查。写方向按实际 cache write-back burst 聚合同一 32 B 块，一次完整 32 B 写回对应一条 UI 写。独立写、提前结束会排空；排空期间到达的请求被保留，失败返回 ERROR。提前完成表示写缓冲已接收，不表示 DDR 已完成；通过 fence/排空后观察状态。错误、超时、迟到响应隔离与 CDC 回归继续适用。
 
@@ -43,7 +45,7 @@ JTAG 用于 halt、寄存器/内存观察、身份核对及显式恢复。无 JT
 
 所有候选只编程 FPGA SRAM，不写 Flash。`ddr-suite` 的 flags 为 1=容量标签、2=遍历、4=cache 观察、8=每块八字。遍历排除完整运行镜像含 data/bss；栈和结果位于 DLM，不必再排除 DDR 栈。局部遍历不冒充全容量验证。cache 观察段在 ILM 中执行，以免取指和栈污染 DDR 计数。
 
-`jtag-test` 只核对 ITCM 镜像、非顺序读、本地内存配置与自主 POST，不注入程序、不设 DPC。`recover` 才是显式重启操作。普通应用使用公共 payload BSP 和弱 trap handler，二进制路径归 artifact 所有，不依赖诊断程序。原子指令在 fabric DDR 上不受支持；XIP、DMAC、HDMI 和共享仲裁后置。性能保留原始 cycle，未标定核心时钟前不发布已验证 MB/s。
+`jtag-test` 只核对 ITCM 镜像、非顺序读、本地内存配置与自主 POST，不注入程序、不设 DPC。`recover` 才是显式重启操作。普通应用使用公共 payload BSP 和弱 trap handler，二进制路径归 artifact 所有，不依赖诊断程序。原子指令在 fabric DDR 上不受支持。扩展 AHB 的数据口是 loopback FIFO。硬核 DMAC 已通过它和外部 DDR 口做 DDR 到 DDR、DDR 到 loopback 的传输；DMA_REQ/ACK 是四相握手，满、空、取消和软复位已在 SRAM 编程的位流上核对。XIP、HDMI 和专用 fabric reader 仍未验收。性能保留原始 cycle，未标定核心时钟前不发布已验证 MB/s。
 平台启动固件统一位于 `firmware/bootloader/ae350/`，构建身份为 `AE350-ROM-bootloader`；这是后续阶段共用的 ROM bootloader。应用 BSP 与可复用内存诊断为独立产物。旧 P1 ROM/SRAM 平台已退役，不再作为恢复目标。
 
 

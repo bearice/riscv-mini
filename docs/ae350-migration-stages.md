@@ -1,23 +1,27 @@
 # AE350 后续平台路线
 
-当前平台以厂商 ITCM 启动、硬核 ILM/DLM 和零基址 DDR 为基础。旧 P0/P1 过程说明、fabric ROM/SRAM 监视器和临时调试入口已退役；历史实现见 snapshot commit。当前交付依据为[内存验证合同](ae350-memory-validation.md)、[平台操作](ae350-platform.md)与[最终验收报告](../reports/ae350-p2.md)。下列为后续任务，不表示已经实现。
+当前平台以厂商 ITCM 启动、硬核 ILM/DLM 和零基址 DDR 为基础。旧 P0/P1 过程说明、fabric ROM/SRAM 监视器和临时调试入口已退役；历史实现见 snapshot commit。当前交付依据为[内存验证合同](ae350-memory-validation.md)、[平台操作](ae350-platform.md)与[最终验收报告](../reports/ae350-p2.md)。P3 的板测记录写在该节末尾；P4 及以后尚未实现。
 
-### P3：互连、硬核DMAC与缓存所有权
+### P3：互连、硬核DMAC与缓存所有权（当前运行点完成）
 
-地址、CSR、DMA数据端点、共享buffer与兼容合同采用[AE350统一地址规划](ae350-address-map.md)作为待实施方案；沿用硬核DMAC原址，外设控制与数据口分离，不继承20K的CSR编号。
+最终接口与使用限制见 [DMA 服务](ae350-dma.md)，验收说明见 [DMA 验收](../reports/ae350-dma.md)。原验收命令 `board p3-suite` 整理为持续复用的 `board dma-suite`；历史回执路径不改写。频率扫描暂停，PLIC 到 CPU 中断服务不签收。P4 可开始；正式 DMA 外设接入前须闭合忙通道保护和硬件错误传播。
+
+地址、CSR、DMA数据端点、共享buffer与兼容合同采用[AE350统一地址规划](ae350-address-map.md)；沿用硬核DMAC原址，外设控制与数据口分离，不继承20K的CSR编号。
 
 交付：扩展MMIO/IRQ路径、DMA buffer映射/同步接口、测试FIFO/loopback外设、已冻结的fabric DDR访问拓扑。
 
 通过：
 
 - DMAC做至少10000次混合传输：不同长度/对齐/边界、固定/递增地址、链表/循环、双通道竞争；支持组合逐字节匹配，不支持配置明确拒绝，guard区无破坏。
-- 在cache开启且故意制造脏行/旧行时验证CPU→DMA与DMA→CPU，交还前后的clean/invalidate与对齐/所有权规则正确；不能仅用cache关闭测试。
+- 在cache开启时验证CPU→DMA与DMA→CPU，交还前后的clean/invalidate与对齐/所有权规则正确；当前新值在clean前可见，签收旧行和范围失效，不宣称脏行写回通过。
 - 外设FIFO真实接DMA_REQ/ACK，在背压、空/满、取消、超时、软复位时不重复/丢失已承诺数据；停止后未完成事务排空，内存方可复用。
 - 若fabric reader使用独立DDR端口，CPU与其并发读写通过同一测试；若只验证了DMAC，必须把专用reader标为尚未支持。
-- 完成上述P3总线扫频及CPU/DDR高频组合验证；独立上限不能直接宣称为组合稳定上限。
+- 当前运行点为 80/100/400 MHz；频率扫描按用户决定暂停，高频组合不在本阶段完成声明中。
 - 错误的机器/设备major、MMIO/IRQ绑定、DMA可达范围和required capability有拒绝测试；兼容的可选新增寄存器有接受测试。
 
 P3是进入任何正式DMA外设的门槛，不因GPIO或CPU memcpy可用就跳过。
+
+位流 `d6a32f5add1b` 的原始验收回执为 `build/runs/20261020T080229355702Z-board-ae350-p3-suite`，只编程 FPGA SRAM。最终结果和未验收范围统一见 [DMA 验收](../reports/ae350-dma.md)，不以通用上传成功替代套件通过。
 
 ### P4：共享外设模块与基本BSP
 

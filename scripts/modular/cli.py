@@ -194,5 +194,13 @@ def perform(args, p):
             session.__exit__(None,None,None)
 
 
+def _plain(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
 def vars_serializable(args):
-    return {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    return {key: _plain(value) for key, value in vars(args).items()}

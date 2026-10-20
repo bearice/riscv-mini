@@ -22,7 +22,7 @@ from litex.gen import LiteXModule
 
 
 class MemInterconnect(LiteXModule):
-    def __init__(self, master, slaves, registered=False):
+    def __init__(self, master, slaves, registered=False, require_sel=False):
         """slaves: list of (base, size, bus) with disjoint windows."""
         self.master = master
         self.slaves = slaves
@@ -66,8 +66,9 @@ class MemInterconnect(LiteXModule):
             master.readyout.eq(Mux(state, ready & (dispatched if registered else 1), 1)),
         ]
         accept_now = Signal()
+        selected = master.sel if require_sel else 1
         self.comb += accept_now.eq(master.trans[1] & reduce(or_, [sel_hit[i] for i in range(nslaves)])
-                                   & master.readyout)
+                                   & master.readyout & selected)
         # ready of the selected slave, for the data phase
         self.comb += ready.eq(reduce(or_, [Mux(sel_lat[i], slaves[i][2].readyout, 0)
                                           for i in range(nslaves)]))

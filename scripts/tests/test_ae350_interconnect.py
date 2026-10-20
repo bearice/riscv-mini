@@ -70,13 +70,13 @@ class DUT(LiteXModule):
         return self.ic.n_accepted
 
 
-def xact(bus, write, addr, data=0, size=2, timeout=400):
+def xact(bus, write, addr, data=0, size=2, timeout=400, sel=0xff):
     """One AHB-Lite transfer: one acceptance edge, then the data phase."""
     yield bus.addr.eq(addr)
     yield bus.size.eq(size)
     yield bus.write.eq(1 if write else 0)
     yield bus.wdata.eq(data)
-    yield bus.sel.eq(0xff)
+    yield bus.sel.eq(sel)
     yield bus.trans.eq(2)
     yield                      # address phase: HTRANS high for exactly one cycle
     yield bus.trans.eq(0)      # deassert for the data phase (no second accept)

@@ -181,6 +181,10 @@ class AdapterRecoveryTests(unittest.TestCase):
         run_simulation(dut, {'sys': process(), 'ddr': model.run()},
                        clocks={'sys': 10, 'ddr': 10})
 
+    def test_loopback_and_platform_csr(self):
+        from scripts.tests.test_ae350_platform import main
+        self.assertEqual(main(), 0)
+
 
 class HostContractTests(unittest.TestCase):
     def test_user_source_changes_only_payload_inputs(self):

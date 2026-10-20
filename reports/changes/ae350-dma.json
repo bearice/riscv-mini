@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-10-20T08:16:21+00:00",
+  "title": "AE350 reusable DMA platform and acceptance",
+  "changes": [
+    "Expose platform CSR, loopback AHB and hard DMAC handshake; provide shared polling DMA submission and ranged cache maintenance with explicit limitations; replace bring-up probes with dma-suite and retain measured acceptance scope."
+  ],
+  "build": {
+    "id": "f6523855b9d785c37cb37995f605cb9bce33c373bb9378577639b8a22c3c3b86",
+    "kind": "modular",
+    "artifact": {
+      "component": "gateware",
+      "digest": "f6523855b9d785c37cb37995f605cb9bce33c373bb9378577639b8a22c3c3b86"
+    },
+    "payload_artifact": {
+      "component": "payload",
+      "digest": "18be1b4b39f16c6625eed2eea40b44758e259b872d12d2a3604f920f5c4f85eb"
+    },
+    "status": "board-qualified",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\store\\gateware\\f6523855b9d785c37cb37995f605cb9bce33c373bb9378577639b8a22c3c3b86",
+    "evidence": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261020T081410037685Z-board-ae350-ddr-suite\\result.json"
+    ],
+    "bitstream_sha256": "4e3f50c6954d0a33b4fc39a537a3e093722a2248f9d72cb6ead0c76aba1356cf",
+    "payload_sha256": "ff49f05277c6422ac6ede1038f4da9c089794b62ed314e80f3c09c081cc5bcc1",
+    "source": {
+      "commit": "4b15f9b7e07fe5ddc6ef46611322154d4d16257c",
+      "dirty": true,
+      "inputs_sha256": "81a9ca33baea5f054aa6f0c1a2694676d454ed0c1848953c47b2336d7456126f",
+      "kind": "modular-captured"
+    }
+  },
+  "performance_report": "reports\\performance\\ae350-dma-regression.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 20,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "81a9ca33baea5f054aa6f0c1a2694676d454ed0c1848953c47b2336d7456126f"
+  },
+  "mode": "staged review",
+  "base_revision": "4b15f9b7e07fe5ddc6ef46611322154d4d16257c",
+  "source_revision": null
+}

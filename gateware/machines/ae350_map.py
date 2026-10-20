@@ -1,6 +1,9 @@
 """AE350 memory address/ownership contract; generates C and linker inputs."""
 DDR_BASE = 0
 DDR_SIZE = 1 << 30
+# Peripheral AHB/APB and the vendor ITCM. 100 MHz sys failed STA on
+# 2026-10-20: sys Fmax 84.8 MHz, and u_vc_ilm_ram high pulse was 0.221 ns
+# against a 0.900 ns requirement. 80 MHz is the passing point.
 FABRIC_HZ = 80_000_000
 # Delivered data-port point is 100 MHz. The 133.333 MHz configuration that
 # was tried failed both minimum pulse width and setup under full STA. That
@@ -25,7 +28,42 @@ ROM_STACK_BOTTOM = PAYLOAD_STACK_TOP
 ROM_STACK_TOP = DLM_BASE + DLM_SIZE
 CSR_BASE = 0xF8000000
 CSR_SIZE = 0x10000
+SYSINFO_BASE = CSR_BASE
+IRQ_BASE = CSR_BASE + 0x2000
 DDR_CSR_BASE = CSR_BASE + 0x3000  # platform DDR diagnostics page, not SYSINFO
+DMA_SVC_BASE = CSR_BASE + 0x4000
+EXT_AHB_BASE = 0xE8000000
+EXT_AHB_SIZE = 128 << 20
+LOOPBACK_DATA = 0xE8050000
+LOOPBACK_DEPTH = 16
+DMAC_BASE = 0xF0C00000
+# MUG1031 documents the DMAC and the 8 external REQ/ACK pairs, not the
+# register map or the PLIC source number of EXT_INT[0]. The hard DMAC can
+# master external DDR; these IDs publish the fabric that exists.
+ABI_VERSION = 0x00010000
+SYSINFO_ID = 0xAE350001
+IRQ_ID = 0xAE350002
+DMA_SVC_ID = 0xAE350003
+LOOPBACK_ID = 0xAE350101
+DMAC_ID = 0xAE350201
+CAP_LOOPBACK = 1
+CAP_EXT_IRQ = 2
+CAP_DMA_REQ = 4
+CAP_FABRIC_READER = 8
+CAP_DMAC_DECLARED = 16
+FLAG_PRESENT = 1
+FLAG_DATA = 2
+FLAG_DMA = 4
+FLAG_IRQ = 8
+SYSINFO_CAP = CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED
+DMA_SVC_CAP = CAP_LOOPBACK | CAP_DMA_REQ
+REQ_MAP = 0x00000100  # TX uses DMA_REQ[0], RX uses DMA_REQ[1]
+LOOPBACK_EP = (
+    LOOPBACK_ID, DMA_SVC_BASE, 0x1000, LOOPBACK_DATA, 4, ABI_VERSION,
+    0 | (0 << 8) | ((FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16), 0)
+DMAC_EP = (
+    DMAC_ID, DMAC_BASE, 0, 0, 0, 0,
+    0xff | (0xff << 8) | (FLAG_PRESENT << 16), 0)
 STATUS_ADDR = DDR_CSR_BASE
 CALIB_CYCLES_ADDR = DDR_CSR_BASE + 4
 READ_COUNT_ADDR = DDR_CSR_BASE + 0x18
@@ -44,6 +82,7 @@ WINDOWS = (
     ('ilm', ILM_BASE, ILM_SIZE, 'hard-local-memory'),
     ('dlm', DLM_BASE, DLM_SIZE, 'hard-local-memory'),
     ('platform-csr', CSR_BASE, CSR_SIZE, 'implemented'),
+    ('ext-ahb', EXT_AHB_BASE, EXT_AHB_SIZE, 'loopback-data-word'),
 )
 SUBRANGES = (
     ('ilm.code', ILM_BASE, ILM_CODE_BYTES),
@@ -65,7 +104,8 @@ def image_abi():
                        write_trace=WRITE_TRACE_ADDR, read_trace=READ_TRACE_ADDR),
         loader=dict(max_bytes=DDR_CODE_MAX, stack_top=PAYLOAD_STACK_TOP),
         uart=dict(base=0xf0300000, baud=115200),
-        capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1'))
+        capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1',
+                          dmac='exported-unproven', ext_ahb='loopback', fabric_reader='unsupported'))
     return zlib.crc32(json.dumps(interface, sort_keys=True, separators=(',', ':')).encode())
 
 
@@ -87,6 +127,12 @@ def check():
         errors.append('invalid DDR loader layout')
     if not 0 < DATA_HZ < 200_000_000:
         errors.append('AE350 data clock must be below 200MHz')
+    if not EXT_AHB_BASE <= LOOPBACK_DATA < LOOPBACK_DATA + 4 <= EXT_AHB_BASE + EXT_AHB_SIZE:
+        errors.append('loopback data word escapes the extended AHB window')
+    for name, base in (('sysinfo', SYSINFO_BASE), ('irq', IRQ_BASE),
+                       ('dma-service', DMA_SVC_BASE)):
+        if not CSR_BASE <= base < base + 0x1000 <= CSR_BASE + CSR_SIZE:
+            errors.append(name + ' page escapes the platform CSR window')
     return errors
 
 

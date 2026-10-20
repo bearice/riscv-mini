@@ -96,7 +96,7 @@ def perform_upload(args, selected=None):
             cpu = hardware.halt()
             pc = cpu.register(0x7b1)
             mcause = cpu.register(0x342)
-            sr = [int.from_bytes(cpu.read_memory(amap.RESULTS_BASE + 4 * i, 4), 'little') for i in range(8)]
+            sr = [int.from_bytes(cpu.read_memory(amap.RESULTS_BASE + 4 * i, 4), 'little') for i in range(16)]
             running_in_payload = ae350_image.LOAD <= pc < ae350_image.LOAD + len(payload)
             op.record('cpu', pc=hex(pc), mcause=hex(mcause), results=[hex(v) for v in sr],
                       phase='executing' if (running_in_payload and mcause == 0) else 'handoff-only')
@@ -105,6 +105,8 @@ def perform_upload(args, selected=None):
         phase = 'uploaded-executed' if args.cpu_jtag_location else 'uploaded-and-handoff'
         hardware.close()
         hardware = None
+        # passed means the image executed (PC in range, mcause 0), not that a
+        # payload's own checks succeeded. Suite judgments live in their operations.
         op.report.update(passed=True, phase=phase)
         op.save()
         print('PASS AE350 UART ' + phase, flush=True)

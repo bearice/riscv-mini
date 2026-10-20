@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "passed": true,
+  "candidate_artifact": {
+    "component": "gateware",
+    "digest": "f6523855b9d785c37cb37995f605cb9bce33c373bb9378577639b8a22c3c3b86"
+  },
+  "payload_artifact": {
+    "component": "payload",
+    "digest": "18be1b4b39f16c6625eed2eea40b44758e259b872d12d2a3604f920f5c4f85eb"
+  },
+  "payload_sha256": "ff49f05277c6422ac6ede1038f4da9c089794b62ed314e80f3c09c081cc5bcc1",
+  "receipt": "build\\runs\\20261020T081410037685Z-board-ae350-ddr-suite\\result.json",
+  "receipt_sha256": "ab7865ba7f9691c80c8e9c0291e1020f0939530554060c1d8c89256352474253",
+  "scope": "memory regression on DMA-capable gateware; not a DMAC throughput measurement; raw cycles without new counter calibration",
+  "rows": [
+    {
+      "cache": "uncached",
+      "operation": "write",
+      "cycles_median": 1835103,
+      "samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1835103,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1835099,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1835103,
+          "ui_reads": 0,
+          "ui_writes": 16384,
+          "bytes": 65536
+        }
+      ]
+    },
+    {
+      "cache": "uncached",
+      "operation": "read",
+      "cycles_median": 7378761,
+      "samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 7378857,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 7378741,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 7378761,
+          "ui_reads": 16384,
+          "ui_writes": 0,
+          "bytes": 65536
+        }
+      ]
+    },
+    {
+      "cache": "uncached",
+      "operation": "copy",
+      "cycles_median": 9961315,
+      "samples": [
+        {
+          "cache": "uncached",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 9961447,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 9961315,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        },
+        {
+          "cache": "uncached",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 9961203,
+          "ui_reads": 16384,
+          "ui_writes": 16384,
+          "bytes": 65536
+        }
+      ]
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "write",
+      "cycles_median": 1973777,
+      "samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "write",
+          "cycles": 1973677,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "write",
+          "cycles": 1973817,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "write",
+          "cycles": 1973777,
+          "ui_reads": 2048,
+          "ui_writes": 2048,
+          "bytes": 65536
+        }
+      ]
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "read",
+      "cycles_median": 1470527,
+      "samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "read",
+          "cycles": 1470719,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "read",
+          "cycles": 1470527,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "read",
+          "cycles": 1470431,
+          "ui_reads": 2048,
+          "ui_writes": 0,
+          "bytes": 65536
+        }
+      ]
+    },
+    {
+      "cache": "write-back-cold",
+      "operation": "copy",
+      "cycles_median": 3491233,
+      "samples": [
+        {
+          "cache": "write-back-cold",
+          "repeat": 0,
+          "operation": "copy",
+          "cycles": 3491101,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 1,
+          "operation": "copy",
+          "cycles": 3491233,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536
+        },
+        {
+          "cache": "write-back-cold",
+          "repeat": 2,
+          "operation": "copy",
+          "cycles": 3491401,
+          "ui_reads": 4096,
+          "ui_writes": 2048,
+          "bytes": 65536
+        }
+      ]
+    }
+  ]
+}

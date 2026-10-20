@@ -26,6 +26,7 @@ from litex.soc.interconnect.ahb import AHBInterface
 
 from .ae350_native import NativeAE350
 from .ae350_interconnect import MemInterconnect, ErrorSlave
+from .ae350_platform import Ae350Platform
 from . import ae350_map
 from .ae350_clock import ClockReset
 from .ddr3_ahb import DDR3UI, DDR3AHB
@@ -297,34 +298,15 @@ class DDRSoC(LiteXModule):
         self.comb += self.data_cdc.i.eq(Cat(self.ddr_port.debug, self.ddr_port.debug_hi,
                                           self.ddr_port.last_control,
                                           self.ddr_port.write_control, self.ddr_port.read_control))
-        # Read-only platform CSR bank on the hard subsystem's APB extension.
-        # Diagnostics never override initialized boot ITCM contents.
+        # Platform CSR and the extended-AHB loopback. DDR diagnostics stay at
+        # their P2 offsets; writes to that page still return an error.
         registers = {0: status, 4: calib_cycles, 8: self.data_cdc.o[:32],
             12: self.data_cdc.o[32:64], 16: self.data_cdc.o[64:80],
             20: snapshot[7][:16], 24: snapshot[7][16:32],
             28: self.data_cdc.o[80:96], 64: self.data_cdc.o[96:112],
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
-        # APB has a setup cycle before ENABLE. Latch the address then, decode
-        # it on the following cycle while PREADY is low, and complete the
-        # access with registered data. The hard-macro address never drives the
-        # response mux in the same cycle the macro samples PRDATA.
-        apb_addr_q = Signal(32)
-        apb_wait = Signal()
-        self.comb += self.cpu.apb_ready.eq(~apb_wait)
-        self.sync += [
-            If(~self.cpu.apb_select,
-                apb_wait.eq(0),
-            ).Elif(~self.cpu.apb_enable,
-                apb_addr_q.eq(self.cpu.apb_addr),
-                apb_wait.eq(1),
-            ).Elif(apb_wait,
-                apb_wait.eq(0),
-                self.cpu.apb_data.eq(0),
-                Case(apb_addr_q, {
-                    ae350_map.DDR_CSR_BASE + offset: self.cpu.apb_data.eq(value)
-                    for offset, value in registers.items()}),
-            ),
-        ]
+        # Not self.platform: that attribute is the Gowin board platform.
+        self.ext = Ae350Platform(self.cpu, registers)
 
         serial = platform.request('serial')
         self.cpu.cpu_params.update(i_UART2_RXD=serial.rx, o_UART2_TXD=serial.tx,

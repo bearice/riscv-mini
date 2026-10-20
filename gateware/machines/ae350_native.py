@@ -107,9 +107,9 @@ class NativeAE350(LiteXModule):
         self.interrupt = Signal(16)
         if wrapper:
             # The vendor-delivered ``RiscV_AE350_SOC_Top`` wrapper around the
-            # hard macro.  Its feature set comes from riscv_ae350_config.v, so
-            # the port list is the configured subset: fabric ROM, fabric
-            # DDR/SRAM AHB port, UART2, GPIO, debug JTAG.
+            # hard macro.  Its feature set comes from riscv_ae350_config.v.
+            # The live configuration is vendor ITCM, the 64-bit DDR port,
+            # extended APB, the 32-bit extended AHB slave, EXT_INT and DMA_REQ.
             self.cpu_params = dict(
                 i_CORE_CLK       = ClockSignal("cpu"),
                 i_DDR_CLK        = ClockSignal(data_domain),
@@ -161,15 +161,28 @@ class NativeAE350(LiteXModule):
                     self.cpu_params.pop(port)
                 self.apb_addr = Signal(32)
                 self.apb_data = Signal(32)
+                self.apb_wdata = Signal(32)
+                self.apb_strb = Signal(4)
                 self.apb_select = Signal()
                 self.apb_enable = Signal()
                 self.apb_write = Signal()
                 self.apb_ready = Signal(reset=1)
+                self.apb_slverr = Signal()
+                self.dma_req = Signal(8)
+                self.dma_ack = Signal(8)
                 self.cpu_params.update(o_APB_PADDR=self.apb_addr, o_APB_PSEL=self.apb_select,
                     o_APB_PENABLE=self.apb_enable, o_APB_PWRITE=self.apb_write,
-                    o_APB_PWDATA=Open(32), o_APB_PPROT=Open(3), o_APB_PSTRB=Open(4),
+                    o_APB_PWDATA=self.apb_wdata, o_APB_PPROT=Open(3), o_APB_PSTRB=self.apb_strb,
                     i_APB_PRDATA=self.apb_data, i_APB_PREADY=self.apb_ready,
-                    i_APB_PSLVERR=self.apb_write)
+                    i_APB_PSLVERR=self.apb_slverr,
+                    i_EXT_INT=self.interrupt,
+                    i_DMA_REQ=self.dma_req, o_DMA_ACK=self.dma_ack,
+                    i_EXTS_HRDATA=ahb_exts.rdata, i_EXTS_HREADYIN=ahb_exts.readyout,
+                    i_EXTS_HRESP=ahb_exts.resp, o_EXTS_HADDR=ahb_exts.addr,
+                    o_EXTS_HBURST=ahb_exts.burst, o_EXTS_HPROT=ahb_exts.prot,
+                    o_EXTS_HSEL=ahb_exts.sel, o_EXTS_HSIZE=ahb_exts.size,
+                    o_EXTS_HTRANS=ahb_exts.trans, o_EXTS_HWDATA=ahb_exts.wdata,
+                    o_EXTS_HWRITE=ahb_exts.write)
         else:
             self.cpu_params = dict(
             # Clk/Rst.

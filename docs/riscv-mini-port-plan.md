@@ -13,4 +13,4 @@
 
 板卡参考文件仅从 TangPrimer-138K/docs 与 example 读取。项目实现和文档位于 riscv-mini，不能把板卡参考目录当作实现工作树。摄像头引脚保持保留，CPU JTAG 走已分配的 Dock J23。
 
-频率按当前器件/IP 配置和完整 STA/实板证据选取，旧 20K 频率不构成约束。当前数据口 100 MHz 与外设/ITCM 80 MHz 分域，DDR UI 100 MHz、物理 CK 400 MHz；800 MHz 是核心配置目标，counter 标定及适用范围另列证据，不从 PLL 参数推定性能。未通过的 133 MHz 尝试只定义该实现的失败边界。
+频率按当前器件/IP 配置和完整 STA/实板证据选取，旧 20K 频率不构成约束。当前数据口 100 MHz，外设 AHB/APB 与厂商 ITCM 80 MHz，DDR UI 100 MHz、物理 CK 400 MHz。2026-10-20 将 sys 设为 100 MHz 未过 STA：sys Fmax 84.8 MHz，ITCM 块 RAM 高脉冲 0.221 ns，要求 0.900 ns。800 MHz 是核心配置目标，counter 标定及适用范围另列证据，不从 PLL 参数推定性能。未通过的 133 MHz 尝试只定义该实现的失败边界。

@@ -1,6 +1,6 @@
 # AE350 物理地址、CSR 与 DMA 规划
 
-更新：2026-10-19。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，删除 fabric 工作 SRAM、JTAG mailbox 和 launcher。唯一实现合同为 `gateware/machines/ae350_map.py`；精确候选和验证范围见 [最终验收报告](../reports/ae350-p2.md)。其余 DMA/外设槽仍为规划。这里的 CSR 指外设 MMIO；RISC-V CPU CSR 不属于此地址表。
+更新：2026-10-20。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，删除 fabric 工作 SRAM、JTAG mailbox 和 launcher。唯一实现合同为 `gateware/machines/ae350_map.py`。SYSINFO、IRQ 聚合、DMA 服务页及 0xe8050000 的 loopback 已实现。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 运行点完成轮询式功能验收；完整 PLIC 中断服务未验收。公共 API、缓存所有权及使用限制见 [DMA 服务](ae350-dma.md)，结果见 [DMA 验收](../reports/ae350-dma.md)。其余外设槽仍为规划。这里的 CSR 指外设 MMIO；RISC-V CPU CSR 不属于此地址表。
 
 最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。启动协议见[bootloader](ae350-bootloader.md)。
 
@@ -66,7 +66,7 @@ HDMI CSR控制帧地址，但像素流由fabric专用DDR reader读取；它不�
 
 FIFO DATA地址固定，DMA传输时外设地址不递增；DDR端地址递增。APB CSR与AHB DATA是不同用途，不建立两个有副作用的数据口别名。AHB槽的其余地址保留，未实现的端点/非法方向/非法宽度应有界报错，不能静默丢弃数据。主机不得用读改写或推测访问操作FIFO。
 
-上述地址首先是CPU可编程端点规划。**硬DMAC是否能到达这些端点与DDR，必须在P3用实际传输证明**；CPU可达不等于DMAC可达。若硬DMAC拓扑不支持，保留逻辑设备ABI并调整后端/采用fabric DMA，不伪造已连通状态。Extended AHB Master面向ILM/DLM，不当作通用DDR主接口。
+上述地址首先是CPU可编程端点规划。DDR 与 loopback 数据字已由硬核 DMAC 在当前运行点传过数据；其余规划端点仍要各自用实际传输证明，CPU 可达不等于 DMAC 可达。若硬 DMAC 拓扑不支持，保留逻辑设备 ABI 并调整后端或采用 fabric DMA，不伪造已连通状态。Extended AHB Master面向ILM/DLM，不当作通用DDR主接口。
 
 ## 4. DMA寄存器、描述符与缓冲区
 
@@ -78,7 +78,7 @@ DMA buffer/描述符在DDR中分配，描述符里的地址是物理字节地址
 
 池内动态分配HDMI framebuffer、audio/mic环、网络/USB队列及描述符，不按外设永久切割固定DDR地址。双缓冲、环长度、descriptor stride等通过驱动或已版本化CSR传递。硬件描述符不复用成跨平台软件ABI；项目HAL暴露方向、buffer、长度、完成/取消等操作。
 
-分配对齐取cache-line与控制器要求的较大值，metadata与设备数据不共用需独立维护的cache line。非一致DMA为默认假设：CPU写→clean→内存/设备屏障→提交；设备写→确认完成及屏障→invalidate→CPU读。精确维护方法需沿用已验收的A25实现；没有证据前不声明硬件一致性、write-through或某个地址别名天然uncached。
+分配对齐取cache-line与控制器要求的较大值，metadata与设备数据不共用需独立维护的cache line。公共接口仍按非一致 DMA 使用：提交前对范围做 clean，CPU 读设备数据前对范围做 invalidate。当前 A25 运行点的套件结果是：缓存打开后的 store 在 clean 之前已经能被 DMAC 读到，该窗口的 DDR 写计数差为 0，所以这不是脏行写回通过。DMAC 改写后，CPU 要等这条缓存行按地址范围无效才读到新值；单行、连续三行和不满一行都如此。不把这条结果推广成硬件一致性。
 
 硬DMAC通道动态申请：首轮memcpy/loopback，再audio TX和mic RX。SD/网络/USB按后端能力申请；HDMI首选专用reader。物理DMA request/ack编号由vendor配置及端点表生成，不等于固定通道号，不能凭“8通道”预分配全部资源。
 
@@ -114,8 +114,8 @@ XIP验收：ROM冷/热启动与恢复、只读拒写、随机/跨字取数、代
 
 ## 7. 实施顺序与验收
 
-1. 当前内存布局已采用零基址 DDR、厂商 ITCM 与硬核 ILM/DLM；RTL/C/linker/runner 共用地址合同并检查重叠。后续 SYSINFO/外设/DMAC/XIP 地址仍为预留，实例化后才发布存在和能力。
-2. P3先实例化SYSINFO、DDR/互连诊断、AHB loopback数据口；验证APB/AHB宽度、错误、背压、跨从设备连续事务以及合法空洞拒绝。
+1. 当前内存布局已采用零基址 DDR、厂商 ITCM 与硬核 ILM/DLM；RTL/C/linker/runner 共用地址合同并检查重叠。SYSINFO、IRQ、DMA 服务和 loopback 数据字已发布；XIP 与其余外设槽仍为预留，实例化后才发布存在和能力。
+2. P3a 已实例化 SYSINFO、DDR/互连诊断、AHB loopback 数据字，并用主机仿真检查 APB/AHB 宽度、错误、请求电平和空洞拒绝。硬核 DMAC 在当前运行点已有 DDR 与 loopback 传输的实板证据；公共接口、脏行写回和停止后安全复用尚未签收。
 3. 硬DMAC做DDR memcpy、DDR↔loopback、方向/固定递增地址、边界/取消/超时，再接audio TX与mic RX；每一步记录真实可达性。
 4. 加cache维护/独立外存观察、并发与中断测试；确认描述符和buffer所有权，任何失败不得破坏 ITCM/DLM/JTAG 恢复。
 5. HDMI验证专用reader与CPU/DMAC共享仲裁、带宽与欠载；后续SD/网络/USB逐个启用。所有新布局和仲裁组合仅在400MHz CK交付点完成所需复验，不重新要求低频扫档。
