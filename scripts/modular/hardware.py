@@ -18,6 +18,8 @@ PRIMER20K_CLOSURE = (
     'gateware/boards/__init__.py',
     'gateware/boards/primer20k_dock3713/board.json',
     'gateware/devices/__init__.py',
+    'gateware/devices/audio/__init__.py',
+    'gateware/devices/audio/core.py',
     'gateware/devices/gpio/__init__.py',
     'gateware/devices/gpio/core.py',
     'gateware/devices/microphone/__init__.py',
