@@ -10,7 +10,8 @@ import argparse,concurrent.futures,json,re,sys,time,zlib,hashlib
 from pathlib import Path
 import serial
 from bios_tftp import PayloadServer
-from boot_upload import BootSession, program
+from tools.boot_session import BootSession
+from boot_upload import program
 from bios_image import unpack,OS_MAGIC
 
 def read_words(reply, address, count):

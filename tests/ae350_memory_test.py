@@ -24,7 +24,7 @@ from modular import ae350
 from modular.storage import Store
 import ae350_report
 import ae350_image
-from programmer_cable import resolve_location
+from tools.programmer_cable import resolve_location
 from mini_ops import ae350_upload
 from mini_ops.ae350_session import HardwareSession, SessionError
 from mini_ops.ae350_jtag import CPUJTAG

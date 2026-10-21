@@ -4,8 +4,9 @@ import json
 import time
 from pathlib import Path
 import serial
-from boot_upload import BootSession, verified_output
-from uart_state import State, observe
+from tools.boot_session import BootSession
+from boot_upload import verified_output
+from tools.uart_state import State, observe
 
 ROOT=Path(__file__).resolve().parents[1]
 

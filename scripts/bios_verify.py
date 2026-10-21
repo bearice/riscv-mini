@@ -7,7 +7,7 @@ import argparse
 import concurrent.futures
 from pathlib import Path
 import serial
-from boot_upload import BootSession
+from tools.boot_session import BootSession
 from bios_image import pack, unpack
 from bios_tftp import PayloadServer
 

@@ -42,7 +42,7 @@ def rebuild(store, ref, run):
             raise ValueError('Legacy firmware lacks a complete source/flag lock: ' + name)
         expected = manifest['config']['build']
         # Hash the current implementation and its imports before allowing it to execute.
-        from .firmware import source_files
+        from .compile import source_files
         actual = source_files(store.root, list(expected['sources']))
         if actual != expected['sources']:
             raise ValueError('Source differs from lock for ' + name + '; use the preserved inputs/source snapshot in its recorded checkout')

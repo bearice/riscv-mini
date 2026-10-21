@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from boot_upload import BootSession
+from tools.boot_session import BootSession
 class Port:
     def __init__(self,data):self.data=iter(data)
     def read(self,n):

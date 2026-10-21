@@ -229,7 +229,7 @@ class MachineBuildTests(unittest.TestCase):
             self.assertEqual(self.store.get(cpu)['config']['kind'], 'hard')
 
     def test_138k_input_changes_do_not_invalidate_20k_but_20k_board_changes_do(self):
-        for name in ('gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
+        for name in ('gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py', 'scripts/modular/compile.py',
                      'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
                      'scripts/modular/hardware.py', 'scripts/modular/contracts.py'):
             target = self.root / name

@@ -143,7 +143,7 @@ def assembly(store, parts):
                     if not result['compatible']:
                         raise ValueError(f'{name} -> {dependency}: ' + '; '.join(result['problems']))
     if 'bios' in parts and 'bootloader' in parts:
-        from scripts.boot_image import unpack_image
+        from scripts.tools.boot_image import unpack_image
         boot = manifests['bootloader']
         boot_soc = store.get(boot['dependencies']['soc-description'])
         expected_tag = boot['config'].get('image_abi_tag', boot_soc['config']['legacy_abi_tag'])

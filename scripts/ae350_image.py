@@ -8,7 +8,7 @@ uploads to either platform and each side validates what it actually supports.
 import json
 import zlib
 
-from boot_image import pack_image, unpack_image, packet, HEADER, CHUNK
+from tools.boot_image import pack_image, unpack_image, packet, HEADER, CHUNK
 
 from gateware.machines import ae350_map
 LOAD = ae350_map.DDR_CODE

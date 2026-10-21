@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from boot_image import FLASH_OFFSET, FLASH_SIZE, abi_tag, unpack_image
+from boot_image import abi_tag
+from tools.boot_image import FLASH_OFFSET, FLASH_SIZE, unpack_image
 from build_records import ROOT, artifact_identity, get_record, pnr_passed
 
 

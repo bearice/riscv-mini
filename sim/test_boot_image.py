@@ -5,7 +5,8 @@ import unittest
 import zlib
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from boot_image import HEADER, LOAD, MAX_PAYLOAD, pack_image, unpack_image, packet, abi_tag
+from boot_image import abi_tag
+from tools.boot_image import HEADER, LOAD, MAX_PAYLOAD, pack_image, unpack_image, packet
 
 class ImageTests(unittest.TestCase):
     def setUp(self):

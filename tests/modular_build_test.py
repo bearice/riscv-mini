@@ -225,7 +225,7 @@ class ModularTests(unittest.TestCase):
         self.assertTrue(result['compatible']);self.assertEqual(result['unavailable_optional_flags'],1<<31)
 
     def image_parts(self, image_tag=42):
-        from scripts.boot_image import pack_image
+        from scripts.tools.boot_image import pack_image
         config=dict(contract=self.contract(),legacy_abi_tag=42)
         soc=self.store.publish('soc-description',digest(config),{'csr.json':b'{}'},config=config)
         boot=self.store.publish('bootloader',digest('boot'),{'outputs/boot.bin':b'boot'},dependencies={'soc-description':soc})

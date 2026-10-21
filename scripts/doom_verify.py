@@ -31,7 +31,7 @@ import serial
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from boot_upload import BootSession          # noqa: E402
+from tools.boot_session import BootSession     # noqa: E402
 from bios_image import unpack                # noqa: E402
 from bios_tftp import PayloadServer          # noqa: E402
 

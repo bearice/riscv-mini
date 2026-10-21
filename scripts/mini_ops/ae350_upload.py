@@ -9,10 +9,10 @@ import json
 import time
 
 from modular.storage import Store, file_hash
-from mini_ops.board import Operation
+from mini_ops.common import Operation
 from gateware.machines import ae350_map as amap
 from mini_ops.ae350 import candidate
-from boot_upload import BootSession
+from tools.boot_session import BootSession
 import ae350_image
 
 
@@ -127,7 +127,7 @@ def _negative_cases(session, image, payload, args, op, restart, wait_banner):
     """Rejection paths, each from a freshly restarted ROM (independent state)."""
     import struct
     import zlib
-    from boot_image import HEADER, CHUNK, packet
+    from tools.boot_image import HEADER, CHUNK, packet
 
     cases = []
 

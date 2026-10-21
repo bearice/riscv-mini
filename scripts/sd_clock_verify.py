@@ -9,7 +9,7 @@ import re
 import time
 from pathlib import Path
 import serial
-from boot_upload import BootSession
+from tools.boot_session import BootSession
 from benchmark import ROW
 
 def main():

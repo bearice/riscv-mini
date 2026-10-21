@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 
 from bios_image import OS_MAGIC, unpack
-from boot_upload import BootSession
+from tools.boot_session import BootSession
 from build_records import ROOT
 
 LOAD = 0x02000000

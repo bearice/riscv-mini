@@ -91,7 +91,7 @@ def perform(args, p):
             if args.target == 'linux':
                 environment = linux_runner(['cc', 'make', 'clang', 'lld', 'dtc'])
             else:
-                from .firmware import ROLES
+                from .compile import ROLES
                 roles = {'bios': ROLES,
                          'gateware': ['python','gowin'], 'cpu': ['python','java','sbt-launch']}[args.target]
                 environment = discover(roles)

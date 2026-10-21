@@ -10,7 +10,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'scripts'), str(ROOT/'tests')]
 from bios_image import pack
-from boot_image import unpack_image
+from tools.boot_image import unpack_image
 from mini_ops.linux import preflight
 from mini_operations_test import MiniOperationsTests
 

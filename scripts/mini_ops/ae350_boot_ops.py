@@ -109,8 +109,8 @@ def _loader_suite(request, root, ref, build_id, full=True):
 def _recover(request, root, ref, build_id):
     """Reload the ROM and confirm it comes up, without uploading anything."""
     from mini_ops.ae350_session import HardwareSession
-    from mini_ops.board import Operation
-    from boot_upload import BootSession
+    from mini_ops.common import Operation
+    from tools.boot_session import BootSession
     from modular.storage import Store
     import time
 

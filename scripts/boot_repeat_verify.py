@@ -8,8 +8,9 @@ import json
 import time
 from pathlib import Path
 import serial
-from boot_upload import BootSession, program, verified_output
-from boot_image import unpack_image
+from tools.boot_session import BootSession
+from boot_upload import program, verified_output
+from tools.boot_image import unpack_image
 
 
 def main():

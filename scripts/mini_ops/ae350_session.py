@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 
 from build_records import ROOT
-from boot_upload import programmer_succeeded
-from programmer_cable import resolve_location
+from tools.boot_session import programmer_succeeded
+from tools.programmer_cable import resolve_location
 
 
 class SessionError(RuntimeError):

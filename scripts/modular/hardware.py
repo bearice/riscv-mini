@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from .storage import ROOT, canonical, digest, file_hash, read, write, workspace_lock
 from .environment import discover, identity, python_packages
-from .firmware import source_files as collect_source_files
+from .compile import source_files as collect_source_files
 from .contracts import hardware
 from .workspace import working, clear_generated, invalidate_pnr, gateware_files, remove_file
 
@@ -24,7 +24,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
     v = validation if validation is not None else store.get(base_soc)['config']['validation']
     inputs = source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                                       'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                                      'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py'])
+                                      'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py', 'scripts/modular/compile.py'])
     env = discover(['python'], store.root)
     options = dict(v)
     config = dict(schema=1, options=options, sources=inputs, environment=identity(env), packages=python_packages())
@@ -75,7 +75,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
                 if p.is_file(): files[p.relative_to(work).as_posix()] = p
         if source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                                     'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                                    'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py']) != inputs:
+                                    'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py', 'scripts/modular/compile.py']) != inputs:
             raise ValueError('Hardware inputs changed during generation')
         ref = store.publish('soc-description', key, files, config=cfg, dependencies={'cpu': cpu_ref})
         workspace.success(ref)
@@ -86,7 +86,7 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
     soc_data = store.get(soc); v = soc_data['config']['validation']
     env = discover(['python', *(['gowin'] if synthesize else [])], store.root)
     config = dict(schema=1, options=v, environment=identity(env), packages=python_packages(), synthesize=synthesize,
-                  sources=source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py', 'scripts/modular/workspace.py', 'scripts/modular/gowin.py']))
+                  sources=source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py', 'scripts/modular/workspace.py', 'scripts/modular/gowin.py', 'scripts/modular/compile.py']))
     deps = {'soc-description': soc}
     if v['boot_mode'] == 'rom': deps['bootloader'] = boot
     key = digest(dict(config=config, dependencies=deps))

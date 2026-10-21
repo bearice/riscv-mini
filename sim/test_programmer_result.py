@@ -4,7 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from boot_upload import programmer_succeeded
+from tools.boot_session import programmer_succeeded
 
 class ProgrammerResultTests(unittest.TestCase):
     def result(self,text,code=0,stderr=''):

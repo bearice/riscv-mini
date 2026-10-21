@@ -11,7 +11,7 @@ import time
 import zlib
 from pathlib import Path
 import serial
-from boot_upload import BootSession
+from tools.boot_session import BootSession
 from bios_tftp import PayloadServer
 from boot_upload import verified_output
 

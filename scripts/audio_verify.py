@@ -5,8 +5,9 @@ import re
 import time
 from pathlib import Path
 import serial
-from boot_image import unpack_image
-from boot_upload import BootSession,verified_output,program
+from tools.boot_image import unpack_image
+from tools.boot_session import BootSession
+from boot_upload import verified_output,program
 from audio_capture import record,analyze
 ROOT=Path(__file__).resolve().parents[1]
 

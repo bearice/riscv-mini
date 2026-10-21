@@ -4,12 +4,14 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from scripts.boot_image import abi_tag, unpack_image
+from scripts.boot_image import abi_tag
+from scripts.tools.boot_image import unpack_image
 from scripts.build_records import artifact_identity
 from .storage import ROOT, Store, Run, canonical, digest, file_hash, member, read, text_file, write, workspace_lock
 from .contracts import hardware, check, assembly
 from .cpu import locked_cpu
-from .firmware import build_component, source_files, generated_headers
+from .compile import source_files
+from .firmware import build_component
 from .environment import discover, identity, python_packages
 
 HARDWARE_FIELDS = ('profile', 'boot_mode', 'rom_size_bytes', 'sram_size_bytes', 'boot_ram_address',

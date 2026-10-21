@@ -9,8 +9,9 @@ import time
 import zlib
 from pathlib import Path
 import serial
-from boot_image import HEADER, LOAD, pack_image, packet, unpack_image
-from boot_upload import BootSession, program, verified_output, require_install_supported
+from tools.boot_image import HEADER, LOAD, pack_image, packet, unpack_image
+from tools.boot_session import BootSession
+from boot_upload import program, verified_output, require_install_supported
 
 ROOT=Path(__file__).resolve().parents[1]
 

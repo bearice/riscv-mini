@@ -7,7 +7,7 @@ mailbox protocol, DPC redirection or program injection is used.
 import time
 from modular.storage import Store, file_hash
 from mini_ops.ae350 import candidate
-from mini_ops.board import Operation
+from mini_ops.common import Operation
 from gateware.machines import ae350_map as amap
 
 

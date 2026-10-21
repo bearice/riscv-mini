@@ -7,7 +7,7 @@ from pathlib import Path
 from .storage import canonical, digest, file_hash, write, read, text_file
 from .workspace import working, clear_generated, invalidate_pnr, gateware_files, cached_implementation, record_implementation, remove_file
 from .environment import discover, identity, python_packages, output
-from .firmware import BASE_FLAGS, ROLES, ninja_build
+from .compile import BASE_FLAGS, ROLES, ninja_build
 
 BOOTLOADER = 'firmware/bootloader/ae350'
 PAYLOAD = 'firmware/diagnostics/ae350_memory'

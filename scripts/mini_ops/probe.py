@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import subprocess
 
-from boot_image import FLASH_OFFSET, pack_image
+from tools.boot_image import FLASH_OFFSET, pack_image
 from build_records import ROOT
 
 

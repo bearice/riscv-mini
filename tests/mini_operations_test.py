@@ -12,10 +12,12 @@ from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from boot_image import HEADER, abi_tag, pack_image
+from boot_image import abi_tag
+from tools.boot_image import HEADER, pack_image
 from boot_upload import require_install_supported
 from mini_ops.artifacts import Build, configuration_bytes
-from mini_ops.board import Board, Operation
+from mini_ops.board import Board
+from mini_ops.common import Operation
 from mini import main
 from mini import parser
 from scripts.modular.configuration import configuration_arguments
@@ -188,14 +190,14 @@ class MiniOperationsTests(unittest.TestCase):
         build,op,board,port,_=self.backend()
         port.data.extend(b'ERR DDR INIT; reset\r\nBOOT SELECT:\x00\r\nriscv-mini XIP stale\r\n\x00DDR INIT \x00ERR DDR INIT; reset\r\n')
         port.startup()
-        from boot_upload import BootSession
+        from tools.boot_session import BootSession
         startup=board.menu(BootSession(port))
         self.assertNotIn(b'ERR ',startup)
         self.assertIn(b'DDR READY',startup)
     def test_real_ddr_failure_after_banner_is_rejected(self):
         build,op,board,port,_=self.backend()
         port.data.extend(b'\r\nriscv-mini XIP test-version\r\nDDR INIT 1\r\nERR DDR INIT; reset\r\n')
-        from boot_upload import BootSession
+        from tools.boot_session import BootSession
         with self.assertRaisesRegex(RuntimeError,'DDR initialization failed'):
             board.menu(BootSession(port))
     def test_spi_diagnostic_only_programs_sram_and_restores_loader(self):

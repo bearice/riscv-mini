@@ -3,7 +3,7 @@ import struct
 import time
 from modular.storage import Store, file_hash
 from mini_ops.ae350 import candidate
-from mini_ops.board import Operation
+from mini_ops.common import Operation
 from mini_ops.ae350_payload import resolve_payload, payload_file, application_parameters
 from gateware.machines import ae350_map as amap
 
@@ -76,7 +76,7 @@ def perform(args):
         from mini_ops.ae350_session import HardwareSession
         hardware = HardwareSession(op, port=args.port, cpu_jtag_location=args.cpu_jtag_location,
                                    location=args.location)
-        from boot_upload import BootSession
+        from tools.boot_session import BootSession
         from mini_ops.ae350_upload import wait_loader
         session = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
         hardware.program(fs)

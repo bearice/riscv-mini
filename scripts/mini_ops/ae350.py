@@ -6,7 +6,7 @@ from pathlib import Path
 
 from build_records import ROOT
 from modular.storage import Store, read, file_hash
-from mini_ops.board import Operation
+from mini_ops.common import Operation
 
 
 def candidate(selection):

@@ -15,7 +15,8 @@ import time
 from pathlib import Path
 import serial
 from audio_capture import record, analyze
-from boot_upload import BootSession, verified_output
+from tools.boot_session import BootSession
+from boot_upload import verified_output
 
 
 def main():

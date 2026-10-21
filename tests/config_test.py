@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from gateware.features import Features
 from gateware.config import storage_profile, cpu_configuration, pll_count, cpu_isa, cpu_capabilities
 import tempfile, hashlib, json
@@ -31,7 +32,7 @@ assert pll_count(full,'ohci','dds')==4
 assert pll_count(Features.resolve('minimal'),'ultra','dds')==1
 assert cpu_isa(Features.resolve('full', {'fpu': True}),{'compressed':True,'bitmanip':['Zba','Zbb','Zbs']})=='rv32imafc_zba_zbb_zbs_zicsr_zifencei'
 assert cpu_isa(Features.resolve('full', {'fpu': True}),{'compressed':True,'bitmanip':[]})=='rv32imafc_zicsr_zifencei'
-from scripts.boot_image import abi_tag
+from boot_image import abi_tag
 base={'csr_registers':{},'memories':{},'constants':{}}
 small={**base,'constants':{'config_l2_size':4096}}
 large={**base,'constants':{'config_l2_size':8192}}

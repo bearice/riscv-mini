@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from programmer_cable import resolve_location
+from tools.programmer_cable import resolve_location
 from mini import parser
 
 DEVICE = 'Device Info:\n  ID: 0x0001081B\n  1 device(s) found!\n'

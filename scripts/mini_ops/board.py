@@ -9,33 +9,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from boot_upload import BootSession, programmer_succeeded
-from uart_state import State
-from boot_image import CHUNK, packet
 from build_records import ROOT, write_json
 from mini_ops.artifacts import Build, sha256
+from mini_ops.common import Operation
 from mini_ops.probe import compile_probe
-from programmer_cable import resolve_location
-
-
-class Operation:
-    def __init__(self, command, build=None, root=ROOT):
-        stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-        self.path = root/'build/runs'/f'{stamp}-board-{command}'
-        self.path.mkdir(parents=True)
-        self.report = dict(kind='test' if command=='verify' else 'board', operation=command, passed=False, steps=[],
-                           selected_build=build.describe() if build else None,
-                           device_identity='unconfirmed; selected files are not device readback')
-        if build and build.validation.get('modular_system') and build.image_sha256==build.validation['boot_image']['sha256']:
-            self.report['system']=build.validation['modular_system']
-        self.save()
-
-    def save(self):
-        write_json(self.path/'result.json', self.report)
-
-    def record(self, name, **values):
-        self.report['steps'].append(dict(name=name, **values))
-        self.save()
+from tools.boot_image import CHUNK, packet
+from tools.boot_session import BootSession, programmer_succeeded
+from tools.programmer_cable import resolve_location
+from tools.uart_state import State
 
 
 class Board:
@@ -120,7 +101,7 @@ class Board:
             # The caller just programmed/reloaded SRAM: stop the automatic
             # boot while BOOT SELECT is live, before any passive FSM drain.
             return self.menu(session)
-        from uart_state import BoardFSM
+        from tools.uart_state import BoardFSM
         fsm=BoardFSM(session.port,session.log,
                      self.build.validation['boot_image']['abi_tag'])
         fsm.observe()
@@ -345,7 +326,7 @@ class Board:
         """Drive the board to a known state before any operation that needs a
         live console. UNKNOWN/FAILED escalate: query, CPU reset, SRAM reload.
         Returns the FSM; raise with the walked ladder when it is exhausted."""
-        from uart_state import BoardFSM
+        from tools.uart_state import BoardFSM
         fsm=BoardFSM(session.port,session.log,
                      self.build.validation['boot_image']['abi_tag'])
         fsm.observe()
