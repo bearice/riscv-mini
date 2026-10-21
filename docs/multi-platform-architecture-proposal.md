@@ -31,6 +31,10 @@
 
 ## 3. 建议目录
 
+落地状态（2026-10-21，执行计划阶段 A–D 已完成）：`gateware/boards/`、`gateware/machines/<machine>/`、`gateware/devices/{gpio,ws2812,audio,microphone,video}/`、`gateware/vendor/`；`firmware/{bios,bsp/<machine>,bootloader/<machine>,diagnostics/<machine>,examples/<machine>}`；`scripts/modular/machines/<machine>/`、`scripts/mini_ops/<machine>/`、`scripts/tools/`、`tests/{common,<machine>}/`。下文目录树里的 `scripts/mini.py` 仍留在 `scripts/` 根作为唯一入口。
+
+下面仍是设计文档的目标形状；与实际树的差异以执行计划 §9 为准。
+
 ```text
 gateware/
   boards/                 # 物理资源与装配变体

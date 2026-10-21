@@ -356,3 +356,14 @@ tests/
 | 评审自报基线路径不存在（`build/store/gateware/ed502601d172/`、`ae350-current.json`、`reports/ae350-m6-acceptance.md`） | 阶段 0 改用实测路径（archives 归档两处），并显式禁止引用评审编造的路径 |
 | sim host 测试只列 4 个；sim/ 无 iverilog 文件 | §1 改 7 个 host 测试；sim/ 子目录 = 13 个 migen 文件 |
 | `examples/primer20k_vexriscv/` 内容未列 | §1 列出 11 个跟踪 .c |
+
+
+## 9. 实际落地与 §1 的差异（阶段 E 收口）
+
+2026-10-21 完成阶段 0、P、A、B(2/3/4)、C、D、E；提交链与终态数字见 [reorg-final.md](../reports/reorg-final.md)。
+
+- 已落地目录：`gateware/{boards,machines,devices,vendor}`、`firmware/{bios,bsp/<machine>,bootloader/<machine>,diagnostics/<machine>,examples/<machine>}`、`scripts/modular/machines/<machine>/`、`scripts/mini_ops/<machine>/`、`scripts/tools/`、`tests/{common,<machine>,<machine>/sim}`。`scripts/mini.py` 仍是唯一入口。
+- 与 §1 的差异：`tests/machine_closure_test.py` 落 `tests/common/`；`sim/` 并入 `tests/primer20k_vexriscv/sim/`；`scripts/modular/arguments.py`（含 `release()`）留在框架；`scripts/primer20k_vexriscv/linux_console_perf.py` 按驱动而非测试归属。
+- 机器注册表是 `scripts/modular/machines/__init__.py`：未知机器报错、不落回 20K，未显式 `--machine` 仍指 20K。
+- 阶段 E 验收：AE350 gateware 0/0/0.142；20K minimal 锚点 0/0 且 +4.214 ns；20K full-profile 按修订四原样登记为 setup 50（既有回归，另行立项）；host 39 pass / 13 fail（全部为缺 Icarus Verilog 的驱动式测试）/ 6 skip；隔离反证通过。
+- 阶段 E 顺带修复：`usb_ultra.py` vendor 路径多一层 `gateware/`（仅 full 暴露）、`mini.py` parser 期 AE350 静态 import、`firmware.py` own 列表整目录化。

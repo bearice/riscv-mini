@@ -115,6 +115,8 @@ python scripts/mini.py reproduce <package> --rebuild
 python scripts/mini.py build system --locked <package>/release.lock.json
 ```
 
+目录重组（2026-10-21 的多平台搬迁）之后，重组前导出的发布包不再能直接 `build --locked`：包里的 `inputs/source` 记录的是搬迁前的脚本路径，新树在 source 校验阶段会报 `Source differs from lock`，这是预期的单向兼容边界。历史复现一律用 `mini.py builds reproduce`（在保留 checkout 里自回放），不要为旧包在树上保留第二套路径。
+
 包内 `release.lock.json` 固定完整组件闭包及逐文件校验和，`artifacts/` 保存全部依赖、参数和必要输入。默认 reproduce 是校验并恢复精确产物；`--rebuild` 从每个固件组件保存的源码和构建实现创建独立 checkout，自动绑定本机工具，校验锁定身份后重新编译 HAL/BIOS，并要求产物 digest 完全匹配。CPU/位流仍使用固定产物；不会把此操作称为重新综合或重新上板。
 
 当前导出类型为 artifact-bundle，可用于开发组合归档和跨机器传递，不自动创建 Git tag、GitHub Release 或板测通过标记。旧导入产物中未记录的生成/厂商默认参数明确保留为 legacy 限制，不用当前默认值补造历史事实。软件/RTL 字节重放与不同 OS/Gowin 下的 PnR 复验分别记录。
