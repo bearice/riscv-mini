@@ -9,7 +9,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen.fhdl import verilog
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
-from gateware.memory import SharedMemoryController
+from gateware.machines.primer20k_vexriscv.memory.ports import SharedMemoryController
 
 TB=r"""
 module tb;

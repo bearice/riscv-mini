@@ -59,6 +59,8 @@ def execute(store, run, args):
     run.result['workspace'] = workspace_name(getattr(args, 'workspace', 'default'))
     dry = args.command == 'plan' or args.dry_run
     machine = getattr(args, 'machine', None) or machines.LEGACY
+    if machine not in machines.MACHINES:
+        raise ValueError('Unknown machine: ' + str(machine))
     if machine != machines.AE350 and getattr(args, 'pnr_mode', 'full') not in ('auto', 'full'):
         raise ValueError('--pnr-mode requires --machine mega138k_ae350')
     if getattr(args, 'pnr_mode', 'full') not in ('auto', 'full') and not args.synthesize:

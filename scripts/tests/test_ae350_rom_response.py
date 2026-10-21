@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from migen import Signal
 from migen.sim import run_simulation
 from litex.soc.interconnect.ahb import AHBInterface
-from gateware.machines.ae350_native import AE350ROM
+from gateware.machines.mega138k_ae350.cpu import AE350ROM
 
 
 def main():

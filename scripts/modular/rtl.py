@@ -3,7 +3,7 @@ import re
 from html.parser import HTMLParser
 
 def generate(output,binary=None,synthesize=False,sd_backend="native",features=None,hierarchical=True,usb_backend="ultra",cpu_variant="lite",cpu_verilog=None,sd_profile=None,audio_clock='dds',deep_verilog=False,place_option=2,route_option=2,l2_size=4096,rom_size=8192,boot_mode='rom'):
-    from gateware.soc import MiniSoC
+    from gateware.machines.primer20k_vexriscv.soc import MiniSoC
     from litex.soc.integration.builder import Builder
     data=None
     if binary:
@@ -12,7 +12,7 @@ def generate(output,binary=None,synthesize=False,sd_backend="native",features=No
     soc=MiniSoC(rom_data=data,sd_backend=sd_backend,features=features,usb_backend=usb_backend,cpu_variant=cpu_variant,cpu_verilog=cpu_verilog,sd_profile=sd_profile,audio_clock=audio_clock,l2_size=l2_size,rom_size=rom_size,boot_mode=boot_mode)
     soc.platform.toolchain.options.update(place_option=place_option,route_option=route_option)
     if hierarchical:
-        from gateware.rtl import split_verilog
+        from gateware.machines.primer20k_vexriscv.rtl import split_verilog
         split_verilog(soc.platform,deep=deep_verilog)
     builder=Builder(soc,output_dir=str(output),compile_software=False,compile_gateware=synthesize,
                     csr_json=str(output/'csr.json'),csr_csv=str(output/'csr.csv'),hierarchical=hierarchical)
@@ -33,7 +33,7 @@ def generate_csr(csr,include):
                   f'static inline {typ} {name}_read(void) {{ return {reads}; }}',
                   f'static inline void {name}_write({typ} value) {{ {writes} }}']
     # Read-only compatibility accessors share the gateware layout definition.
-    from gateware.csr_layout import STATUS_LAYOUTS
+    from gateware.machines.primer20k_vexriscv.csr_layout import STATUS_LAYOUTS
     for bank, words in STATUS_LAYOUTS.items():
         for word, fields in words:
             packed = bank+'_'+word
@@ -73,7 +73,7 @@ def pnr_report(output):
 
 def worker(request_path):
     from .storage import read
-    from gateware.features import Features
+    from gateware.machines.primer20k_vexriscv.features import Features
     request = read(request_path); v = request['validation']
     from pathlib import Path
     generate(Path(request['output']), Path(request['rom']), request['synthesize'],

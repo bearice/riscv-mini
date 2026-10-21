@@ -5,8 +5,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from gateware.features import Features
-from gateware.memory_map import c_header
+from gateware.machines.primer20k_vexriscv.features import Features
+from gateware.machines.primer20k_vexriscv.memory_map import c_header
 from scripts.tools.boot_image import pack_image
 from scripts.modular.rtl import generate_csr
 from scripts.versions import read_versions
@@ -83,7 +83,7 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
     ver = versions['hal' if component == 'hal-sdk' else component]
     own = ['scripts/modular', 'scripts/mini.py', 'scripts/mini_ops/release.py', 'scripts/mini_ops/catalog.py', 'scripts/build_records.py', 'scripts/build_recipe.py',
            'scripts/versions.py', 'scripts/riscv_toolchain.py', 'scripts/boot_image.py', 'scripts/tools/boot_image.py',
-           'gateware/csr_layout.py', 'gateware/memory_map.py', 'gateware/config.py', 'gateware/flash_xip.py', 'gateware/features.py', 'requirements.lock',
+           'gateware/machines/primer20k_vexriscv/csr_layout.py', 'gateware/machines/primer20k_vexriscv/memory_map.py', 'gateware/machines/primer20k_vexriscv/config.py', 'gateware/machines/primer20k_vexriscv/flash_xip.py', 'gateware/machines/primer20k_vexriscv/features.py', 'requirements.lock',
            'firmware/common', 'firmware/drivers', 'firmware/hal/include', 'firmware/boot/start.S']
     deps = {'soc-description': soc}
     if component == 'hal-sdk':
@@ -115,7 +115,7 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
         flags += ['-flto', '-fstack-usage']
         if v['boot_mode'] == 'rom': flags.append('-Wl,--defsym,BOOT_ROM_SIZE=' + str(v['rom_size_bytes']))
         else:
-            from gateware.flash_xip import FLASH_BASE, XIP_OFFSET, XIP_SIZE
+            from gateware.machines.primer20k_vexriscv.flash_xip import FLASH_BASE, XIP_OFFSET, XIP_SIZE
             flags += [f'-Wl,--defsym,BOOT_XIP_ORIGIN={FLASH_BASE+XIP_OFFSET}', f'-Wl,--defsym,BOOT_XIP_SIZE={XIP_SIZE}']
     inputs = source_files(store.root, own)
     config = dict(schema=1, component=component, version=ver, sources=inputs, flags=flags,

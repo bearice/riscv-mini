@@ -6,8 +6,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen import Signal, If, ClockDomain
 from migen.fhdl.specials import Memory
 from migen.sim import run_simulation, passive
-from gateware.microphone import Microphone
-from gateware.audio_clock import AudioDDS
+from gateware.machines.primer20k_vexriscv.peripherals.microphone import Microphone
+from gateware.machines.primer20k_vexriscv.peripherals.audio_clock import AudioDDS
 
 
 def check(right,stereo=False,enable_period=1,rate_sys=False):

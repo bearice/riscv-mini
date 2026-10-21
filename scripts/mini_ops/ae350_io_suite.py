@@ -10,7 +10,7 @@ from mini_ops.ae350 import candidate
 from mini_ops.common import Operation
 from mini_ops.ae350_payload import resolve_payload, payload_file
 from mini_ops.ae350_io_contract import DONE, WORDS, judge, observe, SCOPE
-from gateware.machines import ae350_map as amap
+from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 def perform(args):

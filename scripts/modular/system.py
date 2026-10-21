@@ -300,7 +300,7 @@ def materialize(store, ref, destination):
     v['build_id']='bios-'+str(bios['version'])+'+'+bios['build_key'][:12]
     v['config_sha256']=digest(lock['configuration'])
     if v['boot_mode']=='xip':
-        from gateware.flash_xip import FLASH_BASE,XIP_OFFSET,XIP_SIZE
+        from gateware.machines.primer20k_vexriscv.flash_xip import FLASH_BASE,XIP_OFFSET,XIP_SIZE
         xip=destination/'firmware/xip.bin'
         if not xip.is_file():shutil.copyfile(destination/'firmware/boot.bin',xip)
         v['xip']=dict(base=FLASH_BASE,reset_address=FLASH_BASE+XIP_OFFSET,flash_offset=XIP_OFFSET,

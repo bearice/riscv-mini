@@ -6,7 +6,7 @@
 
 ## 内存分工
 
-唯一地址合同为 `gateware/machines/ae350_map.py`，构建生成 C 头和链接片段。
+唯一地址合同为 `gateware/machines/mega138k_ae350/address_map.py`，构建生成 C 头和链接片段。
 
 | 范围 | 实现与用途 |
 | --- | --- |

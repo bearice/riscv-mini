@@ -9,7 +9,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen import Signal, ResetInserter
 from migen.sim import run_simulation
 from litedram.phy.dfi import Interface
-from gateware.ddr_boot import DDRBoot, training_patterns
+from gateware.machines.primer20k_vexriscv.ddr_boot import DDRBoot, training_patterns
 
 phy=SimpleNamespace(dfi=Interface(13,3,1,64,2),dly_sel=Signal(2),burstdet_seen=Signal(2))
 for name in ('rdly_dq_rst','rdly_dq_inc','rdly_dq_dir','rdly_dq_bitslip_rst','rdly_dq_bitslip','burstdet_clr'):

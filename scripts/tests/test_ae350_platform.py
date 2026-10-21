@@ -14,8 +14,8 @@ from migen.sim import run_simulation
 from litex.gen import LiteXModule
 from litex.soc.interconnect.ahb import AHBInterface
 
-from gateware.machines import ae350_map as amap
-from gateware.machines.ae350_platform import Ae350Platform
+from gateware.machines.mega138k_ae350 import address_map as amap
+from gateware.machines.mega138k_ae350.platform import Ae350Platform
 from test_ae350_interconnect import xact
 
 

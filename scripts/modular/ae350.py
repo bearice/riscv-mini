@@ -9,6 +9,51 @@ from .workspace import working, clear_generated, invalidate_pnr, gateware_files,
 from .environment import discover, identity, python_packages, output
 from .compile import BASE_FLAGS, ROLES, ninja_build
 
+AE350_CLOSURE = (
+    'gateware/__init__.py',
+    'gateware/boards/__init__.py',
+    'gateware/boards/mega138k_pro/board.json',
+    'gateware/boards/mega138k_pro/io_map.py',
+    'gateware/devices/__init__.py',
+    'gateware/devices/gpio/__init__.py',
+    'gateware/devices/gpio/core.py',
+    'gateware/devices/ws2812/__init__.py',
+    'gateware/devices/ws2812/core.py',
+    'gateware/machines/mega138k_ae350/__init__.py',
+    'gateware/machines/mega138k_ae350/address_map.py',
+    'gateware/machines/mega138k_ae350/clock.py',
+    'gateware/machines/mega138k_ae350/cpu.py',
+    'gateware/machines/mega138k_ae350/ddr3_ahb.py',
+    'gateware/machines/mega138k_ae350/interconnect.py',
+    'gateware/machines/mega138k_ae350/machine.json',
+    'gateware/machines/mega138k_ae350/peripherals/board_io.py',
+    'gateware/machines/mega138k_ae350/peripherals/board_sense.py',
+    'gateware/machines/mega138k_ae350/platform.py',
+    'gateware/machines/mega138k_ae350/soc.py',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/DDR3_TOP.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/DDR3_define.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/ddr3_1_4code_hs.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/ddr3_name.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/fifo_top_128to32.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/fifo_top_32to128.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_dtcm.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_dtcm_config.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_itcm.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_itcm_config.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/gwmc_local_param.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/gwmc_param.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_config.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_ddr3.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_flash.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_soc.v',
+    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_top.v',
+    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/PROVENANCE.json',
+    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/ddr3_memory_interface.ipc',
+    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/ddr3_memory_interface.v',
+    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.ipc',
+    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.v',
+)
+
 BOOTLOADER = 'firmware/bootloader/ae350'
 PAYLOAD = 'firmware/diagnostics/ae350_memory'
 PROFILES = ('ddr',)
@@ -18,27 +63,16 @@ def _inputs(store, hardware=False, profile='ddr'):
     names = ['scripts/mini.py', *[p.relative_to(store.root).as_posix()
                                 for p in sorted((store.root / 'scripts/modular').glob('*.py'))]]
     files = {'inputs/source/' + name: store.root / name for name in names}
-    name = 'gateware/machines/ae350_map.py'
-    files['inputs/source/' + name] = store.root / name
-    files['inputs/source/gateware/io_map.py'] = store.root / 'gateware/io_map.py'
-    files['inputs/source/gateware/boards/mega138k_pro/board.json'] = (
-        store.root / 'gateware/boards/mega138k_pro/board.json')
+    missing = [name for name in AE350_CLOSURE if not (store.root / name).is_file()]
+    if missing:
+        raise ValueError('Missing declared AE350 input: ' + ', '.join(missing))
+    files.update({'inputs/source/' + name: store.root / name for name in AE350_CLOSURE})
     trees = [BOOTLOADER]
     for tree in trees:
         for path in sorted((store.root / tree).iterdir()):
             if path.is_file():
                 files['inputs/source/' + path.relative_to(store.root).as_posix()] = path
     if hardware:
-        for path in sorted((store.root / 'gateware').glob('*.py')):
-            name = path.relative_to(store.root).as_posix()
-            files['inputs/source/' + name] = path
-        for path in sorted((store.root / 'gateware/machines').glob('*.py')):
-            name = path.relative_to(store.root).as_posix()
-            files['inputs/source/' + name] = path
-        for path in sorted((store.root / 'gateware/vendor').rglob('*')):
-            if path.is_file():
-                name = path.relative_to(store.root).as_posix()
-                files['inputs/source/' + name] = path
         # Preserve installed Python implementation bytes, including the hard
         # macro adapter and bus/PLL logic; package version alone is insufficient.
         for name in ('migen', 'litex'):
@@ -56,8 +90,8 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
     env = discover(ROLES, store.root)
     flags = [*BASE_FLAGS, '-march=rv32ima_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none']
-    from gateware.machines import ae350_map
-    from gateware.machines import ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     ae350_map.require()
     config = dict(schema=1, machine='mega138k_ae350', profile='AE350-ROM-bootloader',
                   purpose='AE350-ROM-bootloader',
@@ -85,7 +119,7 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         run.step('bootloader', 'BUILD', reason='AE350 platform ROM bootloader inputs'); return None
     with working(store, run, 'mega138k_ae350', 'bootloader', key) as workspace:
         work = workspace.path
-        from gateware.machines import ae350_map
+        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         ae350_map.require()
         gen = work / 'generated'
         gen.mkdir(parents=True, exist_ok=True)
@@ -97,7 +131,7 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         ninja_build(work, [bsp / name for name in ('start.S', 'main.c')], flags, env, 'boot',
                     linker=bsp / 'link.ld', run=run, root=store.root, identity_header=gen / 'identity.h')
         attributes = output([*env['bindings']['target.readelf'], '-h', '-A', str(work / 'boot.elf')])
-        from gateware.machines import ae350_map
+        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         rom_limit = ae350_map.ROM_CODE_BYTES
         if '0x80000000' not in attributes or (work / 'boot.bin').stat().st_size > rom_limit:
             raise ValueError('Invalid AE350 ROM image entry or size (limit %d bytes)' % rom_limit)
@@ -153,8 +187,12 @@ def incremental_seed(store, previous, config, board, mode):
         compatible = (ref['component'] == 'gateware' and old.get('synthesize') and
                       all(old.get(k) == config[k] for k in ('tools', 'ddr_profile', 'core_hz', 'bus_hz', 'data_memory_clock_hz')))
         if compatible:
-            old_board = read(store.path(ref) / 'inputs/source/gateware/boards/mega138k_pro/board.json')
-            compatible = all(old_board[k] == board[k] for k in ('reference_device', 'reference_part'))
+            board_input = store.path(ref) / 'inputs/source/gateware/boards/mega138k_pro/board.json'
+            if not board_input.is_file():
+                compatible = False
+            else:
+                old_board = read(board_input)
+                compatible = all(old_board[k] == board[k] for k in ('reference_device', 'reference_part'))
         member = 'gateware/impl/pnr/project.' + ('p' if mode == 'place' else 'pr')
         if compatible and member in manifest['files']:
             timing_report(store.path(ref))
@@ -184,9 +222,9 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
         raise ValueError('Unknown AE350 profile: ' + profile)
     files = _inputs(store, hardware=True, profile=profile)
     hashes = {name: file_hash(path) for name, path in files.items()}
-    from gateware.machines import ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     from .ddr_inputs import DDR_PROFILE
-    from gateware.machines import ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     config = dict(schema=1, machine='mega138k_ae350', profile='AE350-DDR3-' + DDR_PROFILE['name'],
                   sources=hashes, cpu_integration='AE350-vendor-ITCM-wrapper',
                   instruction_memory='vendor-ITCM-bootstrap+hard-ILM', data_memory='hard-DLM+DDR3-IP',
@@ -205,7 +243,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
         run.step(component, 'REUSE', found); return found
     if plan:
         run.step(component, 'BUILD', reason='Vendor ITCM/hard-local-memory/DDR3 inputs'); return None
-    from gateware.machines.mega138k_ae350_ddr import DDRSoC
+    from gateware.machines.mega138k_ae350.soc import DDRSoC
     raw = (store.path(boot) / 'outputs/boot.bin').read_bytes()
     raw += bytes((-len(raw)) % 4)
     rom = [int.from_bytes(raw[n:n + 4], 'little') for n in range(0, len(raw), 4)]
@@ -236,7 +274,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
                 ''.join('%02x\n' % byte for byte in image[lane::4]), encoding='ascii')
         ip_out = work / 'ae350-ip'
         ip_out.mkdir(parents=True, exist_ok=True)
-        vendor = store.root / 'gateware/vendor/ae350_soc'
+        vendor = store.root / 'gateware/vendor/gowin_gw5ast/ae350_soc'
         # Vendor wrapper/netlist selects memories through these generated
         # includes, as in the reference project. Keep all includes beside
         # the encrypted sources so no stale installation config can win.
@@ -256,7 +294,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
         run.result['incremental_pnr'] = seed or dict(mode='full')
         run.save()
         soc.platform.build(soc, build_dir=str(work / 'gateware'), run=False, build_name='mini_ae350_ddr')
-        from gateware.machines import ae350_map
+        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         ae350_map.require()
         write(work / 'memory-map.json', dict(
             memories=dict(rom=dict(base=ae350_map.ROM_BASE, size=ae350_map.ROM_SIZE,
@@ -325,7 +363,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     """
     if profile != 'ddr':
         raise ValueError('AE350 payloads require --ae350-profile ddr')
-    from gateware.machines import ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     ae350_map.require()
     files = {name: path for name, path in _inputs(store, profile='ddr').items()
              if name.startswith('inputs/source/scripts/')}
@@ -372,8 +410,8 @@ def payload(store, run, cpu, args, profile, plan=False):
         project('helper', [path], path.parent, True)
     if not any(unit.startswith('application/') for unit in units):
         raise ValueError('No application translation units were selected')
-    files['inputs/source/gateware/machines/ae350_map.py'] = store.root / 'gateware/machines/ae350_map.py'
-    files['inputs/source/gateware/io_map.py'] = store.root / 'gateware/io_map.py'
+    files['inputs/source/gateware/machines/mega138k_ae350/address_map.py'] = store.root / 'gateware/machines/mega138k_ae350/address_map.py'
+    files['inputs/source/gateware/boards/mega138k_pro/io_map.py'] = store.root / 'gateware/boards/mega138k_pro/io_map.py'
     files['inputs/source/gateware/boards/mega138k_pro/board.json'] = (
         store.root / 'gateware/boards/mega138k_pro/board.json')
     hashes = {name: file_hash(path) for name, path in files.items()}

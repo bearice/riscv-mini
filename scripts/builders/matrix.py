@@ -6,7 +6,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
-from gateware.features import Features
+from gateware.machines.primer20k_vexriscv.features import Features
 
 
 def build(args, run=None):
@@ -51,7 +51,7 @@ def build(args, run=None):
         features=Features.resolve(profile,overrides)
         if '--profile' not in converted:converted=['--profile','full',*converted]
         if features.mmu or features.fpu:
-            from gateware.config import cpu_filename
+            from gateware.machines.primer20k_vexriscv.config import cpu_filename
             if not args.cpu_rtl_dir:raise ValueError('CPU matrix needs --cpu-rtl-dir with explicit locked CPU inputs')
             converted+=['--cpu-verilog',str(args.cpu_rtl_dir/cpu_filename(features.mmu,features.fpu))]
         command=[sys.executable,str(ROOT/'scripts/mini.py'),'build','system','--rtl-hierarchy','flat',

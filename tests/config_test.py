@@ -3,8 +3,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from gateware.features import Features
-from gateware.config import storage_profile, cpu_configuration, pll_count, cpu_isa, cpu_capabilities
+from gateware.machines.primer20k_vexriscv.features import Features
+from gateware.machines.primer20k_vexriscv.config import storage_profile, cpu_configuration, pll_count, cpu_isa, cpu_capabilities
 import tempfile, hashlib, json
 
 def rejected(function,*args):

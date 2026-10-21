@@ -3,7 +3,7 @@ import re
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from gateware.rtl import qualify_sdc, normalize_clock_domains
+from gateware.machines.primer20k_vexriscv.rtl import qualify_sdc, normalize_clock_domains
 source='''module riscv_mini__rgb_lcd();
 reg [31:0] multiregimpl60;
 always @(posedge sys_clk) multiregimpl60 <= incoming;

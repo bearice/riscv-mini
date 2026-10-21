@@ -1,17 +1,17 @@
 """P2 DDR3 machine profile: the single place where geometry, timings and the
 window contract live for both the build record and the board operation.
 
-Values are copied from gateware/machines/mega138k_ae350.json (which cites the
+Values are copied from gateware/machines/mega138k_ae350/machine.json (which cites the
 vendor IP configuration, the H5TQ4G63EFR geometry and the vendor DDR test).
 Changing anything here changes the gateware build key (the module is part of
 the hashed source closure).
 """
 
-from gateware.machines.ae350_map import FABRIC_HZ, DATA_HZ
+from gateware.machines.mega138k_ae350.address_map import FABRIC_HZ, DATA_HZ
 
 DDR_PROFILE = dict(
     name='400MHz',
-    ip='gateware/vendor/gowin_ddr3_400',
+    ip='gateware/vendor/gowin_gw5ast/gowin_ddr3_400',
     ip_module='DDR3_Memory_Interface_Top',
     ip_sha256=dict(
         ddr3_memory_interface_v='ae7db3c0bb476e4d132518c3b5f3824abfd02fe2b6a163b006752a74b4bb159e',

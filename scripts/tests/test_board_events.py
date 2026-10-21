@@ -13,12 +13,12 @@ sys.path.insert(0, str(ROOT / 'scripts' / 'tests'))
 from migen import Signal
 from migen.sim import run_simulation
 
-from gateware import io_map
-from gateware.gpio_events import ButtonEvents
-from gateware.ws2812 import WS2812Core, timing
-from gateware.machines import ae350_map as amap
-from gateware.machines.ae350_platform import Ae350Platform
-from gateware.machines.ae350_board_io import FabricBoard
+from gateware.boards.mega138k_pro import io_map
+from gateware.devices.gpio.core import ButtonEvents
+from gateware.devices.ws2812.core import WS2812Core, timing
+from gateware.machines.mega138k_ae350 import address_map as amap
+from gateware.machines.mega138k_ae350.platform import Ae350Platform
+from gateware.machines.mega138k_ae350.peripherals.board_io import FabricBoard
 from test_ae350_platform import Cpu, apb
 
 

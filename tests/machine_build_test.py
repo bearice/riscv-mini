@@ -17,7 +17,7 @@ from scripts.modular.storage import Store, Run, read, write, digest
 from scripts.modular.targets import execute
 from scripts.modular.system import bundle, import_legacy
 from scripts.modular.contracts import assembly
-from scripts.modular.hardware import generate_soc
+from scripts.modular.hardware import PRIMER20K_CLOSURE, generate_soc
 
 
 class MachineBuildTests(unittest.TestCase):
@@ -25,12 +25,17 @@ class MachineBuildTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name) / 'checkout'
-        for name in ('gateware/boards/mega138k_pro/board.json', 'gateware/machines/mega138k_ae350.json',
-                     'scripts/modular/machines.py', 'scripts/modular/storage.py', 'scripts/modular/environment.py',
-                     'scripts/modular/workspace.py'):
+        names = ('gateware/boards/mega138k_pro/board.json', 'gateware/machines/mega138k_ae350/machine.json',
+                 'scripts/modular/machines.py', 'scripts/modular/storage.py', 'scripts/modular/environment.py',
+                 'scripts/modular/workspace.py', *PRIMER20K_CLOSURE)
+        for name in names:
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / name, target)
+            source = ROOT / name
+            if source.is_file():
+                shutil.copyfile(source, target)
+            else:
+                target.write_text('# placeholder\n', encoding='utf-8')
         self.vendor = Path(self.temporary.name) / 'vendor'
         (self.vendor / 'src').mkdir(parents=True)
         (self.vendor / 'ae350_customized_demo.gprj').write_text(
@@ -152,7 +157,7 @@ class MachineBuildTests(unittest.TestCase):
             machines.resolve(self.store, self.vendor)
 
     def test_illegal_clock_profiles_rejected(self):
-        path = self.root / 'gateware/machines/mega138k_ae350.json'
+        path = self.root / 'gateware/machines/mega138k_ae350/machine.json'
         original = read(path)
         for domain, field, value in (('apb', 'reference_hz', 50000000), ('ahb', 'reference_hz', 200000000),
                                      ('core', 'target_hz', 800000001), ('ddr_ck', 'target_hz', 400000001)):
@@ -229,12 +234,6 @@ class MachineBuildTests(unittest.TestCase):
             self.assertEqual(self.store.get(cpu)['config']['kind'], 'hard')
 
     def test_138k_input_changes_do_not_invalidate_20k_but_20k_board_changes_do(self):
-        for name in ('gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py', 'scripts/modular/compile.py',
-                     'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                     'scripts/modular/hardware.py', 'scripts/modular/contracts.py'):
-            target = self.root / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / name, target)
         cpu = self.store.publish('cpu', digest('legacy'), {'cpu.lock.json': b'{}'})
         def key():
             run = Run('build', 'legacy-plan', root=self.root)
@@ -247,11 +246,11 @@ class MachineBuildTests(unittest.TestCase):
         before = key()
         board = self.root / 'gateware/boards/mega138k_pro/board.json'
         board.write_bytes(board.read_bytes() + b'\n')
-        implementation = self.root/'gateware/machines/mega138k_ae350.py'
+        implementation = self.root / 'gateware/machines/mega138k_ae350/soc.py'
         implementation.write_text('# 138K-only RTL implementation\n')
         (self.vendor / 'src/top.cst').write_bytes(b'changed 138K CST')
         self.assertEqual(before, key())
-        legacy = self.root / 'gateware/board.json'
+        legacy = self.root / 'gateware/boards/primer20k_dock3713/board.json'
         legacy.write_bytes(legacy.read_bytes() + b'\n')
         self.assertNotEqual(before, key())
 

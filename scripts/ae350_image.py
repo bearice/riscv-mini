@@ -10,7 +10,7 @@ import zlib
 
 from tools.boot_image import pack_image, unpack_image, packet, HEADER, CHUNK
 
-from gateware.machines import ae350_map
+from gateware.machines.mega138k_ae350 import address_map as ae350_map
 LOAD = ae350_map.DDR_CODE
 ABI_NAME = 'ae350-rv32ima-p2'
 IMAGE_VERSION = 1
@@ -18,7 +18,7 @@ IMAGE_VERSION = 1
 
 def abi_tag():
     """The platform's ABI tag, owned by the address/capability contract."""
-    from gateware.machines import ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     return ae350_map.image_abi()
 
 

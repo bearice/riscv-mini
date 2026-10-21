@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen.sim import run_simulation
-from gateware.audio_clock import AudioDDS
+from gateware.machines.primer20k_vexriscv.peripherals.audio_clock import AudioDDS
 
 for clock_hz in (48000000,60000000,120000000):
     reference=AudioDDS(clock_hz); ticks=[[],[]]

@@ -1,6 +1,6 @@
 # AE350 物理地址、CSR 与 DMA 规划
 
-更新：2026-10-21。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，无 fabric 工作 SRAM、JTAG mailbox 或 launcher。唯一地址合同为 `gateware/machines/ae350_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](ae350-io.md)。LED 使用板级输出寄存器，硬 GPIO IOPORT 未启用。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](ae350-dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
+更新：2026-10-21。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，无 fabric 工作 SRAM、JTAG mailbox 或 launcher。唯一地址合同为 `gateware/machines/mega138k_ae350/address_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](ae350-io.md)。LED 使用板级输出寄存器，硬 GPIO IOPORT 未启用。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](ae350-dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
 
 最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。启动协议见[bootloader](ae350-bootloader.md)。
 

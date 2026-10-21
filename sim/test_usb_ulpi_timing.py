@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen import Module, Record, Signal
 from migen.sim import run_simulation, passive
-from gateware.usb import USBPHYInit
+from gateware.machines.primer20k_vexriscv.peripherals.usb import USBPHYInit
 
 def check(offset,output_delay,input_delay):
     dut=Module();pads=Record([('dir',1),('nxt',1),('stp',1)])

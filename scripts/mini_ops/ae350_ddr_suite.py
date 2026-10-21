@@ -5,7 +5,7 @@ from modular.storage import Store, file_hash
 from mini_ops.ae350 import candidate
 from mini_ops.common import Operation
 from mini_ops.ae350_payload import resolve_payload, payload_file, application_parameters
-from gateware.machines import ae350_map as amap
+from gateware.machines.mega138k_ae350 import address_map as amap
 
 RES = amap.RESULTS_BASE
 DONE = 0xd0000002

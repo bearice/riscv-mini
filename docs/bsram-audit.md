@@ -19,4 +19,4 @@ BSRAM 数量取决于端口、位宽及写粒度，不能只按有效字节数�
 
 启动栈/data/BSS 的 4 KiB 保留区为 `0x007ff000..0x007fffff`，训练前固定在 L2 数据 RAM，训练后按正常 writeback 写入 DDR；应用栈顶为 `0x00c00000`，应用预留 64 KiB 栈。没有地址 `0x10000000` 的集成 SRAM。默认 4 KiB L2 采用整条 128-bit refill/合并写，避免按字节拆分数据 RAM；8 KiB 配置尚未上板验证。
 
-本页直接记录当前默认 full 的存储分配。相关实现见 [`gateware/soc.py`](../gateware/soc.py)、[`gateware/shared_l2.py`](../gateware/shared_l2.py)、[`gateware/audio.py`](../gateware/audio.py)、[`gateware/microphone.py`](../gateware/microphone.py)。修改配置后需重新统计，不能从逻辑字节数直接推导原语数量。
+本页直接记录当前默认 full 的存储分配。相关实现见 [`gateware/machines/primer20k_vexriscv/soc.py`](../gateware/machines/primer20k_vexriscv/soc.py)、[`gateware/machines/primer20k_vexriscv/memory/shared_l2.py`](../gateware/machines/primer20k_vexriscv/memory/shared_l2.py)、[`gateware/machines/primer20k_vexriscv/peripherals/audio.py`](../gateware/machines/primer20k_vexriscv/peripherals/audio.py)、[`gateware/machines/primer20k_vexriscv/peripherals/microphone.py`](../gateware/machines/primer20k_vexriscv/peripherals/microphone.py)。修改配置后需重新统计，不能从逻辑字节数直接推导原语数量。

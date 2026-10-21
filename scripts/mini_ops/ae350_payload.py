@@ -53,7 +53,7 @@ def resolve_payload(store, selection=None):
     if ref.get('component') != 'payload':
         raise ValueError('Selected artifact is not an AE350 payload: %r' % (ref,))
     manifest = store.get(ref, recursive=True)
-    from gateware.machines import ae350_map
+    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     config = manifest['config']
     if config.get('machine') != 'mega138k_ae350' or config.get('image_abi') != ae350_map.image_abi():
         raise ValueError('Payload machine/address ABI differs from this host contract')

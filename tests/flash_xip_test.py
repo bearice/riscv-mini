@@ -4,7 +4,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen import Module, Record, Signal
 from migen.sim import run_simulation, passive
 from litex.soc.cores.spi import SPIMaster
-from gateware.flash_xip import FlashXIP, XIP_OFFSET
+from gateware.machines.primer20k_vexriscv.flash_xip import FlashXIP, XIP_OFFSET
 
 dut=Module()
 pads=Record(SPIMaster.pads_layout)

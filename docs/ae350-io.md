@@ -12,7 +12,7 @@ ATCGPIO100 中断使能为 `+0x50`，模式从 `+0x54` 开始每通道占四位�
 
 ## 共享核心与中断合同
 
-`gateware/gpio_events.py` 和 `gateware/ws2812.py` 不含总线地址或封装引脚。20K CSR Adapter 与 AE350 APB Adapter 复用同一份状态机。AE350 的 WS2812 页为 `0xf8070000`，板级事件页为 `0xf8080000`，使用公共设备头。
+`gateware/devices/gpio/core.py` 和 `gateware/devices/ws2812/core.py` 不含总线地址或封装引脚。20K CSR Adapter 与 AE350 APB Adapter 复用同一份状态机。AE350 的 WS2812 页为 `0xf8070000`，板级事件页为 `0xf8080000`，使用公共设备头。
 
 80 MHz 下 WS2812 位槽 100 周期，0/1 高电平 32/64 周期，reset 间隔 24000 周期。输入颜色为 0xRRGGBB，输出为 GRB、MSB first。忙时提交不启动第二帧，LAST_ERROR=1；非法写产生 PSLVERR 且无副作用。H16 为 3.3 V、灯供电为 5 V，目视显示通过不等于该电平组合的全条件电气保证。
 

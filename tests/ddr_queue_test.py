@@ -13,8 +13,8 @@ from litedram.common import PhySettings
 from litedram.core.controller import LiteDRAMController, ControllerSettings
 from litedram.core.crossbar import LiteDRAMCrossbar
 from litedram.phy.model import SDRAMPHYModel
-from gateware.ddr import H5TQ1G63EFR
-from gateware.ddr_boot import DDR_CMD_BUFFER_DEPTH
+from gateware.machines.primer20k_vexriscv.memory.gw2_ddr import H5TQ1G63EFR
+from gateware.machines.primer20k_vexriscv.ddr_boot import DDR_CMD_BUFFER_DEPTH
 
 
 class SmallMemory(H5TQ1G63EFR):

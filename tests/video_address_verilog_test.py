@@ -4,8 +4,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from migen import Module,ClockDomain
 from migen.fhdl import verilog
-from gateware.memory import MemoryPort
-from gateware.video import RGBLCD
+from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort
+from gateware.machines.primer20k_vexriscv.peripherals.video import RGBLCD
 out=ROOT/'build/video-address-rtl';out.mkdir(parents=True,exist_ok=True)
 dut=Module();dut.clock_domains.cd_sys=ClockDomain('sys');dut.clock_domains.cd_video=ClockDomain('video')
 port=MemoryPort('read',data_width=16);dut.submodules.lcd=lcd=RGBLCD(port,None)

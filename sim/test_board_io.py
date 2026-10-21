@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen import Signal
 from migen.sim import run_simulation
-from gateware.board_io import BoardIO,WS2812
+from gateware.machines.primer20k_vexriscv.peripherals.board_io import BoardIO,WS2812
 
 leds=Signal(6);keys=Signal(4,reset=15);switches=Signal(4)
 gpio=BoardIO(leds,keys,switches,debounce_cycles=5)

@@ -72,7 +72,7 @@ def _source_inputs(reference):
 
 def resolve(store, reference=None):
     board_path = store.root / 'gateware/boards/mega138k_pro/board.json'
-    machine_path = store.root / 'gateware/machines/mega138k_ae350.json'
+    machine_path = store.root / 'gateware/machines/mega138k_ae350/machine.json'
     board, machine = read(board_path), read(machine_path)
     camera = board['resources']['camera']
     reserved = {pin for values in camera.values() if isinstance(values, list) for pin in values}

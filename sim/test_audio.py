@@ -7,8 +7,8 @@ from migen import Signal, If, ClockDomain
 from migen.fhdl.specials import Memory
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
-from gateware.audio import Audio
-from gateware.audio_clock import AudioDDS
+from gateware.machines.primer20k_vexriscv.peripherals.audio import Audio
+from gateware.machines.primer20k_vexriscv.peripherals.audio_clock import AudioDDS
 
 
 def fixture(depth=8, half=2, enable_period=1,rate_sys=False):

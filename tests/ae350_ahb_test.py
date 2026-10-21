@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from migen.sim import run_simulation
 from litex.soc.interconnect.ahb import AHBInterface
-from gateware.machines.ae350_native import AHBMemory, AE350ROM
+from gateware.machines.mega138k_ae350.cpu import AHBMemory, AE350ROM
 
 
 class NativeMemoryTest(unittest.TestCase):

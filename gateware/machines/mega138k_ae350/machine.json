@@ -1,0 +1,157 @@
+{
+  "schema": 1,
+  "id": "mega138k_ae350",
+  "board": "mega138k_pro",
+  "stage": "native-memory",
+  "cpu": {
+    "kind": "hard",
+    "vendor": "Gowin/Andes",
+    "subsystem": "AE350",
+    "core": "A25",
+    "xlen": 32,
+    "hardware_isa": "rv32imafdc_zicsr_zifencei",
+    "initial_software_abi": "ilp32",
+    "software_qualification": "integer ABI; floating-point, MMU and interrupt software outside memory qualification",
+    "vendor_reference_configuration": "src/riscv_ae350_soc/riscv_ae350_soc.ipc",
+    "core_clock_route": "PLL_R[0]/CLKOUT1"
+  },
+  "memory": {
+    "backend": "gowin-customized-ddr3-ahb",
+    "shared_l2": false,
+    "physical_geometry": {
+      "part": "H5TQ4G63EFR-RDC",
+      "chips": 2,
+      "chip_data_width": 16,
+      "data_width": 32,
+      "row_bits": 15,
+      "bank_bits": 3,
+      "column_bits": 10,
+      "size_bytes": 1073741824,
+      "status": "identified-from-photo-and-reference-not-memory-tested"
+    },
+    "published_ram_bytes": null,
+    "fabric_access": "pending-P3-arbitration",
+    "cache_dma_ownership": "pending-P3"
+  },
+  "clocks": {
+    "policy": "characterize-specification-limits",
+    "core": {
+      "target_hz": 800000000,
+      "max_hz": 800000000
+    },
+    "data_memory_bus": {
+      "reference_hz": 50000000,
+      "exclusive_max_hz": 200000000
+    },
+    "ahb": {
+      "reference_hz": 100000000,
+      "exclusive_max_hz": 200000000
+    },
+    "apb": {
+      "reference_hz": 100000000,
+      "exclusive_max_hz": 200000000,
+      "synchronous_with": "ahb",
+      "ratio": "1:1"
+    },
+    "ddr_ck": {
+      "target_hz": 400000000,
+      "max_hz": 400000000
+    },
+    "ddr_rw": {
+      "reference_hz": 100000000,
+      "min_ddr_ck_ratio": "1:4"
+    },
+    "ddr_reference": {
+      "reference_hz": 50000000
+    },
+    "rtc": {
+      "required_hz": 32768,
+      "demo_hz": 10000000,
+      "status": "reference-only"
+    }
+  },
+  "reference_project": "ae350_customized_demo.gprj",
+  "reference_scope": "AE350 native bus, ITCM bootstrap and hard local memory with DDR3",
+  "runtime_abi": "rv32ima_zicsr_zifencei / ilp32; generated address ABI",
+  "loader_format": "ae350-20k-frame-v1; 48-byte header, 128-byte packets, ABI/range/CRC checks",
+  "video": "hdmi",
+  "pending": [
+    "floating-point-and-MMU-software",
+    "timer-IRQ-software",
+    "DMAC-and-shared-DDR-arbitration",
+    "XIP-and-HDMI"
+  ],
+  "ddr3": {
+    "ip_component": "gateware/vendor/gowin_gw5ast/gowin_ddr3_400 (Gowin DDR3 Memory Interface, 256-bit user interface)",
+    "ip_reference": "TangPrimer-138K/example/pro_ddr_test",
+    "ip_config": {
+      "MEMORY_CLK_MHZ": 400,
+      "CLK_RATIO": "1:4",
+      "DQ_WIDTH_BITS": 32,
+      "DRAM_WIDTH_BITS": 16,
+      "RANKS": 1,
+      "ROW_BITS": 15,
+      "BANK_BITS": 3,
+      "COLUMN_BITS": 10,
+      "BURST_MODE": "8",
+      "BURST_TYPE": "SEQ",
+      "ADDR_CMD_MODE": "1T",
+      "CL": 6,
+      "CWL": 5,
+      "AL": "0",
+      "RTT_NOM": "60",
+      "RTT_WR": "OFF",
+      "OUTPUT_DRV": "LOW",
+      "tCK_ps": 2500,
+      "tRP_ps": 15000,
+      "tRRD_ps": 10000,
+      "tRTP_ps": 7500,
+      "tRCD_ps": 15000,
+      "tRC_ps": 55000,
+      "tRAS_ps": 37500,
+      "tFAW_ps": 40000,
+      "tWTR_ps": 7500,
+      "tCKE_ps": 10000,
+      "tREFI_ps": 7800000,
+      "tRFC_ps": 260000,
+      "tDLLK": 512,
+      "ip_source_sha256": "ae7db3c0bb476e4d132518c3b5f3824abfd02fe2b6a163b006752a74b4bb159e"
+    },
+    "user_interface": {
+      "data_width_bits": 256,
+      "bytes_per_beat": 32,
+      "addr_unit_bytes": 4,
+      "clock_hz": 100000000,
+      "clock_ratio": "CK/4",
+      "single_beat_per_command": true
+    },
+    "cpu_window": {
+      "base": 0,
+      "size_bytes": 1073741824,
+      "dram_offset_bytes": 0,
+      "note": "DDR is zero based: CPU byte address == DRAM byte address; fabric SRAM owns 0x40000000-0x40001FFF"
+    },
+    "pins": {
+      "addr": "N1 R1 R2 N2 P1 T2 N4 U1 T4 T3 M1 P4 N3 U2 U5",
+      "ba": "M4 L5 K3",
+      "cs_n": "L4",
+      "ras_n": "H2",
+      "cas_n": "H1",
+      "we_n": "J3",
+      "cke": "L3",
+      "odt": "J1",
+      "reset_n": "N8",
+      "ck": "M2 L2 (single differential SSTL15D port)",
+      "dm": "F4 H9 E3 A3",
+      "dq": "G4 J6 L8 G5 K7 J5 K8 K6 E6 H8 H6 G8 D6 F8 G6 F7 C4 F3 B4 E5 D3 D5 A4 D4 E1 A2 G2 C2 F2 E2 G1 D1",
+      "dqs": "J4,H4 H7,G7 B5,A5 C1,B1 (four differential SSTL15D ports)",
+      "io_standard": "SSTL15 / SSTL15D, BANK_VCCIO=1.5, PULL_MODE=NONE, DRIVE=8 (ADDR[14] DRIVE=12)"
+    },
+    "clock_plan": {
+      "ddr_reference_clk_hz": 50000000,
+      "memory_clk_hz": 400000000,
+      "ui_clk_hz": 100000000,
+      "pll": "Gowin_PLL_DDR3 (IDIV 1, FBDIV 1, ODIV0 16 -> 50 MHz, ODIV2 2 -> 400 MHz)"
+    }
+  }
+}

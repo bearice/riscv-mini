@@ -10,9 +10,9 @@ from migen import Module
 from migen.fhdl import verilog
 from litedram.common import LiteDRAMNativePort
 from litex.soc.interconnect import wishbone
-from gateware.memory import MemoryPort, PortBuffer
-from gateware.native_dma import NativeDMAArbiter
-from gateware.ethernet_ring import EthernetRingDMA
+from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer
+from gateware.machines.primer20k_vexriscv.memory.native_dma import NativeDMAArbiter
+from gateware.machines.primer20k_vexriscv.peripherals.ethernet_ring import EthernetRingDMA
 
 TB = r'''
 module tb;

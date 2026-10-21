@@ -1,6 +1,6 @@
 # 当前 DMA 内存路径
 
-默认 full 使用共享 writeback L2，CPU/音频为 32-bit Wishbone，LCD 为 16-bit pixel stream，SD lite 为 32-bit stream；共享内存控制器在内部缓冲并转换为 128-bit coherent burst。实现见 [`soc.py`](../gateware/soc.py)、[`memory.py`](../gateware/memory.py)、[`shared_l2.py`](../gateware/shared_l2.py)、[`native_dma.py`](../gateware/native_dma.py)。
+默认 full 使用共享 writeback L2，CPU/音频为 32-bit Wishbone，LCD 为 16-bit pixel stream，SD lite 为 32-bit stream；共享内存控制器在内部缓冲并转换为 128-bit coherent burst。实现见 [`soc.py`](../gateware/machines/primer20k_vexriscv/soc.py)、[`memory.py`](../gateware/machines/primer20k_vexriscv/memory/ports.py)、[`shared_l2.py`](../gateware/machines/primer20k_vexriscv/memory/shared_l2.py)、[`native_dma.py`](../gateware/machines/primer20k_vexriscv/memory/native_dma.py)。
 
 | 客户端 | 接口 | 行为 |
 | --- | --- | --- |

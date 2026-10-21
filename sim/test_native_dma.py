@@ -6,8 +6,8 @@ from migen import Module
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
-from gateware.native_dma import NativeSDTransfer, NativeDMAArbiter
-from gateware.memory import MemoryPort, PortBuffer
+from gateware.machines.primer20k_vexriscv.memory.native_dma import NativeSDTransfer, NativeDMAArbiter
+from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer
 
 def backend(port, memory, counts):
     @passive

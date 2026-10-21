@@ -1,6 +1,6 @@
 # 共享 writeback L2
 
-默认构建使用 [`SharedL2`](../gateware/shared_l2.py)：CPU 和低带宽 Wishbone DMA 共用一个 32-bit 入口，LCD 扫描和 SD lite 通过 [共享内存控制器](memory-controller.md) 的独立端口缓冲，转换到 L2 内部的两个 128-bit coherent streaming 入口。LCD 外部接口是 16-bit，SD 是 32-bit。缓存与内部三入口仲裁处于同一个状态机内，后端直接连接 LiteDRAM native crossbar。
+默认构建使用 [`SharedL2`](../gateware/machines/primer20k_vexriscv/memory/shared_l2.py)：CPU 和低带宽 Wishbone DMA 共用一个 32-bit 入口，LCD 扫描和 SD lite 通过 [共享内存控制器](memory-controller.md) 的独立端口缓冲，转换到 L2 内部的两个 128-bit coherent streaming 入口。LCD 外部接口是 16-bit，SD 是 32-bit。缓存与内部三入口仲裁处于同一个状态机内，后端直接连接 LiteDRAM native crossbar。
 
 ## 数据与所有权
 

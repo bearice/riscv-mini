@@ -13,7 +13,7 @@ from migen import Signal, ClockDomain, ResetInserter
 from litex.gen import LiteXModule, LiteXContext
 from litex.build.generic_platform import GenericPlatform
 from litex.soc.interconnect import wishbone
-from gateware.rtl import split_verilog
+from gateware.machines.primer20k_vexriscv.rtl import split_verilog
 
 
 class Consumer(LiteXModule):
@@ -72,12 +72,12 @@ def main():
     if args.blocks and (args.flat or args.unfixed):p.error('--blocks requires the fixed hierarchical converter')
     if not args.unfixed and not args.flat:split_verilog(platform,deep=not args.blocks)
     if args.unfixed_order:
-        import gateware.rtl as adapter
+        import gateware.machines.primer20k_vexriscv.rtl as adapter
         original=adapter.normalize_clock_domains
         def no_order(*args):original(*args);return {}
         adapter.normalize_clock_domains=no_order
     if args.unfixed_alias:
-        import gateware.rtl as adapter
+        import gateware.machines.primer20k_vexriscv.rtl as adapter
         adapter.remove_shared_aliases=lambda node:node
     fragment=dut.get_fragment()
     result=platform.get_verilog(fragment,ios={dut.protocol_err,dut.default_high,dut.local_reset,dut.count,dut.cd_sys.clk,dut.cd_sys.rst},

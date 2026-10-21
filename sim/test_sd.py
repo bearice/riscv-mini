@@ -9,7 +9,7 @@ from migen.sim import run_simulation
 from litex.soc.interconnect import stream
 from litesdcard.phy import SDPHYClocker
 from litesdcard.core import SDCore as UpstreamCore
-from gateware.vendor.sdcore import SDCore
+from gateware.vendor.litesdcard.sdcore import SDCore
 
 def phy_seam():
     return SimpleNamespace(

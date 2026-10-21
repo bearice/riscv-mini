@@ -1,6 +1,6 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
-/* Generated from gateware/machines/ae350_map.py: MEMORY regions and the
+/* Generated from gateware/machines/mega138k_ae350/address_map.py: MEMORY regions and the
  * hard local memory and explicit stack regions. */
 INCLUDE ae350_map.ld
 SECTIONS {

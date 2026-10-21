@@ -6,7 +6,7 @@ from migen import Module, Signal, ResetInserter
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
-from gateware.shared_l2 import SharedL2
+from gateware.machines.primer20k_vexriscv.memory.shared_l2 import SharedL2
 
 
 def exercise(size):

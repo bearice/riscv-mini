@@ -6,7 +6,7 @@ from migen import ResetInserter, Signal
 from migen.fhdl.specials import Memory
 from migen.sim import run_simulation
 from liteeth.mac.wishbone import LiteEthMACWishboneInterface
-from gateware.constraints import GowinMultiReg
+from gateware.machines.primer20k_vexriscv.constraints import GowinMultiReg
 from migen.genlib.cdc import MultiReg
 
 def main():

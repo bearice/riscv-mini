@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
-from gateware.bus import WishbonePipeline
+from gateware.machines.primer20k_vexriscv.bus import WishbonePipeline
 
 def main():
     up=wishbone.Interface();down=wishbone.Interface();dut=WishbonePipeline(up,down)

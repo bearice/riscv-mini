@@ -1,6 +1,6 @@
 # 共享内存控制器与端口缓冲
 
-`gateware/memory.py` 的 `SharedMemoryController` 管理外设端口的 burst 缓冲、内部仲裁和共享 writeback L2；后端仍是 LiteDRAM controller / PHY。CPU 和音频保留 32-bit Wishbone，LCD 接口为 16-bit 像素流，SD lite 的读、写接口各为 32-bit 数据流。DDR 的 128-bit burst 不再跨到 SD/LCD 模块。
+`gateware/machines/primer20k_vexriscv/memory/ports.py` 的 `SharedMemoryController` 管理外设端口的 burst 缓冲、内部仲裁和共享 writeback L2；后端仍是 LiteDRAM controller / PHY。CPU 和音频保留 32-bit Wishbone，LCD 接口为 16-bit 像素流，SD lite 的读、写接口各为 32-bit 数据流。DDR 的 128-bit burst 不再跨到 SD/LCD 模块。
 
 ```mermaid
 flowchart TB

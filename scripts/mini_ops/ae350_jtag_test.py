@@ -8,7 +8,7 @@ import time
 from modular.storage import Store, file_hash
 from mini_ops.ae350 import candidate
 from mini_ops.common import Operation
-from gateware.machines import ae350_map as amap
+from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 def perform(args):

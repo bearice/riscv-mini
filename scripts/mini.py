@@ -15,6 +15,7 @@ def parser():
     add_commands(sub)
     board=sub.add_parser('board',help='Observe, recover, run, update or verify the board')
     operations=board.add_subparsers(dest='operation',required=True)
+    from scripts.modular.machines import MACHINES
     for name,description in [
         ('status','Passively observe UART; silence is unknown, no reset'),
         ('debug-scan','Read the AE350 board JTAG chain using OpenOCD; no programming'),
@@ -30,7 +31,7 @@ def parser():
         ('ae350-upload','AE350 memory: autonomous ROM POST then UART image upload and execution'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
-        op.add_argument('--machine', choices=('primer20k_vexriscv', 'mega138k_ae350'),
+        op.add_argument('--machine', choices=MACHINES,
                         default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
@@ -77,7 +78,7 @@ def parser():
             op.add_argument('--timeout', type=int, default=60,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
         if name == 'ddr-suite':
-            from gateware.machines import ae350_map
+            from gateware.machines.mega138k_ae350 import address_map as ae350_map
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--cpu-jtag-location', type=int, required=True)
             op.add_argument('--seed', type=int, default=0x12345678)

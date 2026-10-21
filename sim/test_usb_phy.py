@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen import Record
 from migen.sim import run_simulation
-from gateware.usb import USBPHYInit
+from gateware.machines.primer20k_vexriscv.peripherals.usb import USBPHYInit
 
 def main():
     pads=Record([('dir',1),('nxt',1),('stp',1)])

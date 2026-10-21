@@ -6,25 +6,95 @@ import sys
 from pathlib import Path
 from .storage import ROOT, canonical, digest, file_hash, read, write, workspace_lock
 from .environment import discover, identity, python_packages
-from .compile import source_files as collect_source_files
 from .contracts import hardware
 from .workspace import working, clear_generated, invalidate_pnr, gateware_files, remove_file
 
 
-def source_files(root, names):
-    # This backend owns the active 20K RTL. Other machine implementations
-    # have their own closed inputs and must not invalidate its cache.
-    return {name: sha for name, sha in collect_source_files(root, names).items()
-            if not name.startswith(('gateware/machines/', 'gateware/boards/'))}
+# Stage A closure: this backend is the allowlist for the 20K RTL. Every path is
+# repo-relative and must exist; a missing entry fails the build instead of
+# silently shrinking the key. No other machine's files may appear here.
+PRIMER20K_CLOSURE = (
+    'gateware/__init__.py',
+    'gateware/boards/__init__.py',
+    'gateware/boards/primer20k_dock3713/board.json',
+    'gateware/devices/__init__.py',
+    'gateware/devices/gpio/__init__.py',
+    'gateware/devices/gpio/core.py',
+    'gateware/devices/ws2812/__init__.py',
+    'gateware/devices/ws2812/core.py',
+    'gateware/machines/primer20k_vexriscv/__init__.py',
+    'gateware/machines/primer20k_vexriscv/bus.py',
+    'gateware/machines/primer20k_vexriscv/config.py',
+    'gateware/machines/primer20k_vexriscv/constraints.py',
+    'gateware/machines/primer20k_vexriscv/csr_layout.py',
+    'gateware/machines/primer20k_vexriscv/ddr_boot.py',
+    'gateware/machines/primer20k_vexriscv/features.py',
+    'gateware/machines/primer20k_vexriscv/flash_xip.py',
+    'gateware/machines/primer20k_vexriscv/memory/gw2_ddr.py',
+    'gateware/machines/primer20k_vexriscv/memory/native_dma.py',
+    'gateware/machines/primer20k_vexriscv/memory/ports.py',
+    'gateware/machines/primer20k_vexriscv/memory/shared_l2.py',
+    'gateware/machines/primer20k_vexriscv/memory_map.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/audio.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/audio_clock.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/board_io.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/ethernet.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/ethernet_dma.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/ethernet_ring.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/microphone.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/sd.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/sd_dma.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/sddma.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/usb.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/usb_ultra.py',
+    'gateware/machines/primer20k_vexriscv/peripherals/video.py',
+    'gateware/machines/primer20k_vexriscv/rtl.py',
+    'gateware/machines/primer20k_vexriscv/soc.py',
+    'gateware/vendor/gowin_gw2a/gw2ddrphy.py',
+    'gateware/vendor/litesdcard/LICENSE.litedram',
+    'gateware/vendor/litesdcard/sdcore.py',
+    'gateware/vendor/usb_fs_phy/LICENSE',
+    'gateware/vendor/usb_fs_phy/usb_fs_phy.v',
+    'gateware/vendor/usb_host/LICENSE',
+    'gateware/vendor/usb_host/src_v/usbh_crc16.v',
+    'gateware/vendor/usb_host/src_v/usbh_crc5.v',
+    'gateware/vendor/usb_host/src_v/usbh_fifo.v',
+    'gateware/vendor/usb_host/src_v/usbh_host.v',
+    'gateware/vendor/usb_host/src_v/usbh_host_defs.v',
+    'gateware/vendor/usb_host/src_v/usbh_sie.v',
+    'scripts/boot_image.py',
+    'scripts/build_recipe.py',
+    'scripts/build_records.py',
+    'scripts/mini.py',
+    'scripts/modular/compile.py',
+    'scripts/modular/contracts.py',
+    'scripts/modular/environment.py',
+    'scripts/modular/gowin.py',
+    'scripts/modular/hardware.py',
+    'scripts/modular/rtl.py',
+    'scripts/modular/storage.py',
+    'scripts/modular/worker.py',
+    'scripts/modular/workspace.py',
+    'scripts/versions.py',
+)
+
+
+def source_closure(root):
+    missing = [name for name in PRIMER20K_CLOSURE if not (root / name).is_file()]
+    if missing:
+        raise ValueError('Missing declared 20K input: ' + ', '.join(missing))
+    return {name: 'source' for name in PRIMER20K_CLOSURE}
+
+
+def source_files(root):
+    return {name: file_hash(root / name) for name in source_closure(root)}
 
 
 def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
     if store.get(cpu_ref)['config'].get('kind') == 'hard':
         raise ValueError('Hard CPU requires its machine RTL backend; cannot generate VexRiscv RTL')
     v = validation if validation is not None else store.get(base_soc)['config']['validation']
-    inputs = source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
-                                      'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                                      'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py', 'scripts/modular/compile.py'])
+    inputs = source_files(store.root)
     env = discover(['python'], store.root)
     options = dict(v)
     config = dict(schema=1, options=options, sources=inputs, environment=identity(env), packages=python_packages())
@@ -41,7 +111,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
         names = [n for n in cpu_manifest['files'] if n.startswith('outputs/') and n.endswith('.v')]
         cpu_path = store.path(cpu_ref) / names[0] if names else None
         from .rtl import generate
-        from gateware.features import Features
+        from gateware.machines.primer20k_vexriscv.features import Features
         # The CPU is consumed by exact digest. Place matching metadata next to it.
         if cpu_path and 'inputs/generator.json' in cpu_manifest['files']:
             folder = work / 'cpu'; folder.mkdir(exist_ok=True)
@@ -73,9 +143,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
         for folder in ('gateware', 'software/include'):
             for p in (work / folder).rglob('*'):
                 if p.is_file(): files[p.relative_to(work).as_posix()] = p
-        if source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
-                                    'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                                    'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py', 'scripts/modular/compile.py']) != inputs:
+        if source_files(store.root) != inputs:
             raise ValueError('Hardware inputs changed during generation')
         ref = store.publish('soc-description', key, files, config=cfg, dependencies={'cpu': cpu_ref})
         workspace.success(ref)
@@ -86,7 +154,7 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
     soc_data = store.get(soc); v = soc_data['config']['validation']
     env = discover(['python', *(['gowin'] if synthesize else [])], store.root)
     config = dict(schema=1, options=v, environment=identity(env), packages=python_packages(), synthesize=synthesize,
-                  sources=source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py', 'scripts/modular/workspace.py', 'scripts/modular/gowin.py', 'scripts/modular/compile.py']))
+                  sources=source_files(store.root))
     deps = {'soc-description': soc}
     if v['boot_mode'] == 'rom': deps['bootloader'] = boot
     key = digest(dict(config=config, dependencies=deps))

@@ -1,6 +1,6 @@
 """Directional interface compatibility, separate from artifact identity and v1 tags."""
 import re
-from gateware.config import HARDWARE_ABI_MAJOR, INTERFACE_REVISIONS
+from gateware.machines.primer20k_vexriscv.config import HARDWARE_ABI_MAJOR, INTERFACE_REVISIONS
 from .storage import digest
 
 CAPABILITIES = {'mmu': 0, 'fpu': 1, 'flash': 2, 'spi_lcd': 3, 'sd': 4,

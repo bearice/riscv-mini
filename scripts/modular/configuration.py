@@ -1,7 +1,7 @@
 """Resolve one hardware configuration for every build caller."""
 from pathlib import Path
-from gateware.features import Features
-from gateware.config import storage_profile, cpu_configuration, cpu_capabilities, cpu_isa, pll_count
+from gateware.machines.primer20k_vexriscv.features import Features
+from gateware.machines.primer20k_vexriscv.config import storage_profile, cpu_configuration, cpu_capabilities, cpu_isa, pll_count
 from .storage import canonical, digest
 from .cpu import locked_cpu
 from .contracts import hardware

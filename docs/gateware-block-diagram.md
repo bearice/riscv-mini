@@ -102,7 +102,7 @@ flowchart LR
 
 主系统复位由 PLL lock、复位按键、DDR PHY 初始化和 SoC reset 共同参与；LCD 复位同步到 video 域。Ethernet/USB 的外部 PHY 共用 F10 复位输出。USB Host/桥接还有独立的软件复位，PHY 初始化域受 ULPI PLL lock、PHY reset 和 enable 控制。DDR init 时钟独立于可暂停的 sys2x/sys 路径。
 
-Ultra PLL 与当前 `gateware/usb_ultra.py` 及 `docs/clocks.md` 一致，采用 247.5° 配置。
+Ultra PLL 与当前 `gateware/machines/primer20k_vexriscv/peripherals/usb_ultra.py` 及 `docs/clocks.md` 一致，采用 247.5° 配置。
 
 ## 关键设计结论
 
@@ -133,7 +133,7 @@ Ultra PLL 与当前 `gateware/usb_ultra.py` 及 `docs/clocks.md` 一致，采用
 
 已验收的 XIP 候选构建报告：Logic 19,562/20,736（94.34%），CLS 10,180/10,368（98.19%），BSRAM 40/46，rPLL 3/4，PRIMARY 8/8，LW 8/8；setup/hold violated endpoints 为 0/0。该布局剩余 CLS 很少，时钟网络也已占满，不能仅凭 LUT/PLL 的剩余数量判断新增模块可容纳性。数字取自本轮 merge-reviewed 构建；提交后的最终镜像和哈希通过构建 catalog 单独登记。
 
-主要依据：`gateware/soc.py`、`shared_l2.py`、`ddr_boot.py`、`native_dma.py`、`sd.py`、`video.py`、`audio.py`、`microphone.py`、`ethernet.py`、`usb_ultra.py`，以及 gateware/memory_map.py、flash_xip.py 和合格构建的参数、validation、rtl-manifest.json / 顶层生成 RTL。
+主要依据：`gateware/machines/primer20k_vexriscv/soc.py`、`shared_l2.py`、`ddr_boot.py`、`native_dma.py`、`sd.py`、`video.py`、`audio.py`、`microphone.py`、`ethernet.py`、`usb_ultra.py`，以及 gateware/machines/primer20k_vexriscv/memory_map.py、flash_xip.py 和合格构建的参数、validation、rtl-manifest.json / 顶层生成 RTL。
 
 ## 独立分支中的端口缓冲实验
 

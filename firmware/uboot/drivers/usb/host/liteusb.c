@@ -2,7 +2,7 @@
 /*
  * riscv-mini custom Ultraembedded PIO full-speed USB host driver for U-Boot.
  *
- * The host is a bit-level PIO engine (gateware/usb_ultra.py): the CPU launches
+ * The host is a bit-level PIO engine (gateware/machines/primer20k_vexriscv/peripherals/usb_ultra.py): the CPU launches
  * one USB packet at a time via TOKEN and reads the device response from RX_STAT.
  * There is no DMA and no frame scheduler; every transaction is polled. The
  * controller exposes a single full-speed root port, so this driver emulates the

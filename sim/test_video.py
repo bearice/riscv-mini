@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen.sim import run_simulation
-from gateware.video import LCDScan, WIDTH, HEIGHT
+from gateware.machines.primer20k_vexriscv.peripherals.video import LCDScan, WIDTH, HEIGHT
 
 def check(starve=False):
     dut=LCDScan()

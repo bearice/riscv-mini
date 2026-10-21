@@ -1,7 +1,7 @@
 """Target argument declarations registered by the single mini parser."""
 from pathlib import Path
-from gateware.features import Features
-from gateware.config import SD_PROFILES
+from gateware.machines.primer20k_vexriscv.features import Features
+from gateware.machines.primer20k_vexriscv.config import SD_PROFILES
 from .storage import ROOT
 
 def busybox(parser):

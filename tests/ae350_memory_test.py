@@ -14,9 +14,9 @@ from migen import Module, Signal, Cat, Constant, ClockDomainsRenamer
 from migen.fhdl.specials import Memory
 from migen.genlib.cdc import BusSynchronizer
 from scripts.tests.test_ddr3_ahb import DUT, Model, Mon, ahb
-from gateware.machines.ddr3_ahb import DDR3AHB, DDR3UI
-from gateware.machines.ae350_native import AHBMemory
-from gateware.machines.ae350_interconnect import MemInterconnect, ErrorSlave
+from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3AHB, DDR3UI
+from gateware.machines.mega138k_ae350.cpu import AHBMemory
+from gateware.machines.mega138k_ae350.interconnect import MemInterconnect, ErrorSlave
 from litex.soc.interconnect.ahb import AHBInterface
 from scripts.tests.test_ae350_interconnect import DUT as InterconnectDUT, xact
 from mini_ops.ae350_boot_ops import RunRequest, _engine_args
@@ -34,7 +34,7 @@ from argparse import Namespace
 
 class AdapterRecoveryTests(unittest.TestCase):
     def test_decoder_cross_slave_transactions_with_real_cdc(self):
-        from gateware.machines import ae350_map
+        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         self.assertEqual((ae350_map.DDR_BASE, ae350_map.DLM_BASE), (0, 0xa0200000))
         self.assertFalse(any(name == 'sram' for name, *_ in ae350_map.WINDOWS))
         dut = Module()
@@ -236,7 +236,7 @@ class HostContractTests(unittest.TestCase):
     def test_bootloader_cache_key_includes_runtime_abi(self):
         store = Store(ROOT)
         run = Mock()
-        from gateware.machines import ae350_map
+        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         with patch.object(store, 'lookup', return_value={'component': 'bootloader'}), \
              patch.object(ae350, 'discover', return_value={}), \
              patch.object(ae350, 'identity', return_value={}), \
@@ -363,7 +363,7 @@ class HostContractTests(unittest.TestCase):
 
     def test_memory_bootloader_hashes_address_contract(self):
         paths = ae350._inputs(Store(ROOT), profile='ddr')
-        self.assertIn('inputs/source/gateware/machines/ae350_map.py', paths)
+        self.assertIn('inputs/source/gateware/machines/mega138k_ae350/address_map.py', paths)
 
     def test_oversize_image_is_rejected_before_hardware(self):
         with self.assertRaises(ValueError):

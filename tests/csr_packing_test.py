@@ -6,8 +6,8 @@ from migen import Signal
 from migen.sim import run_simulation
 from litex.gen import LiteXModule
 from litex.soc.interconnect.csr_bus import CSRBank, Interface
-from gateware.csr_layout import STATUS_LAYOUTS, packed_status
-from gateware.board_io import BoardIO
+from gateware.machines.primer20k_vexriscv.csr_layout import STATUS_LAYOUTS, packed_status
+from gateware.machines.primer20k_vexriscv.peripherals.board_io import BoardIO
 
 for name, words in STATUS_LAYOUTS.items():
     dut = LiteXModule()

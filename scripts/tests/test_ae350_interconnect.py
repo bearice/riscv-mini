@@ -17,8 +17,8 @@ from migen import *
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect.ahb import AHBInterface
 from litex.gen import LiteXModule
-from gateware.machines.ddr3_ahb import DDR3AHB, DDR3UI
-from gateware.machines.ae350_interconnect import MemInterconnect, ErrorSlave
+from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3AHB, DDR3UI
+from gateware.machines.mega138k_ae350.interconnect import MemInterconnect, ErrorSlave
 from test_ddr3_ahb import StubFIFO, Mon, Model
 
 

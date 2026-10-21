@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from migen import Module, Signal
 from migen.fhdl import verilog
 from liteeth.mac.sram import LiteEthMACSRAM
-from gateware.ethernet_ring import attach_ring_to_mac
+from gateware.machines.primer20k_vexriscv.peripherals.ethernet_ring import attach_ring_to_mac
 
 
 def main():

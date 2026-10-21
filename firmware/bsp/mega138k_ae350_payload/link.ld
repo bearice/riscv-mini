@@ -1,7 +1,7 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 /* The payload executes from DDR; the mapping block comes from the address
- * contract (gateware/machines/ae350_map.py). */
+ * contract (gateware/machines/mega138k_ae350/address_map.py). */
 INCLUDE ae350_map.ld
 SECTIONS {
     .text : { __text_start = .; KEEP(*(.text.start)) *(.text*) *(.rodata*) . = ALIGN(4); __text_end = .; } > ddr

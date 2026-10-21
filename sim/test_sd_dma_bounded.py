@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from migen.sim import run_simulation
 from litex.soc.interconnect import wishbone
-from gateware.sd_dma import SDReader, SDWriter
+from gateware.machines.primer20k_vexriscv.peripherals.sd_dma import SDReader, SDWriter
 
 def check(write,length,abort=False):
     bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')

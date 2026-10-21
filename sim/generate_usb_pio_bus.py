@@ -6,7 +6,7 @@ from migen import Module, Instance, ClockSignal, ResetSignal, ResetInserter, Sig
 from migen.fhdl import verilog
 from litex.soc.interconnect import wishbone
 from litex.soc.interconnect.axi import AXILiteInterface
-from gateware.usb_ultra import USBPIOBridge
+from gateware.machines.primer20k_vexriscv.peripherals.usb_ultra import USBPIOBridge
 
 def generate(path):
     m=Module();w=wishbone.Interface(data_width=32,address_width=32,addressing='word')

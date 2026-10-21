@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from migen import Module
 from migen.fhdl import verilog
 from litedram.common import LiteDRAMNativePort
-from gateware.memory import MemoryPort, PortBuffer
-from gateware.video import RGBLCD
+from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer
+from gateware.machines.primer20k_vexriscv.peripherals.video import RGBLCD
 
 TB = r"""
 module tb;

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from migen.fhdl import verilog
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
-from gateware.shared_l2 import SharedL2
+from gateware.machines.primer20k_vexriscv.memory.shared_l2 import SharedL2
 from migen import Signal
 
 TB = r'''

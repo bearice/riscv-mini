@@ -6,7 +6,7 @@ from migen import Module
 from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
-from gateware.memory import MemoryPort, PortBuffer, SharedMemoryController
+from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer, SharedMemoryController
 
 
 def backend(port, memory, traffic):

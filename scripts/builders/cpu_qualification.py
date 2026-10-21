@@ -16,10 +16,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from gateware.features import Features
-from gateware.config import SD_PROFILES, storage_profile, cpu_configuration, pll_count
-from gateware.soc import MiniSoC
-from gateware.rtl import split_verilog
+from gateware.machines.primer20k_vexriscv.features import Features
+from gateware.machines.primer20k_vexriscv.config import SD_PROFILES, storage_profile, cpu_configuration, pll_count
+from gateware.machines.primer20k_vexriscv.soc import MiniSoC
+from gateware.machines.primer20k_vexriscv.rtl import split_verilog
 from litex.soc.integration.builder import Builder
 from scripts.modular.rtl import pnr_report
 
