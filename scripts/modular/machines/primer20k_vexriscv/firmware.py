@@ -85,8 +85,10 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
     versions = read_versions(store.root / 'VERSIONS.yaml')
     ver = versions['hal' if component == 'hal-sdk' else component]
     own = ['scripts/modular/machines/primer20k_vexriscv',
-           *['scripts/modular/' + n for n in ('__init__.py', 'arguments.py', 'compile.py', 'environment.py',
-                                                   'executor.py', 'gowin.py', 'storage.py', 'workspace.py', 'worker.py')],
+           'scripts/modular/machines/__init__.py',
+           *['scripts/modular/' + n for n in ('__init__.py', 'arguments.py', 'cli.py', 'compile.py',
+                                                   'environment.py', 'executor.py', 'gowin.py', 'replay.py',
+                                                   'storage.py', 'targets.py', 'worker.py', 'workspace.py')],
            'scripts/mini.py', 'scripts/mini_ops/primer20k_vexriscv/release.py', 'scripts/mini_ops/catalog.py', 'scripts/tools/build_records.py', 'scripts/tools/build_recipe.py',
            'scripts/tools/versions.py', 'scripts/tools/riscv_toolchain.py', 'scripts/primer20k_vexriscv/boot_image.py', 'scripts/tools/boot_image.py',
            'gateware/machines/primer20k_vexriscv/csr_layout.py', 'gateware/machines/primer20k_vexriscv/memory_map.py', 'gateware/machines/primer20k_vexriscv/config.py', 'gateware/machines/primer20k_vexriscv/flash_xip.py', 'gateware/machines/primer20k_vexriscv/features.py', 'requirements.lock',

@@ -78,7 +78,6 @@ def parser():
             op.add_argument('--timeout', type=int, default=60,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
         if name == 'ddr-suite':
-            from gateware.machines.mega138k_ae350 import address_map as ae350_map
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--cpu-jtag-location', type=int, required=True)
             op.add_argument('--seed', type=int, default=0x12345678)

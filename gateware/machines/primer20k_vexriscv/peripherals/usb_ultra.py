@@ -110,7 +110,7 @@ class USBHostUltra(LiteXModule):
         for a,b in [(phy.ready,self._ready.status),(phy.error,self._error.status),
                     (phy.phy_id,self._id.status)]:self.specials += MultiReg(a,b)
         self.comb += self._lines.status.eq(lines)
-        vendor=Path(__file__).resolve().parents[3]/'gateware/vendor'
+        vendor=Path(__file__).resolve().parents[3]/'vendor'
         soc.platform.add_verilog_include_path(str(vendor/'usb_host/src_v'))
         for source in sorted((vendor/'usb_host/src_v').glob('*.v')):
             if source.name!='usbh_host_defs.v':soc.platform.add_source(str(source))
