@@ -1,11 +1,12 @@
 """Compile the DDR Flash utility; only explicit update builds permit writes."""
-from pathlib import Path
 import os
+from pathlib import Path
 import subprocess
 
-from tools.boot_image import FLASH_OFFSET, pack_image
 import sys
-sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
+sys.path[:0] = [str(Path(__file__).resolve().parents[3]),
+                str(Path(__file__).resolve().parents[3] / 'scripts')]
+from tools.boot_image import FLASH_OFFSET, pack_image
 from scripts.tools.build_records import ROOT
 
 

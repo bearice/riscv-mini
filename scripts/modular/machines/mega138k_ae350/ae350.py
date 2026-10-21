@@ -253,7 +253,6 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
     hashes = {name: file_hash(path) for name, path in files.items()}
     from gateware.machines.mega138k_ae350 import address_map as ae350_map
     from scripts.modular.machines.mega138k_ae350.ddr_inputs import DDR_PROFILE
-    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     config = dict(schema=1, machine='mega138k_ae350', profile='AE350-DDR3-' + DDR_PROFILE['name'],
                   sources=hashes, cpu_integration='AE350-vendor-ITCM-wrapper',
                   instruction_memory='vendor-ITCM-bootstrap+hard-ILM', data_memory='hard-DLM+DDR3-IP',

@@ -9,6 +9,8 @@ import sys
 import time
 from pathlib import Path
 import serial
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]),
+                str(Path(__file__).resolve().parents[2] / 'scripts')]
 from tools.boot_image import CHUNK, HEADER, packet, unpack_image
 from tools.boot_session import BootSession, programmer_succeeded
 from tools.programmer_cable import resolve_location

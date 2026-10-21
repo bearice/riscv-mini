@@ -4,7 +4,8 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path[:0] = [str(Path(__file__).resolve().parents[3]),
+                str(Path(__file__).resolve().parents[3] / 'scripts')]
 
 from scripts.primer20k_vexriscv.boot_image import abi_tag
 from scripts.tools.boot_image import FLASH_OFFSET, FLASH_SIZE, unpack_image

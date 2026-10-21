@@ -86,3 +86,12 @@
 - **20K minimal**：run `20261021T151114537880Z-build-reorg-review2-20k-minimal-564f23`，setup 0 / hold 0，最差 +4.214 ns（同路径同域），Logic 6284/20736、Register 3596/16173、CLS 4574/10368、BSRAM 13/46。
 - **AE350 gateware**：run `20261021T151250260136Z-build-reorg-review2-ae350-faee1a` → `REUSE 28acfbbc4552`，timing 仍 `{0, 0, 0.142}`；输入键未变，证明本轮的麦克风/音频改动不触及 138K。
 - **20K full-profile RTL**：gateware `6cf7a0f905e5`，与上一轮 `build/rtl-review.json` 逐文件一致（`build/rtl-review2.json` 比对：无新增、无删除、无变化），即 FIFO property 化不改变网表。
+
+### 6.2 第三轮评审（结论 ACCEPT）与收尾
+
+第三轮（针对 `c8d9a61`）**ACCEPT**，无阻断；四条 minor 中三条属代码、一条属历史回执，处理如下：
+
+- `scripts/primer20k_vexriscv/boot_upload.py` 直接执行时缺 `sys.path` 引导（`python scripts/primer20k_vexriscv/boot_upload.py --help` 会 `ModuleNotFoundError: tools`）；已补 `parents[2]` + `parents[2]/'scripts'`，`--help` 正常。
+- `artifacts.py` 只把 `ROOT` 放进 `sys.path`，其 `boot_image` 依赖 `tools.*`；`probe.py` 与 `ae350_upload.py` 的引导行在原 import 之后。前者的路径改为 `[ROOT, ROOT/'scripts']`，后两者把引导行提到被使能的 import 之前。
+- `ae350.py` 的 `rtl()` 里第二处重复 `address_map` import（与 `DDR_PROFILE` import 交错，上一轮的对偶替换没命中）已删除；因此 AE350 输入键变化，重新 PnR 得 gateware `24e74f6ce918`，timing 仍 `{0, 0, 0.142}`（run `20261021T153506996468Z-build-reorg-review3-ae350-bd4949`）。
+- `reports/ae350-p2.md` 里的 `../scripts/ae350_report.py` 链接保持原样：它是历史验收回执，按计划"旧回执不再复核"且在登记保持不改的清单内，不做追溯改写。
