@@ -11,8 +11,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.modular.storage import ROOT, canonical, digest, file_hash, text_file
 from scripts.modular.environment import process_environment

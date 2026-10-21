@@ -6,8 +6,6 @@ import os
 import stat
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.tools.build_records import ROOT, get_record, legacy_index, pin, records, refresh, register
 sys.path.insert(0, str(ROOT))

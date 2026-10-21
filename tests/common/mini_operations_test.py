@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0,str(ROOT/'scripts'))
 from scripts.primer20k_vexriscv.boot_image import abi_tag
 from tools.boot_image import HEADER, pack_image
@@ -263,7 +264,7 @@ class MiniOperationsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'ABI'):Build(str(self.path),other)
     def test_legacy_install_guard_before_serial_or_programmer(self):
         with self.assertRaisesRegex(ValueError,'XIP'):require_install_supported(self.v)
-        with patch('boot_upload.serial.Serial') as serial,patch('boot_upload.program') as programmer:
+        with patch('scripts.primer20k_vexriscv.boot_upload.serial.Serial') as serial, patch('scripts.primer20k_vexriscv.boot_upload.program') as programmer:
             from scripts.primer20k_vexriscv.boot_upload import main as upload
             with patch.object(sys,'argv',['boot_upload','--output-dir',str(self.path),'--configure-flash','--mode','install']):
                 with self.assertRaises(ValueError):upload()

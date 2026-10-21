@@ -5,7 +5,6 @@ import subprocess
 
 from tools.boot_image import FLASH_OFFSET, pack_image
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
 from scripts.tools.build_records import ROOT
 

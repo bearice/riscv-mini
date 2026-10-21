@@ -34,7 +34,7 @@ sdcore.py 来自锁定的 LiteSDCard commit
 sddma.py 同样来自上述 LiteSDCard revision 的 frontend/dma.py，保留版权。
 它只将通用 Wishbone DMA 替换为 gateware/machines/primer20k_vexriscv/peripherals/sd_dma.py 的有界传输引擎：
 32-bit DDR 地址、最多 4096 bytes、保留在途请求直至响应后再完成终止。
-两侧 512-byte FIFO 和字节转换器保持原有实现；tests/primer20k_vexriscv/tests/primer20k_vexriscv/sim/test_sd_dma_bounded.py
+两侧 512-byte FIFO 和字节转换器保持原有实现；tests/primer20k_vexriscv/sim/test_sd_dma_bounded.py
 覆盖 SCR、单块、八块、停顿、非法长度及终止时请求排空。
 
 不修改命令格式、PHY 或数据 CRC 算法。更新依赖时须逐项核对补丁，

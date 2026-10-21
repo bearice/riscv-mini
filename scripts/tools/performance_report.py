@@ -8,7 +8,6 @@ import hashlib
 import json
 import re
 import statistics
-from pathlib import Path
 from scripts.tools.build_records import artifact_identity, get_record, now, write_json
 
 

@@ -8,8 +8,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
 from scripts.tools.build_records import ROOT, artifact_identity, configuration_name, get_record, git, now, pin, register, source_identity, write_json
 from scripts.tools.versions import COMPONENTS, bundle_external, bundle_versions, read_versions

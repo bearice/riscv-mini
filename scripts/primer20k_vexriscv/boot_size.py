@@ -6,7 +6,6 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).res
 import argparse
 import json
 import subprocess
-from pathlib import Path
 from scripts.tools.riscv_toolchain import executable as tool_executable
 
 ROOT = Path(__file__).resolve().parents[2]

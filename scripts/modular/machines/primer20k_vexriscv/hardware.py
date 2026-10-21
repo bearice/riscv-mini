@@ -4,8 +4,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.modular.storage import ROOT, canonical, digest, file_hash, read, write, workspace_lock
 from scripts.modular.environment import discover, identity, python_packages

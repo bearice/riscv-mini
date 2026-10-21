@@ -30,6 +30,15 @@ def part(machine, name):
     return importlib.import_module('scripts.modular.machines.%s.%s' % (machine, name))
 
 
+def release(machine, name):
+    """Release operation of one machine, imported on demand."""
+    machine = normalise(machine)
+    if machine != PRIMARY:
+        raise ValueError('Machine ' + machine + ' has no release operation')
+    module = importlib.import_module('scripts.mini_ops.%s.release' % PRIMARY)
+    return getattr(module, name)
+
+
 def description(machine):
     machine = normalise(machine)
     return importlib.import_module('scripts.modular.machines.%s.description' % machine)

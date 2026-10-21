@@ -7,7 +7,6 @@ import argparse
 import json
 import re
 import time
-from pathlib import Path
 import serial
 from tools.boot_image import unpack_image
 from tools.boot_session import BootSession

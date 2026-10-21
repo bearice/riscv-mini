@@ -46,3 +46,25 @@
 - 未做 HDMI、`hal/src` 跨机重构、`interfaces/requires`；这些仍在计划 §5“不做”。
 - 全部验收为主机侧：无实板烧写、无 Flash 写入、无真实外设观测。full-profile 的 50 条 setup 违例只登记，未修。
 - 旧发布包在新树上 `build --locked` 失败是预期（见 [component-builds.md](component-builds.md)），历史复现只用 `mini.py builds reproduce`。
+
+## 6. 验收评审（gemini-4）与修复
+
+独立评审（antigravity/gemini-4-argon，只读，对照提交链 `aec1fd1..4a0fe4c`）结论为 **BLOCKED**，理由分五类，逐条复核后全部成立并已修复：
+
+- **B1 框架未定义名字**：`scripts/modular/targets.py` 的 `output_view()` 引用了未定义的 `machine` 与 `configuration`（stage D 拆分后遗留），任何带 `--output-dir` 的 system 构建都会 `NameError`。改为 `machines.system_machine(store, ref)` 与 `machines.part(machine, 'configuration')`。
+- **B2 搬迁后 import/sys.path 残留**：`tests/primer20k_vexriscv/sim/test_video.py` 仍从旧适配器取 `WIDTH/HEIGHT`（B4 已移到 `devices/video/core.py`）；`tests/common/test_board_events.py` 仍插入已删除的 `scripts/tests` 并 import 兄弟模块；`test_audio_capture.py`、`test_boot_image.py`、`doom_debug.py`、`doom_verify.py`、`gwbasic_verify.py`、`mini_operations_test.py`、`firmware_verify_test.py` 只把 `ROOT/scripts` 放进 `sys.path` 却 import `scripts.*`。上述 8 处全部改正；`firmware_verify_test.py` 同时修掉 `import scripts.x.y` 后仍用裸名的 `NameError`，`mini_operations_test.py` 的 mock 目标改为 `scripts.primer20k_vexriscv.boot_upload.*`。
+- **B3 AE350 输入仍是 glob**：`ae350.py` 的 `_inputs()` 用两处 `.glob('*.py')` 收集脚本且无 `source_closure()`。改为显式 `AE350_SCRIPTS` 允许列表 + `source_closure(root)`（缺文件即 `ValueError`），并补上此前漏登记的 `scripts/modular/machines/__init__.py`。
+- **B4 框架/shared tools 仍直连机器包**：`cli.py` 在构造 parser 时就 import 20K release（并硬编码两处）；`worker.py` 直连 20K `system/firmware/rtl`；`targets.py` 用 `machine == AE350` 分支与三次硬编码机器名；`prepare_commit.py`、`build_records.py` 直连 AE350/20K 后端。现统一走 `scripts.modular.machines` 注册表（新增 `release()`；`description()` 再导出 `timing_report`），未知机器不再落入 20K 管线。
+- **B5 文档破坏**：`docs/ddr-boot.md` 相对链接指向已删除的 `../gateware/ddr_boot.py`；`scripts/README.md` 把 `board verify --suite firmware/boot/cold` 误改成 `firmware/bsp/primer20k_vexriscv/cold`（与 `board.py` 的判据不符）；`gateware/vendor/README.md` 出现双重前缀路径；`tests/primer20k_vexriscv/sim/README.md` 的示例命令仍是旧 `sim/test_*.py`。全部改正。
+
+修复后的复验（本提交）：
+
+- **20K minimal 全流程**：run `20261021T140849117005Z-build-reorg-review-20k-minimal-r2-8db40c`，setup 0 / hold 0，最差 setup slack +4.214 ns（同一路径、同一 CLKDIV/CLKOUT 16.667 ns 关系），Logic 6284/20736、Register 3596/16173、CLS 4574/10368、BSRAM 13/46；`--output-dir build/tmp/view-20k` 同时验证了 B1 的 materialize 路径（build id `4a0fe4c-minimal-rv32im-rom8k-l24k-build-248ffa7a-82f01209`）。
+- **AE350 gateware**：run `20261021T141037438388Z-build-reorg-review-ae350-cc8879`，gateware `28acfbbc4552`，`timing = {setup 0, hold 0, min_pulse_width_slack_ns 0.142}`。
+- **20K full-profile RTL 生成**：gateware `5e47b4ab92fe`；与 B4 的 RTL 快照逐文件比对**完全一致**（`build/rtl-b4.json` vs `build/rtl-review.json`），说明 audio FIFO 改为 property 属结构性整理，不改变网表。
+- **host 全量扫描**：`build/reorg-final-hosttests.json`，83 个目标（`*_test.py` 与 `test_*.py` 两种命名、含 `tests/<machine>/sim/`）→ 61 pass / 3 fail / 19 skip-or-needs-args。3 个红全部为搬迁前既有：`sim/test_audio.py`（环形缓冲基址常量已出该机 RAM 窗口）、`sim/test_sd_dma_bounded.py`（在 5acca4d 树上逐字复现同样断言失败，从未进入旧扫描清单）、`test_features.py`（`fpu` 已关后仍断言全特性为真）。
+- **隔离反证**：`build/stage_d_isolation.py` 三项仍全部通过；`mini.py` 全部子命令、`doctor`、两机 `plan`、未知机器报错均正常。
+
+已知红清单（本阶段不修，统一测试修整时处理）：上述 3 个主机测试，以及 13 个需要 `--iverilog`/`--cpu`/`--output-dir` 且本机无 Icarus Verilog 的驱动式 verilog 测试。
+
+环境副作用（非缺陷，记录备查）：在全新 workspace 第一次起 Gowin PnR 时 `gw_sh` 偶发静默退出（rc=1、无日志），同 workspace 重跑即成功；stage 0 亦观察到同样现象。

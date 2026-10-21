@@ -4,10 +4,10 @@ import hashlib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.modular.storage import canonical, digest, file_hash, member, read, write
 from scripts.modular.environment import discover, identity
+from scripts.modular.machines.mega138k_ae350.ae350 import timing_report  # re-export for tools
 
 LEGACY = 'primer20k_vexriscv'
 AE350 = 'mega138k_ae350'

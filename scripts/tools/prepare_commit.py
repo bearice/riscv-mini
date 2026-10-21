@@ -4,8 +4,6 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.tools.build_records import ROOT, get_record, git, now, source_identity, write_json
 sys.path.insert(0,str(ROOT))
@@ -64,7 +62,7 @@ def selected_build(selection, root=ROOT):
     if receipt.get('passed') is not True or receipt.get('dry_run'):
         raise ValueError('Successful non-dry-run board receipt required')
     from scripts.modular.storage import Store, file_hash
-    from scripts.modular.machines.mega138k_ae350.ae350 import timing_report
+    from scripts.modular.machines import description as machine_description
     store = Store(root)
     ref, payload = receipt['artifact'], receipt['payload_artifact']
     hardware = store.get(ref, recursive=True)
@@ -72,7 +70,7 @@ def selected_build(selection, root=ROOT):
     if (ref['component'] != 'gateware' or hardware['config'].get('machine') != 'mega138k_ae350'
             or not hardware['config'].get('synthesize')):
         raise ValueError('Expected implemented AE350 gateware')
-    timing_report(store.path(ref))
+    machine_description(hardware['config']['machine']).timing_report(store.path(ref))
     fs = store.path(ref) / 'gateware/impl/pnr/project.fs'
     binary = store.path(payload) / application['config']['binary']
     if receipt.get('fs_sha256') != file_hash(fs) or receipt.get('payload_sha256') != file_hash(binary):
@@ -152,8 +150,8 @@ def main():
     if a.write_changelog and not (a.component and a.release_version):
         p.error('--write-changelog requires --component and an explicit --release-version; other commits use scope records only')
     if a.component and a.release_version:
-        from scripts.mini_ops.primer20k_vexriscv.release import release_version
-        version = release_version(a.release_version)
+        from scripts.modular.machines import PRIMARY, release as release_operation
+        version = release_operation(PRIMARY, 'release_version')(a.release_version)
         from scripts.tools.versions import bundle_versions, component_version
         if a.component == 'system':
             bundle_versions(version)
@@ -167,8 +165,8 @@ def main():
     record = prepare(a.title, a.change, a.revision, selected_build(a.build) if a.build else None,
                      a.performance_report, json.loads(a.checks.read_text(encoding='utf-8')) if a.checks else None)
     if a.release_version:
-        from scripts.mini_ops.primer20k_vexriscv.release import release_version
-        record['release_version']=release_version(a.release_version)
+        from scripts.modular.machines import PRIMARY, release as release_operation
+        record['release_version']=release_operation(PRIMARY, 'release_version')(a.release_version)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     identity=scope_identity(record.pop('scope'))
     write_json(review_receipt(a.output),identity)

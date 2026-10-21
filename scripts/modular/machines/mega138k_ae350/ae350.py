@@ -5,7 +5,6 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.modular.storage import canonical, digest, file_hash, write, read, text_file
 from scripts.modular.workspace import working, clear_generated, invalidate_pnr, gateware_files, cached_implementation, record_implementation, remove_file
@@ -57,16 +56,42 @@ AE350_CLOSURE = (
     'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.v',
 )
 
+AE350_SCRIPTS = (
+    'scripts/mini.py',
+    'scripts/modular/__init__.py',
+    'scripts/modular/arguments.py',
+    'scripts/modular/cli.py',
+    'scripts/modular/compile.py',
+    'scripts/modular/environment.py',
+    'scripts/modular/executor.py',
+    'scripts/modular/gowin.py',
+    'scripts/modular/replay.py',
+    'scripts/modular/storage.py',
+    'scripts/modular/targets.py',
+    'scripts/modular/worker.py',
+    'scripts/modular/workspace.py',
+    'scripts/modular/machines/__init__.py',
+    'scripts/modular/machines/mega138k_ae350/__init__.py',
+    'scripts/modular/machines/mega138k_ae350/ae350.py',
+    'scripts/modular/machines/mega138k_ae350/ddr_inputs.py',
+    'scripts/modular/machines/mega138k_ae350/description.py',
+)
+
 BOOTLOADER = 'firmware/bootloader/mega138k_ae350'
 PAYLOAD = 'firmware/diagnostics/mega138k_ae350'
 PROFILES = ('ddr',)
 
 
+def source_closure(root):
+    """Every script an AE350 build reads; a missing file is a hard error."""
+    missing = [name for name in AE350_SCRIPTS if not (root / name).is_file()]
+    if missing:
+        raise ValueError('Missing declared AE350 input: ' + ', '.join(missing))
+    return list(AE350_SCRIPTS)
+
+
 def _inputs(store, hardware=False, profile='ddr'):
-    names = ['scripts/mini.py', *[p.relative_to(store.root).as_posix()
-                                for p in sorted((store.root / 'scripts/modular').glob('*.py'))],
-             *[p.relative_to(store.root).as_posix()
-               for p in sorted((store.root / 'scripts/modular/machines/mega138k_ae350').glob('*.py'))]]
+    names = list(source_closure(store.root))
     files = {'inputs/source/' + name: store.root / name for name in names}
     missing = [name for name in AE350_CLOSURE if not (store.root / name).is_file()]
     if missing:
@@ -95,7 +120,6 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
     env = discover(ROLES, store.root)
     flags = [*BASE_FLAGS, '-march=rv32ima_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none']
-    from gateware.machines.mega138k_ae350 import address_map as ae350_map
     from gateware.machines.mega138k_ae350 import address_map as ae350_map
     ae350_map.require()
     config = dict(schema=1, machine='mega138k_ae350', profile='AE350-ROM-bootloader',
@@ -527,8 +551,6 @@ def build(store, run, args, cpu, board, plan):
         write(store.build / 'refs/machines/mega138k_ae350/candidates' / (run.id + '.json'),
               dict(machine='mega138k_ae350', artifact=artifact, run=run.id,
                    qualification='PnR-not-board-qualified' if implemented else 'host-generated-only'))
-    remaining = ['physical-part-and-board-revisions', *([] if implemented else ['PnR']),
-                 'JTAG-UART-board-validation', 'timer-IRQ-verification', 'CPU-frequency-characterization']
     remaining = ['physical-part-and-board-revisions', *([] if implemented else ['PnR']),
                  'JTAG-UART-board-validation', 'memory-board-verification',
                  'timer-IRQ-verification', 'CPU-frequency-characterization']

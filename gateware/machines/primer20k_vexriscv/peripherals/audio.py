@@ -75,5 +75,8 @@ class Audio(LiteXModule):
         ]
         self.sync += If(clear,
             index.eq(0), self._fetched.status.eq(0), self._wraps.status.eq(0), self._errors.status.eq(0))
-        # Kept for tests that observed the FIFO through the old attribute.
-        self.fifo = core.fifo
+        # Kept for tests that observed the FIFO through the old attribute; a
+        # property avoids registering the core module a second time.
+    @property
+    def fifo(self):
+        return self.core.fifo

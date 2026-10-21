@@ -3,8 +3,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.modular.storage import canonical, digest, read, write, workspace_lock
 from scripts.modular import machines as registry

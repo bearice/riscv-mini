@@ -115,8 +115,9 @@ def get_record(name, root=ROOT):
         data=json.loads(ref.read_text(encoding='utf-8'))
         if data.get('system'):
             from scripts.modular.storage import Store
-            from scripts.modular.machines.primer20k_vexriscv.system import materialize
+            from scripts.modular.machines import part, system_machine
             store=Store(root);system=data['system']
+            materialize = part(system_machine(store, system), 'system').materialize
             path=materialize(store,system,store.build/'work/board-view'/system['digest'])
             v=artifact_identity(path)
             return dict(id=system['digest'],path=str(path),status='pnr-pass' if pnr_passed(v) else 'generated',

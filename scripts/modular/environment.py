@@ -7,8 +7,6 @@ import subprocess
 import sys
 import hashlib
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.modular.storage import ROOT, file_hash, read
 

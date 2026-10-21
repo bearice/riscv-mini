@@ -16,7 +16,6 @@ import socket
 import struct
 import subprocess
 import time
-from pathlib import Path
 import serial
 from scripts.primer20k_vexriscv.audio_capture import record, analyze
 from tools.boot_session import BootSession

@@ -8,7 +8,6 @@ import json
 import shutil
 import subprocess
 import uuid
-from pathlib import Path
 from scripts.tools.build_records import ROOT, INPUT_DIRS, git, write_json
 
 

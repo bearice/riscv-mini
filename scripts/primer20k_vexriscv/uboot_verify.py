@@ -11,7 +11,6 @@ from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 
 import argparse,concurrent.futures,json,re,sys,time,zlib,hashlib
-from pathlib import Path
 import serial
 from scripts.primer20k_vexriscv.bios_tftp import PayloadServer
 from tools.boot_session import BootSession

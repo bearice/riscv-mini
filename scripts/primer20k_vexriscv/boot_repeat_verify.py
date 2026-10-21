@@ -10,7 +10,6 @@ import argparse
 import hashlib
 import json
 import time
-from pathlib import Path
 import serial
 from tools.boot_session import BootSession
 from scripts.primer20k_vexriscv.boot_upload import program, verified_output

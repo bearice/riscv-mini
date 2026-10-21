@@ -4,6 +4,8 @@ import sys
 import unittest
 import zlib
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
 from scripts.primer20k_vexriscv.boot_image import abi_tag
 from tools.boot_image import HEADER, LOAD, MAX_PAYLOAD, pack_image, unpack_image, packet

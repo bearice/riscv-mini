@@ -3,7 +3,6 @@ from pathlib import Path
 from gateware.machines.primer20k_vexriscv.features import Features
 from gateware.machines.primer20k_vexriscv.config import storage_profile, cpu_configuration, cpu_capabilities, cpu_isa, pll_count
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.modular.storage import canonical, digest
 from scripts.modular.machines.primer20k_vexriscv.cpu import locked_cpu

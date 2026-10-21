@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
 from scripts.tools.build_records import ROOT
 from tools.boot_session import programmer_succeeded

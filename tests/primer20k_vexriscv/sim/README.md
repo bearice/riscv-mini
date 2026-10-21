@@ -98,7 +98,7 @@ wide memory, including byte writes, bypass, abort and reset. These do not
 substitute for Gowin RAM mapping, PnR or board acceptance.
 
 ```powershell
-Get-ChildItem sim/test_*.py | ForEach-Object {
+Get-ChildItem tests/primer20k_vexriscv/sim/test_*.py | ForEach-Object {
     & .venv/Scripts/python.exe $_.FullName
     if ($LASTEXITCODE -ne 0) { throw "Failed: $($_.Name)" }
 }

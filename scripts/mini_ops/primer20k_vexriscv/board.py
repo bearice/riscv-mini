@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
 from scripts.tools.build_records import ROOT, write_json
 from mini_ops.primer20k_vexriscv.artifacts import Build, sha256

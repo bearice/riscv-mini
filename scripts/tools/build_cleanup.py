@@ -7,7 +7,6 @@ import json
 import re
 import shutil
 import subprocess
-from pathlib import Path
 from scripts.modular.storage import write, component_name
 
 COMPONENT = re.compile(r"[0-9a-f]{64}")

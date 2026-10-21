@@ -6,8 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'scripts'))
-import scripts.primer20k_vexriscv.firmware_verify
+from scripts.primer20k_vexriscv import firmware_verify
 
 
 class Port:

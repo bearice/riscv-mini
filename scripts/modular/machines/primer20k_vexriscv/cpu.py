@@ -3,7 +3,6 @@ import re
 import shlex
 from pathlib import Path
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.modular.storage import file_hash, read
 

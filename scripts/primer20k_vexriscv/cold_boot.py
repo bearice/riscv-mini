@@ -6,7 +6,6 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).res
 import argparse
 import json
 import time
-from pathlib import Path
 import serial
 from tools.boot_session import BootSession
 from scripts.primer20k_vexriscv.boot_upload import verified_output

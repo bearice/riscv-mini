@@ -4,10 +4,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.modular.storage import ROOT, Store, Run, read, write
+from scripts.modular import arguments
 from scripts.modular import machines as registry
 
 
@@ -27,8 +26,7 @@ def add_commands(sub):
     release=sub.add_parser('release',help='Export, verify or create a release')
     releases=release.add_subparsers(dest='release_operation',required=True)
     create=releases.add_parser('create',help='Rebuild a clean committed source and archive a formal release')
-    from scripts.mini_ops.primer20k_vexriscv.release import add_arguments as release_arguments
-    release_arguments(create)
+    arguments.release(create)
     cat=sub.add_parser('builds',help='Discover or manage historical catalog artifacts')
     from scripts.mini_ops.catalog import add_arguments as catalog_arguments
     catalog_arguments(cat)
@@ -76,7 +74,7 @@ def perform(args, p):
         catalog(args,p);return 0
     if args.command=='release':
         if args.release_operation=='create':
-            from scripts.mini_ops.primer20k_vexriscv.release import perform as create
+            create = registry.release(registry.PRIMARY, 'perform')
             create(args,p);return 0
         args.command=args.release_operation
     store = Store()
@@ -145,7 +143,7 @@ def perform(args, p):
             if (args.directory/'release.lock.json').is_file():
                 run.finish(release=_system(getattr(args, 'machine', None)).verify_export(args.directory))
             else:
-                from scripts.mini_ops.primer20k_vexriscv.release import verify_bundle
+                verify_bundle = registry.release(registry.PRIMARY, 'verify_bundle')
                 run.finish(release=verify_bundle(args.directory))
         elif args.command == 'reproduce':
             ref = _system(getattr(args, 'machine', None)).import_export(store, args.directory)

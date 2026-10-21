@@ -6,7 +6,6 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).res
 import argparse
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 

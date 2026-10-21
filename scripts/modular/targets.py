@@ -3,7 +3,6 @@ import importlib
 from pathlib import Path
 from types import SimpleNamespace
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.modular import arguments
 from scripts.modular.storage import canonical, digest, read, write
@@ -64,16 +63,17 @@ def execute(store, run, args):
     machine = getattr(args, 'machine', None) or machines.LEGACY
     if machine not in machines.MACHINES:
         raise ValueError('Unknown machine: ' + str(machine))
-    if machine != machines.AE350 and getattr(args, 'pnr_mode', 'full') not in ('auto', 'full'):
-        raise ValueError('--pnr-mode requires --machine mega138k_ae350')
+    if machine == machines.PRIMARY and getattr(args, 'pnr_mode', 'full') not in ('auto', 'full'):
+        raise ValueError('--pnr-mode requires --machine ' + machines.AE350)
     if getattr(args, 'pnr_mode', 'full') not in ('auto', 'full') and not args.synthesize:
         raise ValueError('--pnr-mode requires --synthesize')
-    if machine == machines.AE350:
+    if machine != machines.PRIMARY:
         return machines.execute(store, run, args, dry)
     if getattr(args, 'reference_root', None):
-        raise ValueError('--reference-root requires --machine mega138k_ae350')
+        raise ValueError('--reference-root requires --machine ' + machines.AE350)
     if args.target == 'machine-description':
-        raise ValueError('P0 machine-description requires --machine mega138k_ae350; 20K uses its existing soc-description')
+        raise ValueError('P0 machine-description requires --machine ' + machines.AE350
+                         + '; 20K uses its existing soc-description')
     if args.target=='cpu' and not args.generate:
         generator_options=('vexriscv_source','java','sbt_launch','locked_config','relaxed_pc_calculation',
                            'compressed','pipelined_fetch','arithmetic_matrix')
@@ -196,6 +196,7 @@ def output_view(store,run,args,ref):
         import shutil
         shutil.copytree(store.path(ref),args.output_dir.resolve(),dirs_exist_ok=True)
         run.result['output_dir']=str(args.output_dir.resolve());run.save();return
+    machine = machines.system_machine(store, ref)
     materialize = machines.part(machine, 'system').materialize
     from scripts.tools.build_records import source_identity, register, now, write_json
     from scripts.tools.build_recipe import create_recipe
@@ -205,8 +206,9 @@ def output_view(store,run,args,ref):
     # to their historical checkout and are never rewritten to today's flags.
     v=read(output/'validation.json')
     cpu=Path(v['cpu_verilog']) if v.get('cpu_verilog') else None
-    argv=configuration.configuration_arguments(v,args.source or store.root/'firmware/bios/main.c',cpu,'reproduced',
-                                               synthesize=v.get('synthesis_requested',False))
+    argv=machines.part(machine, 'configuration').configuration_arguments(
+        v,args.source or store.root/'firmware/bios/main.c',cpu,'reproduced',
+        synthesize=v.get('synthesis_requested',False))
     source['recipe']=str(create_recipe(output,source,argv,cpu,root=store.root,entrypoint='scripts/mini.py'))
     record=register(output,'build',source,root=store.root)
     write_json(output/'build-info.json',dict(id=record['id'],status=record['status'],source=source))

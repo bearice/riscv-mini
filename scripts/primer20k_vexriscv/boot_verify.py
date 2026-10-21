@@ -8,10 +8,8 @@ import hashlib
 import json
 import re
 import struct
-import sys
 import time
 import zlib
-from pathlib import Path
 import serial
 from tools.boot_image import HEADER, LOAD, pack_image, packet, unpack_image
 from tools.boot_session import BootSession

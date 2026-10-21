@@ -7,7 +7,6 @@ import struct
 import urllib.request
 from pathlib import Path
 import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.builders.linux import ROOT, wsl_path
 

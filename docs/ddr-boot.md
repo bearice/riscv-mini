@@ -10,7 +10,7 @@ CPU 从 8 KiB ROM 或 Flash XIP 启动。复位时共享 L2 把现有数据 RAM 
 
 对两个 byte lane 分别遍历四种 bitslip、256 个 delay setting，每个 setting 检查三个训练种子 42/84/36。读数据必须同时满足两相 DFI valid、该 lane 的数据比较和 burst detect。选取最大连续通过窗口的中点，要求窗口至少四个 setting，并复验。失败最多重新初始化三次；串口输出 lane 的 tap/bitslip/window、最新捕获状态，最终失败后保持控制器隔离，不访问未训练 DDR。
 
-训练 scratch 为 bank0/row0/column0，与启动栈窗口分离。PHY DLL、时钟停止与复位逻辑仍由硬件实现；[`gateware/machines/primer20k_vexriscv/ddr_boot.py`](../gateware/ddr_boot.py) 只提供单周期命令、调节脉冲、固定测试 pattern 和读结果捕获，不含训练扫描 FSM。LiteDRAM controller/crossbar 在 handover 前保持复位。ROM 在开始串口输出前等待 2 ms，让 PHY 启动的短暂 sys 时钟停止/复位结束。
+训练 scratch 为 bank0/row0/column0，与启动栈窗口分离。PHY DLL、时钟停止与复位逻辑仍由硬件实现；[`gateware/machines/primer20k_vexriscv/ddr_boot.py`](../gateware/machines/primer20k_vexriscv/ddr_boot.py) 只提供单周期命令、调节脉冲、固定测试 pattern 和读结果捕获，不含训练扫描 FSM。LiteDRAM controller/crossbar 在 handover 前保持复位。ROM 在开始串口输出前等待 2 ms，让 PHY 启动的短暂 sys 时钟停止/复位结束。
 
 ## CSR 与诊断
 

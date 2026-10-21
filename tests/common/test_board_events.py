@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / 'scripts' / 'tests'))
+sys.path.insert(0, str(ROOT / 'tests' / 'mega138k_ae350'))
 
 from migen import Signal
 from migen.sim import run_simulation

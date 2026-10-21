@@ -7,8 +7,6 @@ import tempfile
 from pathlib import Path
 from gateware.machines.primer20k_vexriscv.features import Features
 from gateware.machines.primer20k_vexriscv.memory_map import c_header
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.tools.boot_image import pack_image
 from scripts.modular.machines.primer20k_vexriscv.rtl import generate_csr

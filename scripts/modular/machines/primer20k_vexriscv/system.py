@@ -4,8 +4,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.primer20k_vexriscv.boot_image import abi_tag
 from scripts.tools.boot_image import unpack_image
