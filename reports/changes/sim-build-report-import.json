@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-10-21T09:18:34+00:00",
+  "title": "sim: repair stale pnr_report import in test_build_report",
+  "changes": [
+    "test_build_report imported pnr_report from the removed scripts.build module and failed at HEAD 5acca4d; point it at scripts.modular.rtl where pnr_report now lives, restoring a green host baseline before the reorg stage-0 record."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 20,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests\\workflow_test.py",
+      "--report",
+      "build/reports/checks/sim-build-report-import.json"
+    ],
+    "source_inputs_sha256": "50ef44819d91688e8d426a7c84e5930b1018b71c62fb3f400d6b45c969b6e29f"
+  },
+  "mode": "staged review",
+  "base_revision": "5acca4d130d36fd845d776e447d11ce2f4b9730c",
+  "source_revision": null
+}

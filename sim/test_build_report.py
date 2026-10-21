@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from scripts.build import pnr_report
+from scripts.modular.rtl import pnr_report
 
 # Resource rows captured from the M9 Gowin V1.9.11.02 routed report.
 RESOURCES='''
