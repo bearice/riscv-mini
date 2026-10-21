@@ -1,6 +1,6 @@
 # AE350 后续平台路线
 
-当前平台以厂商 ITCM 启动、硬核 ILM/DLM 和零基址 DDR 为基础。旧 P0/P1 过程说明、fabric ROM/SRAM 监视器和临时调试入口已退役；历史实现见 snapshot commit。当前交付依据为[内存验证合同](ae350-memory-validation.md)、[平台操作](ae350-platform.md)与[最终验收报告](../reports/ae350-p2.md)。P3 的板测记录写在该节末尾；P4 及以后尚未实现。
+当前平台以厂商 ITCM 启动、硬核 ILM/DLM 和零基址 DDR 为基础。旧 P0/P1 过程说明、fabric ROM/SRAM 监视器和临时调试入口已退役；历史实现见 snapshot commit。当前交付依据为[内存验证合同](ae350-memory-validation.md)、[平台操作](ae350-platform.md)与[最终验收报告](../reports/ae350-p2.md)。P3 的板测记录写在该节末尾。P4 的实现和仍开着的板级门禁见 [板级 I/O](ae350-io.md)。
 
 ### P3：互连、硬核DMAC与缓存所有权（当前运行点完成）
 
@@ -23,16 +23,13 @@ P3是进入任何正式DMA外设的门槛，不因GPIO或CPU memcpy可用就跳�
 
 位流 `d6a32f5add1b` 的原始验收回执为 `build/runs/20261020T080229355702Z-board-ae350-p3-suite`，只编程 FPGA SRAM。最终结果和未验收范围统一见 [DMA 验收](../reports/ae350-dma.md)，不以通用上传成功替代套件通过。
 
-### P4：共享外设模块与基本BSP
+### P4：共享外设模块与基本 BSP（约定范围完成）
 
-交付：硬GPIO的BSP/driver Adapter、必要事件逻辑及可复用WS2812核心，板级输入/输出映射；最小HAL命令行。硬GPIO满足需求时，不强制实例化旧软GPIO来证明共享。
+最终合同见[板级 I/O](ae350-io.md)，身份、回执和性能见[验收报告](../reports/performance/ae350-board-io.md)。当前候选 `44405c059cf8` 已通过共享核心与 20K Adapter 回归、PLIC 到 CPU ISR、硬 GPIO 输入、板级 LED 和事件页、WS2812 数字合同、DMA/CPU DDR/IRQ 并发、完整 STA 及三轮性能对照。
 
-通过：
+普通输出使用板级逻辑寄存器，当前硬 GPIO IOPORT 未启用，不称 LED 经硬 GPIO 输出。软件和 RTL 的映射由板级描述生成。灯、按键和颜色保留用户此前的物理确认记录，与本次自动数字回执分开。诊断载荷、结果合同及 CLI 使用功能命名，后续持续复用。
 
-- 20K Adapter原有寄存器/事件语义回归通过；138K硬GPIO按HAL功能适配，WS2812/确有必要的事件模块不复制第二份状态机。
-- LED逐灯、按键逐键按下/释放、去抖/IRQ清除无残留；WS2812红绿蓝和reset时序检查通过。
-- 不存在的开关/设备返回明确能力或unsupported，禁止伪造20K接口读数；新GPIO电压/有效电平与原理图一致。
-- 每个新增MMIO/IRQ实例可由机器描述生成软件绑定，驱动不硬编码板脚/PLIC source。
+风扇调速、停转和硬件修改按用户要求暂缓，不阻塞约定范围的 P4 交付。实验栅极接口保留，默认持续供电，示例不再修改它；不签为可用调速功能。仅写 SRAM，不改 Flash/current。下一阶段实时 DMA 外设仍须先闭合忙通道保护和硬件错误传播。
 
 ### P5：audio与mic，验证第一条实时DMA链
 

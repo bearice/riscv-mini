@@ -191,5 +191,56 @@
     "TangPrimer-138K/docs/02_Schematic",
     "TangPrimer-138K/example/ae350_customized_demo",
     "docs/ae350-migration-stages.md"
-  ]
+  ],
+  "user_io": {
+    "status": "published-digital-binding; physical observation is a separate gate",
+    "leds": [
+      {"index": 0, "name": "USR_LED0", "pin": "J14", "gpio_bit": 0, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
+      {"index": 1, "name": "USR_LED1", "pin": "R26", "gpio_bit": 1, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
+      {"index": 2, "name": "USR_LED2", "pin": "L20", "gpio_bit": 2, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
+      {"index": 3, "name": "USR_LED3", "pin": "M25", "gpio_bit": 3, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
+      {"index": 4, "name": "USR_LED4", "pin": "N21", "gpio_bit": 4, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
+      {"index": 5, "name": "USR_LED5", "pin": "N23", "gpio_bit": 5, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"}
+    ],
+    "buttons": [
+      {"index": 0, "name": "USR_KEY0", "pin": "K16", "gpio_bit": 8, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5},
+      {"index": 1, "name": "USR_KEY1", "pin": "F15", "gpio_bit": 9, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5},
+      {"index": 2, "name": "USR_KEY2", "pin": "G15", "gpio_bit": 10, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5},
+      {"index": 3, "name": "USR_KEY3", "pin": "G16", "gpio_bit": 11, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5}
+    ],
+    "switches": [],
+    "ws2812": {
+      "present": true,
+      "wired": true,
+      "device": "WS2812B-2020",
+      "pin": "H16",
+      "io_standard": "LVCMOS33",
+      "bank_vccio": 3.3,
+      "supply": "5V",
+      "shares": "aRGB strip connector",
+      "physical_display": "unverified",
+      "note": "Dock schematic places WS2812B-2020 on the peripheral sheet and the published pin is H16. The FPGA pad is 3.3 V; the LED supply in the schematic is 5 V. Waveform acceptance is separate from looking at the LED."
+    },
+    "gpio_inject_bit": 16,
+    "protected_pins": {
+      "H10": "FPGA JTAG TDI",
+      "H11": "FPGA JTAG TMS",
+      "H12": "FPGA JTAG TCK",
+      "J10": "FPGA JTAG TDO",
+      "W10": "configuration DONE",
+      "V11": "configuration READY",
+      "T17": "fan PWM, already driven",
+      "T18": "fan tachometer input"
+    },
+    "not_published": [
+      "U4 is the core reset and is also labeled USR_KEY on the SOM sheet; it is not a button",
+      "N22 is a SOM LED net and is not one of the six dock user LEDs",
+      "core T7/T8 button nets are not the four dock user buttons"
+    ],
+    "evidence": [
+      "Dock 4071f peripheral sheet: USR_LED[0..5], USR_KEY[0..3], WS2812B-2020",
+      "LiteX sipeed_tang_mega_138k_pro led_n and TangMega138KProDock btn_n/led_ws2812",
+      "J3 connector map: button 0..3 = K16 F15 G15 G16, matching the dock CST KEY pins"
+    ]
+  }
 }

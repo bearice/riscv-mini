@@ -1,6 +1,6 @@
 # AE350 DMA 服务
 
-P3 在 sys 80 MHz、数据口 100 MHz、DDR CK 400 MHz 完成轮询式硬核 DMAC 功能交付。P4 尚未开始。频率扫描暂停，完整 PLIC→CPU 中断服务和专用 fabric reader 未验收。最终证据见 [DMA 验收](../reports/ae350-dma.md)。
+硬核 DMAC 在 sys 80 MHz、数据口 100 MHz、DDR CK 400 MHz 完成轮询式功能交付。后续板级 I/O 已验证 GPIO/fabric PLIC→CPU 中断服务，见[板级 I/O](ae350-io.md)；DMAC 自身的 CPU ISR 和专用 fabric reader 仍未验收。频率扫描暂停。DMA 服务证据见 [DMA 验收](../reports/ae350-dma.md)。
 
 公共实现位于 `firmware/ae350/dma/ae350_dma.c` 与头文件。应用通过设备表绑定完整 device/ABI、MMIO 和 IRQ 页身份，提交前校验能力、范围、地址模式及宽度。支持 byte/halfword/word；更宽访问返回 WIDTH。支持 DDR 端点和 loopback 的固定地址握手，不开放任意 MMIO。
 

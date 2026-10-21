@@ -39,6 +39,8 @@ timer0 保留原来的自由运行计数，为既有驱动提供 32 位 tick 超
 
 按键事件为两个 **合并位掩码**，`hal_buttons_take()` 取走按下和释放标志；同一按键在主循环处理前多次变化会合并，不承诺计数队列。硬件 W1C 清除事件，同周期的新边沿优先保留。长按不反复产生 pressed；没有自动 repeat。
 
+`hal_buttons_read()`、`hal_switches_read()` 和 `hal_leds_set()` 保持原有调用。新的查询接口在设备未编译进来时返回 `HAL_UNSUPPORTED`，并且不写调用者的输出。`hal_leds_update()` 拒绝 6 位以外的掩码，拒绝时不改灯。138K 的灯、键和中断不走这组 20K 引脚，见 [AE350 板级 I/O](ae350-io.md)。
+
 WS2812B 所有时序由 sys 状态机完成：每 bit 75 周期 = 1.25 µs，0 高 24 周期 = 400 ns，1 高 48 周期 = 800 ns，发送前初始低和发送后 latch 均至少 18000 周期 = 300 µs。颜色在提交时锁存，之后修改颜色寄存器不会改变正在发送的帧。无需新 PLL。
 
 `hal_phys_reset(hold_ms)` 先停止Ethernet IRQ/MAC和USB Host/DMA，取消旧packet-slot和USB队列所有权，把F10拉低至少10 ms，释放50 ms后重新初始化Ethernet与USB。HAL_OK表示公共复位动作完成，设备初始化结果由 `hal_eth_get_info()` / `hal_usb_get_info()` 查询。它同时复位Ethernet/USB PHY，不控制VBUS。`hal_usb_init()` 的单独重启用STP退出PHY串行模式，保持F10释放，不中断Ethernet。

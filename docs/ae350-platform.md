@@ -1,6 +1,6 @@
 # AE350 平台启动与内存操作
 
-硬核 DMAC 的公共 API、通道/缓存所有权限制及 `board dma-suite` 入口见 [DMA 服务](ae350-dma.md)。P3 在当前 80/100/400 MHz 运行点完成轮询式功能交付；PLIC 到 CPU 中断服务未验收。
+硬核 DMAC 的公共 API、通道/缓存所有权限制及 `board dma-suite` 入口见 [DMA 服务](ae350-dma.md)。当前 80/100/400 MHz 运行点已完成轮询式 DMA 和[板级 I/O](ae350-io.md)交付；GPIO/fabric 的 PLIC 到 CPU ISR 已验收，DMAC 自身的 CPU ISR 尚未验收。
 
 准确候选和证据见[最终验收报告](../reports/ae350-p2.md)，回归范围见[内存验证合同](ae350-memory-validation.md)。
 

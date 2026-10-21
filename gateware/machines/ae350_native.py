@@ -105,6 +105,9 @@ class NativeAE350(LiteXModule):
         self.ahb_ram = ahb_ram = AHBInterface(data_width=64, address_width=32)
         ahb_exts = AHBInterface(data_width=32, address_width=32)
         self.interrupt = Signal(16)
+        self.gpio_in = Signal(32)
+        self.gpio_out = Signal(32)
+        self.gpio_oe = Signal(32)
         if wrapper:
             # The vendor-delivered ``RiscV_AE350_SOC_Top`` wrapper around the
             # hard macro.  Its feature set comes from riscv_ae350_config.v.
@@ -144,9 +147,9 @@ class NativeAE350(LiteXModule):
                 o_UART2_DTRN     = Open(),
                 o_UART2_OUT1N    = Open(),
                 o_UART2_OUT2N    = Open(),
-                i_GPIO_IN        = Constant(0, 32),
-                o_GPIO_OE        = Open(32),
-                o_GPIO_OUT       = Open(32),
+                i_GPIO_IN        = self.gpio_in,
+                o_GPIO_OE        = self.gpio_oe,
+                o_GPIO_OUT       = self.gpio_out,
                 i_TCK_IN         = 1,
                 i_TMS_IN         = 1,
                 i_TRST_IN        = 1,
@@ -279,9 +282,9 @@ class NativeAE350(LiteXModule):
             o_DDR_HWRITE     = ahb_ram.write,
 
             # GPIOs.
-            i_GPIO_IN        = Constant(0, 32),
-            o_GPIO_OUT       = Open(32),
-            o_GPIO_OE        = Open(32),
+            i_GPIO_IN        = self.gpio_in,
+            o_GPIO_OUT       = self.gpio_out,
+            o_GPIO_OE        = self.gpio_oe,
 
             # SCAN.
             i_SCAN_EN        = 0,

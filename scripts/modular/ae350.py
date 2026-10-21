@@ -19,12 +19,18 @@ def _inputs(store, hardware=False, profile='ddr'):
     files = {'inputs/source/' + name: store.root / name for name in names}
     name = 'gateware/machines/ae350_map.py'
     files['inputs/source/' + name] = store.root / name
+    files['inputs/source/gateware/io_map.py'] = store.root / 'gateware/io_map.py'
+    files['inputs/source/gateware/boards/mega138k_pro/board.json'] = (
+        store.root / 'gateware/boards/mega138k_pro/board.json')
     trees = [BOOTLOADER]
     for tree in trees:
         for path in sorted((store.root / tree).iterdir()):
             if path.is_file():
                 files['inputs/source/' + path.relative_to(store.root).as_posix()] = path
     if hardware:
+        for path in sorted((store.root / 'gateware').glob('*.py')):
+            name = path.relative_to(store.root).as_posix()
+            files['inputs/source/' + name] = path
         for path in sorted((store.root / 'gateware/machines').glob('*.py')):
             name = path.relative_to(store.root).as_posix()
             files['inputs/source/' + name] = path
@@ -243,7 +249,8 @@ def payload(store, run, cpu, args, profile, plan=False):
     for path in sorted(runtime.iterdir()):
         if path.is_file():
             files['inputs/payload/runtime/' + path.name] = path
-    units = ['runtime/start.S', 'runtime/trap.c']
+    units = ['runtime/' + path.name for path in sorted(runtime.iterdir())
+             if path.suffix in ('.c', '.S')]
     source = getattr(args, 'source', None)
     directory = getattr(args, 'source_dir', None)
     if source is not None and directory is not None:
@@ -279,9 +286,12 @@ def payload(store, run, cpu, args, profile, plan=False):
             raise ValueError('Unsupported AE350 helper: ' + helper)
         path = store.root / 'firmware/drivers/string.c'
         project('helper', [path], path.parent, True)
-    if len(units) == 2:
+    if not any(unit.startswith('application/') for unit in units):
         raise ValueError('No application translation units were selected')
     files['inputs/source/gateware/machines/ae350_map.py'] = store.root / 'gateware/machines/ae350_map.py'
+    files['inputs/source/gateware/io_map.py'] = store.root / 'gateware/io_map.py'
+    files['inputs/source/gateware/boards/mega138k_pro/board.json'] = (
+        store.root / 'gateware/boards/mega138k_pro/board.json')
     hashes = {name: file_hash(path) for name, path in files.items()}
     env = discover(ROLES, store.root)
     optimize = getattr(args, 'optimize', '-Os')
@@ -321,6 +331,7 @@ def payload(store, run, cpu, args, profile, plan=False):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(path.read_bytes())
         flags += ['-I' + str(staged / 'application')]
+        flags += ['-I' + str(staged / 'runtime')]
         flags += ['-I' + str(staged / ('include%d' % i)) for i in range(len(getattr(args, 'include_dir', [])))]
         ninja_build(work, [staged / name for name in units], flags, env, 'payload',
                     linker=staged / 'runtime/link.ld', run=run, root=store.root)

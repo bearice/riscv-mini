@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-10-21T03:13:40+00:00",
+  "title": "AE350 reusable board I/O and interrupt services",
+  "changes": [
+    "Share debounce and WS2812 cores across 20K and AE350 adapters, generate board bindings, provide GPIO/PLIC services and a reusable digital I/O suite. Qualify the current 80/100/400 MHz candidate with DDR/DMA overlap and performance evidence. Keep fan control outside acceptance and remove fan writes from the demonstration; retain physical observation and temperature accuracy boundaries."
+  ],
+  "build": {
+    "id": "44405c059cf8b49a5944652f0b676294242b06cd2e07931ca11028fc73033289",
+    "kind": "modular",
+    "artifact": {
+      "component": "gateware",
+      "digest": "44405c059cf8b49a5944652f0b676294242b06cd2e07931ca11028fc73033289"
+    },
+    "payload_artifact": {
+      "component": "payload",
+      "digest": "8341de2d9535a3db6833563c0be5f1a915de66ca2a55ed22483fae6667c2a6ae"
+    },
+    "status": "board-qualified",
+    "path": "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\store\\gateware\\44405c059cf8b49a5944652f0b676294242b06cd2e07931ca11028fc73033289",
+    "evidence": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\build\\runs\\20261021T030550637509Z-board-ae350-ddr-suite\\result.json"
+    ],
+    "bitstream_sha256": "b9489058187b53c10f7694ee5cc690c04195730d2b63ed67fd04c0501836668e",
+    "payload_sha256": "0d48edfb8a47ea90358fd24d03f81ddac2223333011ac0cba35e2a559db100d4",
+    "source": {
+      "commit": "63db62bd990b57b67f306901ea9752d835d61ec9",
+      "dirty": true,
+      "inputs_sha256": "ab11578942ba22a484e8fb2256312a8994fa87fa7b278088aa268e5f471e1641",
+      "kind": "modular-captured"
+    }
+  },
+  "performance_report": "reports\\performance\\ae350-board-io.md",
+  "checks": {
+    "passed": true,
+    "tests_run": 20,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests/workflow_test.py",
+      "--report",
+      "build/reports/checks/workflow.json"
+    ],
+    "source_inputs_sha256": "ab11578942ba22a484e8fb2256312a8994fa87fa7b278088aa268e5f471e1641"
+  },
+  "mode": "staged review",
+  "base_revision": "63db62bd990b57b67f306901ea9752d835d61ec9",
+  "source_revision": null
+}

@@ -17,16 +17,23 @@ import os
 from pathlib import Path
 
 from migen import *
+from migen.fhdl.specials import Tristate
 from migen.genlib.resetsync import AsyncResetSynchronizer
 from migen.genlib.cdc import MultiReg, BusSynchronizer
 from litex.gen import LiteXModule, Open
 from litex.build.generic_platform import Pins, IOStandard, Subsignal, Misc
+from litex.build.gowin.common import gowin_special_overrides
 from litex.build.gowin.platform import GowinPlatform
 from litex.soc.interconnect.ahb import AHBInterface
 
 from .ae350_native import NativeAE350
 from .ae350_interconnect import MemInterconnect, ErrorSlave
-from .ae350_platform import Ae350Platform
+from .ae350_platform import Ae350Platform, AckCatch, GowinAckCatch
+from gateware.board_sense import TempAdc, GowinTempAdc
+
+gowin_special_overrides[AckCatch] = GowinAckCatch
+gowin_special_overrides[TempAdc] = GowinTempAdc
+from gateware import io_map
 from . import ae350_map
 from .ae350_clock import ClockReset
 from .ddr3_ahb import DDR3UI, DDR3AHB
@@ -147,11 +154,26 @@ class GowinDDR3(LiteXModule):
         ])
 
 
+def _user_io():
+    """Pins come from the machine description. LEDs are tristated until OE."""
+    io_map.require()
+    rows = []
+    for led in io_map.leds():
+        rows.append(('user_led', led['index'], Pins(led['pin']), IOStandard(led['io_standard'])))
+    for button in io_map.buttons():
+        rows.append(('user_button', button['index'], Pins(button['pin']),
+                     IOStandard(button['io_standard']), Misc('PULL_MODE=UP')))
+    ws = io_map.ws2812()
+    rows.append(('ws2812', 0, Pins(ws['pin']), IOStandard(ws['io_standard'])))
+    return rows
+
+
 class DDRSoC(LiteXModule):
     def __init__(self, board, soc_sources_dir=None):
         self.ddr_ip_dir = DDR_IP_DIR
         self.ddr_ck_hz = 400e6
         ae350_map.require()
+        io_map.require()
         resources = board['resources']
         uart = resources['debug_uart']
         jtag = resources['cpu_jtag']
@@ -163,14 +185,16 @@ class DDRSoC(LiteXModule):
              Subsignal('tms', Pins(jtag['tms']['pin']), Misc('PULL_MODE=UP')),
              Subsignal('tdi', Pins(jtag['tdi']['pin']), Misc('PULL_MODE=UP')),
              Subsignal('tdo', Pins(jtag['tdo']['pin'])), IOStandard(jtag['io_standard'])),
-            ('fan_pwm', 0, Pins('T18'), IOStandard('LVCMOS33')),
-        ] + _ddr3_io()
+            ('fan_pwm', 0, Pins('T17'), IOStandard('LVCMOS33')),
+            ('fan_tach', 0, Pins('T18'), IOStandard('LVCMOS33')),
+        ] + _ddr3_io() + _user_io()
         platform = GowinPlatform(board['reference_part'], io, devicename=board['reference_device'])
         ip_dir = self.ddr_ip_dir
         platform.add_source(os.path.join(ip_dir, 'gowin_pll_ddr3.v'))
         platform.add_source(os.path.join(ip_dir, 'ddr3_memory_interface.v'))
+        # SUG1220: the 80/100 MHz fabric paths close by tens of picoseconds.
         platform.toolchain.options.update(use_cpu_as_gpio=1, use_mspi_as_gpio=1, use_sspi_as_gpio=1,
-                                          place_option=2, route_option=2)
+                                          timing_driven=1, place_option=2, route_option=2)
         platform.default_clk_name = 'clk50'
         platform.default_clk_period = 20
         self.platform = platform
@@ -311,6 +335,16 @@ class DDRSoC(LiteXModule):
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
         # Not self.platform: that attribute is the Gowin board platform.
         self.ext = Ae350Platform(self.cpu, registers)
+        self.comb += self.cpu.gpio_in.eq(self.ext.board.gpio_pin)
+        for led in io_map.leds():
+            pad = platform.request('user_led', led['index'])
+            driven = 0 if led['active_low'] else 1
+            self.specials += Tristate(pad, driven, self.ext.board.leds[led['index']])
+        for button in io_map.buttons():
+            pad = platform.request('user_button', button['index'])
+            level = ~pad if button['active_low'] else pad
+            self.comb += self.ext.board.button_async[button['index']].eq(level)
+        self.comb += platform.request('ws2812').eq(self.ext.board.ws_pad)
 
         serial = platform.request('serial')
         self.cpu.cpu_params.update(i_UART2_RXD=serial.rx, o_UART2_TXD=serial.tx,
@@ -328,7 +362,8 @@ class DDRSoC(LiteXModule):
         platform.add_verilog_include_path(str(soc_sources_dir))
         self.cpu.connect_jtag(platform.request('cpu_jtag'))
         platform.add_period_constraint(platform.lookup_request('cpu_jtag').tck, 10000)
-        self.comb += platform.request('fan_pwm').eq(1)
+        self.specials += Tristate(platform.request('fan_pwm'), 0, self.ext.sense.pull)
+        self.comb += self.ext.sense.tach.eq(platform.request('fan_tach'))
 
         # Extra timing constraints the LiteX backend cannot express:
         # the DDR user clock and memory clock are unrelated to the fabric clocks.

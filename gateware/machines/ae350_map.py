@@ -32,6 +32,26 @@ SYSINFO_BASE = CSR_BASE
 IRQ_BASE = CSR_BASE + 0x2000
 DDR_CSR_BASE = CSR_BASE + 0x3000  # platform DDR diagnostics page, not SYSINFO
 DMA_SVC_BASE = CSR_BASE + 0x4000
+SENSE_BASE = CSR_BASE + 0x7000  # fan PWM and die temperature; first 4 KiB only
+# Peripheral slots from the address contract. Only the first 4 KiB of each
+# 64 KiB reservation is implemented; the rest of the extended APB window
+# still returns an error.
+WS2812_BASE = 0xF8070000
+IO_BASE = 0xF8080000
+GPIO_BASE = 0xF0700000
+PLIC_BASE = 0xE4000000
+PLIC_CLAIM = PLIC_BASE + 0x200004
+PLIC_ENABLE = PLIC_BASE + 0x2000
+PLIC_PENDING = PLIC_BASE + 0x1000
+PLIC_THRESHOLD = PLIC_BASE + 0x200000
+# Andes ATCGPIO100 product field in IDREV[31:12]. A different value is a
+# failed identity check, not a silent accept.
+GPIO_ID_PRODUCT = 0x02031
+# Andes AE350 BSP numbers GPIO as PLIC source 7. The fabric wire is
+# EXT_INT[7]; its PLIC source is unpublished until a board claim records it.
+PLIC_GPIO_SOURCE = 7
+PLIC_FABRIC_IO_SOURCE = 0
+EXT_INT_IO = 7
 EXT_AHB_BASE = 0xE8000000
 EXT_AHB_SIZE = 128 << 20
 LOOPBACK_DATA = 0xE8050000
@@ -51,11 +71,44 @@ CAP_EXT_IRQ = 2
 CAP_DMA_REQ = 4
 CAP_FABRIC_READER = 8
 CAP_DMAC_DECLARED = 16
+CAP_BOARD_IO = 32
+CAP_WS2812 = 64
+CAP_SENSE = 128
 FLAG_PRESENT = 1
 FLAG_DATA = 2
 FLAG_DMA = 4
 FLAG_IRQ = 8
-SYSINFO_CAP = CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED
+SYSINFO_CAP = (CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED |
+               CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE)
+WS2812_ID = 0xAE350301
+IO_ID = 0xAE350302
+WS2812_CAP = 3  # wired controller present
+IO_CAP = 7  # debounced events, diagnostic edge, GPIO inject bit
+SENSE_ID = 0xAE350303
+SENSE_CAP = 3  # fan PWM duty and one die-temperature sample
+# Counts, bit masks and the inject bit are the machine description, not a
+# second copy of the pin list. ae350_map.require() refuses a description
+# that does not match these generated values.
+def _gpio_contract():
+    from gateware import io_map
+    io_map.require()
+    return io_map.gpio_binding()
+
+
+_GPIO = _gpio_contract()
+GPIO_LED_COUNT = _GPIO['led_count']
+GPIO_BUTTON_COUNT = _GPIO['button_count']
+GPIO_LED_BIT = _GPIO['led_bit']
+GPIO_BUTTON_BIT = _GPIO['button_bit']
+GPIO_INJECT_BIT = _GPIO['inject_bit']
+GPIO_LED_MASK = _GPIO['led_mask']
+GPIO_BUTTON_MASK = _GPIO['button_mask']
+GPIO_IRQ_MASK = _GPIO['irq_mask']
+# Synchronous exceptions are recorded here, outside the 32-word suite block.
+# An interrupt that returns with mret leaves mcause intact; this record stays 0.
+TRAP_RECORD = 0xA0
+TRAP_RECORD_WORDS = 5
+ERR_BUSY = 1
 DMA_SVC_CAP = CAP_LOOPBACK | CAP_DMA_REQ
 REQ_MAP = 0x00000100  # TX uses DMA_REQ[0], RX uses DMA_REQ[1]
 LOOPBACK_EP = (
@@ -64,6 +117,16 @@ LOOPBACK_EP = (
 DMAC_EP = (
     DMAC_ID, DMAC_BASE, 0, 0, 0, 0,
     0xff | (0xff << 8) | (FLAG_PRESENT << 16), 0)
+WS2812_EP = (
+    WS2812_ID, WS2812_BASE, 0x1000, 0, 0, ABI_VERSION,
+    0 | (0 << 8) | ((FLAG_PRESENT | FLAG_IRQ) << 16), 0)
+IO_EP = (
+    IO_ID, IO_BASE, 0x1000, 0, 0, ABI_VERSION,
+    EXT_INT_IO | (0 << 8) | ((FLAG_PRESENT | FLAG_IRQ) << 16), 0)
+SENSE_EP = (
+    SENSE_ID, SENSE_BASE, 0x1000, 0, 0, ABI_VERSION,
+    0 | (0 << 8) | (FLAG_PRESENT << 16), 0)
+DEVICE_COUNT = 5
 STATUS_ADDR = DDR_CSR_BASE
 CALIB_CYCLES_ADDR = DDR_CSR_BASE + 4
 READ_COUNT_ADDR = DDR_CSR_BASE + 0x18
@@ -85,6 +148,7 @@ WINDOWS = (
     ('ilm', ILM_BASE, ILM_SIZE, 'hard-local-memory'),
     ('dlm', DLM_BASE, DLM_SIZE, 'hard-local-memory'),
     ('platform-csr', CSR_BASE, CSR_SIZE, 'implemented'),
+    ('periph-csr', 0xF8010000, 0x80000, 'ws2812-and-board-io-pages'),
     ('ext-ahb', EXT_AHB_BASE, EXT_AHB_SIZE, 'loopback-data-word'),
 )
 SUBRANGES = (
@@ -97,19 +161,32 @@ SUBRANGES = (
 )
 
 
-def image_abi():
-    import json
-    import zlib
-    interface = dict(cpu='ae350-rv32imac', image_version=1, load=DDR_CODE,
+def interface():
+    from gateware import io_map
+    binding = io_map.gpio_binding()
+    return dict(cpu='ae350-rv32imac', image_version=1, load=DDR_CODE,
         memories=WINDOWS, reserved=SUBRANGES,
         registers=dict(ddr_status=STATUS_ADDR, calib_cycles=CALIB_CYCLES_ADDR,
                        reads=READ_COUNT_ADDR, writes=WRITE_COUNT_ADDR,
-                       write_trace=WRITE_TRACE_ADDR, read_trace=READ_TRACE_ADDR),
+                       write_trace=WRITE_TRACE_ADDR, read_trace=READ_TRACE_ADDR,
+                       gpio=GPIO_BASE, ws2812=WS2812_BASE, board_io=IO_BASE,
+                       sense=SENSE_BASE, plic=PLIC_BASE),
+        gpio=dict(leds=list(binding['led_bits']), buttons=list(binding['button_bits']),
+                  inject=binding['inject_bit'], irq_mask=binding['irq_mask'],
+                  led_active_low=[int(item) for item in binding['led_active_low']],
+                  button_active_low=[int(item) for item in binding['button_active_low']]),
         loader=dict(max_bytes=DDR_CODE_MAX, stack_top=PAYLOAD_STACK_TOP),
         uart=dict(base=0xf0300000, baud=115200),
         capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1',
-                          dmac='exported-unproven', ext_ahb='loopback', fabric_reader='unsupported'))
-    return zlib.crc32(json.dumps(interface, sort_keys=True, separators=(',', ':')).encode())
+                          dmac='exported-unproven', ext_ahb='loopback', fabric_reader='unsupported',
+                          board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core',
+                          fan='pwm-percent-25khz', temperature='die-quarter-degree'))
+
+
+def image_abi():
+    import json
+    import zlib
+    return zlib.crc32(json.dumps(interface(), sort_keys=True, separators=(',', ':')).encode())
 
 
 def check():
@@ -133,9 +210,36 @@ def check():
     if not EXT_AHB_BASE <= LOOPBACK_DATA < LOOPBACK_DATA + 4 <= EXT_AHB_BASE + EXT_AHB_SIZE:
         errors.append('loopback data word escapes the extended AHB window')
     for name, base in (('sysinfo', SYSINFO_BASE), ('irq', IRQ_BASE),
-                       ('dma-service', DMA_SVC_BASE)):
+                       ('dma-service', DMA_SVC_BASE), ('sense', SENSE_BASE)):
         if not CSR_BASE <= base < base + 0x1000 <= CSR_BASE + CSR_SIZE:
             errors.append(name + ' page escapes the platform CSR window')
+    periph_base, periph_size = 0xF8010000, 0x80000
+    for name, base in (('ws2812', WS2812_BASE), ('board-io', IO_BASE)):
+        if not periph_base <= base < base + 0x1000 <= periph_base + periph_size:
+            errors.append(name + ' page escapes the peripheral CSR window')
+    from gateware import io_map
+    errors.extend(io_map.check())
+    binding = io_map.gpio_binding()
+    expected = {
+        'led count': (GPIO_LED_COUNT, binding['led_count']),
+        'button count': (GPIO_BUTTON_COUNT, binding['button_count']),
+        'led bit': (GPIO_LED_BIT, binding['led_bit']),
+        'button bit': (GPIO_BUTTON_BIT, binding['button_bit']),
+        'inject bit': (GPIO_INJECT_BIT, binding['inject_bit']),
+        'led mask': (GPIO_LED_MASK, binding['led_mask']),
+        'button mask': (GPIO_BUTTON_MASK, binding['button_mask']),
+        'irq mask': (GPIO_IRQ_MASK, binding['irq_mask']),
+    }
+    for name, (have, want) in expected.items():
+        if have != want:
+            errors.append('%s does not match board.json' % name)
+    described = interface()['gpio']
+    if described['leds'] != list(binding['led_bits']) or described['buttons'] != list(binding['button_bits']):
+        errors.append('image ABI gpio binding does not match board.json')
+    if described['led_active_low'] != [int(item) for item in binding['led_active_low']]:
+        errors.append('image ABI led polarity does not match board.json')
+    if described['button_active_low'] != [int(item) for item in binding['button_active_low']]:
+        errors.append('image ABI button polarity does not match board.json')
     return errors
 
 

@@ -1,6 +1,6 @@
 # AE350 物理地址、CSR 与 DMA 规划
 
-更新：2026-10-20。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，删除 fabric 工作 SRAM、JTAG mailbox 和 launcher。唯一实现合同为 `gateware/machines/ae350_map.py`。SYSINFO、IRQ 聚合、DMA 服务页及 0xe8050000 的 loopback 已实现。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 运行点完成轮询式功能验收；完整 PLIC 中断服务未验收。公共 API、缓存所有权及使用限制见 [DMA 服务](ae350-dma.md)，结果见 [DMA 验收](../reports/ae350-dma.md)。其余外设槽仍为规划。这里的 CSR 指外设 MMIO；RISC-V CPU CSR 不属于此地址表。
+更新：2026-10-21。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，无 fabric 工作 SRAM、JTAG mailbox 或 launcher。唯一地址合同为 `gateware/machines/ae350_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](ae350-io.md)。LED 使用板级输出寄存器，硬 GPIO IOPORT 未启用。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](ae350-dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
 
 最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。启动协议见[bootloader](ae350-bootloader.md)。
 
@@ -38,15 +38,16 @@ ROM 保持0x80000000是本项目的启动选择，并非硬核复位向量不可
 | 0xf8004000 | 4KiB | DMA fabric服务：端点能力、握手映射、仲裁QoS/错误；不复制硬DMAC通道寄存器 |
 | 0xf8005000 | 4KiB | 预留调试控制窗口；不建立第二套启动/装载协议 |
 | 0xf8006000 | 4KiB | 性能计数器与一致性快照 |
-| 0xf8007000–0xf800ffff | 36KiB | 平台保留 |
+| 0xf8007000 | 4KiB | 片内温度与实验栅极/测速接口。调速、停转暂缓，默认栅极持续拉低；温度为毫摄氏度 |
+| 0xf8008000–0xf800ffff | 32KiB | 平台保留 |
 | 0xf8010000 | 64KiB | audio TX：格式、时钟、FIFO状态、静音、DMA握手 |
 | 0xf8020000 | 64KiB | mic RX：采样格式、FIFO状态、溢出、DMA握手 |
 | 0xf8030000 | 64KiB | HDMI：模式、像素格式、framebuffer、stride、换帧和欠载 |
 | 0xf8040000 | 64KiB | SD：软控制器CSR、数据/DMA状态 |
 | 0xf8050000 | 64KiB | Ethernet：MAC/MDIO/队列与错误；第三方IP私有寄存器在本槽内定义 |
 | 0xf8060000 | 64KiB | USB：host/设备控制、队列与错误，按实际后端定义 |
-| 0xf8070000 | 64KiB | WS2812及专用波形输出 |
-| 0xf8080000 | 64KiB | 额外fabric I/O/PWM/事件；普通GPIO优先使用硬核0xf0700000 |
+| 0xf8070000 | 64KiB | WS2812 控制器，前 4KiB；数字时序通过，物理观察单独留证 |
+| 0xf8080000 | 64KiB | 板级 LED 输出、按键事件与诊断边沿，前 4KiB；按键电平接硬 GPIO 输入 |
 | 0xf8090000 | 64KiB | Flash/XIP管理：能力、忙状态、地址模式、写擦命令及错误；不作为程序取指地址 |
 | 0xf80a0000–0xfbffffff | 其余空间 | 后续外设保留，不映射为RAM或重复别名 |
 
@@ -92,7 +93,7 @@ SYSINFO设备表发布：device ID/instance、是否存在、CSR与DATA物理基
 
 minor只追加兼容能力/寄存器；移动地址、改变位语义、descriptor/所有权协议改变须提升相应major。构建ID区分二进制身份，ABI版本表达软件合同，二者不可互代。旧20K CSR顺序与LiteX bank编号不继承为新平台ABI。
 
-建议fabric逻辑IRQ分配：0=平台/互连错误，1=HDMI，2=audio，3=mic，4=SD，5=Ethernet，6=USB，7=其他I/O，8–15保留。它们是16路扩展输入的逻辑规划，不是PLIC source ID；真实PLIC映射、优先级、level/edge、ack顺序和硬DMAC中断由BSP/设备表生成并验收。
+建议fabric逻辑IRQ分配：0=平台/互连错误，1=HDMI，2=audio，3=mic，4=SD，5=Ethernet，6=USB，7=其他I/O，8–15保留。它们是16路扩展输入的逻辑规划，不是PLIC source ID。当前 `EXT_INT[0]` 仍是 loopback，`EXT_INT[7]` 是板级事件页。真实 PLIC 映射要由板测核对；GPIO 参考 source 为 7，fabric 源由诊断发现，不在驱动里写死。
 
 ## 6. XIP与Flash地址合同
 

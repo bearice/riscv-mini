@@ -34,6 +34,12 @@ unsigned hal_leds_get(void);
 unsigned hal_buttons_read(void); /* bit0..3 = Key2..5; 1 is pressed */
 unsigned hal_switches_read(void); /* bit0..3 = E9,E8,T4,T5; 1 is ON */
 void hal_buttons_take(unsigned *pressed,unsigned *released); /* coalesced transition masks */
+typedef struct {uint32_t present,leds,buttons,switches,ws2812;} hal_io_info_t;
+/* Capability query. HAL_UNSUPPORTED leaves the outputs untouched. */
+hal_result_t hal_io_get_info(hal_io_info_t *info);
+hal_result_t hal_buttons_query(unsigned *pressed);
+hal_result_t hal_switches_query(unsigned *on);
+hal_result_t hal_leds_update(unsigned mask); /* rejects bits outside the published mask without writing */
 hal_result_t hal_ws2812_set(uint8_t red,uint8_t green,uint8_t blue);
 unsigned hal_ws2812_busy(void);
 /* Single main-loop owner; frames include Ethernet header, exclude preamble/FCS.

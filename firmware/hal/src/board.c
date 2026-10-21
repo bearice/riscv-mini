@@ -83,6 +83,44 @@ unsigned hal_switches_read(void) {return board_io_switches_read();}
 void hal_buttons_take(unsigned *pressed,unsigned *released) {
     unsigned state=hal_irq_save();if(pressed)*pressed=presses;if(released)*released=releases;presses=releases=0;hal_irq_restore(state);
 }
+hal_result_t hal_io_get_info(hal_io_info_t *info) {
+    if(!info)return HAL_INVALID;
+#if MINI_FEATURE_BOARD_IO
+    info->present=1;info->leds=6;info->buttons=4;info->switches=4;
+#if MINI_FEATURE_WS2812
+    info->ws2812=1;
+#else
+    info->ws2812=0;
+#endif
+    return HAL_OK;
+#else
+    return HAL_UNSUPPORTED;
+#endif
+}
+hal_result_t hal_buttons_query(unsigned *pressed) {
+#if MINI_FEATURE_BOARD_IO
+    if(!pressed)return HAL_INVALID;
+    *pressed=board_io_buttons_read();return HAL_OK;
+#else
+    (void)pressed;return HAL_UNSUPPORTED;
+#endif
+}
+hal_result_t hal_switches_query(unsigned *on) {
+#if MINI_FEATURE_BOARD_IO
+    if(!on)return HAL_INVALID;
+    *on=board_io_switches_read();return HAL_OK;
+#else
+    (void)on;return HAL_UNSUPPORTED;
+#endif
+}
+hal_result_t hal_leds_update(unsigned mask) {
+#if MINI_FEATURE_BOARD_IO
+    if(mask&~63u)return HAL_INVALID;
+    board_io_leds_write(mask);return HAL_OK;
+#else
+    (void)mask;return HAL_UNSUPPORTED;
+#endif
+}
 #if MINI_FEATURE_WS2812
 hal_result_t hal_ws2812_set(uint8_t red,uint8_t green,uint8_t blue) {
     if(ws2812_busy_read())return HAL_BUSY;
