@@ -24,6 +24,8 @@ PRIMER20K_CLOSURE = (
     'gateware/devices/gpio/core.py',
     'gateware/devices/microphone/__init__.py',
     'gateware/devices/microphone/core.py',
+    'gateware/devices/video/__init__.py',
+    'gateware/devices/video/core.py',
     'gateware/devices/ws2812/__init__.py',
     'gateware/devices/ws2812/core.py',
     'gateware/machines/primer20k_vexriscv/__init__.py',
