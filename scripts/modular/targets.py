@@ -22,6 +22,10 @@ def add_targets(parser):
         target.add_argument('--output-dir', type=Path, help='Optional output view; default output is managed under build/')
         target.add_argument('--dry-run', action='store_true', help='Resolve a plan without executing build tools')
         target.add_argument('--purpose', default='candidate', help='Purpose recorded with this build request')
+        target.add_argument('--workspace', default='default', help='Reusable work area name; use a different name for independent experiments')
+        if name == 'gateware':
+            target.add_argument('--pnr-mode', choices=('auto', 'full', 'place', 'pnr'), default='full',
+                                help='AE350: full (default), or explicitly reuse successful placement/routing state')
         if name in CORE or name == 'payload':
             target.add_argument('--ae350-profile', choices=('ddr',), default='ddr',
                                 help='AE350 DDR memory platform')
@@ -51,8 +55,14 @@ def add_targets(parser):
 
 
 def execute(store, run, args):
+    from .workspace import workspace_name
+    run.result['workspace'] = workspace_name(getattr(args, 'workspace', 'default'))
     dry = args.command == 'plan' or args.dry_run
     machine = getattr(args, 'machine', None) or machines.LEGACY
+    if machine != machines.AE350 and getattr(args, 'pnr_mode', 'full') not in ('auto', 'full'):
+        raise ValueError('--pnr-mode requires --machine mega138k_ae350')
+    if getattr(args, 'pnr_mode', 'full') not in ('auto', 'full') and not args.synthesize:
+        raise ValueError('--pnr-mode requires --synthesize')
     if machine == machines.AE350:
         return machines.execute(store, run, args, dry)
     if getattr(args, 'reference_root', None):
@@ -114,42 +124,60 @@ def execute(store, run, args):
 
 def backend(store, run, args, dry):
     name='cpu_generator' if args.target=='cpu' else BACKENDS[args.target]
-    output = (args.output_dir or store.build/'work'/args.target/run.id).resolve()
+    from .workspace import location, working
+    machine = getattr(args, 'machine', None) or machines.LEGACY
+    output = (args.output_dir or location(store, run, machine, args.target)).resolve()
     request={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
     run.result.update(target=args.target, output_dir=str(output), resolved_request=request)
     run.save()
     if dry:
         run.step(args.target,'BUILD',reason='resolved backend request; no tools or source downloads executed')
         run.finish(plan=True);return None
-    module=importlib.import_module('scripts.builders.'+name)
-    actual=SimpleNamespace(**vars(args));actual.output_dir=output
-    actual.prepare_only=False;actual.record=False;actual.pack_only=False
-    if args.target=='uboot':
-        actual.without_video=False
-        for flag in args.feature:
-            if flag not in ('video=on','video=off'):raise ValueError('U-Boot supports --feature video=on|off')
-            actual.without_video=flag=='video=off'
-    if args.target in ('opensbi','uboot'):
-        from .system import import_legacy,materialize
-        ref=import_legacy(store,args.hardware,run)
-        view=store.build/'work/hardware-view'/ref['digest']
-        actual.soc_dir=materialize(store,ref,view)
-        run.result['system']=ref
-    output.mkdir(parents=True,exist_ok=True)
-    write(output/'build.lock.json',dict(schema=1,target=args.target,request=request))
-    if args.target=='opensbi':module.COMMANDS.clear()
-    module.build(actual,run=run)
-    if args.target in ('linux','busybox','opensbi'):
-        from .executor import execute
-        roles={'linux':('cc','make','clang','lld','dtc'),
-               'busybox':('cc','make','riscv64-elf-gcc'),
-               'opensbi':('cc','make','clang','lld','dtc')}
-        execute(output/'build.sh', ['--package-only'] if getattr(args,'rootfs_only',False) else (),
-                required=roles[args.target],run=run)
-        actual.record=True;actual.pack_only=True
-        if args.target=='opensbi':module.pack_output(output,actual.osb_name)
-        else:module.build(actual,run=run)
-    run.finish(output_dir=str(output));return None
+    with working(store, run, machine, args.target, digest(request), path=output) as workspace:
+        module=importlib.import_module('scripts.builders.'+name)
+        actual=SimpleNamespace(**vars(args));actual.output_dir=output
+        actual.prepare_only=False;actual.record=False;actual.pack_only=False
+        if args.target=='uboot':
+            actual.without_video=False
+            for flag in args.feature:
+                if flag not in ('video=on','video=off'):raise ValueError('U-Boot supports --feature video=on|off')
+                actual.without_video=flag=='video=off'
+        if args.target in ('opensbi','uboot'):
+            from .system import import_legacy,materialize
+            ref=import_legacy(store,args.hardware,run)
+            view=store.build/'work/hardware-view'/ref['digest']
+            actual.soc_dir=materialize(store,ref,view)
+            run.result['system']=ref
+        output.mkdir(parents=True,exist_ok=True)
+        write(output/'build.lock.json',dict(schema=1,target=args.target,request=request))
+        if args.target=='opensbi':module.COMMANDS.clear()
+        module.build(actual,run=run)
+        if args.target in ('linux','busybox','opensbi'):
+            from .executor import execute
+            roles={'linux':('cc','make','clang','lld','dtc'),
+                   'busybox':('cc','make','riscv64-elf-gcc'),
+                   'opensbi':('cc','make','clang','lld','dtc')}
+            execute(output/'build.sh', ['--package-only'] if getattr(args,'rootfs_only',False) else (),
+                    required=roles[args.target],run=run)
+            actual.record=True;actual.pack_only=True
+            if args.target=='opensbi':module.pack_output(output,actual.osb_name)
+            else:module.build(actual,run=run)
+        # Upstream object/source trees stay mutable; snapshot only their
+        # top-level delivery files after the backend has completed successfully.
+        from .storage import file_hash
+        delivery = {p.name: p for p in output.iterdir() if p.is_file()
+                    and p.name not in ('.lock', 'workspace.json', 'build.ninja')
+                    and not p.name.startswith('.ninja')
+                    and p.suffix not in ('.o', '.d', '.tmp')}
+        config = dict(format='backend-output-snapshot', target=args.target, request=request,
+                      files={name: file_hash(path) for name, path in delivery.items()})
+        files = {'outputs/' + name: path for name, path in delivery.items()}
+        files['backend.lock.json'] = canonical(config)
+        deps = {'system': run.result['system']} if 'system' in run.result else {}
+        artifact = store.publish('backend/' + args.target, digest(config), files, config=config, dependencies=deps)
+        workspace.success(artifact)
+        run.finish(output_dir=str(output), artifact=artifact);return None
+
 
 
 def output_view(store,run,args,ref):

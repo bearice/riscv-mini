@@ -179,10 +179,10 @@ class WorkflowTests(unittest.TestCase):
         b = self.root / 'build/work/b-cache'
         a.mkdir(parents=True); b.mkdir()
         remove = __import__('shutil').rmtree
-        def guarded(path):
+        def guarded(path, **kwargs):
             if path == a:
                 raise PermissionError('fixture access denied')
-            return remove(path)
+            return remove(path, **kwargs)
         with patch('scripts.mini_ops.catalog.shutil.rmtree', side_effect=guarded):
             with self.assertRaisesRegex(RuntimeError, 'retained 1'):
                 clean_build('work', execute=True, root=self.root)

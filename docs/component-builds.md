@@ -61,7 +61,8 @@ python scripts/mini.py build busybox
 | --- | --- |
 | `build/store/<component>/<digest>` | 不可变模块产物、完整输入/flags lock、源码快照、manifest |
 | `build/store/system/<digest>/bundle.lock.json` | 组件引用和完整配置，不复制依赖文件 |
-| `build/work/<component>/<key>` | Ninja、对象文件、depfile、临时输出；可增量或清理 |
+| `build/work/<machine>/<target>/<workspace>` | 稳定工作区；默认 workspace 为 default，保留 Ninja、对象、depfile、厂商工具缓存 |
+| `build/work/replay/<run-id>` | 明确要求冷编译的独立复现工作区 |
 | `build/runs/<run-id>` | kind、请求、计划、结果、日志和测试结果 |
 | `build/index/build-keys` | 输入 key 到产物的可重建索引 |
 | `build/refs` | 现役、基线、候选引用 |
@@ -69,9 +70,38 @@ python scripts/mini.py build busybox
 
 完成产物按内容清单计算 SHA256，文件或 manifest 被修改后复用/导出/恢复均拒绝。同 key 生成不同产物会保留冲突并失败，不覆盖旧结果。输入源码在构建期间变化也会拒绝发布。
 
-当前同一仓库的模块操作使用会话锁，避免构建与清理互相破坏；目标内部 Ninja 并行编译。编译环境过滤隐含的 CFLAGS/GCC_EXEC_PREFIX 等变量，并记录实际工具和库。源码路径和 map 文件中不稳定的本机根目录作规范化处理，以支持不同 checkout 路径下的同平台重放。
+每个稳定工作区持有 OS 文件锁，直到验证和成功归档完成；两个构建不能同时修改同一个工作区。需要独立实验时使用 `--workspace experiment-name`；目标内部 Ninja 仍并行编译。工作区名只选择可变缓存位置，不替代输入摘要或产物身份。编译环境过滤隐含的 CFLAGS/GCC_EXEC_PREFIX 等变量，并记录实际工具和库。源码路径和 map 文件中不稳定的本机根目录作规范化处理，以支持不同 checkout 路径下的同平台重放。
+
+`workspace.json` 记录 running/succeeded/failed、本次 run/input_key 以及最近一次成功产物。失败保留现场与上次成功引用，不发布新产物。成功结果仍复制进 `build/store`，清理工作区不影响已归档或固定版本。旧的按 key/run 划分的目录不自动迁移或删除。
+
+硬件重新生成时去掉过期的生成源文件，保留厂商综合缓存；执行 PnR 前使旧位流和报告失效，再检查本次退出码、位流和时序。归档保留生成输入、位流、时序/资源报告及 `.p/.pr`，不再复制 `impl/gwsynthesis` 编译缓存。固件保留对象与 Ninja depfile；静态库重建时先删除旧库，避免已经移除的源文件仍残留在库中。
+
+上游后端也使用相同的稳定目录和锁；成功后归档顶层交付文件到 `build/store/backend/<target>/...`，缓存子目录继续留在 work。它是输出快照，不宣称具有核心模块同等的源码闭包及 replay 能力。显式 `--output-dir` 仍选择其工作/输出位置。上游工具自身使用的外部缓存位置维持各后端现有约定。
 
 构建身份头仅由显示身份的 main.c 消费；普通硬件功能头保持稳定。修改某个 BIOS 实现文件后，Ninja 可保留其他对象，仅重编该文件与身份显示文件，再链接和打包。
+
+## 138K/AE350 增量 PnR
+
+Gowin 增量 PnR 支持 Arora V/III，AE350 的 GW5AST-138 可用，20K 的 GW2A 不适用。AE350 `gateware --synthesize` 默认 `--pnr-mode full`。稳定工作区、对象缓存和成功产物复用默认生效；厂商增量 PnR 显式选择。`place` 只复用布局 `.p`；`pnr` 复用布局和布线 `.pr`，这两种模式要求已有兼容成功基线，否则在运行 Gowin 前报错。可选 `auto` 在同一命名工作区存在兼容成功实现时使用 `.pr`，否则全量实现。完整 `.pr` 的读取和匹配在实际工程上可能比全量实现慢，不能把它等同于必然加速。
+
+```text
+python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize
+python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --pnr-mode full
+python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --pnr-mode pnr
+python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --workspace experiment --pnr-mode place
+```
+
+基线从最近一次成功的不可变产物读取并校验；器件、工具身份、DDR 配置和关键时钟必须兼容，setup/hold 及最小脉宽检查必须通过。种子复制到稳定工作区再通过显式 Tcl 路径传给 Gowin，不使用可能来自失败运行的临时 `.pr`。模式和基线身份/哈希记录在 lock 中，并将基线保留为依赖。相同源码请求先查成功结果缓存，不因成功基线更新而不断重建；实现输入索引可从 store manifest 重建。
+
+增量失败保留失败日志，不静默退回全量。可显式选择 `--pnr-mode full` 重新实现；若完全相同的全量请求已有归档，则直接复用。`auto` 对时钟或工具不兼容的基线自动执行全量。每次实现仍做原有时序检查，不代表板测通过。只运行生成、不加 `--synthesize` 时不会归档工作区残留的旧 PnR 输出。
+
+参考：[SUG100 第 42–43 页](https://cdn.gowinsemi.com.cn/SUG100E.pdf#page=54)、[SUG1220 第 44 页](https://cdn.gowinsemi.com.cn/SUG1220E.pdf#page=50)。
+
+## Gowin 许可证连接重试
+
+20K、AE350 综合构建及 CPU qualification（包括 synthesis-only）遇到明确的 license server 连接故障时自动重试：总计最多 4 次尝试，等待间隔为 5、15、30 秒。识别 `License verification failed` 附近的 `Connection timeout`、`Server not responding`、无法连接许可证服务器等信息；空日志、许可证过期/无效、语法、布局布线和时序错误不会触发这种重试。即便工具错误地以退出码 0 报告许可证连接失败，也不会当作成功。
+
+重试继续使用原工作区及其综合缓存，每次尝试先使旧位流和报告失效。AE350 收据保留 `gowin-attempt-N.log` 与 `gowin-attempts.json`，20K 对应 `gateware-attempt-N.log` 与 `gateware-attempts.json`；其中记录退出码、故障证据及等待时间。`gowin.log`/`gateware.log` 保留最后一次尝试。达到上限后构建失败，不发布新产物；成功后仍执行原有位流与时序验收。等待期间取消会停止后续重试。
 
 ## 导出与复现
 

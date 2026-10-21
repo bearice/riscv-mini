@@ -96,6 +96,31 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(len(result['retained']), 1)
         self.assertFalse((self.root / 'build/old.log').exists())
 
+    def test_nested_backend_components_follow_archive_roots(self):
+        live = dict(component='backend/payload', digest='a' * 64)
+        self.put('build/store/backend/payload/' + 'a' * 64 + '/manifest.json', dict(dependencies={}))
+        self.put('build/store/backend/payload/' + 'b' * 64 + '/manifest.json', dict(dependencies={}))
+        self.put('build/archives/test/receipt.json', dict(artifact=live))
+        self.assertEqual(self.targets(), {'build/store/backend/payload/' + 'b' * 64})
+
+    def test_gc_refuses_an_active_workspace(self):
+        from scripts.modular.storage import Store, Run
+        from scripts.modular.workspace import working
+        store = Store(self.root)
+        run = Run('test', 'active', root=self.root)
+        self.put('build/old.log', {})
+        with working(store, run, 'machine', 'target', 'inputs') as workspace:
+            with self.assertRaisesRegex(ValueError, 'already in use'):
+                clean(self.root, execute=True)
+            self.assertTrue((self.root / 'build/old.log').exists())
+            workspace.success()
+
+    def test_successful_workspace_keeps_its_implementation_seed(self):
+        ref = self.artifact('a')
+        self.put('build/work/machine/gateware/default/workspace.json',
+                 dict(last_success=dict(artifact=ref), last_implementation=dict(artifact=ref)))
+        self.assertNotIn('build/store/gateware/' + 'a' * 64, self.targets())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

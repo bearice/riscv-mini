@@ -13,6 +13,7 @@ from scripts.versions import read_versions
 from .storage import ROOT, canonical, digest, file_hash, read, text_file, write, workspace_lock
 from .environment import discover, identity, output, process_environment
 from .contracts import requirements
+from .workspace import working
 
 BASE_FLAGS = ['-Os', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin',
               '-ffunction-sections', '-fdata-sections', '-nostdlib', '-nostartfiles', '-msmall-data-limit=0']
@@ -101,7 +102,7 @@ def ninja_path(path):
     return str(path).replace('\\', '/').replace('$', '$$').replace(' ', '$ ').replace(':', '$:')
 
 
-def ninja_build(work, sources, flags, env, name, linker=None, libraries=None, implicit=(), run=None, root=ROOT, identity_header=None):
+def ninja_build(work, sources, flags, env, name, linker=None, libraries=None, implicit=(), run=None, root=ROOT, identity_header=None, identity_sources=None):
     """Commands are structured action JSONs, avoiding cross-shell quoting of argv."""
     actions = work / 'actions'; actions.mkdir(exist_ok=True)
     worker = root / 'scripts/mini.py'
@@ -113,7 +114,12 @@ def ninja_build(work, sources, flags, env, name, linker=None, libraries=None, im
     objects = []
     def action(label, command, out, inputs, rule='action', extra=()):
         action_path = actions / (label.replace('/', '_').replace(' ', '_') + '.json')
-        text_file(action_path, canonical(dict(argv=[str(x) for x in command], cwd=str(root), environment=env.get('process_environment', {}))).decode() + '\n')
+        record = dict(argv=[str(x) for x in command], cwd=str(root), environment=env.get('process_environment', {}))
+        if label.startswith('AR-'):
+            # ar rcs retains members removed from the source list unless the
+            # old archive is removed first. Object files remain incremental.
+            record['remove_before'] = [str(out)]
+        text_file(action_path, canonical(record).decode() + '\n')
         prereq = [*inputs, action_path, worker, Path(__file__), *implicit, *extra]
         lines.append('build ' + ninja_path(out) + ': ' + rule + ' ' + ' '.join(ninja_path(p) for p in prereq))
         lines.append('  action = ' + quote_command([str(action_path)]).replace('$', '$$'))
@@ -122,7 +128,8 @@ def ninja_build(work, sources, flags, env, name, linker=None, libraries=None, im
         source = Path(source)
         obj = work / 'obj' / (digest(source.relative_to(root).as_posix())[:16] + '.o')
         obj.parent.mkdir(exist_ok=True)
-        uses_identity=identity_header is not None and source.name=='main.c'
+        uses_identity = identity_header is not None and (source.name == 'main.c' if identity_sources is None
+                                                        else source in identity_sources)
         extra_flags=['-include',str(identity_header)] if uses_identity else []
         command = [*env['bindings']['target.cc'], *flags, *extra_flags, '-frandom-seed=' + obj.stem,
                    '-ffile-prefix-map=' + str(root) + '=.', '-MMD', '-MF', str(obj) + '.d', '-MT', obj, '-c', source, '-o', obj]
@@ -223,10 +230,9 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
         run.step(component, 'REUSE', found); return found
     if plan:
         run.step(component, 'BUILD', reason='component inputs/flags/tools not in store'); return None
-    work_key = digest(dict(component=component, deps=deps, flags=flags, environment=identity(env)))
-    if force and fresh_workspace: work_key += '-replay-' + run.id
-    work = store.build / 'work' / component / work_key
-    with workspace_lock(work):
+    with working(store, run, 'primer20k_vexriscv', component, key,
+                 fresh=force and fresh_workspace) as workspace:
+        work = workspace.path
         include = work / 'include'
         generated_headers(read(store.path(soc) / 'csr.json'), v, include)
         # Stable shared SDK header is independent of run ID, global HEAD, and BIOS version.
@@ -274,5 +280,6 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
         contract = requirements(sm['config']['contract'])
         ref = store.publish(component, key, files, config=dict(build=config, requires=contract,
                             image_format='mini-image-v1', image_abi_tag=abi), dependencies=deps, version=ver)
+        workspace.success(ref)
     run.step(component, 'BUILD', ref)
     return ref

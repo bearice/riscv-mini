@@ -8,6 +8,7 @@ from .storage import ROOT, canonical, digest, file_hash, read, write, workspace_
 from .environment import discover, identity, python_packages
 from .firmware import source_files as collect_source_files
 from .contracts import hardware
+from .workspace import working, clear_generated, invalidate_pnr, gateware_files, remove_file
 
 
 def source_files(root, names):
@@ -23,7 +24,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
     v = validation if validation is not None else store.get(base_soc)['config']['validation']
     inputs = source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                                       'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                                      'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py'])
+                                      'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py'])
     env = discover(['python'], store.root)
     options = dict(v)
     config = dict(schema=1, options=options, sources=inputs, environment=identity(env), packages=python_packages())
@@ -33,8 +34,9 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
         run.step('soc-description', 'REUSE', found); return found
     if plan:
         run.step('soc-description', 'BUILD', reason='gateware source/configuration changed'); return None
-    work = store.build / 'work/soc-description' / key
-    with workspace_lock(work):
+    with working(store, run, 'primer20k_vexriscv', 'soc-description', key) as workspace:
+        work = workspace.path
+        clear_generated(work, ('cpu', 'gateware', 'software/include'))
         cpu_manifest = store.get(cpu_ref)
         names = [n for n in cpu_manifest['files'] if n.startswith('outputs/') and n.endswith('.v')]
         cpu_path = store.path(cpu_ref) / names[0] if names else None
@@ -73,9 +75,10 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
                 if p.is_file(): files[p.relative_to(work).as_posix()] = p
         if source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/boot_image.py',
                                     'scripts/build_records.py', 'scripts/build_recipe.py', 'scripts/versions.py',
-                                    'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py']) != inputs:
+                                    'scripts/modular/hardware.py', 'scripts/modular/contracts.py', 'scripts/modular/storage.py', 'scripts/modular/workspace.py']) != inputs:
             raise ValueError('Hardware inputs changed during generation')
         ref = store.publish('soc-description', key, files, config=cfg, dependencies={'cpu': cpu_ref})
+        workspace.success(ref)
     run.step('soc-description', 'BUILD', ref); return ref
 
 
@@ -83,7 +86,7 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
     soc_data = store.get(soc); v = soc_data['config']['validation']
     env = discover(['python', *(['gowin'] if synthesize else [])], store.root)
     config = dict(schema=1, options=v, environment=identity(env), packages=python_packages(), synthesize=synthesize,
-                  sources=source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py']))
+                  sources=source_files(store.root, ['gateware', 'gateware/board.json', 'scripts/modular/rtl.py', 'scripts/mini.py', 'scripts/modular/worker.py', 'scripts/modular/hardware.py', 'scripts/modular/workspace.py', 'scripts/modular/gowin.py']))
     deps = {'soc-description': soc}
     if v['boot_mode'] == 'rom': deps['bootloader'] = boot
     key = digest(dict(config=config, dependencies=deps))
@@ -92,8 +95,14 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
         run.step('gateware', 'REUSE', found); return found
     if plan:
         run.step('gateware', 'BUILD', reason='hardware/ROM/vendor options changed'); return None
-    work = store.build / 'work/gateware' / key
-    with workspace_lock(work):
+    with working(store, run, 'primer20k_vexriscv', 'gateware', key) as workspace:
+        work = workspace.path
+        clear_generated(work, ('cpu', 'software/include'))
+        for path in (work / 'gateware').glob('*'):
+            if path.is_file():
+                remove_file(path)
+        if synthesize:
+            invalidate_pnr(work)
         # Generate final RTL using the same explicit CPU and hardware config.
         cpu = soc_data['dependencies']['cpu']; cm = store.get(cpu)
         cpus = [n for n in cm['files'] if n.startswith('outputs/') and n.endswith('.v')]
@@ -111,12 +120,25 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
         command = [sys.executable, str(store.root / 'scripts/mini.py'), '_worker', 'rtl', str(request)]
         process = dict(os.environ)
         if synthesize: process['PATH'] = str(Path(env['bindings']['gowin'][0]).parent) + os.pathsep + process.get('PATH','')
-        with (run.path / 'gateware.log').open('w', encoding='utf-8') as log:
-            proc = subprocess.Popen(command, cwd=store.root, env=process, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for line in proc.stdout:
-                log.write(line); log.flush()
-                if any(word in line for word in ('ERROR', 'Error', 'Stage', 'Routing', 'Finished', 'Synthesis')): print(line, end='', flush=True)
-            if proc.wait(): raise RuntimeError('Gateware generation failed; see ' + str(run.path / 'gateware.log'))
+        def attempt(log_path):
+            if synthesize:
+                invalidate_pnr(work)
+            with log_path.open('w', encoding='utf-8') as log:
+                proc = subprocess.Popen(command, cwd=store.root, env=process, stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+                for line in proc.stdout:
+                    log.write(line); log.flush()
+                    if any(word in line for word in ('ERROR', 'Error', 'Stage', 'Routing', 'Finished', 'Synthesis', 'License', 'license')):
+                        print(line, end='', flush=True)
+                return proc.wait()
+        from .gowin import run_with_license_retry
+        returncode, final_log = run_with_license_retry(attempt, run.path, prefix='gateware',
+                                                      delays=(5, 15, 30) if synthesize else ())
+        shutil.copyfile(final_log, run.path / 'gateware.log')
+        run.result['gowin_attempts'] = read(run.path / 'gateware-attempts.json')
+        run.save()
+        if returncode:
+            raise RuntimeError('Gateware generation failed; see ' + str(run.path / 'gateware-attempts.json'))
         report = dict(v, synthesis_requested=synthesize, board_test='not performed', component_versions={})
         if synthesize:
             from .rtl import pnr_report
@@ -124,8 +146,11 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
             if any(timing.values()): raise ValueError('Timing violations: ' + str(timing))
             report.update(timing_violated_endpoints=timing, resources=resources, bitstream_sha256=file_hash(work/'gateware/riscv_mini.fs'))
         files = {'build.lock.json': canonical(config)}
-        for path in (work / 'gateware').rglob('*'):
-            if path.is_file(): files['project/' + path.relative_to(work/'gateware').as_posix()] = path
+        files['gateware-attempts.json'] = run.path / 'gateware-attempts.json'
+        files.update({'logs/' + p.name: p for p in run.path.glob('gateware-attempt-*.log')})
+        for path in gateware_files(work, synthesize):
+            files['project/' + path.relative_to(work/'gateware').as_posix()] = path
         if synthesize: files['outputs/riscv_mini.fs'] = work/'gateware/riscv_mini.fs'
         ref = store.publish('gateware', key, files, config=dict(build=config, validation=report), dependencies=deps)
+        workspace.success(ref)
     run.step('gateware', 'BUILD', ref); return ref

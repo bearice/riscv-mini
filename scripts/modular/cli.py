@@ -179,9 +179,9 @@ def perform(args, p):
                 if not any(resolved.is_relative_to((store.build/n).resolve()) for n in ('work','cache')):
                     raise ValueError('Cleanup path escapes disposable workspace')
                 print(('Cleaning ' if args.execute else 'Would clean ')+str(path))
-                if args.execute:
-                    # Session lock excludes other modular builds during cleanup.
-                    shutil.rmtree(path)
+            if args.execute:
+                from .workspace import clean_workspaces
+                clean_workspaces(store, candidates)
             run.finish(executed=args.execute)
         print('Result:', run.path / 'result.json', flush=True)
         return 0

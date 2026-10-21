@@ -31,7 +31,8 @@ def clean_work(execute=False, root=ROOT):
             if line.startswith('worktree '):
                 protected.append(Path(line[9:]).resolve())
     # Git-managed checkouts and acquisition/lock roots are not scratch output.
-    reserved = {'worktrees', 'replays', 'hardware', '.session-lock', '.store-lock', '.publish'}
+    reserved = {'worktrees', 'replays', 'hardware', '.session-lock', '.store-lock', '.publish',
+                '.maintenance-lock', '.implementation-index-lock'}
     targets, kept = [], []
     if work.exists():
         for target in sorted(work.iterdir()):
@@ -48,18 +49,17 @@ def clean_work(execute=False, root=ROOT):
     write_json(path, plan)
     print(('Cleaning' if execute else 'Would clean'), len(targets), 'work caches; plan:', path)
     if execute:
+        from scripts.modular.storage import Store
+        from scripts.modular.workspace import clean_workspaces
         deleted, errors = [], []
         for name in targets:
             target = Path(name)
             if not target.resolve().is_relative_to(work) or target.resolve() == work:
                 raise ValueError('Unsafe work cleanup target')
             try:
-                if target.is_dir():
-                    shutil.rmtree(target)
-                else:
-                    target.unlink()
+                clean_workspaces(Store(root), [target])
                 deleted.append(name)
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 errors.append(dict(target=name, error=str(error)))
                 # Preserve access-denied roots; do not stop other independent
                 # cache cleanup or rewrite ACLs/attributes to force deletion.

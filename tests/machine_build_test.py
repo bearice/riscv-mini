@@ -26,7 +26,8 @@ class MachineBuildTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name) / 'checkout'
         for name in ('gateware/boards/mega138k_pro/board.json', 'gateware/machines/mega138k_ae350.json',
-                     'scripts/modular/machines.py', 'scripts/modular/storage.py', 'scripts/modular/environment.py'):
+                     'scripts/modular/machines.py', 'scripts/modular/storage.py', 'scripts/modular/environment.py',
+                     'scripts/modular/workspace.py'):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target)

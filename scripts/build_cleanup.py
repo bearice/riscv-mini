@@ -4,7 +4,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from scripts.modular.storage import write
+from scripts.modular.storage import write, component_name
 
 COMPONENT = re.compile(r"[0-9a-f]{64}")
 RUN_ID = re.compile(r"20[0-9]{6}T[0-9]+Z-[A-Za-z0-9_.-]+")
@@ -55,6 +55,10 @@ def plan(root, active_run=None):
     for directory in ('archives', 'releases'):
         for path in (build / directory).rglob('*.json'):
             note(path)
+    # Retained reusable work areas own their successful cache/implementation
+    # seeds. Dropping a work area releases these roots on the next GC pass.
+    for path in (build / 'work').glob('*/*/*/workspace.json'):
+        note(path)
     for path in (build / 'refs').rglob('*.json'):
         if 'candidates' not in path.parts or path.parent == build / 'refs/candidates':
             value = note(path)
@@ -77,7 +81,11 @@ def plan(root, active_run=None):
     def visit(ref):
         if ref in keep:
             return
-        if not re.fullmatch(r'[A-Za-z0-9_-]+', ref[0]) or not COMPONENT.fullmatch(ref[1]):
+        try:
+            component_name(ref[0])
+        except ValueError:
+            raise ValueError('Invalid artifact reference') from None
+        if not COMPONENT.fullmatch(ref[1]):
             raise ValueError('Invalid artifact reference')
         path = build / 'store' / ref[0] / ref[1] / 'manifest.json'
         value = read_json(path)
@@ -108,10 +116,12 @@ def plan(root, active_run=None):
         elif path.is_file() and path.name not in ('README.md', 'environment.json'):
             if path.suffix in ('.log', '.txt', '.png', '.raw', '.v', '.syms', '.exe', '.py', '.json', '.md') and not path.name.startswith('release-notes-'):
                 add(path, 'loose-log')
-    for component in (build / 'store').glob('*'):
-        if component.is_dir():
-            for path in component.iterdir():
-                if path.is_dir() and COMPONENT.fullmatch(path.name) and (component.name, path.name) not in keep:
+    store = build / 'store'
+    for pattern in ('*/*', '*/*/*'):
+        for path in store.glob(pattern):
+            if path.is_dir() and COMPONENT.fullmatch(path.name):
+                component = path.parent.relative_to(store).as_posix()
+                if (component, path.name) not in keep:
                     add(path, 'unreferenced-component')
     for path in candidates:
         value = read_json(path)
@@ -144,8 +154,9 @@ def plan(root, active_run=None):
 def clean(root, execute=False):
     root = Path(root).resolve()
     # Use the same lock as modular builds, so the graph cannot change mid-GC.
-    from scripts.modular.storage import workspace_lock
-    with workspace_lock(root / 'build/work/.session-lock'):
+    from scripts.modular.storage import workspace_lock, Store
+    from scripts.modular.workspace import maintenance
+    with workspace_lock(root / 'build/work/.session-lock'), maintenance(Store(root)):
         selected = plan(root)
         output = root / 'build/reports/cleanup/obsolete-plan.json'
         write(output, selected)

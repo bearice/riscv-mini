@@ -10,6 +10,8 @@ def perform(argv):
         from scripts.modular.storage import read
         from scripts.modular.environment import process_environment
         action = read(argv[1])
+        for name in action.get('remove_before', []):
+            Path(name).unlink(missing_ok=True)
         return subprocess.run(action['argv'], cwd=action['cwd'], env=process_environment(action['environment'])).returncode
     if argv[:1] == ['rebuild-one']:
         from scripts.modular.storage import Store,Run,read

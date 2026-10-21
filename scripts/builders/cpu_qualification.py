@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import shutil
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
@@ -78,16 +79,33 @@ def build(args, run=None):
         builder = Builder(soc, output_dir=str(output), compile_software=False,
                           compile_gateware=True, csr_json=str(output/'csr.json'),
                           csr_csv=str(output/'csr.csv'), hierarchical=True)
-        builder.build(run=not args.synthesis_only, build_name='riscv_mini')
+        builder.build(run=False, build_name='riscv_mini')
         if args.synthesis_only:
             run_tcl=output/'gateware/run.tcl'
             script=run_tcl.read_text()
             if script.count('run all')!=1:raise ValueError('Expected one run all in generated Tcl')
             run_tcl.write_text(script.replace('run all','run syn'))
-            subprocess.run([local['gowin'],'run.tcl'],cwd=output/'gateware',check=True,
-                           stdout=(output/'synthesis-only.log').open('w'),stderr=subprocess.STDOUT)
+        from scripts.modular.gowin import run_with_license_retry
+        from scripts.modular.workspace import invalidate_pnr
+        environment = os.environ.copy()
+        library = Path(vendor).resolve().parent.parent / 'lib'
+        if library.is_dir():
+            names = ('DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH') if sys.platform == 'darwin' else ('LD_LIBRARY_PATH',)
+            for name in names:
+                environment[name] = str(library) + (os.pathsep + environment[name] if environment.get(name) else '')
+        def attempt(log_path):
+            invalidate_pnr(output)
+            with log_path.open('w', encoding='utf-8') as log:
+                return subprocess.run([vendor, 'run.tcl'], cwd=output / 'gateware', env=environment,
+                                      stdout=log, stderr=subprocess.STDOUT).returncode
+        returncode, log = run_with_license_retry(attempt, run.path if run else output, prefix='qualification')
+        shutil.copyfile(log, output / ('synthesis-only.log' if args.synthesis_only else 'gowin.log'))
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, [vendor, 'run.tcl'])
+        if args.synthesis_only:
             report.update(completed=True,stage='synthesis_only')
         else:
+            shutil.copyfile(output / 'gateware/impl/pnr/project.fs', output / 'gateware/riscv_mini.fs')
             timing, resources = pnr_report(output)
             report.update(completed=True, stage='pnr',timing_violated_endpoints=timing, resources=resources,
                           timing_passed=not any(timing.values()))
