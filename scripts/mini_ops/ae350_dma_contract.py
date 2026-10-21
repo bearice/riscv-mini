@@ -2,7 +2,7 @@
 
 Generic UART upload success only means the payload reached its image with
 mcause 0. This contract is the suite result. Word order matches
-firmware/examples/ae350_dma_suite.c.
+firmware/diagnostics/mega138k_ae350/ae350_dma_suite.c.
 """
 
 SCHEMA = 0x50330001

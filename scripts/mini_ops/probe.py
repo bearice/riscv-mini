@@ -50,9 +50,9 @@ def compile_probe(build, directory, tools, run=subprocess.run, writable=False):
                '-nostdlib', '-nostartfiles', '-msmall-data-limit=0',
                '-DMINI_BOOTLOADER=1', '-DMINI_FEATURE_MMU='+str(int(build.validation.get('cpu_capabilities',{}).get('mmu',False))),
                '-DMINI_CPU_DCACHE='+str(int(build.validation.get('cpu_capabilities',{}).get('dcache',False))),
-               '-I',str(directory),str(ROOT/'firmware/boot/start.S'),
-               str(ROOT/'firmware/tools/flash_readback.c'),
-               '-T',str(ROOT/'firmware/bootloader/app.ld'),'-o',str(elf)]
+               '-I',str(directory),str(ROOT/'firmware/bsp/primer20k_vexriscv/start.S'),
+               str(ROOT/'firmware/tools/primer20k_vexriscv/flash_readback.c'),
+               '-T',str(ROOT/'firmware/bsp/primer20k_vexriscv/app.ld'),'-o',str(elf)]
     with (directory/'compile.log').open('w',encoding='utf-8') as log:
         run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=60,env=environment)
         run([str(objcopy),'-O','binary',str(elf),str(directory/'probe.bin')],

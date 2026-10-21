@@ -337,7 +337,7 @@ void vt_putc(vt_t *t, unsigned char ch) {
 
 uint16_t vt_rgb(unsigned color) {
   /* 索引 0-15 = ANSI 黑红绿黄蓝品青灰 / 亮黑红绿黄蓝品白。
-   * 调色板顺序与 firmware/diagnostics/tests.c 里已上板确认的文字色一致
+   * 调色板顺序与 firmware/diagnostics/primer20k_vexriscv/tests.c 里已上板确认的文字色一致
    * （tests.c 用 0xffff 作前景、0x0841 作背景），不要凭 RGB565 位域推导重排。 */
   static const uint16_t palette[16] = {
     0x0000, 0xf800, 0x07e0, 0xffe0, 0x001f, 0xf81f, 0x07ff, 0xbdf7,

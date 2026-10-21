@@ -1,4 +1,4 @@
-#include "../bios/include/bios.h"
+#include "../../bios/include/bios.h"
 static void write_text(const char *s,unsigned n) {bios_call(BIOS_WRITE,(uintptr_t)s,n,0,0);}
 static volatile uint32_t zeroed[16];
 static volatile uint32_t initialized=0x12345678;

@@ -224,7 +224,7 @@ __attribute__((naked, used, section(".text.entry"))) void _start(void)
         "2:\n"
         "la t0, sim_trap_handler\n"     /* mtvec, direct mode */
         "csrw mtvec, t0\n"
-        /* The board's firmware/boot/start.S sets mstatus.FS=Dirty when the
+        /* The board's firmware/bsp/primer20k_vexriscv/start.S sets mstatus.FS=Dirty when the
          * build has an FPU; the payload inherits it and may use float.  A
          * payload that does not get it traps on its first FP instruction. */
         "li t0, 0x6000\n"

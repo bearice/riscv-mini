@@ -6,7 +6,7 @@ app 链接工具链的 Newlib、libm、libgcc，并链接 `firmware/libc/runtime
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build payload --libc newlib --soft-float `
-  --source firmware/examples/libc_test.c --output-dir build/libc-test-app
+  --source firmware/examples/primer20k_vexriscv/libc_test.c --output-dir build/libc-test-app
 ```
 
 `--soft-float` 选择 RV32IM/ILP32，适用于当前无 FPU 的已验收 gateware。`--libc` 默认仍是 `none`，旧 freestanding app 可以继续使用 `--helper string`；Newlib app 不使用该 helper，也不提供替代标准头文件。

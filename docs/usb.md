@@ -75,7 +75,7 @@ dummy-TD ownership bug (a transfer descriptor owned by the controller was
 never released, so the periodic list stalled); LED output remains untested.
 
 The base monitor prints key usages over UART. The independent
-`firmware/examples/ethernet_demo.c` adds `u` for USB diagnostics and `j` for
+`firmware/examples/primer20k_vexriscv/ethernet_demo.c` adds `u` for USB diagnostics and `j` for
 USB-only restart to its SD/LCD/audio/network acceptance workload. Run
 `scripts/ethernet_verify.py --usb` with the existing source NIC/IP and
 `--soak-seconds 300`; it checks three local restarts, shared PHY reset,

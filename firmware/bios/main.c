@@ -1,5 +1,5 @@
 #include "internal.h"
-#include "../diagnostics/tests.h"
+#include "../diagnostics/primer20k_vexriscv/tests.h"
 #include "image_abi.h"
 #include <string.h>
 static void network_display(void) {

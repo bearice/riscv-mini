@@ -54,13 +54,13 @@ RX IRQ 只屏蔽持续有效的 RX 通知，不确认释放包；主循环复制
 
 ## 独立验收程序
 
-`firmware/examples/ethernet_demo.c` 在 DDR 中实现最小 ARP、IPv4 ICMP echo、UDP 1234 echo，板地址 `169.254.20.20`、MAC由Flash工厂UID派生。不包含 TCP/DHCP/lwIP。只接收 IPv4 IHL5、未分片包，检查 IP/ICMP/UDP 校验和和长度；不支持 options、fragment 或 VLAN。ARP/ICMP/UDP 回显只用于本机直连验收，主应用和 bootloader 不链接这些协议。
+`firmware/examples/primer20k_vexriscv/ethernet_demo.c` 在 DDR 中实现最小 ARP、IPv4 ICMP echo、UDP 1234 echo，板地址 `169.254.20.20`、MAC由Flash工厂UID派生。不包含 TCP/DHCP/lwIP。只接收 IPv4 IHL5、未分片包，检查 IP/ICMP/UDP 校验和和长度；不支持 options、fragment 或 VLAN。ARP/ICMP/UDP 回显只用于本机直连验收，主应用和 bootloader 不链接这些协议。
 
 程序先完成SD/LCD初始化，再启动网络以避免启动期间填满槽；主循环、音频预填充、SD CRC、绘图和较长的串口状态输出均服务网络，绘图/状态路径也补充静音音频ring。250 ms链路轮询尚未确认时保留待发ARP回复，恢复后重试。串口 `s` 状态、`d` 静音 DMA、`x` 停音频、`r` 只读 SD 文件 CRC、`f` 换帧、`e` 公共 PHY reset、`!` reboot。
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build system --synthesize --output-dir build/m8
-.venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/ethernet_demo.c --output-dir build/m8-demo
+.venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/ethernet_demo.c --output-dir build/m8-demo
 .venv/Scripts/python.exe sim/test_ethernet.py
 # 先查看实际 USB 网卡名称、ifIndex、已存在的 IPv4；不要复制另一台机器的值。
 Get-NetAdapter

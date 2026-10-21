@@ -1,5 +1,5 @@
 /* BIOS payload: original GIF artwork, procedural stars/rainbow, looping BGM. */
-#include "../bios/include/bios.h"
+#include "../../bios/include/bios.h"
 #include "nyancat_assets.h"
 
 enum {WIDTH=480,HEIGHT=272,SCALE=8,CAT_X=104,CAT_Y=52,

@@ -7,7 +7,7 @@
 - 默认 CPU 仍为无 C 的 `VexRiscv_MmuFpu.v`，默认 ROM 仍为 8 KiB。
 - `scripts/mini.py build cpu --generate` 增加了 `--compressed`，可以生成四种 MMU/FPU 组合的 C 版本。
 - `scripts/mini.py build cpu --generate` 增加了 `--pipelined-fetch`。它把 C 版本的 `twoCycleCache` 恢复为 `true`，并打开 `injectorStage`，用于缩短取指关键路径。
-- `scripts/mini.py build system` 和 `firmware/bootloader/boot.ld` 支持 `--rom-size 4096/8192`；默认值仍为 8192。
+- `scripts/mini.py build system` 和 `firmware/bootloader/primer20k_vexriscv/boot.ld` 支持 `--rom-size 4096/8192`；默认值仍为 8192。
 - `scripts/test_cpu_fence.py` 支持 `--compressed`，`tests/cpu_fence_program.S` 增加了跨 cache line 的压缩指令测试。
 - CPU 外部 fence/atomic 补丁、L2 atomic bypass 和未使用的 posted write combiner 已删除；原生 CPU 的指令语义由 ACK-visible RTL 测试检查，旧候选仍保留在各自输出目录。
 - DDR 默认使用 1 项注册命令队列，关闭 auto precharge；`tests/ddr_queue_test.py` 默认验证生产深度，`tests/ddr_queue_structure_test.py` 检查实际 controller/crossbar 的组合反馈环。

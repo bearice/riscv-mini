@@ -1,7 +1,7 @@
 // BIOS TTY：VT100/ANSI 终端（vt.c）+ 双路输出（UART 透传 / LCD 网格镜像）+ 输入队列。
 #include "internal.h"
 #include "vt.h"
-#include "../diagnostics/tests.h"
+#include "../diagnostics/primer20k_vexriscv/tests.h"
 #include <hal/hal.h>
 #include "../common/rgb_canvas.h"
 #include <string.h>

@@ -2,7 +2,7 @@
  * terminal with the full 16-colour SGR set, attributes and cursor addressing.
  *
  *   .venv/Scripts/python.exe scripts/bios_payload.py \
- *       --source firmware/examples/tty_color_demo.c --output-dir build/tty-color
+ *       --source firmware/examples/primer20k_vexriscv/tty_color_demo.c --output-dir build/tty-color
  *   # then in the BIOS:  set server <host-ip> ; boot net BOOT.RPB
  *
  * The panel is 80x34 cells of 6x8 pixels.  Everything goes through the BIOS
@@ -10,7 +10,7 @@
  * attached to UART as well - useful for checking the demo without the LCD.
  * Shows the palette, waits for a key (or about 10 s), restores text mode and
  * returns to the BIOS. */
-#include "../bios/include/bios.h"
+#include "../../bios/include/bios.h"
 
 static void out(const char *s,unsigned n) {bios_call(BIOS_WRITE,(uintptr_t)s,n,0,0);}
 static void puts_(const char *s) {unsigned n=0;while(s[n])++n;out(s,n);}

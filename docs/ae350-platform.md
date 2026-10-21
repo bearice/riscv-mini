@@ -38,7 +38,7 @@ JTAG 用于 halt、寄存器/内存观察、身份核对及显式恢复。无 JT
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build gateware --machine mega138k_ae350 --synthesize
 .venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350
-.venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350 --source firmware/examples/ae350_payload_demo.c
+.venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350 --source firmware/examples/mega138k_ae350/ae350_payload_demo.c
 .venv/Scripts/python.exe scripts/mini.py board run --machine mega138k_ae350 --build <gateware-result.json> --payload <application-result.json> --port COM9 --location <FPGA_LOCATION> --cpu-jtag-location <CPU_LOCATION>
 .venv/Scripts/python.exe scripts/mini.py board ddr-suite --build <gateware-result.json> --payload <diagnostic-result.json> --port COM9 --location <FPGA_LOCATION> --cpu-jtag-location <CPU_LOCATION> --flags 15 --traversal-mb 1 --stress-seconds 2 --poll-interval 1 --timeout 180
 .venv/Scripts/python.exe scripts/mini.py board jtag-test --build <gateware-result.json> --location <FPGA_LOCATION> --cpu-jtag-location <CPU_LOCATION>
@@ -48,7 +48,7 @@ JTAG 用于 halt、寄存器/内存观察、身份核对及显式恢复。无 JT
 所有候选只编程 FPGA SRAM，不写 Flash。`ddr-suite` 的 flags 为 1=容量标签、2=遍历、4=cache 观察、8=每块八字。遍历排除完整运行镜像含 data/bss；栈和结果位于 DLM，不必再排除 DDR 栈。局部遍历不冒充全容量验证。cache 观察段在 ILM 中执行，以免取指和栈污染 DDR 计数。
 
 `jtag-test` 只核对 ITCM 镜像、非顺序读、本地内存配置与自主 POST，不注入程序、不设 DPC。`recover` 才是显式重启操作。普通应用使用公共 payload BSP 和弱 trap handler，二进制路径归 artifact 所有，不依赖诊断程序。原子指令在 fabric DDR 上不受支持。扩展 AHB 的数据口是 loopback FIFO。硬核 DMAC 已通过它和外部 DDR 口做 DDR 到 DDR、DDR 到 loopback 的传输；DMA_REQ/ACK 是四相握手，满、空、取消和软复位已在 SRAM 编程的位流上核对。XIP、HDMI 和专用 fabric reader 仍未验收。性能保留原始 cycle，未标定核心时钟前不发布已验证 MB/s。
-平台启动固件统一位于 `firmware/bootloader/ae350/`，构建身份为 `AE350-ROM-bootloader`；这是后续阶段共用的 ROM bootloader。应用 BSP 与可复用内存诊断为独立产物。旧 P1 ROM/SRAM 平台已退役，不再作为恢复目标。
+平台启动固件统一位于 `firmware/bootloader/mega138k_ae350/`，构建身份为 `AE350-ROM-bootloader`；这是后续阶段共用的 ROM bootloader。应用 BSP 与可复用内存诊断为独立产物。旧 P1 ROM/SRAM 平台已退役，不再作为恢复目标。
 
 
 ## 性能与恢复边界

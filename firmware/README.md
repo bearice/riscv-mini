@@ -20,9 +20,9 @@
 
 ```powershell
 & $MiniPython scripts/build.py                            # BIOS
-& $MiniPython scripts/build.py --app firmware/examples/monitor.c
-& $MiniPython scripts/build.py --app firmware/examples/usb_input_demo.c
-& $MiniPython scripts/bios_payload.py --source firmware/examples/bios_demo.c
+& $MiniPython scripts/build.py --app firmware/examples/primer20k_vexriscv/monitor.c
+& $MiniPython scripts/build.py --app firmware/examples/primer20k_vexriscv/usb_input_demo.c
+& $MiniPython scripts/bios_payload.py --source firmware/examples/bios_payload/bios_demo.c
 & $MiniPython scripts/gwbasic_image.py                    # GW-BASIC 解释器 RPB1
 ```
 

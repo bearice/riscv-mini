@@ -7,7 +7,7 @@
 static int32_t bios_call(unsigned fn,uintptr_t a,uintptr_t b,uintptr_t c,uintptr_t d) {
     (void)fn;(void)a;(void)b;(void)c;(void)d;return 0;
 }
-#include "../firmware/examples/nyancat_demo.c"
+#include "../firmware/examples/bios_payload/nyancat_demo.c"
 const int16_t nyan_pcm[2]={0},nyan_pcm_end[2]={0};
 static uint16_t screens[2][WIDTH*HEIGHT];
 int main(void) {

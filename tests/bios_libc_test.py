@@ -15,7 +15,7 @@ class LibcTest(unittest.TestCase):
         wad=out/'fixture.wad'
         wad.write_bytes(b'IWAD'+bytes(range(256))*32)
         elf=doom_sim.build(out,wad,soft_float=True,
-                          sources=[ROOT/'firmware/examples/libc_test.c'])
+                          sources=[ROOT/'firmware/examples/primer20k_vexriscv/libc_test.c'])
         code,text,_,timed_out=doom_sim.run(elf,doom_sim.find_qemu(),out,30,[])
         self.assertFalse(timed_out,text[-1500:])
         self.assertEqual(code,0,text[-1500:])

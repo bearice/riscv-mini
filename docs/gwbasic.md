@@ -23,7 +23,7 @@ boot sd BASIC.RPB
 GW-BASIC payload 默认构建使用单精度 FPU，SoC 必须显式启用 `--feature fpu=on`（`-march=rv32imaf -mabi=ilp32f`）。RISC-V 上 `mstatus.FS=0` 时任何浮点指令（含 `frrm`）都会触发非法指令，而本机固件只在带 FPU 的构建里置位 `mstatus.FS`：
 
 ```asm
-/* firmware/boot/start.S */
+/* firmware/bsp/primer20k_vexriscv/start.S */
 #if MINI_FEATURE_FPU && !MINI_BOOTLOADER
     li t0, 0x6000
     csrs mstatus, t0
@@ -104,7 +104,7 @@ SYSTEM
 & $MiniPython scripts/gwbasic_sim.py --script-text 'TESTS' --expect "ALL TESTS PASSED"
 ```
 
-`tests/gwbasic_test.py` 先校验 RPB1 头/CRC/装载地址/入口/内存声明（就是 BIOS 校验的那几项），再用 `scripts/gwbasic_sim.py` 把**真实 payload 目标文件**跑在 QEMU 上。仿真器用一个 shim 顶替 BIOS：提供 `bios_info`、按 ABI 服务 ecall（UART、确定性时钟、无设备时返回 -1）、在 `_start` 里照抄 `firmware/boot/start.S` 的 `mstatus.FS` 使能、并把异常打印成 `SIM TRAP cause=... mepc=...` 而不是静默挂死。**它不模拟**：真实 LCD/键盘/SD/USB、DDR 训练、BIOS TTY 行为、Flash 装载，也不校验 RPB1 镜像本身（镜像由上面那组主机断言检查）。
+`tests/gwbasic_test.py` 先校验 RPB1 头/CRC/装载地址/入口/内存声明（就是 BIOS 校验的那几项），再用 `scripts/gwbasic_sim.py` 把**真实 payload 目标文件**跑在 QEMU 上。仿真器用一个 shim 顶替 BIOS：提供 `bios_info`、按 ABI 服务 ecall（UART、确定性时钟、无设备时返回 -1）、在 `_start` 里照抄 `firmware/bsp/primer20k_vexriscv/start.S` 的 `mstatus.FS` 使能、并把异常打印成 `SIM TRAP cause=... mepc=...` 而不是静默挂死。**它不模拟**：真实 LCD/键盘/SD/USB、DDR 训练、BIOS TTY 行为、Flash 装载，也不校验 RPB1 镜像本身（镜像由上面那组主机断言检查）。
 
 因为 payload 不是位置无关的（`-msmall-data-limit=0` 让它用绝对地址），仿真构建把同一批目标文件重链接到 `0x80000000`（QEMU virt 的 RAM 基址）；板端链接在 `0x01000000`。**只有地址常量不同**，代码路径与编译产物一致。
 

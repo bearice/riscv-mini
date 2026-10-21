@@ -59,7 +59,7 @@ MMU 默认开启、FPU 默认关闭；minimal 默认关闭两者，仍可分别�
 .venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature sd=on --output-dir build/sd-blocks
 
 # 最小双麦克风波形系统；USB 按键控制可另加 --feature usb=on。
-.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature video=on --feature mic=on --feature mic_stereo=on --source firmware/examples/microphone_stereo_demo.c --output-dir build/mic-only
+.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature video=on --feature mic=on --feature mic_stereo=on --source firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c --output-dir build/mic-only
 
 # 从全功能系统裁掉网络和音频输出。
 .venv/Scripts/python.exe scripts/mini.py build system --feature eth=off --feature usb=off --feature audio=off --output-dir build/capture

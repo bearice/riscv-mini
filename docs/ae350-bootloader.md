@@ -6,4 +6,4 @@
 
 构建由 `scripts/mini.py build bootloader --machine mega138k_ae350` 或 `build gateware` 编排，产物类别为 bootloader，身份为 AE350-ROM-bootloader。应用和诊断载荷独立构建，不影响 bootloader 复用。
 
-应用运行时位于 firmware/bsp/mega138k_ae350_payload；可复用内存诊断位于 firmware/diagnostics/ae350_memory。二者不作为 bootloader 的源文件或链接依赖。旧 fabric ROM/SRAM 监视器已退役；历史实现仅通过 snapshot commit 回溯。
+应用运行时位于 firmware/bsp/mega138k_ae350；可复用内存诊断位于 firmware/diagnostics/mega138k_ae350。二者不作为 bootloader 的源文件或链接依赖。旧 fabric ROM/SRAM 监视器已退役；历史实现仅通过 snapshot commit 回溯。

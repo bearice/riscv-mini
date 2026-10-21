@@ -35,7 +35,7 @@ CPU/sys 60 MHz 以 clock-enable 分频生成 BCLK，WS 在 BCLK 下降沿变化�
 单路模式仍由 `hal_mic_start(right)` 选择第一只麦克风的 LR/时隙，仅使用 FIFO
 低 24 位；单路和双路读取 API 检查模式，避免错误解读。
 
-独立双路程序 `firmware/examples/microphone_stereo_demo.c` 在上方绘制绿色左路
+独立双路程序 `firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c` 在上方绘制绿色左路
 （P11/R11），下方绘制青色右路（T6/R8），每路 512 点 / 10.667 ms，两个
 图使用共同增益并各自去除均值。`A` 自动增益、`+/-` 手动增益、空格冻结。
 串口提供 `status`、`perf`、`test mic stereo`（`test mic` 为别名）、`dump`（512 对
@@ -54,7 +54,7 @@ HAL 提供 `hal_mic_start(right)`、`hal_mic_stop()`、`hal_mic_capture()`、
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build system --output-dir build/mic --synthesize
-.venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/microphone_stereo_demo.c --output-dir build/mic-demo
+.venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c --output-dir build/mic-demo
 .venv/Scripts/python.exe scripts/boot_upload.py --program --mode uart --output-dir build/mic --image build/mic-demo/firmware/app.img
 ```
 

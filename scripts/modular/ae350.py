@@ -54,8 +54,8 @@ AE350_CLOSURE = (
     'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.v',
 )
 
-BOOTLOADER = 'firmware/bootloader/ae350'
-PAYLOAD = 'firmware/diagnostics/ae350_memory'
+BOOTLOADER = 'firmware/bootloader/mega138k_ae350'
+PAYLOAD = 'firmware/diagnostics/mega138k_ae350'
 PROFILES = ('ddr',)
 
 
@@ -367,12 +367,18 @@ def payload(store, run, cpu, args, profile, plan=False):
     ae350_map.require()
     files = {name: path for name, path in _inputs(store, profile='ddr').items()
              if name.startswith('inputs/source/scripts/')}
-    runtime = store.root / 'firmware/bsp/mega138k_ae350_payload'
-    for path in sorted(runtime.iterdir()):
-        if path.is_file():
-            files['inputs/payload/runtime/' + path.name] = path
-    units = ['runtime/' + path.name for path in sorted(runtime.iterdir())
-             if path.suffix in ('.c', '.S')]
+    # The payload tree is split into runtime/, dma/ and io/ subdirectories so a
+    # second machine can grow its own layout without a flat directory. Every
+    # subdirectory is staged as its own include root, keeping the bare
+    # #include names the sources use today.
+    runtime = store.root / 'firmware/bsp/mega138k_ae350'
+    payload_dirs = ('runtime', 'dma', 'io')
+    for sub in payload_dirs:
+        for path in sorted((runtime / sub).iterdir()):
+            if path.is_file():
+                files['inputs/payload/%s/%s' % (sub, path.name)] = path
+    units = ['%s/%s' % (sub, path.name) for sub in payload_dirs
+             for path in sorted((runtime / sub).iterdir()) if path.suffix in ('.c', '.S')]
     source = getattr(args, 'source', None)
     directory = getattr(args, 'source_dir', None)
     if source is not None and directory is not None:
@@ -459,7 +465,7 @@ def payload(store, run, cpu, args, profile, plan=False):
                 if not destination.is_file() or destination.read_bytes() != path.read_bytes():
                     destination.write_bytes(path.read_bytes())
         flags += ['-I' + str(staged / 'application')]
-        flags += ['-I' + str(staged / 'runtime')]
+        flags += ['-I' + str(staged / sub) for sub in payload_dirs]
         flags += ['-I' + str(staged / ('include%d' % i)) for i in range(len(getattr(args, 'include_dir', [])))]
         # Most payloads do not use the display identity. Avoid invalidating
         # runtime objects merely because an unrelated source changed the key.

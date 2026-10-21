@@ -2,7 +2,7 @@
 
 硬核 DMAC 在 sys 80 MHz、数据口 100 MHz、DDR CK 400 MHz 完成轮询式功能交付。后续板级 I/O 已验证 GPIO/fabric PLIC→CPU 中断服务，见[板级 I/O](ae350-io.md)；DMAC 自身的 CPU ISR 和专用 fabric reader 仍未验收。频率扫描暂停。DMA 服务证据见 [DMA 验收](../reports/ae350-dma.md)。
 
-公共实现位于 `firmware/ae350/dma/ae350_dma.c` 与头文件。应用通过设备表绑定完整 device/ABI、MMIO 和 IRQ 页身份，提交前校验能力、范围、地址模式及宽度。支持 byte/halfword/word；更宽访问返回 WIDTH。支持 DDR 端点和 loopback 的固定地址握手，不开放任意 MMIO。
+公共实现位于 `firmware/bsp/mega138k_ae350/dma/ae350_dma.c` 与头文件。应用通过设备表绑定完整 device/ABI、MMIO 和 IRQ 页身份，提交前校验能力、范围、地址模式及宽度。支持 byte/halfword/word；更宽访问返回 WIDTH。支持 DDR 端点和 loopback 的固定地址握手，不开放任意 MMIO。
 
 ## 调用与所有权
 
@@ -15,7 +15,7 @@ CPU 在交给设备前调用 `ae350_dma_sync_for_device(addr, bytes)`，DMA 停�
 ## 可复用验收
 
 ```powershell
-.venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350 --source firmware/examples/ae350_dma_suite.c --extra-source firmware/ae350/dma/ae350_dma.c --include-dir firmware/ae350/dma
+.venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350 --source firmware/diagnostics/mega138k_ae350/ae350_dma_suite.c
 .venv/Scripts/python.exe scripts/mini.py board dma-suite --build <gateware-result.json> --payload <payload-result.json> --port COM9 --location <FPGA位置> --cpu-jtag-location <CPU位置>
 ```
 

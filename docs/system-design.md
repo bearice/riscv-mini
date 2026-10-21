@@ -9,7 +9,7 @@ Tang Primer 20K（GW2A-LV18PG256C8/I7）+ Dock 3713 上的裸机 RISC-V 系统�
 - CPU：默认 full 配置 VexRiscv MMU、无 FPU，RV32IMA，60 MHz，2 KiB I-cache / 2 KiB D-cache，Sv32，默认启用 4 KiB 共享 writeback L2（CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent）；MMU 与 FPU 可独立关闭。CPU RTL 由 `scripts/mini.py build cpu --generate` 生成到 `build/cpu-features/`（`VexRiscv_Base.v` / `_Fpu.v` / `_Mmu.v` / `_MmuFpu.v` + `.yaml`），`gateware/machines/primer20k_vexriscv/soc.py` 按开关选择文件，使用原生 cache/fence 实现。
 - 时钟：输入 27 MHz，sys 60 MHz，DDR CK 120 MHz。完整来源与复位关系见 [时钟树](clocks.md)。
 - 中断映射（RV32 外部中断号，`firmware/hal` 依赖，与生成头一致）：UART0 = 0、timer0 = 1、timer1 = 2、board_io = 3、sdcard = 4、ethmac = 5、usb_host = 6。关闭的功能不占用中断号。
-- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，启动代码负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--source firmware/examples/monitor.c` 构建。
+- 默认 DDR 固件为 [常驻 BIOS](bios.md)：POST、UART/LCD TTY、USB 键盘、图形、IO、自检与 SD/TFTP 裸机引导。设置保存于 SD 的 BIOS.CFG，启动代码负责 DDR 初始化和 Flash/UART 装载。独立基础 monitor 可用 `--source firmware/examples/primer20k_vexriscv/monitor.c` 构建。
 
 MMU 配置另有 60 MHz 的独立 64 位机器定时器，接 MTIP；S-mode 外设 mask/pending CSR 为 `0x9c0` / `0xdc0`。OpenSBI 的 OSB1 一次性交接与保护边界见 [OpenSBI](opensbi-port.md)。
 
@@ -85,7 +85,7 @@ CPU RTL 缺失时构建会提示先运行 `scripts/mini.py build cpu --generate`
 | 路径 | 内容 |
 | --- | --- |
 | `gateware/` | SoC、SD backend、共享缓存与 native 端口、视频扫描、L2、约束与板级配置 |
-| `firmware/boot/` | 共用启动汇编；ROM 使用 L2 启动 RAM 建立栈 |
+| `firmware/bsp/primer20k_vexriscv/` | 共用启动汇编；ROM 使用 L2 启动 RAM 建立栈 |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
 | `firmware/bios/` | 默认常驻 BIOS、公开服务 ABI 与裸机 SDK |
 | `firmware/diagnostics/` | BIOS 与 monitor 共用自检 |
@@ -129,7 +129,7 @@ ABI `ba18270e`；bitstream SHA256 `fcb9ccc9c6abc3c0ff0df8c1121e1d0fd9816de49c8f1
 
 Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。上述基线使用移除补丁前的 CPU fence 握手；当前源码已删除它及 L2 atomic bypass，不能继承上述资源、时序和实板验收。最新 C 候选见 [PnR 交接](debug-c-pnr-handoff.md)。基线实板验收包含固件自检、连续 LCD 计时器、SD、静音音频和外部网络并发，不表示其他裁剪组合或更高频率已通过上板验收。ROM 配置容量 8192 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
 
-Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/main.c`](../firmware/bootloader/main.c) 与 [`scripts/boot_upload.py`](../scripts/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
+Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/primer20k_vexriscv/main.c`](../firmware/bootloader/primer20k_vexriscv/main.c) 与 [`scripts/boot_upload.py`](../scripts/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
 
 ## 文档索引
 

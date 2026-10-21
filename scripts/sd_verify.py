@@ -36,7 +36,7 @@ def main():
             if args.program:program(output,args.location)
             session=BootSession(port,log);session.menu(args.reset)
             startup=session.upload(image)
-            if b'SD DEMO:' not in startup:raise RuntimeError('Load firmware/examples/sd_demo.c')
+            if b'SD DEMO:' not in startup:raise RuntimeError('Load firmware/examples/primer20k_vexriscv/sd_demo.c')
             report['checks']['startup']=startup.decode(errors='replace')
             def command(letter):
                 port.write(letter.encode());port.flush();result=session.until(b'> ',30)

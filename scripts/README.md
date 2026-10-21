@@ -75,7 +75,7 @@ SRAM 下载和复位后先同步完整的新启动横幅，再判断 DDR 状态�
 
 探针从所选构建的 `csr.json` 生成地址。新发布包包含该文件；旧包只有在原始 run 的 bitstream/app hash 和 CSR ABI 全部匹配时才使用其 CSR。原始 run 丢失则更新预检失败，不从其他配置猜地址。
 
-`board verify --suite firmware/boot/cold` 调用现有专项验收实现，将日志写入本次操作目录。固件验收支持当前 BIOS/monitor；物理屏幕、听音、键鼠输入等观察仍按各专项验收说明执行。冷启动检查是外部断电后的启动和状态检查，不替代精确 Flash 读回；冷启动不属于默认验收或发布流程，只在用户主动要求时执行。
+`board verify --suite firmware/bsp/primer20k_vexriscv/cold` 调用现有专项验收实现，将日志写入本次操作目录。固件验收支持当前 BIOS/monitor；物理屏幕、听音、键鼠输入等观察仍按各专项验收说明执行。冷启动检查是外部断电后的启动和状态检查，不替代精确 Flash 读回；冷启动不属于默认验收或发布流程，只在用户主动要求时执行。
 
 boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验收。firmware 的 `--mic` 明确测试已连接的麦克风；`--soak-seconds` 要求文件系统、视频、USB、音频全部启用。不满足条件在板端操作前失败。
 
@@ -107,4 +107,4 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 
 AE350 平台操作合同见 [当前上板说明](../docs/ae350-platform.md)。普通工作使用 `board run/recover/verify`，诊断使用 `board ddr-suite`；`ae350-upload` 仅保留为兼容别名。上传必须明确传入 `--payload <payload-build-result.json>`，不再自动挑选其他构建的最新载荷。无 JTAG 的上传只证明 ROM 接收与交接，执行核验和拒绝路径测试使用显式 CPU JTAG。完整时序检查包含 setup、hold 和 minimum pulse width。
 
-AE350 ROM bootloader 的源目录为 `firmware/bootloader/ae350/`，独立于内存诊断。普通应用和 DDR suite 都经同一 UART loader 装载；`board jtag-test` 只读核验 ITCM、本地内存和 POST，`board recover` 执行显式恢复。
+AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独立于内存诊断。普通应用和 DDR suite 都经同一 UART loader 装载；`board jtag-test` 只读核验 ITCM、本地内存和 POST，`board recover` 执行显式恢复。

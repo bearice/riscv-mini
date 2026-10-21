@@ -40,7 +40,7 @@ python scripts/mini.py build system --hardware current --refresh-hardware --synt
 ```text
 python scripts/mini.py build system --profile minimal
 python scripts/mini.py build system --hardware current --l2-size 16384 --synthesize
-python scripts/mini.py build system --profile minimal --feature video=on --source firmware/examples/monitor.c
+python scripts/mini.py build system --profile minimal --feature video=on --source firmware/examples/primer20k_vexriscv/monitor.c
 python scripts/mini.py build cpu --generate --pipelined-fetch --arithmetic-matrix --output-dir build/work/cpu-generator
 python scripts/mini.py build payload --soft-float
 python scripts/mini.py build linux

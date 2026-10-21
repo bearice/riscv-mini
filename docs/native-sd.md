@@ -54,7 +54,7 @@ CD 在每次等待与块操作中检查。检测无卡时标记介质不可用�
 & $MiniPython scripts/mini.py build system --sd-profile spi --output-dir build/spi --synthesize
 
 # 独立测试应用，保持基础 monitor 无写测/压力命令。
-& $MiniPython scripts/mini.py build system --sd-profile lite --source firmware/examples/sd_demo.c --output-dir build/m6-demo
+& $MiniPython scripts/mini.py build system --sd-profile lite --source firmware/examples/primer20k_vexriscv/sd_demo.c --output-dir build/m6-demo
 & $MiniPython scripts/sd_verify.py --output-dir build/base --reset --write-test --soak-seconds 300
 
 # 恢复基础应用。

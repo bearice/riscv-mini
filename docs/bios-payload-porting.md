@@ -26,7 +26,7 @@ CPU/sys=60 MHz DDR=120 MHz UART=115200
 BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 ```
 
-**坑 1：硬浮点载荷在没有 F 扩展的配置上以非法指令死掉。** 现役 full 配置是 `rv32ima`（`FPU=0`），所以载荷必须用 `--soft-float`（`rv32im/ilp32`，浮点走 libgcc 软实现）。`mstatus.FS` 只在 `MINI_FEATURE_FPU` 的构建里由 `firmware/boot/start.S` 置位，载荷自己无法补救。
+**坑 1：硬浮点载荷在没有 F 扩展的配置上以非法指令死掉。** 现役 full 配置是 `rv32ima`（`FPU=0`），所以载荷必须用 `--soft-float`（`rv32im/ilp32`，浮点走 libgcc 软实现）。`mstatus.FS` 只在 `MINI_FEATURE_FPU` 的构建里由 `firmware/bsp/primer20k_vexriscv/start.S` 置位，载荷自己无法补救。
 
 - 硬浮点载荷 → `--feature fpu=on` 的 full 配置
 - 软浮点载荷 → 任何配置

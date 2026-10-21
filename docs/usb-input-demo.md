@@ -1,6 +1,6 @@
 # RGB LCD keyboard/mouse demo
 
-Source: [`firmware/examples/usb_input_demo.c`](../firmware/examples/usb_input_demo.c).
+Source: [`firmware/examples/primer20k_vexriscv/usb_input_demo.c`](../firmware/examples/primer20k_vexriscv/usb_input_demo.c).
 This standalone DDR application uses the existing RGB LCD scanner and USB HAL.
 It uses the selected USB HAL backend; the default is the lightweight PIO host.
 No gateware or bootloader change is needed; the application ABI must match the
@@ -39,7 +39,7 @@ Build and load using PowerShell from `riscv-mini`:
 
 ```powershell
 & ./.venv/Scripts/python.exe scripts/mini.py build system `
-    --source firmware/examples/usb_input_demo.c --output-dir build/usb-input-demo
+    --source firmware/examples/primer20k_vexriscv/usb_input_demo.c --output-dir build/usb-input-demo
 
 # Select an existing successfully routed FPGA build with the matching ABI.
 # The board must already be running that configuration.

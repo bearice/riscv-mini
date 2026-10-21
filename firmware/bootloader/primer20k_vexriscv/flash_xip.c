@@ -3,7 +3,7 @@
  * Installing images is deliberately unavailable while executing from Flash.
  */
 #include "flash.h"
-#include "../common/memory_layout.h"
+#include "../../common/memory_layout.h"
 unsigned flash_size(void) { return MINI_FLASH_SIZE; }
 int flash_init(uint32_t *id) { if(id)*id=0;return 1; }
 int flash_read(unsigned address,void *data,unsigned length) {

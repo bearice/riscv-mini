@@ -20,7 +20,7 @@
 - `--soft-float`：rv32im/ilp32，**现役配置用这个**
 - 不带：rv32imaf/ilp32f，只在显式 `--feature fpu=on` 的 full 配置上跑
 
-硬浮点使能机制与 [GW-BASIC 的说明](gwbasic.md#硬浮点前提) 相同（`firmware/boot/start.S` 只在 `MINI_FEATURE_FPU` 构建里置 `mstatus.FS`）。
+硬浮点使能机制与 [GW-BASIC 的说明](gwbasic.md#硬浮点前提) 相同（`firmware/bsp/primer20k_vexriscv/start.S` 只在 `MINI_FEATURE_FPU` 构建里置 `mstatus.FS`）。
 
 ### BIOS 前提
 

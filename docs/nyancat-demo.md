@@ -1,6 +1,6 @@
 # Nyan Cat BIOS demo
 
-`firmware/examples/nyancat_demo.c` 是由 BIOS 引导的裸机程序，使用
+`firmware/examples/bios_payload/nyancat_demo.c` 是由 BIOS 引导的裸机程序，使用
 [原版页面](https://www.nyan.cat/index.php?cat=original) 的 `original.gif` 和
 `original.mp3`。它不是替换 BIOS 的独立 HAL 固件，不通过 `build.py --app` 构建。
 
@@ -21,7 +21,7 @@
 uv pip install --python .venv/Scripts/python.exe -r requirements-nyancat.txt
 .venv/Scripts/python.exe scripts/mini.py build nyancat --output-dir build/nyancat
 .venv/Scripts/python.exe scripts/mini.py build payload `
-  --source firmware/examples/nyancat_demo.c `
+  --source firmware/examples/bios_payload/nyancat_demo.c `
   --include-dir build/nyancat `
   --extra-source build/nyancat/assets.S `
   --output-dir build/nyancat/payload

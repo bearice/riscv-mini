@@ -7,10 +7,10 @@
 #include "blockcache.h"
 #include <string.h>
 #if MINI_FEATURE_VIDEO
-#include "../common/rgb_canvas.h"
+#include "../../common/rgb_canvas.h"
 #endif
 #if MINI_FEATURE_ETH
-#include "../common/packet_echo.h"
+#include "../../common/packet_echo.h"
 #endif
 
 #define RING_FRAMES 32768u

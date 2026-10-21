@@ -44,10 +44,10 @@ MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/r
 MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
 
 RGB LCD 默认显示 BIOS 的 80×34 字符终端；图形模式提供 RGB565 双帧槽。独立基础 monitor
-（`--source firmware/examples/monitor.c`）启动时显示黑色画布；扫描器和 DMA 保留，
+（`--source firmware/examples/primer20k_vexriscv/monitor.c`）启动时显示黑色画布；扫描器和 DMA 保留，
 `video_frame()` / `video_present()` 提供写帧和换帧接口，见 [显示规格](docs/video-spec.md)。HDMI 暂缓。
 独立 [键鼠图形 demo](docs/usb-input-demo.md) 在大 LCD 上显示鼠标光标、键盘文字和输入状态，
-通过 UART 装入 DDR；源码为 `firmware/examples/usb_input_demo.c`。
+通过 UART 装入 DDR；源码为 `firmware/examples/primer20k_vexriscv/usb_input_demo.c`。
 
 复位后的本机网络初始化流量会短时占满两个未过滤 RX 槽，并发窗口前显式等待其结束；
 限制与失败现场见 [Ethernet](docs/ethernet.md)。Flash 启动后首次 USB 枚举存在未定位的间歇失败，
@@ -65,7 +65,7 @@ RTOS 属于后续工作。
 驱动中移除，未启用功能的测试命令返回 `UNSUPPORTED`。
 
 接线以用户更正为准：麦克风 DA=P11、CK=R11、LR=M15、WS=J16，另接 GND/3V3；T9 继续用于
-WS2812。双麦克风 demo 为 `firmware/examples/microphone_stereo_demo.c`，第二只接 DA=T6、
+WS2812。双麦克风 demo 为 `firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c`，第二只接 DA=T6、
 CK=R8、LR=T8、WS=P9；monitor 命令为 `test mic stereo`。
 
 输入 `test` 列出 DDR、Flash、UART/IRQ、SD、两块 LCD、板级 IO、音频、Ethernet、USB 和并发
@@ -182,7 +182,7 @@ ARP 解析每 250 ms 重试一次，最长 10 秒；link 位由 HAL 每 250 ms �
 | 路径 | 内容 |
 | --- | --- |
 | `gateware/` | SoC、可选 SD backend、DDR 端口调度、视频扫描、时序约束和板级配置 |
-| `firmware/boot/` | 共用启动汇编；ROM 使用 L2 启动 RAM 建立栈 |
+| `firmware/bsp/primer20k_vexriscv/` | 共用启动汇编；ROM 使用 L2 启动 RAM 建立栈 |
 | `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
 | `firmware/bios/` | 默认常驻 BIOS：POST、TTY、设置、系统服务与 SD/TFTP 引导 |
 | `firmware/diagnostics/` | BIOS 与 monitor 共用的板级自检命令 |

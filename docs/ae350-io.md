@@ -22,14 +22,14 @@ Payload BSP 提供 PLIC 注册、屏蔽、claim/complete 与 trap 分派，进�
 
 ## 可复用诊断
 
-`firmware/examples/ae350_io_suite.c` 输出 32 字结果合同，完成字 `0xC4100004`、schema `0x50340001`。`board io-suite` 分别判定上传、执行和数字功能，包括身份/拒绝、LED 读回、1000 次事件、合并/屏蔽/重入、硬 GPIO claim、WS2812 完成/忙拒绝，以及 DMA 忙时的 ISR 与独立 CPU DDR 访问。物理观察独立记录，套件 physical 字保持 0。
+`firmware/diagnostics/mega138k_ae350/ae350_io_suite.c` 输出 32 字结果合同，完成字 `0xC4100004`、schema `0x50340001`。`board io-suite` 分别判定上传、执行和数字功能，包括身份/拒绝、LED 读回、1000 次事件、合并/屏蔽/重入、硬 GPIO claim、WS2812 完成/忙拒绝，以及 DMA 忙时的 ISR 与独立 CPU DDR 访问。物理观察独立记录，套件 physical 字保持 0。
 
 ```powershell
-.venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350 --source firmware/examples/ae350_io_suite.c --extra-source firmware/ae350/dma/ae350_dma.c --include-dir firmware/ae350/dma
+.venv/Scripts/python.exe scripts/mini.py build payload --machine mega138k_ae350 --source firmware/diagnostics/mega138k_ae350/ae350_io_suite.c
 .venv/Scripts/python.exe scripts/mini.py board io-suite --build <gateware-result.json> --payload <payload-result.json> --port COM9 --location <FPGA位置> --cpu-jtag-location <CPU位置>
 ```
 
-`firmware/examples/ae350_led_rgb_demo.c` 用 KEY0/KEY1 选择 LED、KEY2/KEY3 选择 RGB，独立打印温度，不写风扇占空比。历史目视确认记录为 `build/runs/20261020T170013748621Z-board-ae350-upload`，当前数字重测不伪造为再次目视。
+`firmware/examples/mega138k_ae350/ae350_led_rgb_demo.c` 用 KEY0/KEY1 选择 LED、KEY2/KEY3 选择 RGB，独立打印温度，不写风扇占空比。历史目视确认记录为 `build/runs/20261020T170013748621Z-board-ae350-upload`，当前数字重测不伪造为再次目视。
 
 ## 温度与暂缓能力
 

@@ -84,29 +84,31 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
     own = ['scripts/modular', 'scripts/mini.py', 'scripts/mini_ops/release.py', 'scripts/mini_ops/catalog.py', 'scripts/build_records.py', 'scripts/build_recipe.py',
            'scripts/versions.py', 'scripts/riscv_toolchain.py', 'scripts/boot_image.py', 'scripts/tools/boot_image.py',
            'gateware/machines/primer20k_vexriscv/csr_layout.py', 'gateware/machines/primer20k_vexriscv/memory_map.py', 'gateware/machines/primer20k_vexriscv/config.py', 'gateware/machines/primer20k_vexriscv/flash_xip.py', 'gateware/machines/primer20k_vexriscv/features.py', 'requirements.lock',
-           'firmware/common', 'firmware/drivers', 'firmware/hal/include', 'firmware/boot/start.S']
+           'firmware/common', 'firmware/drivers', 'firmware/hal/include', 'firmware/bsp/primer20k_vexriscv/start.S']
     deps = {'soc-description': soc}
+    app_unit = None
     if component == 'hal-sdk':
         names = hal_sources(v)
         own += ['firmware/hal/src', 'firmware/vendor/fatfs', 'firmware/vendor/tinyusb/src']
     elif component == 'bios':
-        names = ['firmware/boot/start.S', *['firmware/bios/' + n for n in ('main.c', 'console.c', 'vt.c', 'settings.c', 'boot.c', 'network.c', 'benchmark.c', 'enter.S')], 'firmware/diagnostics/tests.c']
-        own += ['firmware/bios', 'firmware/diagnostics', 'firmware/bootloader/app.ld']
+        names = ['firmware/bsp/primer20k_vexriscv/start.S', *['firmware/bios/' + n for n in ('main.c', 'console.c', 'vt.c', 'settings.c', 'boot.c', 'network.c', 'benchmark.c', 'enter.S')], 'firmware/diagnostics/primer20k_vexriscv/tests.c']
+        own += ['firmware/bios', 'firmware/diagnostics/primer20k_vexriscv', 'firmware/bsp/primer20k_vexriscv/app.ld']
         own += [p.relative_to(store.root).as_posix() for folder in ('firmware/vendor/fatfs','firmware/vendor/tinyusb/src')
                 for p in sorted((store.root/folder).rglob('*.h'))]
         if not boot or not sdk: raise ValueError('BIOS needs bootloader and HAL SDK artifacts')
         deps.update(bootloader=boot, **{'hal-sdk': sdk})
         if application and Path(application).resolve() != store.root / 'firmware/bios/main.c':
             app = Path(application).resolve().relative_to(store.root).as_posix()
-            names = ['firmware/boot/start.S', app]
-            if Path(app).name == 'monitor.c': names.append('firmware/diagnostics/tests.c')
-            own = [n for n in own if n not in ('firmware/bios', 'firmware/diagnostics')]
+            app_unit = store.root / app
+            names = ['firmware/bsp/primer20k_vexriscv/start.S', app]
+            if Path(app).name == 'monitor.c': names.append('firmware/diagnostics/primer20k_vexriscv/tests.c')
+            own = [n for n in own if n not in ('firmware/bios', 'firmware/diagnostics/primer20k_vexriscv')]
             own += names
     elif component == 'bootloader':
-        names = ['firmware/boot/start.S', 'firmware/drivers/uart.c', 'firmware/drivers/time.c',
-                 'firmware/bootloader/main.c', 'firmware/bootloader/ddr.c']
-        names.append('firmware/bootloader/' + ('flash.c' if v['boot_mode'] == 'rom' else 'flash_xip.c') if v['features']['flash'] else 'firmware/drivers/flash_disabled.c')
-        own += ['firmware/bootloader']
+        names = ['firmware/bsp/primer20k_vexriscv/start.S', 'firmware/drivers/uart.c', 'firmware/drivers/time.c',
+                 'firmware/bootloader/primer20k_vexriscv/main.c', 'firmware/bootloader/primer20k_vexriscv/ddr.c']
+        names.append('firmware/bootloader/primer20k_vexriscv/' + ('flash.c' if v['boot_mode'] == 'rom' else 'flash_xip.c') if v['features']['flash'] else 'firmware/drivers/flash_disabled.c')
+        own += ['firmware/bootloader/primer20k_vexriscv', 'firmware/bootloader/include']
     else:
         raise ValueError('Unknown firmware component: ' + component)
     flags = portable_flags(v) + ['-DMINI_BOOTLOADER=' + str(int(component == 'bootloader'))]
@@ -122,11 +124,14 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
                   rebuild_entrypoint=['scripts/mini.py','_worker','rebuild-one'],
                   translation_units=names,
                   dependencies=deps, environment=identity(env), libraries=gcc_inputs(env, v),
-                  includes=['$GENERATED', 'firmware/drivers', 'firmware/bootloader', 'firmware/vendor/fatfs',
+                  includes=['$GENERATED', 'firmware/drivers', 'firmware/bootloader/primer20k_vexriscv',
+                            'firmware/bootloader/include', 'firmware/vendor/fatfs',
                             'firmware/hal/include', 'firmware/vendor/tinyusb/src'],
                   forced_include='$GENERATED/features.h',
                   identity_include=None if component=='hal-sdk' else {'source':'main.c','header':'$GENERATED/identity.h'},
-                  linker=None if component=='hal-sdk' else 'firmware/bootloader/' + ('app.ld' if component=='bios' else 'boot.ld' if v['boot_mode']=='rom' else 'xip.ld'),
+                  linker=None if component=='hal-sdk' else (
+                      'firmware/bsp/primer20k_vexriscv/app.ld' if component=='bios' else
+                      'firmware/bootloader/primer20k_vexriscv/' + ('boot.ld' if v['boot_mode']=='rom' else 'xip.ld')),
                   link_flags=['-Wl,--gc-sections', '-Wl,-Map,$OUTPUT.map', '-lgcc'],
                   compile_flags=['-MMD', '-MF', '$OBJECT.d', '-MT', '$OBJECT', '-c'],
                   reproducibility_flags=['-frandom-seed=$OBJECT_ID', '-ffile-prefix-map=$ROOT=.'],
@@ -160,15 +165,19 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
         if component!='hal-sdk':text_file(include/'identity.h',header)
         abi = sm['config']['legacy_abi_tag']
         text_file(include / 'image_abi.h', f'#define MINI_IMAGE_ABI 0x{abi:08x}u\n#define MINI_IMAGE_ABI_HEX "{abi:08x}"\n')
-        dirs = [include, store.root / 'firmware/drivers', store.root / 'firmware/bootloader', store.root / 'firmware/vendor/fatfs',
+        dirs = [include, store.root / 'firmware/drivers', store.root / 'firmware/bootloader/primer20k_vexriscv',
+                store.root / 'firmware/bootloader/include', store.root / 'firmware/vendor/fatfs',
                 store.root / 'firmware/hal/include', store.root / 'firmware/vendor/tinyusb/src']
         compile_flags = [*flags, *[arg for d in dirs for arg in ('-I', str(d))], '-include', str(include / 'features.h')]
         libs = [store.path(sdk) / 'outputs/hal.a'] if sdk else []
-        linker = None if component == 'hal-sdk' else store.root / 'firmware/bootloader' / ('app.ld' if component == 'bios' else 'boot.ld' if v['boot_mode'] == 'rom' else 'xip.ld')
+        linker = None if component == 'hal-sdk' else (
+            store.root / 'firmware/bsp/primer20k_vexriscv/app.ld' if component == 'bios' else
+            store.root / 'firmware/bootloader/primer20k_vexriscv' / ('boot.ld' if v['boot_mode'] == 'rom' else 'xip.ld'))
         name = {'hal-sdk': 'hal', 'bios': 'app', 'bootloader': 'boot'}[component]
         headers = [p for p in include.rglob('*') if p.is_file() and p.name!='identity.h']
         ninja_build(work, [store.root / n for n in names], compile_flags, env, name, linker, libs, implicit=headers, run=run, root=store.root,
-                    identity_header=include/'identity.h' if component!='hal-sdk' else None)
+                    identity_header=include/'identity.h' if component!='hal-sdk' else None,
+                    identity_sources=[app_unit] if app_unit else None)
         if source_files(store.root, own) != inputs:
             raise ValueError('Source changed during build: ' + component)
         files = {'outputs/' + p.name: p for p in work.glob(name + '.*') if p.suffix in ('.a', '.elf', '.bin')}

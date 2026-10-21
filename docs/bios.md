@@ -2,7 +2,7 @@
 
 性能测试命令与计时边界见 [BIOS benchmark](benchmark.md)。
 
-默认固件是 `firmware/bios/main.c`。片上 ROM 负责软件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--source firmware/examples/monitor.c` 单独构建。
+默认固件是 `firmware/bios/main.c`。片上 ROM 负责软件 DDR 初始化、Flash/UART 恢复和装载 BIOS；BIOS 在 DDR 中初始化设备、执行 POST，提供文字终端、图形与 IO 服务，再从 SD 或网络引导自定义裸机程序。原来的基础 monitor 可用 `--source firmware/examples/primer20k_vexriscv/monitor.c` 单独构建。
 
 ## 启动与内存
 
@@ -178,7 +178,7 @@ RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version�
 # 重用已验收、CSR ABI 相同的 FPGA 配置，UART 运行 BIOS；不写 Flash。
 & $MiniPython scripts/boot_upload.py --reset --mode uart --output-dir build/base --image build/bios/firmware/app.img
 & $MiniPython scripts/mini.py build payload
-& $MiniPython scripts/mini.py build payload --source firmware/examples/bios_demo.c
+& $MiniPython scripts/mini.py build payload --source firmware/examples/bios_payload/bios_demo.c
 # 在接 Dock 的本机网卡地址上运行只读 TFTP；地址须替换为实际地址。
 & $MiniPython scripts/bios_tftp.py --bind 169.254.25.153 --file build/bios-payload/BOOT.RPB
 ```

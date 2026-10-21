@@ -1,9 +1,9 @@
 /* Optional UART monitor example; the default DDR firmware is bios/main.c. */
 #include <hal/hal.h>
 #include <generated/soc.h>
-#include "../../bootloader/image_abi.h"
+#include "image_abi.h"
 #include <string.h>
-#include "../diagnostics/tests.h"
+#include "../../diagnostics/primer20k_vexriscv/tests.h"
 static int parse_hex(const char *p,unsigned digits,unsigned *value) {
     unsigned n=0;for(unsigned i=0;i<digits;++i) {unsigned char c=p[i];unsigned d=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:16;if(d>=16)return 0;n=(n<<4)|d;}
     if(p[digits])return 0;
