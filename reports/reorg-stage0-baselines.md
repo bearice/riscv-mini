@@ -48,7 +48,7 @@ FAIL 分类（无一例进入阶段判定，登记为现状）：
 
 **5acca4d 树上 minimal-profile 全流程 = GREEN（本轮可得的绿色对照）**：store `gateware/030dc2c45ab442de2bf59d77ac69a9fa7d9359b53408ece91749421a17c44d09`，run 同 §1。setup 0 / hold 0；最坏建立 slack **+4.214 ns**（VexRiscv 译码→访存路径）；Logic **6284/20736**、BSRAM 13/46；`pnr_report` 契约（`scripts/modular/rtl.py`）直接可读。
 
-**后果（阻塞项，已提请用户）**：计划规定阶段 A 的 20K 对比基线"必须是 5acca4d 树上 full-profile PnR 重跑产物（成功发布 store 后才登记）"，而该重跑在当前树无绿色产物；在用户裁决（替代门 = minimal 绿基线 + full 网表等价 + 阶段 E 末次全量重建；或先立项修时序）之前，阶段 A 不开。
+**后果（已裁决，2026-10-21 晚）**：本计划原规定阶段 A 的 20K 对比基线"必须是 5acca4d 树上 full-profile PnR 重跑产物"，而该重跑在当前树无绿色产物。用户拍板 **full 完全退出各阶段门**（计划修订四"裁决"节）：A–D 各阶段 20K 时序哨兵 = minimal 全流程 0/0、+4.214 ns 锚点、hold 恒 0、不新增违例域；full 全量重建只在阶段 E 验收跑一次并登记（预期仍红）。20K full 时序回归作为独立缺陷另行立项。
 
 ## 4. AE350 时序基线
 

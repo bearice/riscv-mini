@@ -1,6 +1,6 @@
 # 多平台目录重组与设备解耦执行计划
 
-日期：2026-10-21。修订三（同日）：gemini-4-argon 第二轮复核（对修订二，结论 STILL-BLOCKED：3 个新阻塞 B-R2-1/2/3 + 每阶段 majors）经 lead 逐行验证后落进本修订，落点见 §8。修订二文本（含第一轮落点 §6、第二轮落点 §7）保留。本文把 [多平台组织提案](multi-platform-architecture-proposal.md)（下称"设计文档"）的 §3/§4 落为可分批执行的计划。设计文档的兼容性判定（§6）和 requires/provides（§7）不在本计划内。
+日期：2026-10-21。修订四（同日，用户裁决）：20K full-profile PnR 完全退出阶段 0/A–D 的验证门，full 全量重建只在阶段 E 验收跑一次并登记结果（预期红，时序回归作为独立缺陷另行立项）；细则见 §3 的"裁决（修订四）"。修订三（同日）：gemini-4-argon 第二轮复核（对修订二，结论 STILL-BLOCKED：3 个新阻塞 B-R2-1/2/3 + 每阶段 majors）经 lead 逐行验证后落进本修订，落点见 §8。修订二文本（含第一轮落点 §6、第二轮落点 §7）保留。本文把 [多平台组织提案](multi-platform-architecture-proposal.md)（下称"设计文档"）的 §3/§4 落为可分批执行的计划。设计文档的兼容性判定（§6）和 requires/provides（§7）不在本计划内。
 
 硬规则（贯穿每一阶段，违反则该提交不算完成）：
 
@@ -186,13 +186,23 @@ tests/
 
 每阶段一次提交，遵守 pre-commit SOP。验证门必须在该提交的树上为绿。不把"下阶段会修"算进本阶段的门。
 
+### 裁决（修订四，2026-10-21 晚，用户拍板）
+
+20K full-profile PnR 时序在当前树为红（既有 RTL 增量回归，见 `reports/reorg-stage0-baselines.md` §3），计划原要求的"绿色 full 重跑基线"不可得。用户裁决：**full 完全退出各阶段门**。
+
+- 阶段 0 的 20K 基线即按 `reports/reorg-stage0-baselines.md`（提交 `aec1fd1`）判定为记录完成：v0.11.0 = 最后板级合格参照；5acca4d full 红指纹（754 CLKDIV 域 + 3 usb_ulpi 端点，hold 0）= 缺陷登记；minimal 全流程绿锚点（0/0，最坏 +4.214 ns，store `030dc2c45ab4`）= 每阶段时序哨兵。
+- 阶段 A–D 各门不含 20K full 重建或 full 对比。20K 侧时序哨兵 = minimal 全流程重建 0/0、hold 恒 0、不新增违例域；host 回归 = 对"现状 + 已知名单"不新增红；隔离反证照常。
+- **AE350 gateware 重建 + 时序对比（对 0/0/0.142 绿基线）保留为各阶段门**：裁决只豁免 20K 的 red full-profile 组合，AE350 是该机唯一绿色时序信号，不得豁免。
+- 阶段 E 验收跑一次两机全量重建：20K full 结果原样登记（预期仍红，除非缺陷已被另行修复），AE350 full gateware 必须保持 0/0/0.142。
+- 时序回归修复不在重组范围：独立立项，用户排期。
+
 ### 阶段 0 — 基线与 manifest
 
 不改源码布局。
 
 - 记录两机 `mini.py plan` 的全部目标。AE350 `plan system` 今日就是 BLOCKED（[scripts/modular/machines.py:144-149](../scripts/modular/machines.py:144)），原样记为基线，不当成回归。
 - 记录 host 测试通过清单、20K full PnR 时序，以及当前 AE350 gateware 的时序报告路径。两机基线实测落点（本修订在 5acca4d 工作机上核实）：
-  - 20K：`build/refs/current.json` → `build/archives/v0.11.0-ed502601d172/full-rv32ima-rom8k-l28k/`。身份已核（build-info.json：commit ed502601d17220c41ca05140d832df23204a3d70、dirty:false、kind:captured、2026-10-14；validation.json：setup 0/hold 0；报告在其 `reports/pnr/pnr/{project_tr_content.html,project.tr.html,project.rpt.txt}`）。但 `git diff --stat ed502601d172..HEAD -- gateware firmware` = **64 files +54552/-42**，归档不是 RTL-当前的。登记为"最后板级合格参照"；阶段 A 的对比基线必须是 5acca4d 树上的 full-profile PnR 重跑产物（mini.py 托管构建，成功发布 store 后才登记）。当前该重跑在 gateware PnR 阶段失败（详见记忆 82f87866 续记），修复前 20K 基线不算记录完成，阶段 A 不得开。
+  - 20K：`build/refs/current.json` → `build/archives/v0.11.0-ed502601d172/full-rv32ima-rom8k-l28k/`。身份已核（build-info.json：commit ed502601d17220c41ca05140d832df23204a3d70、dirty:false、kind:captured、2026-10-14；validation.json：setup 0/hold 0；报告在其 `reports/pnr/pnr/{project_tr_content.html,project.tr.html,project.rpt.txt}`）。但 `git diff --stat ed502601d172..HEAD -- gateware firmware` = **64 files +54552/-42**，归档不是 RTL-当前的。登记为"最后板级合格参照"。原文要求"阶段 A 的对比基线必须是 5acca4d 树上的 full-profile PnR 重跑产物（成功发布 store 后才登记）；重跑失败则修复前阶段 A 不得开"——该重跑在 PnR 阶段红（既有 RTL 增量回归），整条要求由修订四裁决废止：full 退出各阶段门，阶段 0 基线以 `reports/reorg-stage0-baselines.md`（提交 `aec1fd1`）判定为记录完成。
   - AE350：最新提交级归档 `build/archives/ae350-board-io-7339ab23d5cb`（source_commit 7339ab23d5cbd14b9586e7542b11cf5abef9e482、dirty:false、kind:code-snapshot）。前置条件按修订三收窄为 `git diff 7339ab2..HEAD -- gateware firmware` 为空——**实测为空，判定可采用、无需重跑**。`scripts/modular/ae350.py` 不再进该 diff 条件：5acca4d 对它的 +128/-28 已逐段核验——`rtl()` 对默认 full 模式不改任何 PnR 输入（DDRSoC 生成、.cst/.sdc/run.tcl、IP 树、Gowin 选项不变），只加 workspace 复用、incremental-seed 管线（full 模式下不激活）与 license retry；`firmware()` 把 BOOT_BUILD_ID 宏移进 gen/identity.h，只影响 ITCM ROM 里的 12 字符横幅串。时序证据：`build/archives/ae350-board-io-7339ab23d5cb/build/store/gateware/44405c059cf8b49a5944652f0b676294242b06cd2e07931ca11028fc73033289/timing.json`（setup 0、hold 0、min_pulse_width_slack_ns 0.142）与同目录 `gateware/impl/pnr/{project_tr_content.html,project.tr,project.rpt.txt}`。今日候选 `stable-workspace-full-71e169`（digest 8c46d5e0…，PnR-not-board-qualified）只作对照，不作基线。A 的对比门不能对着空基线。
   - 外部评审给出的 `build/store/gateware/ed502601d172/`、`build/refs/ae350-current.json`、`reports/ae350-m6-acceptance.md` 均不存在（是归档内相对路径漏了 `build/archives/<name>/` 前缀），禁止引用。
 - `sim/test_build_report.py:8` 的 `from scripts.build import pnr_report` 在 5acca4d 即坏（`scripts/build.py` 不存在，`pnr_report` 在 `scripts/modular/rtl.py`）。基线清单必须是"现状 + 已知名单"：在本阶段记录之前先开一个独立小提交修复该 import 并复跑，之后基线才是全绿现状。
@@ -235,7 +245,7 @@ tests/
 - 重写 `incremental_seed` 读取的 staged board 路径。读不到旧构件的新路径就拒绝种子，不删除守卫：守卫对已发布旧构件读 `inputs/source/gateware/boards/mega138k_pro/board.json`，旧种子构件里只有 `gateware/board.json`，直接换路径会 `FileNotFoundError` 炸掉增量路径——按"路径不存在 → return None → 退回 full PnR"实现（决策 4：守卫保留）。
 - [targets.py:61-67](../scripts/modular/targets.py:61) 改为注册表分发：未知 `--machine` 报错，不落入 20K。加反证测试：假机器 id 的 `plan` 必须失败。`mini.py:33` 的 choices 从注册表生成。
 
-**验证门**：两机 gateware 按阶段 0 基线完整重建并对比时序；20K bootloader（rom 与 xip）和 AE350 bootloader/payload 能构建（证明 firmware.py 的 gateware 字符串已跟上）；host 回归全绿；隔离反证（改 `io_map.py` 只失效 138K）。本阶段不要求固件目录已经重组。
+**验证门**（按修订四）：20K gateware 用 minimal 全流程完整重建，对阶段 0 绿锚点（0/0、最坏 +4.214 ns）对比时序；AE350 gateware 完整重建并对 0/0/0.142 基线对比；full-profile 组合不进本门；20K bootloader（rom 与 xip）和 AE350 bootloader/payload 能构建（证明 firmware.py 的 gateware 字符串已跟上）；host 回归对"现状 + 已知名单"不新增红；隔离反证（改 `io_map.py` 只失效 138K）。本阶段不要求固件目录已经重组。
 
 ### 阶段 B — 设备解耦
 
@@ -248,7 +258,7 @@ tests/
 - 不建 `gateware/memory/`。两套 DDR 不是同一模块的两个消费者。
 - `cpu/`、`transport/`、`interconnect/` 仍不建，除非本阶段真的出现第二个 import 方。出现了才加目录，并在该提交的说明里指出第二个消费者。
 
-每小步的门：该 core 的接口测试、所属机器的仿真、该机 PnR。B 末实板：20K audio 播放/录音、video ring、io；AE350 io-suite 与 dma-suite。
+每小步的门：该 core 的接口测试、所属机器的仿真、该机 PnR。修订四注：B 的 core 不在 minimal 组合内，其"该机 PnR"按裁决降级为 full-profile RTL 生成（无 PnR）+ 仿真回归作为每小步门；full 时序只在阶段 E 末次重建登记。B 末实板：20K audio 播放/录音、video ring、io；AE350 io-suite 与 dma-suite。
 
 ### 阶段 C — firmware 重组
 
@@ -287,6 +297,8 @@ tests/
 **验证门**：`mini.py` 全部子命令 `--help`；两机 `plan`；host 测试全绿；隔离反证。
 
 ### 阶段 E — 设计文档收口
+
+按修订四，本阶段验收跑一次两机全量重建并登记结果：AE350 gateware 必须 0/0/0.142；20K full-profile 原样登记（预期仍红 = 既有回归，除非已另行修复），连同 minimal 锚点、host 终态、隔离反证一起进阶段 E 报告。
 
 只更新状态，不在这一步才去修已经坏掉的命令。
 

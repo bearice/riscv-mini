@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-10-21T11:27:45+00:00",
+  "title": "docs: rule full-profile PnR out of the per-stage reorg gates",
+  "changes": [
+    "User ruling (plan revision 4): 20K full-profile PnR leaves stage 0/A-D verification gates because no green full baseline exists at HEAD (pre-existing RTL-growth timing regression). Stage gates become the minimal full-flow green anchor (0/0, +4.214ns) plus AE350 gateware rebuild against its 0/0/0.142 green baseline, which stays mandatory; B-step machine PnR requirements downgrade to full-profile RTL generation without PnR plus sim regressions; stage E runs one full two-machine rebuild and registers the result as-is. The timing regression itself is a separate defect project outside the reorg."
+  ],
+  "build": null,
+  "performance_report": null,
+  "checks": {
+    "passed": true,
+    "tests_run": 20,
+    "command": [
+      "C:\\Users\\bearice\\Workspace\\TangPrimer-20K\\riscv-mini\\.venv\\Scripts\\python.exe",
+      "tests\\workflow_test.py",
+      "--report",
+      "build/reports/checks/reorg-ruling4.json"
+    ],
+    "source_inputs_sha256": "50ef44819d91688e8d426a7c84e5930b1018b71c62fb3f400d6b45c969b6e29f"
+  },
+  "mode": "staged review",
+  "base_revision": "aec1fd1e62a6d4df71fa9fd20966db0998203475",
+  "source_revision": null
+}
