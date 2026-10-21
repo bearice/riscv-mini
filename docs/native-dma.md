@@ -21,4 +21,4 @@ SD 使用 16 字节对齐、4 KiB DDR bounce buffer，上层可提供非对齐�
 
 LCD 和 SD 经共享内存控制器的端口缓冲与共享缓存入口，内部保持 128-bit burst，外设等待不占全局仲裁。停止、flush 和缓冲提交契约见 [共享内存控制器](memory-controller.md)。控制器 crossbar 的 bank 仲裁仍存在。
 
-`sim/test_native_dma.py` 检查打包、尾部掩码、停止、延迟后端和 SD 读写仲裁。生成 Verilog 的打包掩码回归见 `tests/native_sd_verilog_test.py`。实板使用 `test dma`、SD 文件读写、LCD 整帧 CRC、音频欠载/错误计数及外部网络并发检查；这些检查不代替声道听音或任意设备组合的验收。
+`tests/primer20k_vexriscv/sim/test_native_dma.py` 检查打包、尾部掩码、停止、延迟后端和 SD 读写仲裁。生成 Verilog 的打包掩码回归见 `tests/primer20k_vexriscv/native_sd_verilog_test.py`。实板使用 `test dma`、SD 文件读写、LCD 整帧 CRC、音频欠载/错误计数及外部网络并发检查；这些检查不代替声道听音或任意设备组合的验收。

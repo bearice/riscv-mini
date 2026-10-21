@@ -14,9 +14,9 @@ description: 在 TangPrimer-20K/riscv-mini 运行 BIOS benchmark 或对比历史
 ```powershell
 $Candidate = & .venv/Scripts/python.exe scripts/mini.py builds path <候选完整ID>
 $Run = "build/reports/performance/$(Get-Date -Format yyyyMMdd-HHmmss)-<候选标识>"
-.venv/Scripts/python.exe scripts/benchmark.py --build-dir $Candidate --suite all --rounds 3 --output-dir "$Run/all"
-.venv/Scripts/python.exe scripts/benchmark.py --build-dir $Candidate --suite cache --rounds 3 --output-dir "$Run/cache"
-.venv/Scripts/python.exe scripts/performance_report.py --candidate <候选ID> --baseline <基线ID> `
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/benchmark.py --build-dir $Candidate --suite all --rounds 3 --output-dir "$Run/all"
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/benchmark.py --build-dir $Candidate --suite cache --rounds 3 --output-dir "$Run/cache"
+.venv/Scripts/python.exe scripts/tools/performance_report.py --candidate <候选ID> --baseline <基线ID> `
   --candidate-results "$Run/all" --candidate-results "$Run/cache" `
   --baseline-results <基线all目录> --baseline-results <基线cache目录> `
   --output reports/performance/<本次对比名>.md

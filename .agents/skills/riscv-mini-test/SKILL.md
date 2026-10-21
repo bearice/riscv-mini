@@ -14,12 +14,12 @@ description: 在 TangPrimer-20K/riscv-mini 选择和执行主机、RTL、DFI 回
 按改动选择验证层级，使用 SOP 的验证矩阵。常用主机与 L2 检查：
 
 ```powershell
-.venv/Scripts/python.exe tests/config_test.py
-.venv/Scripts/python.exe tests/shared_l2_test.py
-.venv/Scripts/python.exe tests/workflow_test.py --report build/reports/checks/workflow.json
+.venv/Scripts/python.exe tests/common/config_test.py
+.venv/Scripts/python.exe tests/primer20k_vexriscv/shared_l2_test.py
+.venv/Scripts/python.exe tests/common/workflow_test.py --report build/reports/checks/workflow.json
 ```
 
-CPU/DDR/外设改动另外选择相关 `tests/*_verilog_test.py`、DFI 回归或 `scripts/test_cpu_fence.py`；先查脚本参数和所需仿真工具。模型通过后仍需实际配置 PnR 和受影响板测。
+CPU/DDR/外设改动另外选择相关 `tests/*_verilog_test.py`、DFI 回归或 `scripts/primer20k_vexriscv/test_cpu_fence.py`；先查脚本参数和所需仿真工具。模型通过后仍需实际配置 PnR 和受影响板测。
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py board verify --build <本次完整ID> --suite firmware

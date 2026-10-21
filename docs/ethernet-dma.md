@@ -40,6 +40,6 @@ DMA 的 DDR 访问经过 SharedL2 native 入口，和 SD 一样不分配缓存�
 
 ## 验证
 
-`tests/ethernet_dma_verilog_test.py --iverilog C:/msys64/ucrt64/bin/iverilog.exe` 对生成 RTL 验证双向字节顺序、1..7 B 尾字、1514/1536 B 包、延迟 ACK、非法描述符、取消排空及重启。实际资源与 setup/hold 必须以完整 PnR 为准；外部 payload 验证需匹配 gateware/BIOS 后使用 UDP echo，并核对 HAL DMA RX/TX 计数。
+`tests/primer20k_vexriscv/ethernet_dma_verilog_test.py --iverilog C:/msys64/ucrt64/bin/iverilog.exe` 对生成 RTL 验证双向字节顺序、1..7 B 尾字、1514/1536 B 包、延迟 ACK、非法描述符、取消排空及重启。实际资源与 setup/hold 必须以完整 PnR 为准；外部 payload 验证需匹配 gateware/BIOS 后使用 UDP echo，并核对 HAL DMA RX/TX 计数。
 
 当前为 CPU 逐包提交且 HAL 同步等待的 packet copy DMA；不是自动 descriptor ring。ring 需另行实现硬件描述符消费 / 更新、buffer ownership 和完成队列。

@@ -6,14 +6,17 @@ import os
 import stat
 import sys
 from pathlib import Path
-from build_records import ROOT, get_record, legacy_index, pin, records, refresh, register
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.tools.build_records import ROOT, get_record, legacy_index, pin, records, refresh, register
 sys.path.insert(0, str(ROOT))
-from scripts.build_recipe import reproduce, verify_recipe
+from scripts.tools.build_recipe import reproduce, verify_recipe
 
 
 def clean_work(execute=False, root=ROOT):
     """Drop rebuildable workspace caches; never touch immutable stores or receipts."""
-    from build_records import write_json
+    from scripts.tools.build_records import write_json
     root = Path(root).resolve()
     work = (root / 'build/work').resolve()
     if not work.is_relative_to(root / 'build'):
@@ -75,7 +78,7 @@ def clean_build(record_id, execute=False, root=ROOT):
     if record_id == 'work':
         return clean_work(execute, root)
     if record_id == 'obsolete':
-        from scripts.build_cleanup import clean
+        from scripts.tools.build_cleanup import clean
         return clean(root, execute)
     matches=[r for r in records(root) if r['id']==record_id]
     if len(matches)!=1:raise ValueError('Unknown catalog ID')
@@ -97,7 +100,7 @@ def clean_build(record_id, execute=False, root=ROOT):
             if not isinstance(error[1],PermissionError) or not Path(path).resolve().is_relative_to(output):raise error[1]
             os.chmod(path,os.stat(path).st_mode | stat.S_IWRITE)
             function(path)
-        from build_records import write_json
+        from scripts.tools.build_records import write_json
         try:shutil.rmtree(output,onerror=remove_readonly)
         except OSError:
             for alias in records(root):

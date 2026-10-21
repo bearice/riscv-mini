@@ -39,6 +39,6 @@ Windows当前板载下载器使用FTDI驱动；本机Gowin OpenOCD的FTDI后端�
 
 FPGA 配置 TAP 身份为 `0x0001081b`，CPU TAP 身份为 `0x1000563d`。COM 和 D2XX location 随重插变化，执行前用 `board debug-scan` 获取，不能照搬历史数字。独立 RV-Debugger Plus 不需额外 UART 连接即可调试 CPU。当前 D2XX 后端支持 halt、CSR/内存、单步和 resume；未宣称已打通 OpenOCD/GDB。
 
-2026-10-18已将D2XX ROM验证/重启纳入统一板测入口：`mini.py board run --machine mega138k_ae350 --build <准确run> --port COM9 --location <FPGA位置> --cpu-jtag-location <CPU位置>`。recover和verify同样支持该参数。后端为scripts/mini_ops/ae350_jtag.py，使用Programmer目录的ftd2xx.dll，检查CPU TAP身份，暂停并完整读回所选ROM，与boot.bin比较后才设DPC=0x80000000并恢复执行。每次SRAM加载分别记录ROM匹配、重启前异常寄存器和恢复状态；ROM不匹配不会改PC重启。正常UART用于功能验收，已移除额外UART诊断发送器。
+2026-10-18已将D2XX ROM验证/重启纳入统一板测入口：`mini.py board run --machine mega138k_ae350 --build <准确run> --port COM9 --location <FPGA位置> --cpu-jtag-location <CPU位置>`。recover和verify同样支持该参数。后端为scripts/mini_ops/mega138k_ae350/ae350_jtag.py，使用Programmer目录的ftd2xx.dll，检查CPU TAP身份，暂停并完整读回所选ROM，与boot.bin比较后才设DPC=0x80000000并恢复执行。每次SRAM加载分别记录ROM匹配、重启前异常寄存器和恢复状态；ROM不匹配不会改PC重启。正常UART用于功能验收，已移除额外UART诊断发送器。
 
 板卡断电或重启后必须先通过FPGA配置JTAG重新加载上述J23接线对应的SRAM候选，再扫描CPU TAP。没有该设计时，J23未必连接AE350调试口，读到全1不能判断接线损坏。

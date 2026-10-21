@@ -33,8 +33,8 @@ DDR BIOS 的软件 Flash 驱动继续保留。执行 XIP 代码期间不允许�
 ```powershell
 python scripts/mini.py build cpu --generate --source <VexRiscv源码> --java <Java8> --sbt-launch <sbt-launch-1.9.7.jar> --pipelined-fetch --output-dir build/cpu-noc
 python scripts/mini.py build system --profile full --cpu-verilog build/cpu-noc/VexRiscv_Mmu_s1m1.v --boot-mode xip --place-option 3 --route-option 2 --purpose noc-xip-p3-r2 --synthesize
-python tests/flash_xip_test.py
-python scripts/test_cpu_fence.py --cpu build/cpu-noc/VexRiscv_MmuFpu.v --iverilog <iverilog> --output-dir build/cpu-noc-fence-test
+python tests/primer20k_vexriscv/flash_xip_test.py
+python scripts/primer20k_vexriscv/test_cpu_fence.py --cpu build/cpu-noc/VexRiscv_MmuFpu.v --iverilog <iverilog> --output-dir build/cpu-noc-fence-test
 ```
 
 C 能力由所选 CPU RTL 的配对生成元数据决定；关闭 C 必须在 `build cpu --generate` 时生成相应 CPU，不能用 SoC 功能 flag 改写 CPU 能力。

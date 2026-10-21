@@ -3,10 +3,12 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from .storage import canonical, digest, read, write, workspace_lock
-from .firmware import build_component
-from .system import bundle, import_export
-from .contracts import assembly
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular.storage import canonical, digest, read, write, workspace_lock
+from scripts.modular import machines as registry
+from scripts.modular.machines import LEGACY, system_machine
 
 
 def locked_build(store, path, run, plan=False):
@@ -17,14 +19,15 @@ def locked_build(store, path, run, plan=False):
         if data.get('schema') != 1 or not data.get('components'):
             raise ValueError('Unknown/incomplete system lock')
         for item in data['components'].values(): store.get(item, recursive=True)
-        assembly(store, data['components'])
+        registry.part(LEGACY, 'contracts').assembly(store, data['components'])
         ref = store.publish('system', digest(data), {'bundle.lock.json':canonical(data)},
                             config=dict(configuration=data['configuration']),dependencies=data['components'])
     elif (Path(path).parent / 'artifacts').is_dir():
-        ref = import_export(store, Path(path).parent)
+        ref = registry.part(LEGACY, 'system').import_export(store, Path(path).parent)
     else:
         store.get(ref, recursive=True)
-    assembly(store, read(store.path(ref) / 'bundle.lock.json')['components'])
+    machine = system_machine(store, ref)
+    registry.part(machine, 'contracts').assembly(store, read(store.path(ref) / 'bundle.lock.json')['components'])
     if plan:
         run.step('system','REUSE',ref,reason='exact locked artifact closure verified')
         return ref
@@ -33,6 +36,7 @@ def locked_build(store, path, run, plan=False):
 
 def rebuild(store, ref, run):
     """Rebuild firmware from its recorded source snapshot; retain fixed hardware."""
+    machine = system_machine(store, ref)
     lock = read(store.path(ref) / 'bundle.lock.json')
     parts = dict(lock['components'])
     for name in ('hal-sdk','bios'):
@@ -42,12 +46,12 @@ def rebuild(store, ref, run):
             raise ValueError('Legacy firmware lacks a complete source/flag lock: ' + name)
         expected = manifest['config']['build']
         # Hash the current implementation and its imports before allowing it to execute.
-        from .compile import source_files
+        from scripts.modular.compile import source_files
         actual = source_files(store.root, list(expected['sources']))
         if actual != expected['sources']:
             raise ValueError('Source differs from lock for ' + name + '; use the preserved inputs/source snapshot in its recorded checkout')
         if run.result.get('plan'): continue
-        rebuilt = build_component(store, run, name, parts['soc-description'],
+        rebuilt = registry.part(machine, 'firmware').build_component(store, run, name, parts['soc-description'],
                                   boot=parts.get('bootloader') if name=='bios' else None,
                                   sdk=parts.get('hal-sdk') if name=='bios' else None,
                                   expected=expected, force=True)
@@ -59,9 +63,9 @@ def rebuild(store, ref, run):
 def rebuild_preserved(store, ref, run):
     """Each component executes its own preserved implementation in a separate checkout."""
     import tempfile
-    from .storage import Store
-    from .system import export_bundle
-    from scripts.versions import COMPONENTS
+    from scripts.modular.storage import Store
+    export_bundle = registry.part(system_machine(store, ref), 'system').export_bundle
+    from scripts.tools.versions import COMPONENTS
     lock=read(store.path(ref)/'bundle.lock.json')
     parts=lock['components']
     for name in ('hal-sdk','bios'):

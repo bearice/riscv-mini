@@ -90,7 +90,7 @@ static uint32_t post_ddr(void) {
 
 /* ------------------------------------------------------------- UART loader ---
  *
- * Reuses the shared 20K framing (scripts/boot_image.py):
+ * Reuses the shared 20K framing (scripts/primer20k_vexriscv/boot_image.py):
  *   header: 12 little-endian u32 = magic, version, header size, abi,
  *           payload length, load, entry, crc32(payload), 0, 0, 0,
  *           crc32(header[0:44])

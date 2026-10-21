@@ -52,9 +52,9 @@ boot ROM 只负责 DDR 软件初始化和 Flash/UART 装载，不链接这些测
 主机脚本仅负责 UART 装载和调用固件命令，不重新实现 DDR/SD/USB 等判定逻辑：
 
 ```powershell
-& $MiniPython scripts/firmware_verify.py --program
+& $MiniPython scripts/primer20k_vexriscv/firmware_verify.py --program
 # 已在运行 monitor：软件复位后执行所有自动检查，并创建新 SD 测试文件。
-& $MiniPython scripts/firmware_verify.py --reset --sd-write --soak-seconds 300
+& $MiniPython scripts/primer20k_vexriscv/firmware_verify.py --reset --sd-write --soak-seconds 300
 ```
 
 默认产物为 `build/base`；不同构建使用 `--output-dir`，不同但 ABI 匹配的应用使用 `--image`。
@@ -66,17 +66,17 @@ boot ROM 只负责 DDR 软件初始化和 Flash/UART 装载，不链接这些测
 
 HDL 模拟、外部 IO 边沿模型、Gowin PnR/资源报告、主机 UDP 收发和 WinMM
 音频捕获只能在相应主机工具中完成，固件无法观察自己的布局布线或主机收到的包。
-ROM 的坏镜像/分包 CRC/截断拒绝仍由 `scripts/boot_verify.py` 经 UART 测试真正的
+ROM 的坏镜像/分包 CRC/截断拒绝仍由 `scripts/primer20k_vexriscv/boot_verify.py` 经 UART 测试真正的
 bootloader，不在正常应用里复制另一套 loader。对应 `sim/` 检查与旧独立示例保留；
 常规板上验收优先使用本页的 monitor 命令，不再需要临时探针固件。
 
-已运行 monitor 时，`scripts/monitor_external_verify.py` 可调用 `test audio tone`
+已运行 monitor 时，`scripts/primer20k_vexriscv/monitor_external_verify.py` 可调用 `test audio tone`
 并经本机 Line In 检查左右声道、频率和自动静音；再调用 `test eth start`，
 经指定网卡执行 ARP、ping、UDP echo，并交替执行现有 SD/LCD/USB 命令。
 该脚本只承担 UART 传输和外部观测，不复位、不写 Flash、不修改网卡配置。
 
 ```powershell
-& $MiniPython scripts/monitor_external_verify.py --output-dir build/base --audio --host-ip 169.254.25.153 --interface-index 80 --seconds 30
+& $MiniPython scripts/primer20k_vexriscv/monitor_external_verify.py --output-dir build/base --audio --host-ip 169.254.25.153 --interface-index 80 --seconds 30
 ```
 
 主机 IP 和接口序号必须按当前连接查询，本机已确认的网卡、IP、麦克风与 SD 卡状态见 [本机测试环境](lab-environment.md)；示例数值不是固件配置。执行音频选项会

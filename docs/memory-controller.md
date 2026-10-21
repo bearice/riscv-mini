@@ -36,8 +36,8 @@ flush、invalidate、缓存禁用会暂停接收新的 SD 写命令，等待已�
 
 ## 验证
 
-- `tests/memory_ports_test.py`：真实 L2 与端口缓冲，LCD 背压/SD 部分写不阻塞其他入口，byte masks、尾包、dirty 数据可见性、flush 等待提交、取消/重新启动、未接受 native offer 的排空。
-- `tests/memory_controller_verilog_test.py`：生成的整个共享内存控制器在 Icarus 中验证 CPU/SD/LCD 同时工作的握手、lane、byte mask 和提交边界。
-- `tests/native_sd_verilog_test.py`：SD 32-bit 客户与内存侧 buffer 的生成 RTL，验证四字顺序和完整掩码。
-- `tests/lcd_memory_verilog_test.py`：生成的 LCD / buffer / FIFO / CDC RTL，独立 sys/video 时钟，验证启动排空后两帧显示的像素顺序、地址边界、帧结束标志和无 underflow。
+- `tests/primer20k_vexriscv/memory_ports_test.py`：真实 L2 与端口缓冲，LCD 背压/SD 部分写不阻塞其他入口，byte masks、尾包、dirty 数据可见性、flush 等待提交、取消/重新启动、未接受 native offer 的排空。
+- `tests/primer20k_vexriscv/memory_controller_verilog_test.py`：生成的整个共享内存控制器在 Icarus 中验证 CPU/SD/LCD 同时工作的握手、lane、byte mask 和提交边界。
+- `tests/primer20k_vexriscv/native_sd_verilog_test.py`：SD 32-bit 客户与内存侧 buffer 的生成 RTL，验证四字顺序和完整掩码。
+- `tests/primer20k_vexriscv/lcd_memory_verilog_test.py`：生成的 LCD / buffer / FIFO / CDC RTL，独立 sys/video 时钟，验证启动排空后两帧显示的像素顺序、地址边界、帧结束标志和无 underflow。
 - 原有 L2、boot RAM、DDR/DFI 回归继续运行。实际 full PnR 与实板结果分别记录，仿真通过不等于实板验收。

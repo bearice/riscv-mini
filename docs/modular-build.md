@@ -130,14 +130,14 @@ RTL 模式/manifest、固件大小、ABI，以及请求综合时的资源与时�
 .venv/Scripts/python.exe scripts/mini.py build matrix --jobs 2
 
 # 使用该构建配置筛选固件测试；关闭模块的命令也检查 UNSUPPORTED。
-.venv/Scripts/python.exe scripts/firmware_verify.py --program --output-dir build/minimal
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/firmware_verify.py --program --output-dir build/minimal
 
 # 全功能外接麦克风已连接时，增加单路及双路快照检查。
-.venv/Scripts/python.exe scripts/firmware_verify.py --program --mic --output-dir build/full
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/firmware_verify.py --program --mic --output-dir build/full
 ```
 
 配置矩阵检查固件编译、CSR bank 和实际引脚是否随开关移除，使用 flat RTL
 加快组合检查；真实多文件 Gowin 与实板验收另行记录，不能用矩阵通过替代。
-`sim/test_features.py` 检查依赖冲突和跨配置镜像拒绝，`sim/test_rtl.py` 检查
+`tests/primer20k_vexriscv/test_features.py` 检查依赖冲突和跨配置镜像拒绝，`tests/primer20k_vexriscv/test_rtl.py` 检查
 向量同步器、reset net、外部核路径的层级约束转换，以及嵌套模块的时钟域、
 reset/CE 保留，I2S 仿真仍覆盖 mono/stereo。

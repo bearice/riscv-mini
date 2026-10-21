@@ -26,17 +26,17 @@ from litex.build.gowin.common import gowin_special_overrides
 from litex.build.gowin.platform import GowinPlatform
 from litex.soc.interconnect.ahb import AHBInterface
 
-from .cpu import NativeAE350
-from .interconnect import MemInterconnect, ErrorSlave
-from .platform import Ae350Platform, AckCatch, GowinAckCatch
+from gateware.machines.mega138k_ae350.cpu import NativeAE350
+from gateware.machines.mega138k_ae350.interconnect import MemInterconnect, ErrorSlave
+from gateware.machines.mega138k_ae350.platform import Ae350Platform, AckCatch, GowinAckCatch
 from gateware.machines.mega138k_ae350.peripherals.board_sense import TempAdc, GowinTempAdc
 
 gowin_special_overrides[AckCatch] = GowinAckCatch
 gowin_special_overrides[TempAdc] = GowinTempAdc
 from gateware.boards.mega138k_pro import io_map
-from . import address_map as ae350_map
-from .clock import ClockReset
-from .ddr3_ahb import DDR3UI, DDR3AHB
+from gateware.machines.mega138k_ae350 import address_map as ae350_map
+from gateware.machines.mega138k_ae350.clock import ClockReset
+from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
 
 # DDR3 pin map (Tang Mega 138K Pro, vendor ae350_customized_demo.cst).
 DDR3_ADDR = 'N1 R1 R2 N2 P1 T2 N4 U1 T4 T3 M1 P4 N3 U2 U5'.split()

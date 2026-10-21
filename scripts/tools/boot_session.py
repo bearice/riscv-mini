@@ -4,11 +4,15 @@ Machine-neutral: the 20K loader and the AE350 ROM/POST flows both speak the
 same ``STATE=``/``BL>`` protocol and the same image framing.  Platform-specific
 programming and Flash layout stay in the platform scripts.
 """
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+
 import re
 import struct
 import time
 
-from tools.boot_image import CHUNK, HEADER, packet, unpack_image
+from scripts.tools.boot_image import CHUNK, HEADER, packet, unpack_image
 
 
 def programmer_succeeded(result):

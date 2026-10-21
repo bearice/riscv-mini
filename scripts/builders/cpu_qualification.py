@@ -21,7 +21,7 @@ from gateware.machines.primer20k_vexriscv.config import SD_PROFILES, storage_pro
 from gateware.machines.primer20k_vexriscv.soc import MiniSoC
 from gateware.machines.primer20k_vexriscv.rtl import split_verilog
 from litex.soc.integration.builder import Builder
-from scripts.modular.rtl import pnr_report
+from scripts.modular.machines.primer20k_vexriscv.rtl import pnr_report
 
 
 def build(args, run=None):

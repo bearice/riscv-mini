@@ -4,22 +4,30 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from .storage import ROOT, Store, Run, read, write
-from .system import import_legacy, build_firmware_system, export_bundle, verify_export, import_export, resolve_system, materialize
-from .environment import discover, identity, linux_runner
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular.storage import ROOT, Store, Run, read, write
+from scripts.modular import machines as registry
+
+
+def _system(machine=None):
+    """The owning machine's system backend, imported on demand."""
+    return registry.part(machine, 'system')
+from scripts.modular.environment import discover, identity, linux_runner
 
 
 def add_commands(sub):
     configure = sub.add_parser('configure', help='Automatically discover tools used by a target')
     configure.add_argument('--target', choices=('bios', 'gateware', 'cpu', 'linux'), default='bios')
-    from .targets import add_targets
+    from scripts.modular.targets import add_targets
     for command in ('build', 'plan'):
         op = sub.add_parser(command, help='Build a target' if command=='build' else 'Resolve a target without execution')
         add_targets(op)
     release=sub.add_parser('release',help='Export, verify or create a release')
     releases=release.add_subparsers(dest='release_operation',required=True)
     create=releases.add_parser('create',help='Rebuild a clean committed source and archive a formal release')
-    from scripts.mini_ops.release import add_arguments as release_arguments
+    from scripts.mini_ops.primer20k_vexriscv.release import add_arguments as release_arguments
     release_arguments(create)
     cat=sub.add_parser('builds',help='Discover or manage historical catalog artifacts')
     from scripts.mini_ops.catalog import add_arguments as catalog_arguments
@@ -50,7 +58,7 @@ def add_commands(sub):
     pin.add_argument('name')
     pin.add_argument('system')
     for command in (show, view, export, pin):
-        from .machines import MACHINES
+        from scripts.modular.machines import MACHINES
         command.add_argument('--machine', choices=MACHINES, help='Scope current/baseline; omitted means original 20K')
     compat = sub.add_parser('compat', help='Check directional hardware/software contract compatibility')
     compat.add_argument('--hardware', required=True)
@@ -61,14 +69,14 @@ def add_commands(sub):
 
 def perform(args, p):
     if args.command=='_worker':
-        from .worker import perform as worker
+        from scripts.modular.worker import perform as worker
         return worker(args.argv)
     if args.command=='builds':
         from scripts.mini_ops.catalog import perform as catalog
         catalog(args,p);return 0
     if args.command=='release':
         if args.release_operation=='create':
-            from scripts.mini_ops.release import perform as create
+            from scripts.mini_ops.primer20k_vexriscv.release import perform as create
             create(args,p);return 0
         args.command=args.release_operation
     store = Store()
@@ -78,7 +86,7 @@ def perform(args, p):
     session = None
     session_acquired = False
     try:
-        from .storage import workspace_lock
+        from scripts.modular.storage import workspace_lock
         # Only operations that mutate shared references need the session-wide
         # lock.  A build or plan is serialised per work directory (the components
         # take their own lock) and the content store serialises publishes, so
@@ -91,7 +99,7 @@ def perform(args, p):
             if args.target == 'linux':
                 environment = linux_runner(['cc', 'make', 'clang', 'lld', 'dtc'])
             else:
-                from .compile import ROLES
+                from scripts.modular.compile import ROLES
                 roles = {'bios': ROLES,
                          'gateware': ['python','gowin'], 'cpu': ['python','java','sbt-launch']}[args.target]
                 environment = discover(roles)
@@ -101,28 +109,30 @@ def perform(args, p):
             print(__import__('json').dumps(environment, indent=2))
         elif args.command == 'import':
             source = Path(args.source)
-            ref = import_export(store, source) if (source / 'release.lock.json').is_file() else import_legacy(store, args.source, run)
+            system = _system(getattr(args, 'machine', None))
+            ref = system.import_export(store, source) if (source / 'release.lock.json').is_file() else system.import_legacy(store, args.source, run)
             run.finish(system=ref)
         elif args.command in ('build', 'plan'):
-            from .targets import execute, output_view
+            from scripts.modular.targets import execute, output_view
             ref=execute(store,run,args)
             if args.command=='build' and not args.dry_run:
                 output_view(store,run,args,ref)
         elif args.command in ('show', 'materialize', 'export', 'pin'):
-            from .machines import select_hardware, check_system, reference_path, LEGACY
+            from scripts.modular.machines import select_hardware, check_system, reference_path, LEGACY
             selection = select_hardware(store, args.system, args.machine)
-            ref = resolve_system(store, selection)
+            system = _system(getattr(args, 'machine', None))
+            ref = system.resolve_system(store, selection)
             if ref is None:
                 if args.machine and args.machine != LEGACY:
                     raise ValueError('No AE350 system bundle exists; P0 artifacts are descriptions only')
-                ref = import_legacy(store, selection, run)
+                ref = system.import_legacy(store, selection, run)
             check_system(store, ref, args.machine)
             if args.command == 'show':
                 print(__import__('json').dumps(read(store.path(ref) / 'bundle.lock.json'), indent=2))
             elif args.command == 'materialize':
-                materialize(store, ref, args.output_dir)
+                system.materialize(store, ref, args.output_dir)
             elif args.command == 'export':
-                export_bundle(store, ref, args.output_dir, args.test_run)
+                system.export_bundle(store, ref, args.output_dir, args.test_run)
             elif args.command == 'pin':
                 if args.name not in ('current', 'baseline'):
                     raise ValueError('Only current/baseline references can be pinned')
@@ -133,18 +143,18 @@ def perform(args, p):
             run.finish(system=ref)
         elif args.command == 'verify':
             if (args.directory/'release.lock.json').is_file():
-                run.finish(release=verify_export(args.directory))
+                run.finish(release=_system(getattr(args, 'machine', None)).verify_export(args.directory))
             else:
-                from scripts.mini_ops.release import verify_bundle
+                from scripts.mini_ops.primer20k_vexriscv.release import verify_bundle
                 run.finish(release=verify_bundle(args.directory))
         elif args.command == 'reproduce':
-            ref = import_export(store, args.directory)
+            ref = _system(getattr(args, 'machine', None)).import_export(store, args.directory)
             if args.rebuild:
-                from .replay import rebuild_preserved
+                from scripts.modular.replay import rebuild_preserved
                 ref = rebuild_preserved(store, ref, run)
             run.finish(system=ref, mode='rebuild' if args.rebuild else 'verified-artifact-restore')
         elif args.command == 'test':
-            ref = resolve_system(store, args.system)
+            ref = _system(getattr(args, 'machine', None)).resolve_system(store, args.system)
             if ref is None: raise ValueError('Import the system before testing')
             command = args.argv[1:] if args.argv[:1] == ['--'] else args.argv
             if not command: raise ValueError('A test command is required after --')
@@ -155,9 +165,10 @@ def perform(args, p):
             run.save()
             if result.returncode: raise RuntimeError('Test failed; see ' + str(run.path / 'test.log'))
         elif args.command == 'compat':
-            from .contracts import check
-            ref = resolve_system(store, args.hardware)
-            if ref is None: ref=import_legacy(store,args.hardware,run)
+            check = registry.part(getattr(args, 'machine', None), 'contracts').check
+            system = _system(getattr(args, 'machine', None))
+            ref = system.resolve_system(store, args.hardware)
+            if ref is None: ref=system.import_legacy(store,args.hardware,run)
             parts=read(store.path(ref)/'bundle.lock.json')['components']
             provider=store.get(parts['soc-description'])['config']['contract']
             data=read(args.software)
@@ -180,7 +191,7 @@ def perform(args, p):
                     raise ValueError('Cleanup path escapes disposable workspace')
                 print(('Cleaning ' if args.execute else 'Would clean ')+str(path))
             if args.execute:
-                from .workspace import clean_workspaces
+                from scripts.modular.workspace import clean_workspaces
                 clean_workspaces(store, candidates)
             run.finish(executed=args.execute)
         print('Result:', run.path / 'result.json', flush=True)

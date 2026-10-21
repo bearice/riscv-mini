@@ -1,9 +1,12 @@
 """Build a custom bare-metal payload using the resident BIOS ecall interface."""
 import json,subprocess,os
 from pathlib import Path
-from bios_image import pack
-from payload_libc import newlib_link
-from riscv_toolchain import executable as tool_executable
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.primer20k_vexriscv.bios_image import pack
+from scripts.primer20k_vexriscv.payload_libc import newlib_link
+from scripts.tools.riscv_toolchain import executable as tool_executable
 ROOT=Path(__file__).resolve().parents[2]
 # A payload links with -nostdlib, so the freestanding helpers the compiler still
 # emits calls to (memcpy, memset, strlen, ...) have to be linked in explicitly.

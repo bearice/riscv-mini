@@ -43,7 +43,7 @@ reports/
 .venv/Scripts/python.exe scripts/mini.py build system --purpose full-candidate --synthesize
 .venv/Scripts/python.exe scripts/mini.py builds list
 $Candidate = & .venv/Scripts/python.exe scripts/mini.py builds path latest-pnr
-.venv/Scripts/python.exe scripts/firmware_verify.py --output-dir $Candidate --program --soak-seconds 60
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/firmware_verify.py --output-dir $Candidate --program --soak-seconds 60
 # 只有匹配 hash 且 passed=true 的板测才能选为 current。
 .venv/Scripts/python.exe scripts/mini.py builds pin current <完整ID> --evidence "$Candidate/firmware-verification.json"
 $Current = & .venv/Scripts/python.exe scripts/mini.py builds path current
@@ -64,11 +64,11 @@ $Baseline = & .venv/Scripts/python.exe scripts/mini.py builds path baseline
 性能数据放到独立的 build/reports/performance/<日期>-<双方ID>/all、cache 子目录。每次使用新目录，避免覆盖旧测量。使用 `benchmark.py --build-dir $Current` 保存双镜像身份；该参数关联操作者选择的已加载版本，并不对 FPGA 做 bitstream 读回。
 
 ```powershell
-.venv/Scripts/python.exe scripts/benchmark.py --build-dir $Current --suite all --rounds 3 `
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/benchmark.py --build-dir $Current --suite all --rounds 3 `
   --output-dir build/reports/performance/<日期>-<候选ID>/all
-.venv/Scripts/python.exe scripts/benchmark.py --build-dir $Current --suite cache --rounds 3 `
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/benchmark.py --build-dir $Current --suite cache --rounds 3 `
   --output-dir build/reports/performance/<日期>-<候选ID>/cache
-.venv/Scripts/python.exe scripts/performance_report.py --candidate current --baseline baseline `
+.venv/Scripts/python.exe scripts/tools/performance_report.py --candidate current --baseline baseline `
   --candidate-results <候选all目录> --candidate-results <候选cache目录> `
   --baseline-results <基线all目录> --baseline-results <基线cache目录> `
   --output reports/performance/<候选版本>-vs-<基线版本>.md

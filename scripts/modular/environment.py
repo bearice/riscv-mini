@@ -7,7 +7,10 @@ import subprocess
 import sys
 import hashlib
 from pathlib import Path
-from .storage import ROOT, file_hash, read
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular.storage import ROOT, file_hash, read
 
 COMMANDS = {'cc': 'gcc', 'cxx': 'g++', 'ar': 'ar', 'make': 'make', 'dtc': 'dtc',
             'clang': 'clang', 'lld': 'ld.lld', 'objcopy': 'llvm-objcopy', 'java': 'java'}
@@ -58,7 +61,7 @@ def discover(roles, root=ROOT):
                 include=Path(output([path,'-print-file-name=include']))
                 if not include.is_dir():raise ValueError('Missing compiler builtin headers')
                 headers={p.relative_to(include).as_posix():file_hash(p) for p in sorted(include.rglob('*')) if p.is_file()}
-                from .storage import digest
+                from scripts.modular.storage import digest
                 details['builtin_headers_sha256']=digest(headers)
         elif role == 'gowin':
             path = local.get('gowin') or shutil.which('gw_sh')

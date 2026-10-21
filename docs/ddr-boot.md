@@ -10,7 +10,7 @@ CPU 从 8 KiB ROM 或 Flash XIP 启动。复位时共享 L2 把现有数据 RAM 
 
 对两个 byte lane 分别遍历四种 bitslip、256 个 delay setting，每个 setting 检查三个训练种子 42/84/36。读数据必须同时满足两相 DFI valid、该 lane 的数据比较和 burst detect。选取最大连续通过窗口的中点，要求窗口至少四个 setting，并复验。失败最多重新初始化三次；串口输出 lane 的 tap/bitslip/window、最新捕获状态，最终失败后保持控制器隔离，不访问未训练 DDR。
 
-训练 scratch 为 bank0/row0/column0，与启动栈窗口分离。PHY DLL、时钟停止与复位逻辑仍由硬件实现；[`gateware/ddr_boot.py`](../gateware/ddr_boot.py) 只提供单周期命令、调节脉冲、固定测试 pattern 和读结果捕获，不含训练扫描 FSM。LiteDRAM controller/crossbar 在 handover 前保持复位。ROM 在开始串口输出前等待 2 ms，让 PHY 启动的短暂 sys 时钟停止/复位结束。
+训练 scratch 为 bank0/row0/column0，与启动栈窗口分离。PHY DLL、时钟停止与复位逻辑仍由硬件实现；[`gateware/machines/primer20k_vexriscv/ddr_boot.py`](../gateware/ddr_boot.py) 只提供单周期命令、调节脉冲、固定测试 pattern 和读结果捕获，不含训练扫描 FSM。LiteDRAM controller/crossbar 在 handover 前保持复位。ROM 在开始串口输出前等待 2 ms，让 PHY 启动的短暂 sys 时钟停止/复位结束。
 
 ## CSR 与诊断
 
@@ -22,8 +22,8 @@ CPU 从 8 KiB ROM 或 Flash XIP 启动。复位时共享 L2 把现有数据 RAM 
 
 ## ROM 和验证边界
 
-ROM 链接启动汇编、UART、timer、DDR 初始化、紧凑 Flash 驱动和镜像装载器，使用 `-Os -flto`。不含 SD、LCD、文件系统、音频、网络或 USB。8 KiB 上限由 [`boot.ld`](../firmware/bootloader/primer20k_vexriscv/boot.ld) 和 [`scripts/mini.py build system`](../scripts/mini.py) 检查；函数空间可用 `scripts/boot_size.py` 检查，LTO 内联空间计入调用者。当前 full ROM 为 5292 B；boot 编译同时生成 `.su` 栈使用报告。当前 main 固定栈帧 272 B，train 48 B、probe 64 B；沿已链接静态调用路径训练峰值约 384 B，没有递归或动态栈分配。4 KiB 窗口中至少保留 2 KiB 栈。
+ROM 链接启动汇编、UART、timer、DDR 初始化、紧凑 Flash 驱动和镜像装载器，使用 `-Os -flto`。不含 SD、LCD、文件系统、音频、网络或 USB。8 KiB 上限由 [`boot.ld`](../firmware/bootloader/primer20k_vexriscv/boot.ld) 和 [`scripts/mini.py build system`](../scripts/mini.py) 检查；函数空间可用 `scripts/primer20k_vexriscv/boot_size.py` 检查，LTO 内联空间计入调用者。当前 full ROM 为 5292 B；boot 编译同时生成 `.su` 栈使用报告。当前 main 固定栈帧 272 B，train 48 B、probe 64 B；沿已链接静态调用路径训练峰值约 384 B，没有递归或动态栈分配。4 KiB 窗口中至少保留 2 KiB 栈。
 
-`tests/boot_ram_test.py` 检查训练前隔离、4/8 KiB 缓存字节写、脏栈交接/替换和复位。`tests/shared_l2_verilog_test.py` 另执行实际 Verilog 的启动 RAM 路径。`tests/ddr_boot_test.py` 检查命令、调节脉冲、新数据捕获和所有权交接，不模拟电气 PHY，也不代替真实 ROM 训练。`scripts/boot_repeat_verify.py --output-dir BUILD` 检查重复 SRAM 下载和软件复位后的实际训练与 BIOS 启动，不写 Flash。
+`tests/primer20k_vexriscv/boot_ram_test.py` 检查训练前隔离、4/8 KiB 缓存字节写、脏栈交接/替换和复位。`tests/primer20k_vexriscv/shared_l2_verilog_test.py` 另执行实际 Verilog 的启动 RAM 路径。`tests/primer20k_vexriscv/ddr_boot_test.py` 检查命令、调节脉冲、新数据捕获和所有权交接，不模拟电气 PHY，也不代替真实 ROM 训练。`scripts/primer20k_vexriscv/boot_repeat_verify.py --output-dir BUILD` 检查重复 SRAM 下载和软件复位后的实际训练与 BIOS 启动，不写 Flash。
 
 训练和 `test ddr` 并非完整 128 MiB 内存测试，后者覆盖 8 KiB scratch。重复启动通过不代表已验证所有电源状态、温度或板型；Flash 和整板断电启动需要匹配配置单独验证。镜像格式与更新操作见 [bootloader](bootloader.md)。

@@ -2,7 +2,7 @@
 
 Machine-neutral: every platform reuses this framing and the CRC rules.  The
 20K image ABI *tag* (``abi_tag``) is a platform semantic and stays in
-``scripts/boot_image.py``.
+``scripts/primer20k_vexriscv/boot_image.py``.
 """
 import struct
 import zlib

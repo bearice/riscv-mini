@@ -62,7 +62,7 @@ BIOS 命令行带行编辑：方向键、Home/End、Insert 切换、Delete、Ctr
 
 边界：不实现 DEC 图形/特殊字符集（`ESC ( ) * +` 被吞掉）、DECOM 原点模式、回滚历史、Unicode/宽字符、鼠标上报、DECAWM 关闭（`?7l`）。CSI 序列的解析跨字节增量进行，未结束的序列不会阻塞后续输入。
 
-`tests/vt_console_test.c` 在主机直接跑解析核心（73 项断言，覆盖光标/擦除/插入删除/滚动区域/备用屏/SGR/DSR/畸形序列），`tests/console_output_test.c` 覆盖驱动与 TTY 镜像只输出一次。两者都不涉及真实硬件。
+`tests/primer20k_vexriscv/vt_console_test.c` 在主机直接跑解析核心（73 项断言，覆盖光标/擦除/插入删除/滚动区域/备用屏/SGR/DSR/畸形序列），`tests/primer20k_vexriscv/console_output_test.c` 覆盖驱动与 TTY 镜像只输出一次。两者都不涉及真实硬件。
 
 ### PC/AT 兼容边界
 
@@ -176,16 +176,16 @@ RPB1 镜像头是 32 B 小端八个 uint32_t：magic=`0x31425052`、ABI version�
 . .\scripts\env.ps1
 & $MiniPython scripts/mini.py build system --output-dir build/bios
 # 重用已验收、CSR ABI 相同的 FPGA 配置，UART 运行 BIOS；不写 Flash。
-& $MiniPython scripts/boot_upload.py --reset --mode uart --output-dir build/base --image build/bios/firmware/app.img
+& $MiniPython scripts/primer20k_vexriscv/boot_upload.py --reset --mode uart --output-dir build/base --image build/bios/firmware/app.img
 & $MiniPython scripts/mini.py build payload
 & $MiniPython scripts/mini.py build payload --source firmware/examples/bios_payload/bios_demo.c
 # 在接 Dock 的本机网卡地址上运行只读 TFTP；地址须替换为实际地址。
-& $MiniPython scripts/bios_tftp.py --bind 169.254.25.153 --file build/bios-payload/BOOT.RPB
+& $MiniPython scripts/primer20k_vexriscv/bios_tftp.py --bind 169.254.25.153 --file build/bios-payload/BOOT.RPB
 ```
 
 在 BIOS 中设置 `set server 169.254.25.153`，然后 `boot net`；`fetch BOOT.RPB` 创建 SD 文件后可 `boot sd`。数据文件用 `fetchraw FILE` 转存：同样 8 MiB 上限，但不做程序格式校验、落卡后也不要求是镜像，适合把 DOOM 的 `DOOM1.WAD` 之类文件送上卡。主机脚本不会修改网卡或防火墙；接收 RRQ 需要所选 Python 运行环境能够接收 UDP 入站。默认文件已有时，选择新的文件名。
 
-[端到端验证工具](../scripts/bios_verify.py) 调用相同固件命令，覆盖网络重试/重复块/零长度结束、坏 CRC、SD 重复启动、缺失文件、设置往返和非法参数。运行示例：`scripts/bios_verify.py --host-ip 169.254.25.153 --sd-file BIOSDEM.RPB`；需要 SD 上不存在这个目标文件，会显式保存 `BIOS.CFG`。Python 格式测试位于 [bios_image_test.py](../tests/bios_image_test.py)，板端格式/ECALL 测试为 `test bios`。
+[端到端验证工具](../scripts/primer20k_vexriscv/bios_verify.py) 调用相同固件命令，覆盖网络重试/重复块/零长度结束、坏 CRC、SD 重复启动、缺失文件、设置往返和非法参数。运行示例：`scripts/primer20k_vexriscv/bios_verify.py --host-ip 169.254.25.153 --sd-file BIOSDEM.RPB`；需要 SD 上不存在这个目标文件，会显式保存 `BIOS.CFG`。Python 格式测试位于 [bios_image_test.py](../tests/primer20k_vexriscv/bios_image_test.py)，板端格式/ECALL 测试为 `test bios`。
 
 默认 full BIOS 已在实际板卡验证 SD/TFTP 执行与返回，并确认 LCD TTY/USB 键盘输入。minimal 仅构建检查，不代表被裁剪的硬件已上板验收。BIOS 不包含 OS 引导、动态装载重定位、DHCP 或图形窗口系统；SDK 示例演示 `.data`/`.bss`、IO、服务调用、RGB565 换帧和返回 BIOS。[GW-BASIC 解释器](gwbasic.md) 是这套 ABI 上较大的一个应用：约 95 KiB 的 RPB1 程序，使用文字/图形服务、时钟和 SD 读文件，可在 QEMU 上跑真实产物做回归。[DOOM](doom.md) 是另一个：约 356 KiB，直接用文件系统服务读 SD 上的 IWAD，并零拷贝写 480×272 面板。**新写二级程序前先读 [给 BIOS 写二级程序](bios-payload-porting.md)**，那里集中了浮点前提、服务选择、主循环归属、SD/TFTP 准备与已踩过的坑。
 

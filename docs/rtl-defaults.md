@@ -8,6 +8,6 @@
 - `normalize_clock_domains` 与临时 `_prepare_fragment` 包装保留最终 FHDL 同步语句顺序，防止 inline 合并移动复位条件，改变最后一次非阻塞赋值的优先级。包装在 finally 恢复，不修改依赖安装包。
 - `remove_shared_aliases` 按真实实例所有权只序列化模块一次，防止 SharedIRQ 别名过滤删除真正的 OR 逻辑。
 
-`tests/rtl_defaults_test.py` 检查常量驱动、复位优先级与共享 IRQ；深层路径也必须保留这些语义。静态无未驱动线不等于功能正确，常量初始化可能掩盖缺失逻辑。
+`tests/primer20k_vexriscv/rtl_defaults_test.py` 检查常量驱动、复位优先级与共享 IRQ；深层路径也必须保留这些语义。静态无未驱动线不等于功能正确，常量初始化可能掩盖缺失逻辑。
 
 Gowin 设置 `netlist_hierarchy=0`，保留源文件边界，同时允许综合跨模块优化。默认 `timing_driven=1`、place=2、route=2。Retiming 仅在明确传入并检查工具实际设置后才可认为启用；默认不开启。资源与时序见 [系统设计](system-design.md)。

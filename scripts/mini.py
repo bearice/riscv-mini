@@ -134,28 +134,14 @@ def main(argv=None):
             if not 1<=args.timeout<=3600:p.error('--timeout must be in 1..3600')
             if args.image and args.suite in ('boot','spi','cold'):p.error('--image is supported by firmware/flash verification only')
             if args.mic and args.suite!='firmware':p.error('--mic requires --suite firmware')
-        if args.machine == 'mega138k_ae350':
-            if args.operation == 'jtag-test':
-                from mini_ops.ae350_jtag_test import perform
-            elif args.operation == 'ddr-suite':
-                from mini_ops.ae350_ddr_suite import perform
-            elif args.operation == 'dma-suite':
-                from mini_ops.ae350_dma_suite import perform
-            elif args.operation == 'io-suite':
-                from mini_ops.ae350_io_suite import perform
-            elif args.operation == 'ae350-upload':
-                from mini_ops.ae350_upload import perform_upload as perform
-
-            else:
-                from mini_ops.ae350 import perform
-        else:
-            from mini_ops.board import perform
+        from scripts.modular.machines import operation as machine_operation
+        perform = machine_operation(args.machine, args.operation)
         try:perform(args)
         except (ValueError,RuntimeError,OSError,KeyError,TimeoutError,subprocess.SubprocessError) as error:
             p.exit(1,str(error)+'\n')
     elif args.command=='doctor':
-        from doctor import main as doctor
-        doctor()
+        from scripts.tools.doctor import main as doctor_main
+        doctor_main()
     elif args.command=='guide':
         print((Path(__file__).parent/'README.md').read_text(encoding='utf-8'))
     else:

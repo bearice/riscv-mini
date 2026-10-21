@@ -45,9 +45,9 @@ runtime 先建立 Newlib 的 `setjmp` 返回点，再初始化标准输出、运
 ## 验证
 
 ```powershell
-.venv/Scripts/python.exe tests/bios_libc_test.py
-.venv/Scripts/python.exe tests/doom_test.py
-.venv/Scripts/python.exe scripts/doom_debug.py --boot `
+.venv/Scripts/python.exe tests/primer20k_vexriscv/bios_libc_test.py
+.venv/Scripts/python.exe tests/primer20k_vexriscv/doom_test.py
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/doom_debug.py --boot `
   --image build/libc-test-app/BOOT.RPB --tftp-name LIBCTEST.RPB `
   --host-ip 169.254.25.153 --boot-marker 'LIBC TEST PASS' --command boot-check
 ```

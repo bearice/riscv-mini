@@ -59,7 +59,7 @@ Invoke-WebRequest http://mirror.volia.net/debian/pool/non-free/d/doom-wad-sharew
 ```powershell
 # 主机侧导出，必须用防火墙已放行的解释器（仓库 .venv 不在放行列表）
 & 'C:\Users\bearice\AppData\Local\Programs\Python\Python313\python.exe' `
-    scripts/bios_tftp.py --bind 169.254.25.153 --file build/doom-assets/DOOM1.WAD --name DOOM1.WAD
+    scripts/primer20k_vexriscv/bios_tftp.py --bind 169.254.25.153 --file build/doom-assets/DOOM1.WAD --name DOOM1.WAD
 ```
 
 ```text
@@ -115,16 +115,16 @@ shim: reads 1282 KiB fs=1642 ms/1007 calls poll=131 ms/216 t=138573 ms
 主机回归（RPB1 布局 + QEMU 上跑真实产物）：
 
 ```powershell
-& .\.venv\Scripts\python.exe tests/doom_test.py -v
-& $MiniPython scripts/doom_sim.py --soft-float --sample 25
+& .\.venv\Scripts\python.exe tests/primer20k_vexriscv/doom_test.py -v
+& $MiniPython scripts/primer20k_vexriscv/doom_sim.py --soft-float --sample 25
 ```
 
-`scripts/doom_sim.py` 用一个 shim 顶替 BIOS：提供 `bios_info`、按 ABI 服务 ecall（UART、确定性时钟、面板、脚本化按键、把 `DOOM1.WAD` 作为唯一只读文件），异常打印成 `SIM TRAP cause=... mepc=...`。**它不模拟**真实 LCD/USB/SD、DDR 训练、BIOS TTY 行为，也不校验 RPB1 镜像本身（那由 `tests/doom_test.py` 的主机断言做）。payload 不是位置无关的，仿真把同一批目标文件重链接到 `0x80000000`（QEMU virt RAM 基址），只有地址常量不同。
+`scripts/primer20k_vexriscv/doom_sim.py` 用一个 shim 顶替 BIOS：提供 `bios_info`、按 ABI 服务 ecall（UART、确定性时钟、面板、脚本化按键、把 `DOOM1.WAD` 作为唯一只读文件），异常打印成 `SIM TRAP cause=... mepc=...`。**它不模拟**真实 LCD/USB/SD、DDR 训练、BIOS TTY 行为，也不校验 RPB1 镜像本身（那由 `tests/primer20k_vexriscv/doom_test.py` 的主机断言做）。payload 不是位置无关的，仿真把同一批目标文件重链接到 `0x80000000`（QEMU virt RAM 基址），只有地址常量不同。
 
 实板验收：
 
 ```powershell
-& $MiniPython scripts/doom_verify.py --host-ip 169.254.25.153
+& $MiniPython scripts/primer20k_vexriscv/doom_verify.py --host-ip 169.254.25.153
 ```
 
 它**先确认板子在 BIOS setup 提示符**（看不到就停下，让你先跑 `scripts/mini.py board recover --build current`），然后复用 `boot_upload.BootSession` 驱动控制台、用进程内 `bios_tftp.PayloadServer` 导出载荷，检查：SD 上有 `DOOM1.WAD`、TFTP 收到 RRQ、`W_Init/adding DOOM1.WAD/R_Init/P_Init/I_InitGraphics`、200 帧心跳、无 `FAULT cause=`。结果写 `build/doom-verify/doom-verification.json` 与 `doom-console.log`。DOOM 不会自己返回 BIOS（F12），所以脚本跑完游戏仍在运行；它不写 Flash、不复位板子、不改主机网络与防火墙。
@@ -139,14 +139,14 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 ## 调试通道
 
-载荷在 UART 上监听单字符命令（`firmware/apps/doom/dg_debug.c`），主机侧统一走 `scripts/doom_debug.py`。载荷运行期间 BIOS 不再读控制台，同一时刻只有一个进程能占着 COM 口，所以换载荷的调试要让它自己负责启动：
+载荷在 UART 上监听单字符命令（`firmware/apps/doom/dg_debug.c`），主机侧统一走 `scripts/primer20k_vexriscv/doom_debug.py`。载荷运行期间 BIOS 不再读控制台，同一时刻只有一个进程能占着 COM 口，所以换载荷的调试要让它自己负责启动：
 
 ```powershell
 # 一条命令：BIOS 提示符 → TFTP 启动 → 等 I_InitGraphics → 暂停 → 取帧 → PNG
-& $MiniPython scripts/doom_debug.py --boot --host-ip 169.254.25.153 --settle 25 --command frame
-& $MiniPython scripts/doom_debug.py --command source      # 8-bit 源像素 + 引擎调色板
-& $MiniPython scripts/doom_debug.py --command timing      # 分段耗时
-& $MiniPython scripts/doom_debug.py --compare             # 不上板，重算差异（必须紧跟 source，见下）
+& $MiniPython scripts/primer20k_vexriscv/doom_debug.py --boot --host-ip 169.254.25.153 --settle 25 --command frame
+& $MiniPython scripts/primer20k_vexriscv/doom_debug.py --command source      # 8-bit 源像素 + 引擎调色板
+& $MiniPython scripts/primer20k_vexriscv/doom_debug.py --command timing      # 分段耗时
+& $MiniPython scripts/primer20k_vexriscv/doom_debug.py --compare             # 不上板，重算差异（必须紧跟 source，见下）
 ```
 
 `--compare` 读的是 `--out-dir` 里**当前那份** `rgb565-*.png`/`index8-*.png`/`palette.raw`，每次取帧都会原地覆盖。所以它必须紧跟在 `frame`+`source` 之后、中间不夹任何别的取帧；否则比的是两个不同时刻的帧，会读出 80% 上下的假差异（我这么踩过一次）。要留多张，就每次换一个 `--out-dir`。
@@ -169,7 +169,7 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 **为什么这套东西能定位问题**：`g` 给的是引擎画出来的 8-bit 像素，`f` 给的是面板里的 RGB565，`--compare` 用板子自己交上来的 `colors[]` 把前者换算成 RGB565 再逐字节比。源干净、面板脏 → 问题在 blit 或 DMA；源本身就脏 → 问题在数据或引擎。用 `colors[]` 而不是 WAD 里的 PLAYPAL，是因为 `I_SetPalette` 还过了一层 `gammatable[usegamma]`（不是恒等表），拿 PLAYPAL 比会看到 36.74% 的假差异。
 
-暂停期间载荷仍在跑 `dbg_service()`，串口不会失联；取帧期间游戏时钟同样冻结，15 s 的传输不会变成 15 s 的世界跳变。这条"面板 = 引擎源图"的等式由 `tests/doom_test.py` 的 `DebugChannelTest` 锁住：它在主机侧把 `g` 取回的源图按板子的调色板重跑一遍 blit，和 `f` 取回的 RGB565 逐字节比，必须 `0/200 rows differ`。换 WAD、换优化等级都会改变具体像素，所以这里不记 CRC 的具体值——但这条 diff 必须一直是 0，实板上的读数同样是 0。
+暂停期间载荷仍在跑 `dbg_service()`，串口不会失联；取帧期间游戏时钟同样冻结，15 s 的传输不会变成 15 s 的世界跳变。这条"面板 = 引擎源图"的等式由 `tests/primer20k_vexriscv/doom_test.py` 的 `DebugChannelTest` 锁住：它在主机侧把 `g` 取回的源图按板子的调色板重跑一遍 blit，和 `f` 取回的 RGB565 逐字节比，必须 `0/200 rows differ`。换 WAD、换优化等级都会改变具体像素，所以这里不记 CRC 的具体值——但这条 diff 必须一直是 0，实板上的读数同样是 0。
 
 **闪烁要问两个帧槽，不是问一帧**：面板在 slot0/slot1 之间交替，"画面闪"只可能是两格内容不一样，所以单张截图永远证明不了。`F` 在暂停态把两格都取回来逐字节比——一致就说明面板交替的是同一张图的两份拷贝，帧缓冲这一层不可能闪；不一致，差异落在哪些行本身就是答案。QEMU 暂停态实测 `slot0 vs slot1: 0 bytes, 0/272 rows differ`。
 
@@ -183,7 +183,7 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 **闪烁有客观证据，而且不在软件里**：跑一次 DOOM 前后各取一次 `bios-status`。空板待机 `underflows=00000000`（1202 个面板帧）；跑一轮吸引模式之后 `underflows=00000089`，同期 `frames` 从 `0x4b2` 走到 `0x2ac9`，即 **9751 个面板帧里欠载 137 次（1.4%）**——面板每 60 Hz 重扫一次，游戏只有 3 fps，所以每一次欠载都会在屏幕上留下可见的一闪。扫描器只有 8 KiB FIFO（`gateware/machines/primer20k_vexriscv/peripherals/video.py` 的 `stream.SyncFIFO(depth=8192//2)`），而 `LCDScan` 是每个像素时钟消费一个像素、`underflow = draw & ~sink.valid`，8 KiB = 4096 像素 ≈ 450 µs 的余量，也就是说 DDR 有半毫秒没理 LCD DMA。**把它当成 SD 读卡的锅试过一次，结论是否**：把块缓存从 32 块（128 KiB）加到 512 块（2 MiB）之后，同样的 DOOM 流量还是同样的 1007 次 `FS_READ`（次数由调用方 4 KiB 合并决定，不由卡决定），欠载反而略多（6823 帧 148 次）。**所以欠载跟的是 CPU 的访存流量，不是读卡流量**——软件渲染器在 2 KiB 写直通 L1 上疯狂取纹理，把 LCD 的取数挤饿了。真正的解在 gateware 的 DDR 仲裁优先级或 FIFO 深度，属于 PnR 改动，不在移植范围内；软件侧能证明的都证明了：帧内容逐字节正确、两个帧槽一致、present 没有失败过。
 
-**取到的是"完整的一帧"，不是"命令那一刻的缓冲"**：调试命令是从 shim 的轮询里进来的，可能落在这一帧的中间，于是 dump 会拍到半张画好的图。现在 `I_StartFrame` 调 `dbg_frame_began()` 把帧标记为未完成、`I_FinishUpdate` 末尾调 `dbg_frame_done()`；帧没画完时 `f`/`F`/`g` 进 `g_queue[]` 排队，等帧边界再按原顺序执行（其余命令照旧立刻跑，否则启动那几分钟里什么都问不出来）。这个队列是 `tests/doom_test.py` 的 `DebugChannelTest` 逼出来的——空白填充一上上去，`blit diff` 立刻从 0 变成 76 470，因为 dump 开始落在"已清空、还没画"的窗口里。
+**取到的是"完整的一帧"，不是"命令那一刻的缓冲"**：调试命令是从 shim 的轮询里进来的，可能落在这一帧的中间，于是 dump 会拍到半张画好的图。现在 `I_StartFrame` 调 `dbg_frame_began()` 把帧标记为未完成、`I_FinishUpdate` 末尾调 `dbg_frame_done()`；帧没画完时 `f`/`F`/`g` 进 `g_queue[]` 排队，等帧边界再按原顺序执行（其余命令照旧立刻跑，否则启动那几分钟里什么都问不出来）。这个队列是 `tests/primer20k_vexriscv/doom_test.py` 的 `DebugChannelTest` 逼出来的——空白填充一上上去，`blit diff` 立刻从 0 变成 76 470，因为 dump 开始落在"已清空、还没画"的窗口里。
 
 **但暂停会把排队的取帧永远饿死**：那个队列只在帧边界排空，而帧边界是 `payload_main` 循环里的 `dbg_service()`。引擎可能正卡在一个**等时钟**的循环里——`d_main.c:309-328` 的擦窗是 `do{ nowtime=I_GetTime(); tics=nowtime-wipestart; I_Sleep(1);}while(tics<=0);`——而暂停冻住的正是这个时钟，于是它永远到不了 `DG_DrawFrame`，边界服务再也不跑，排队的 `f` 就没了。实板上的现象：`--command frame` 什么都不返回（连 `DBG done` 都没有），不排队的 `m`/`t` 还能答，`t` 报 `frames=0`，恢复后游戏照跑 3.59 fps——看着像取帧坏了，其实是暂停把引擎钉死在帧中间。修法是 `DG_SleepMs` 在 `dbg_held()`（暂停或正在 dump）时调 `dbg_service_held()`：既然引擎在等一个被冻住的时间，这一帧不可能自己画完，就判它"最终"再跑边界服务；排队的 `f`/`F`/`g` 仍在同一次调用里按序跑完，所以它们描述的仍是同一块缓冲，`blit diff` 依旧 0。
 > 别图省事在 `p` 那一支直接把帧标记为已完成——试过：`f` 立刻在帧中间跑掉、`g` 在别处跑，两次 dump 来自不同帧，`DebugChannelTest` 当场 `168/200 rows differ, 59.74%`。排队的意义就是"同一次服务里跑完"。
@@ -196,7 +196,7 @@ BIOS 自身的功能验收仍走既有入口（本机 RTL 未变时按 [提交 S
 
 根因是 `shim_include/stdlib.h` 的 `#define abs(x) ((x)<0?-(x):(x))`。`R_StoreWallRange` 调用 `abs(rw_normalangle-rw_angle1)`，两个参数都是无符号 `angle_t`。标准 `abs(int)` 先转换参数，宏却保留无符号类型；例如 `0xf0000000` 应解释为 `-0x10000000` 后取绝对值，宏却返回 `0xf0000000`，随后的 ANG90 钳位使墙面距离接近零、投影异常放大，形成整高纯色竖条。它不仅发生在演示开头：修前 E1M3 的 `lt=2552/3136/3381/3636` 实板截图仍有竖条。
 
-修复为接受 `int` 参数且只求值一次的内联函数。`tests/doom_shim_test.py` 在 RV32 QEMU 上验证墙面调用模式、角度回绕、正反方向和参数单次求值；修前 `-O0/-O2` 都在第一个角度用例失败，修后都通过，已纳入 `tests/doom_test.py`（11 tests OK）。同一 E1M5 `lt=1`、逐位相同相机状态下，修前有竖条、修后为正常房间。实板新载荷的 E1M5 `lt=17/274/522/771` 间隔截图同样恢复正常，修后实板 frame/source 比对为 0/128000 字节差异。
+修复为接受 `int` 参数且只求值一次的内联函数。`tests/primer20k_vexriscv/doom_shim_test.py` 在 RV32 QEMU 上验证墙面调用模式、角度回绕、正反方向和参数单次求值；修前 `-O0/-O2` 都在第一个角度用例失败，修后都通过，已纳入 `tests/primer20k_vexriscv/doom_test.py`（11 tests OK）。同一 E1M5 `lt=1`、逐位相同相机状态下，修前有竖条、修后为正常房间。实板新载荷的 E1M5 `lt=17/274/522/771` 间隔截图同样恢复正常，修后实板 frame/source 比对为 0/128000 字节差异。
 
 证据：`build/doom-debug/series-20261012/`（修前间隔截图）、`build/doom-render-sim-fixed/`（QEMU）、`build/doom-debug/fixed-20261012/`（实板）。旧的「QEMU 与板上相同，所以属于原版行为」推断无效：两边共享相同的 shim，能共同重现同一个移植缺陷。
 
@@ -227,11 +227,11 @@ Doom 现在通过 `mini.py build payload --libc newlib` 静态链接工具链标
 | `firmware/apps/doom/shim.c` | CRC、进度和调试钩子；标准库实现由静态链接的 Newlib 提供 |
 | `firmware/libc/` | 共用 app syscall runtime、48 MiB Doom 堆边界和退出返回；不编进 BIOS 固件 |
 | `scripts/mini.py build doom` | 构建 `BOOT.RPB`（转调 `mini.py build payload`，固定 `DOOMGENERIC_RESX/RESY=480/272`） |
-| `scripts/doom_sim.py` | QEMU 仿真（BIOS shim + 面板抓帧 + 脚本化按键） |
-| `scripts/doom_verify.py` | 实板验收（复用 `BootSession`/`PayloadServer`） |
+| `scripts/primer20k_vexriscv/doom_sim.py` | QEMU 仿真（BIOS shim + 面板抓帧 + 脚本化按键） |
+| `scripts/primer20k_vexriscv/doom_verify.py` | 实板验收（复用 `BootSession`/`PayloadServer`） |
 | `firmware/apps/doom/dg_debug.c`、`dg_debug.h` | UART 调试通道：暂停/单帧/取帧/取源像素与调色板/分段耗时/已知图案 |
-| `scripts/doom_debug.py` | 调试通道主机侧：发命令、解 base64、验 CRC、出 PNG、`--compare` 逐字节比对 |
-| `tests/doom_test.py` | 主机回归：RPB1 布局 + QEMU 跑真实载荷 |
+| `scripts/primer20k_vexriscv/doom_debug.py` | 调试通道主机侧：发命令、解 base64、验 CRC、出 PNG、`--compare` 逐字节比对 |
+| `tests/primer20k_vexriscv/doom_test.py` | 主机回归：RPB1 布局 + QEMU 跑真实载荷 |
 
 
 ## INDEX8 调色板实验
@@ -244,7 +244,7 @@ Doom 现在通过 `mini.py build payload --libc newlib` 静态链接工具链标
 
 480×272 的单帧 DMA 数据量由 261120 降至 130560 bytes，双缓冲实际扫描区从 510 降至 255 KiB。实验复用 BIOS 原有的 510 KiB 静态显存池，因此这一步不会回收整个 BIOS 预留池，也不会因为 DDR 显存减少而释放 BSRAM。INDEX8 仍按行复制 320×200 的引擎缓冲。
 
-验证入口：`tests/lcd_palette_verilog_test.py --iverilog C:/msys64/ucrt64/bin/iverilog.exe` 检查索引顺序、256 项颜色、调色板读回、帧/表同步切换、窗口和每帧 8160 个 16-byte DMA burst；RGB565 是 16320 个。`--benchmark-checksum` 在计时完成后报告 source、palette、video 与 mapped565 校验，性能测试用不带此选项的独立载荷。实验布局、时序、实板验收和帧率见 `reports/performance/doom-palette-experiment.md`。
+验证入口：`tests/primer20k_vexriscv/lcd_palette_verilog_test.py --iverilog C:/msys64/ucrt64/bin/iverilog.exe` 检查索引顺序、256 项颜色、调色板读回、帧/表同步切换、窗口和每帧 8160 个 16-byte DMA burst；RGB565 是 16320 个。`--benchmark-checksum` 在计时完成后报告 source、palette、video 与 mapped565 校验，性能测试用不带此选项的独立载荷。实验布局、时序、实板验收和帧率见 `reports/performance/doom-palette-experiment.md`。
 
 
 ## 默认配置

@@ -38,7 +38,7 @@ enable、select、base0、base1、packed state、address_error，每个寄存器
 
 ## 验证
 
-`tests/uboot_video_test.py` 检查 CSR ABI、无视频配置和 UART 内存 dump 解析。
+`tests/primer20k_vexriscv/uboot_video_test.py` 检查 CSR ABI、无视频配置和 UART 内存 dump 解析。
 `uboot_verify.py --video --soc-dir <匹配的SoC目录>` 额外检查 LCD probe、
 vidconsole 注册、stdout/stderr 镜像、连续文字滚屏、framebuffer 非零像素、
 DMA frames/completed 递增、地址有效且无新增 underflow。

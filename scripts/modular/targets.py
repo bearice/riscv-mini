@@ -2,9 +2,12 @@
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
-from . import arguments, configuration
-from .storage import canonical, digest, read, write
-from . import machines
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular import arguments
+from scripts.modular.storage import canonical, digest, read, write
+from scripts.modular import machines
 
 CORE = ('system', 'bios', 'bootloader', 'hal-sdk', 'cpu', 'soc-description', 'gateware')
 BACKENDS = {'cpu-gcb':'cpu_gcb', 'cpu-qualification':'cpu_qualification', 'matrix':'matrix',
@@ -36,10 +39,10 @@ def add_targets(parser):
         if name in CORE:
             target.add_argument('--locked', type=Path)
             if name in ('system', 'gateware', 'soc-description'):
-                configuration.add_arguments(target)
+                arguments.add_arguments(target)
                 target.add_argument('--refresh-hardware', action='store_true')
             else:
-                target.set_defaults(feature=[], refresh_hardware=False, **{key:None for key in configuration.HARDWARE_OPTIONS})
+                target.set_defaults(feature=[], refresh_hardware=False, **{key:None for key in arguments.HARDWARE_OPTIONS})
             if name in ('system', 'gateware'):
                 target.add_argument('--synthesize', action='store_true', help='Run Gowin PnR for changed hardware')
             else: target.set_defaults(synthesize=False)
@@ -55,7 +58,7 @@ def add_targets(parser):
 
 
 def execute(store, run, args):
-    from .workspace import workspace_name
+    from scripts.modular.workspace import workspace_name
     run.result['workspace'] = workspace_name(getattr(args, 'workspace', 'default'))
     dry = args.command == 'plan' or args.dry_run
     machine = getattr(args, 'machine', None) or machines.LEGACY
@@ -76,16 +79,19 @@ def execute(store, run, args):
                            'compressed','pipelined_fetch','arithmetic_matrix')
         if any(getattr(args,key,None) for key in generator_options):
             raise ValueError('CPU generator options require --generate')
-    if getattr(args,'locked',None) and (configuration.changed(args) or args.source or args.synthesize or args.refresh_hardware):
+    backend_parts = machines.part(machine, 'configuration')
+    if getattr(args,'locked',None) and (backend_parts.changed(args) or args.source or args.synthesize or args.refresh_hardware):
         raise ValueError('--locked cannot be combined with source/configuration overrides')
     if args.target in BACKENDS or (args.target=='cpu' and args.generate):
         return backend(store, run, args, dry)
-    from .system import import_legacy, bundle, git_commit, build_firmware_system
+    system = machines.part(machine, 'system')
+    import_legacy, bundle, git_commit, build_firmware_system = (
+        system.import_legacy, system.bundle, system.git_commit, system.build_firmware_system)
     if args.locked:
-        from .replay import locked_build
+        from scripts.modular.replay import locked_build
         ref=locked_build(store,args.locked,run,plan=dry);run.finish(system=ref)
         return ref
-    hardware_build = args.target in ('soc-description','gateware') or args.refresh_hardware or configuration.changed(args) or args.synthesize
+    hardware_build = args.target in ('soc-description','gateware') or args.refresh_hardware or backend_parts.changed(args) or args.synthesize
     if not hardware_build:
         if args.target=='cpu':
             ref=import_legacy(store,args.hardware,run);parts=read(store.path(ref)/'bundle.lock.json')['components']
@@ -95,14 +101,15 @@ def execute(store, run, args):
     if not args.profile:
         ref = import_legacy(store,args.hardware,run)
         base = read(store.path(ref)/'bundle.lock.json')['components']
-    v, cpu = configuration.resolve(store,run,args,base,plan=dry)
+    v, cpu = backend_parts.resolve(store,run,args,base,plan=dry)
     if dry and not cpu:
         for name in ('soc-description','bootloader','gateware','hal-sdk','bios'):
             run.step(name,'BUILD',reason='resolved hardware request; exact cache check occurs when upstream outputs exist')
             if args.target==name: break
         run.finish(plan=True);return None
-    from .hardware import generate_soc, build_gateware
-    from .firmware import build_component
+    generate_soc = machines.part(machine, 'hardware').generate_soc
+    build_gateware = machines.part(machine, 'hardware').build_gateware
+    build_component = machines.part(machine, 'firmware').build_component
     soc = generate_soc(store,run,None,cpu,validation=v,plan=dry)
     if not soc:
         run.step('downstream','BUILD',reason='SoC description output required');run.finish(plan=True);return None
@@ -126,7 +133,7 @@ def execute(store, run, args):
 
 def backend(store, run, args, dry):
     name='cpu_generator' if args.target=='cpu' else BACKENDS[args.target]
-    from .workspace import location, working
+    from scripts.modular.workspace import location, working
     machine = getattr(args, 'machine', None) or machines.LEGACY
     output = (args.output_dir or location(store, run, machine, args.target)).resolve()
     request={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
@@ -145,7 +152,8 @@ def backend(store, run, args, dry):
                 if flag not in ('video=on','video=off'):raise ValueError('U-Boot supports --feature video=on|off')
                 actual.without_video=flag=='video=off'
         if args.target in ('opensbi','uboot'):
-            from .system import import_legacy,materialize
+            system = machines.part(machine, 'system')
+            import_legacy, materialize = system.import_legacy, system.materialize
             ref=import_legacy(store,args.hardware,run)
             view=store.build/'work/hardware-view'/ref['digest']
             actual.soc_dir=materialize(store,ref,view)
@@ -155,7 +163,7 @@ def backend(store, run, args, dry):
         if args.target=='opensbi':module.COMMANDS.clear()
         module.build(actual,run=run)
         if args.target in ('linux','busybox','opensbi'):
-            from .executor import execute
+            from scripts.modular.executor import execute
             roles={'linux':('cc','make','clang','lld','dtc'),
                    'busybox':('cc','make','riscv64-elf-gcc'),
                    'opensbi':('cc','make','clang','lld','dtc')}
@@ -166,7 +174,7 @@ def backend(store, run, args, dry):
             else:module.build(actual,run=run)
         # Upstream object/source trees stay mutable; snapshot only their
         # top-level delivery files after the backend has completed successfully.
-        from .storage import file_hash
+        from scripts.modular.storage import file_hash
         delivery = {p.name: p for p in output.iterdir() if p.is_file()
                     and p.name not in ('.lock', 'workspace.json', 'build.ninja')
                     and not p.name.startswith('.ninja')
@@ -188,9 +196,9 @@ def output_view(store,run,args,ref):
         import shutil
         shutil.copytree(store.path(ref),args.output_dir.resolve(),dirs_exist_ok=True)
         run.result['output_dir']=str(args.output_dir.resolve());run.save();return
-    from .system import materialize
-    from scripts.build_records import source_identity,register,now,write_json
-    from scripts.build_recipe import create_recipe
+    materialize = machines.part(machine, 'system').materialize
+    from scripts.tools.build_records import source_identity, register, now, write_json
+    from scripts.tools.build_recipe import create_recipe
     output=materialize(store,ref,args.output_dir.resolve())
     source=source_identity(store.root);source.update(kind='captured',created_at=now())
     # New recipes capture mini's canonical invocation; old recipes remain tied

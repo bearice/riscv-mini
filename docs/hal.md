@@ -68,12 +68,12 @@ trap 汇编保留 x1..x31、原 sp、mepc/mstatus/mcause/mtval，栈保持 16 �
 
 ```powershell
 & $MiniPython scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/hal_demo.c --output-dir build/m5a-demo
-& $MiniPython scripts/boot_upload.py --reset --mode uart --image build/m5a-demo/firmware/app.img
+& $MiniPython scripts/primer20k_vexriscv/boot_upload.py --reset --mode uart --image build/m5a-demo/firmware/app.img
 # 示例输入 Q 返回 UART IRQ ECHO=00000051；! 返回 bootloader。
-& $MiniPython scripts/boot_upload.py --reset --mode uart
+& $MiniPython scripts/primer20k_vexriscv/boot_upload.py --reset --mode uart
 ```
 
-先构建/下载当前 FPGA 配置，示例才能使用匹配的 CSR ABI。模拟检查运行 `sim/test_board_io.py`，包括去抖、长按不重复、释放、并发按键、GRB/pulse/latch 和 busy 提交忽略。实板验收见 [系统设计](system-design.md)。
+先构建/下载当前 FPGA 配置，示例才能使用匹配的 CSR ABI。模拟检查运行 `tests/primer20k_vexriscv/sim/test_board_io.py`，包括去抖、长按不重复、释放、并发按键、GRB/pulse/latch 和 busy 提交忽略。实板验收见 [系统设计](system-design.md)。
 
 原生 SD 的块缓冲、错误取消和运行频率见 [原生 SD](native-sd.md)。
 

@@ -49,18 +49,18 @@ USB HID、音频、麦克风是事件或固定采样率接口，本命令不测�
 
 缓存测试仅在短计时内关闭 CPU 中断，LCD 扫描继续；它与普通 `bench mem` 的中断开启结果不直接等价。L1 D-cache 是写穿透，L2 是 writeback；写命中在共享缓存完成，冲突替换包含 dirty 行写回。测试结束恢复 L2 原启用状态和中断。无 L2 或不同 L2 容量配置明确报告不支持。
 
-[benchmark.py](../scripts/benchmark.py) 驱动相同 BIOS 命令，默认三轮，保存 UART 原始输出与 JSON，并计算中位数。
+[benchmark.py](../scripts/primer20k_vexriscv/benchmark.py) 驱动相同 BIOS 命令，默认三轮，保存 UART 原始输出与 JSON，并计算中位数。
 
 ```powershell
-& $MiniPython scripts/benchmark.py --rounds 3
+& $MiniPython scripts/primer20k_vexriscv/benchmark.py --rounds 3
 # 需要该 Python 的 UDP 入站已允许，地址为接 Dock 网口的本机 IPv4；本机已确认的网卡与地址见 [本机测试环境](lab-environment.md)。
-& $MiniPython scripts/benchmark.py --rounds 3 --host-ip 169.254.25.153
+& $MiniPython scripts/primer20k_vexriscv/benchmark.py --rounds 3 --host-ip 169.254.25.153
 ```
 
 网络测试由主机生成已知的 1 MiB 数据，校验接收长度与 CRC。主机不改变网卡、路由或防火墙。`--host-ip` 会设置 BIOS 的当前 server 地址，不执行 settings save。脚本最后运行 `test bios` 和 `status`，检查 BIOS 回归并保留设备状态。
 
-`--suite cpu/mem/cache/io/net` 可单独重复某组测试。`bench libc` 在实板覆盖 304 个对齐、短长度、首个差异和哨兵检查；主机 [libc_memory_test.c](../tests/libc_memory_test.c) 还用标准 libc 参考值、保护页及 sanitizer 检查更大的长度。只对完整对齐字使用 `may_alias` 字类型，非同余对齐的 memcpy 和短尾部保留字节路径；字符串函数保持逐字节读取，避免越过 NUL 所在对象。
+`--suite cpu/mem/cache/io/net` 可单独重复某组测试。`bench libc` 在实板覆盖 304 个对齐、短长度、首个差异和哨兵检查；主机 [libc_memory_test.c](../tests/primer20k_vexriscv/libc_memory_test.c) 还用标准 libc 参考值、保护页及 sanitizer 检查更大的长度。只对完整对齐字使用 `may_alias` 字类型，非同余对齐的 memcpy 和短尾部保留字节路径；字符串函数保持逐字节读取，避免越过 NUL 所在对象。
 
-[sd_clock_verify.py](../scripts/sd_clock_verify.py) 默认扫描四档读频率，每档三次；`--clocks 15000000 --soak-seconds 300` 进行五分钟只读测试。每轮先在 7.5 MHz 获取参考 CRC，再测试请求频率的单块/八块读取，失败候选明确记录。30 MHz 是实验候选，需要 CMD6 协商且尚未通过实板读取，不能作为默认。结束时检查低速恢复、BIOS 自检和设备状态，不写卡。重新 mount/init 会恢复驱动默认频率。
+[sd_clock_verify.py](../scripts/primer20k_vexriscv/sd_clock_verify.py) 默认扫描四档读频率，每档三次；`--clocks 15000000 --soak-seconds 300` 进行五分钟只读测试。每轮先在 7.5 MHz 获取参考 CRC，再测试请求频率的单块/八块读取，失败候选明确记录。30 MHz 是实验候选，需要 CMD6 协商且尚未通过实板读取，不能作为默认。结束时检查低速恢复、BIOS 自检和设备状态，不写卡。重新 mount/init 会恢复驱动默认频率。
 
 `--suite net --host-ip ADDRESS` 仅运行现有 `bench net BENCH.BIN` 命令；失败时保留 TFTP 服务事件和 `test eth` 状态，不能把失败的传输计入吞吐。

@@ -68,7 +68,7 @@ been requalified with a Hub.
 
 Current on-board commands are `test usb`, `test usb tree`, `test usb stop/restart`,
 `test usb input`, `test usb leds ...` and `test phys`. Batch execution uses
-`scripts/firmware_verify.py`; physical input and LED acceptance require manual action.
+`scripts/primer20k_vexriscv/firmware_verify.py`; physical input and LED acceptance require manual action.
 See [firmware commands](firmware-tests.md).
 Keyboard/mouse input was verified on 2026-10-01 after fixing the OHCI
 dummy-TD ownership bug (a transfer descriptor owned by the controller was
@@ -77,7 +77,7 @@ never released, so the periodic list stalled); LED output remains untested.
 The base monitor prints key usages over UART. The independent
 `firmware/examples/primer20k_vexriscv/ethernet_demo.c` adds `u` for USB diagnostics and `j` for
 USB-only restart to its SD/LCD/audio/network acceptance workload. Run
-`scripts/ethernet_verify.py --usb` with the existing source NIC/IP and
+`scripts/primer20k_vexriscv/ethernet_verify.py --usb` with the existing source NIC/IP and
 `--soak-seconds 300`; it checks three local restarts, shared PHY reset,
 OHCI frames/HID presence, UDP, SD CRC, LCD scanning and muted audio DMA.
 It never asks for or requires physical USB removal.
@@ -87,12 +87,12 @@ the soak window and is not a UDP retry. Immediate post-reset UDP loss on the
 unfiltered two-slot Ethernet receiver remains a known limitation; see
 [usb-light.md](usb-light.md).
 
-Simulation: `.venv/Scripts/python.exe sim/test_usb_phy.py` exercises the actual
+Simulation: `.venv/Scripts/python.exe tests/primer20k_vexriscv/sim/test_usb_phy.py` exercises the actual
 initialization FSM. It does not prove electrical USB timing or enumeration.
-`sim/test_usb_ulpi_timing.py` adds a quantized edge/propagation model for
+`tests/primer20k_vexriscv/sim/test_usb_ulpi_timing.py` adds a quantized edge/propagation model for
 command/data/STP sequencing and read turnaround at two timing corners; this
 behavioral probe supplements, and does not replace, post-route STA.
-`sim/test_bus.py` checks the registered DDR/OHCI Wishbone seams with delayed
+`tests/primer20k_vexriscv/sim/test_bus.py` checks the registered DDR/OHCI Wishbone seams with delayed
 responses, byte enables, errors and canceled requests. ULPI input sampling
 uses falling edges; initialization output data/STP is registered. Serial RX
 uses two synchronizer stages before the controller. Timing constraints retain

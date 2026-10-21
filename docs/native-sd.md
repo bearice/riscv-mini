@@ -27,7 +27,7 @@ sys 为 60 MHz。初始化 divider=150 得到 400 kHz；默认读取 divider=4�
 
 默认 lite DMA 通过 128-bit coherent streaming 入口访问共享 L2；full 保留通用 32-bit Wishbone DMA。传输经 **4 KiB、16 字节对齐的 DDR bounce buffer**，因此上层缓冲不必对齐。每次最多八块；大请求分段，单块用 CMD17/24、多块用 CMD18/25，随后 CMD12 停止。读操作只有在数据 CRC 和 DMA 完成都成功后才复制到调用者；写操作先复制到 DMA 缓冲。默认构建启用 4 KiB 共享 writeback L2，SD lite 读写能观察与更新 dirty 行，所有权切换仍使用 `fence rw,rw`。
 
-命令与数据使用硬件 CRC7/CRC16；软件检查 R1/R6 和 event 错误。锁定版 SDCore 未把命令 CRC 错误传给 CSR，本地 `gateware/vendor/sdcore.py` 只修正该状态连接，保留原版权。仿真能复现原版坏 CRC 返回成功，本地返回 done/error/crc。上游功能依据见 [LiteSDCard](https://github.com/enjoy-digital/litesdcard)。
+命令与数据使用硬件 CRC7/CRC16；软件检查 R1/R6 和 event 错误。锁定版 SDCore 未把命令 CRC 错误传给 CSR，本地 `gateware/vendor/litesdcard/sdcore.py` 只修正该状态连接，保留原版权。仿真能复现原版坏 CRC 返回成功，本地返回 done/error/crc。上游功能依据见 [LiteSDCard](https://github.com/enjoy-digital/litesdcard)。
 
 命令 PHY timeout 为 250 ms，数据读 timeout 为 500 ms；软件 event / DMA 等待各最多一秒，ACMD41 初始化循环最多两秒。写响应/busy 超时也由软件等待覆盖。失败禁用 DMA、复位 SD 控制器及 FIFO，并标记未初始化，后续 `hal_sd_mount()` 重新初始化。CMD13 检查写后状态，`CTRL_SYNC` 不添加额外的数据读回。
 
@@ -55,10 +55,10 @@ CD 在每次等待与块操作中检查。检测无卡时标记介质不可用�
 
 # 独立测试应用，保持基础 monitor 无写测/压力命令。
 & $MiniPython scripts/mini.py build system --sd-profile lite --source firmware/examples/primer20k_vexriscv/sd_demo.c --output-dir build/m6-demo
-& $MiniPython scripts/sd_verify.py --output-dir build/base --reset --write-test --soak-seconds 300
+& $MiniPython scripts/primer20k_vexriscv/sd_verify.py --output-dir build/base --reset --write-test --soak-seconds 300
 
 # 恢复基础应用。
-& $MiniPython scripts/boot_upload.py --reset --mode uart
+& $MiniPython scripts/primer20k_vexriscv/boot_upload.py --reset --mode uart
 ```
 
 独立示例中 `r` 读取现有 `RVTEST00.BIN` 并计算 CRC；`b` 比较 16 次单块和一次 16 块读取，使用未对齐缓冲；`w` 用 `FA_CREATE_NEW` 选择未占用的 `RV6Txxxx.BIN`，写入 64 KiB、关闭、重新打开并逐字节/CRC 验证。它不会格式化或覆盖既有文件。`f` 换帧，`s` 状态，`!` 复位。测试文件保留在卡上。

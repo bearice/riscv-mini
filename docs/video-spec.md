@@ -87,7 +87,7 @@ rgb_lcd_wrap_end_write(0);
 此配置每帧读取 4000 次 16B burst，而全屏 INDEX8 为 8160 次；黑边不占 VRAM。
 它提供应用免复制的扫描条件，应用仍需管理前后台缓冲所有权，不能覆盖正在扫描的帧。
 
-针对性 RTL 回归：`tests/lcd_skip_verilog_test.py --iverilog <iverilog.exe> --case <case>`，
+针对性 RTL 回归：`tests/primer20k_vexriscv/lcd_skip_verilog_test.py --iverilog <iverilog.exe> --case <case>`，
 case 包括 doom、small、full、rgb、range、stall、starve；检查完整像素流、黑边、DMA 请求、
 换帧/调色板原子切换、背光输出、地址/窗口拒绝、延迟与欠载后的恢复。
 

@@ -129,7 +129,7 @@ ABI `ba18270e`；bitstream SHA256 `fcb9ccc9c6abc3c0ff0df8c1121e1d0fd9816de49c8f1
 
 Gowin V1.9.12.04，place=3、route=2、netlist_hierarchy=0，setup/hold 违例 0/0。上述基线使用移除补丁前的 CPU fence 握手；当前源码已删除它及 L2 atomic bypass，不能继承上述资源、时序和实板验收。最新 C 候选见 [PnR 交接](debug-c-pnr-handoff.md)。基线实板验收包含固件自检、连续 LCD 计时器、SD、静音音频和外部网络并发，不表示其他裁剪组合或更高频率已通过上板验收。ROM 配置容量 8192 B、无集成 SRAM；实际固件大小随工具/LTO 构建而变，由链接器强制限制。
 
-Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/primer20k_vexriscv/main.c`](../firmware/bootloader/primer20k_vexriscv/main.c) 与 [`scripts/boot_upload.py`](../scripts/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
+Flash 配置偏移 0，匹配应用偏移 0x200000。分区和更新逻辑见 [`firmware/bootloader/primer20k_vexriscv/main.c`](../firmware/bootloader/primer20k_vexriscv/main.c) 与 [`scripts/primer20k_vexriscv/boot_upload.py`](../scripts/primer20k_vexriscv/boot_upload.py)。历史设计和测试结果由 Git 历史保存，不在 docs 中维护逐轮记录。
 
 ## 文档索引
 

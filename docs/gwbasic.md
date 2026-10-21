@@ -16,7 +16,7 @@ set file BASIC.RPB      (或 set server <host-ip> 后用 boot net BASIC.RPB)
 boot sd BASIC.RPB
 ```
 
-`SYSTEM` 返回 BIOS（BIOS 打印 `PAYLOAD RETURNED` 后回到 setup）。也可用 `scripts/gwbasic_sim.py` 在 QEMU 上直接运行，见下文"验证"。
+`SYSTEM` 返回 BIOS（BIOS 打印 `PAYLOAD RETURNED` 后回到 setup）。也可用 `scripts/primer20k_vexriscv/gwbasic_sim.py` 在 QEMU 上直接运行，见下文"验证"。
 
 ### 硬浮点前提
 
@@ -100,14 +100,14 @@ SYSTEM
 ## 验证
 
 ```powershell
-& $MiniPython tests/gwbasic_test.py -v          # 镜像布局 + QEMU 上跑真实代码
-& $MiniPython scripts/gwbasic_sim.py --script-text 'TESTS' --expect "ALL TESTS PASSED"
+& $MiniPython tests/primer20k_vexriscv/gwbasic_test.py -v          # 镜像布局 + QEMU 上跑真实代码
+& $MiniPython scripts/primer20k_vexriscv/gwbasic_sim.py --script-text 'TESTS' --expect "ALL TESTS PASSED"
 ```
 
-`tests/gwbasic_test.py` 先校验 RPB1 头/CRC/装载地址/入口/内存声明（就是 BIOS 校验的那几项），再用 `scripts/gwbasic_sim.py` 把**真实 payload 目标文件**跑在 QEMU 上。仿真器用一个 shim 顶替 BIOS：提供 `bios_info`、按 ABI 服务 ecall（UART、确定性时钟、无设备时返回 -1）、在 `_start` 里照抄 `firmware/bsp/primer20k_vexriscv/start.S` 的 `mstatus.FS` 使能、并把异常打印成 `SIM TRAP cause=... mepc=...` 而不是静默挂死。**它不模拟**：真实 LCD/键盘/SD/USB、DDR 训练、BIOS TTY 行为、Flash 装载，也不校验 RPB1 镜像本身（镜像由上面那组主机断言检查）。
+`tests/primer20k_vexriscv/gwbasic_test.py` 先校验 RPB1 头/CRC/装载地址/入口/内存声明（就是 BIOS 校验的那几项），再用 `scripts/primer20k_vexriscv/gwbasic_sim.py` 把**真实 payload 目标文件**跑在 QEMU 上。仿真器用一个 shim 顶替 BIOS：提供 `bios_info`、按 ABI 服务 ecall（UART、确定性时钟、无设备时返回 -1）、在 `_start` 里照抄 `firmware/bsp/primer20k_vexriscv/start.S` 的 `mstatus.FS` 使能、并把异常打印成 `SIM TRAP cause=... mepc=...` 而不是静默挂死。**它不模拟**：真实 LCD/键盘/SD/USB、DDR 训练、BIOS TTY 行为、Flash 装载，也不校验 RPB1 镜像本身（镜像由上面那组主机断言检查）。
 
 因为 payload 不是位置无关的（`-msmall-data-limit=0` 让它用绝对地址），仿真构建把同一批目标文件重链接到 `0x80000000`（QEMU virt 的 RAM 基址）；板端链接在 `0x01000000`。**只有地址常量不同**，代码路径与编译产物一致。
 
-板端验收：把 `BOOT.RPB` 放到 SD 或用 TFTP 提供给 BIOS，`boot sd|net <file>` 进入解释器后执行 `TESTS`，看到 `ALL TESTS PASSED (77 checks)` 即与仿真结果一致。`scripts/gwbasic_verify.py` 把这条流程串起来（TFTP 导出 + 串口驱动 + 交互检查 + 结果 JSON）；它**不**写 Flash、不重启板子、不改主机网络或防火墙。注意 TFTP 服务必须用主机防火墙已放行的解释器启动（仓库 `.venv` 不在放行列表里，用它监听 UDP/69 收不到板端请求）。
+板端验收：把 `BOOT.RPB` 放到 SD 或用 TFTP 提供给 BIOS，`boot sd|net <file>` 进入解释器后执行 `TESTS`，看到 `ALL TESTS PASSED (77 checks)` 即与仿真结果一致。`scripts/primer20k_vexriscv/gwbasic_verify.py` 把这条流程串起来（TFTP 导出 + 串口驱动 + 交互检查 + 结果 JSON）；它**不**写 Flash、不重启板子、不改主机网络或防火墙。注意 TFTP 服务必须用主机防火墙已放行的解释器启动（仓库 `.venv` 不在放行列表里，用它监听 UDP/69 收不到板端请求）。
 
 **兼容性前提：payload 的 load 是 `0x01000000`，只能由零基址 RAM 改造之后的 BIOS（v0.8.0 起）装载。** 更早的固件（例如 Flash 里的 v0.7.1）地址映射是 `0x41000000`，会以 `BOOT rejected: format/range/version/CRC` 拒绝同一镜像。所以硬浮点 payload 需要「v0.8.0+ gateware 且带 FPU 的 full 配置」同时成立；v0.8.0 之前的板子要先把 gateware 下到 SRAM / 更新 Flash 才能用它。

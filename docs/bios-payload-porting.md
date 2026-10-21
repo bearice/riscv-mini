@@ -64,7 +64,7 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 & $MiniPython scripts/mini.py build <app> --soft-float  # 已注册的应用 target，内部调用 payload backend
 ```
 
-- 镜像必须 RPB1：`magic=0x31425052`、`load=0x01000000`、entry 在文件内且 4 字节对齐、两个 CRC。`scripts/bios_image.py` 是格式定义，`tests/*_test.py` 里做主机断言。
+- 镜像必须 RPB1：`magic=0x31425052`、`load=0x01000000`、entry 在文件内且 4 字节对齐、两个 CRC。`scripts/primer20k_vexriscv/bios_image.py` 是格式定义，`tests/*_test.py` 里做主机断言。
 - 载荷窗口 `0x01000000..0x07deffff`；栈 `0x07df0000..0x07dfffff`，初始 `SP=0x07e00000`；**程序内存 `memory_bytes` 必须 ≤ `0x06000000`**，因为装载时 BIOS 一边从 `0x07000000` 的暂存区读、一边往程序内存写，超过就会自己覆盖自己。
 - `.bss` 也算进 `memory_bytes`，BIOS 会清零：板上日志里 `BOOT zero/cache sync:` 就是这笔开销（约 50 MiB → 5.6 s），不是卡死。
 - 载荷镜像装载上限 8 MiB（`BIOS_IMAGE_MAX`）；数据文件（IWAD 之类）不要塞进镜像，用 SD/TFTP 单独传。
@@ -93,12 +93,12 @@ BIOS ABI=1 memory=128 MiB MMU=1 FPU=0        <-- 看这里
 
 **坑 12（每次读 1 字节的 libc 循环）：** 一次 `FS_READ` 就是一次 ecall + 一次 FatFs 读，BIOS 侧还有块缓存兜着，但缓存救不了调用次数。DOOM 的 `I_ReadFile` 用 `fread(buf,1,size,handle)`，如果 shim 的 `fread` 按 item 逐字节循环，4 MiB WAD 就是 268 127 次 ecall——实测光这一项 72 s，加上每块一次 `BIOS_POLL` 的 147 s，`R_Init` 直接跑到 15 分钟。shim 必须把 `sz*n` 合并成 ≤4096 字节的整块请求（`shim.c` 的 `fread`），并且把 POLL 限流（8 ms 一次）。判断办法就是打点：`shim: reads N KiB fs=ms/calls poll=ms/calls`，`bytes/calls` 接近 1 即中招。
 
-**坑 11（TFTP 解释器要防火墙放行）：** 独立进程导出 TFTP 时必须用主机防火墙已放行的解释器（仓库 `.venv` 不在放行列表，用它监听 UDP/69 收不到板端 RRQ）；或者像 `scripts/bios_verify.py` 那样在**同一进程内**起 `bios_tftp.PayloadServer`。BIOS 端是 512 B 停等 TFTP、不支持 options，实测约 243 KiB/s（4.2 MB 约 17 s）。
+**坑 11（TFTP 解释器要防火墙放行）：** 独立进程导出 TFTP 时必须用主机防火墙已放行的解释器（仓库 `.venv` 不在放行列表，用它监听 UDP/69 收不到板端 RRQ）；或者像 `scripts/primer20k_vexriscv/bios_verify.py` 那样在**同一进程内**起 `bios_tftp.PayloadServer`。BIOS 端是 512 B 停等 TFTP、不支持 options，实测约 243 KiB/s（4.2 MB 约 17 s）。
 
 ```powershell
 # 主机侧（放行的解释器）
 & 'C:\Users\bearice\AppData\Local\Programs\Python\Python313\python.exe' `
-    scripts/bios_tftp.py --bind <host-ip> --file <本地文件> --name <板端文件名>
+    scripts/primer20k_vexriscv/bios_tftp.py --bind <host-ip> --file <本地文件> --name <板端文件名>
 ```
 
 ```text
@@ -141,12 +141,12 @@ BOOT payload entry=01000000
 载荷专属的实板验收脚本要**复用**现成组件，别另写一套：
 
 ```python
-from boot_upload import BootSession       # 提示符/状态机、DDR 失败检测
-from bios_tftp import PayloadServer       # 进程内 TFTP，见 scripts/bios_verify.py
-from bios_image import unpack             # RPB1 校验
+from scripts.primer20k_vexriscv.boot_upload import BootSession       # 提示符/状态机、DDR 失败检测
+from scripts.primer20k_vexriscv.bios_tftp import PayloadServer       # 进程内 TFTP，见 scripts/primer20k_vexriscv/bios_verify.py
+from scripts.primer20k_vexriscv.bios_image import unpack             # RPB1 校验
 ```
 
-验收脚本至少要：① 先要 `> ` 提示符，拿不到就提示用 `board recover`；② 检查所需数据文件在 SD 上；③ 断言启动里程碑与进度（帧数/字节数），而不是只看“有输出”；④ 检查没有 `FAULT cause=`；⑤ 把 JSON 与串口日志写到 `build/<app>-verify/`；⑥ 不写 Flash、不复位、不改主机网络。DOOM 的实现是 `scripts/doom_verify.py`。
+验收脚本至少要：① 先要 `> ` 提示符，拿不到就提示用 `board recover`；② 检查所需数据文件在 SD 上；③ 断言启动里程碑与进度（帧数/字节数），而不是只看“有输出”；④ 检查没有 `FAULT cause=`；⑤ 把 JSON 与串口日志写到 `build/<app>-verify/`；⑥ 不写 Flash、不复位、不改主机网络。DOOM 的实现是 `scripts/primer20k_vexriscv/doom_verify.py`。
 
 BIOS 自身改动仍走 `board verify --suite firmware --image <app.img>`；提交前按 [提交 SOP](pre-commit-sop.md) 记范围与检查。
 
@@ -167,14 +167,14 @@ BIOS 自身改动仍走 `board verify --suite firmware --image <app.img>`；提�
 **反例 2：自己写串口状态机。** 我另写了一个 `Console` 类（自己的 `until`/`drain`/超时），而仓库已经有 `boot_upload.BootSession`：它管提示符成帧、`fresh_banner()`、`menu()`、DDR 初始化失败即抛错。
 → 正确做法：`from boot_upload import BootSession`，只写本应用特有的断言。
 
-**反例 3：自己拉起 TFTP 进程。** 我另起子进程跑 `bios_tftp.py`，还硬编码一个“防火墙已放行的解释器”路径；`scripts/bios_verify.py` 早就是**同进程** `PayloadServer(...).serve_once()` 多线程导出的写法。
+**反例 3：自己拉起 TFTP 进程。** 我另起子进程跑 `bios_tftp.py`，还硬编码一个“防火墙已放行的解释器”路径；`scripts/primer20k_vexriscv/bios_verify.py` 早就是**同进程** `PayloadServer(...).serve_once()` 多线程导出的写法。
 → 正确做法：复用 `bios_tftp.PayloadServer`（进程内、可 `exercise_retry`）；只有在你确实要单独常驻服务时才用子进程，并且必须用放行的解释器（见坑 11）。
 
 **反例 4：脚本把输出憋到最后。** 验收脚本先重定向到文件、最后才打印，跑的时候终端几分钟一个字都没有，用户合理地以为卡死并中止了我三次。
 → 正确做法：边读边打印（`note()` 里 `stdout.flush()`）、每步 `[app] 正在做什么`、等待时每 15 s 打一行“还在等 X、已收 N 字节、还剩 M 秒”；长阶段由载荷自己打进度（坑 9）。
 
 **反例 5：不确认板子状态就往串口写。** 脚本直接 `boot net …`，既不看 `> ` 提示符，也不管上一次运行是不是还在跑（这时写进去的字节会被正在跑的载荷当按键吃掉）。
-→ 正确做法：先发一个 `\r` 要提示符，拿不到就停下并提示 `./mini.ps1 board recover --build current`；详见 `scripts/doom_verify.py` 现在的写法。
+→ 正确做法：先发一个 `\r` 要提示符，拿不到就停下并提示 `./mini.ps1 board recover --build current`；详见 `scripts/primer20k_vexriscv/doom_verify.py` 现在的写法。
 
 **反例 6：先加一次性服务，再补文档。** 为了把 4 MiB 的 IWAD 送上卡，我先塞了一个专门的 `fetchraw` 命令（以及早先“按路径+偏移读一次”的 `FILE_READ`）。
 → 正确做法：先把 BIOS 侧能力做成**标准形状**（这次最终落成 `FS_OPEN/CLOSE/READ/WRITE/SEEK/STAT/MKDIR/UNLINK/RENAME` 一层），控制台命令、ecall 服务、旧接口都只是它的客户；`fetch`/`fetchraw` 也只是这层的调用者。一次性补丁会让每个后续应用再发明一遍。

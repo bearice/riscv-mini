@@ -26,6 +26,6 @@ L2 CSR 提供 enable、stats、flush、invalidate、busy。flush 写回 dirty �
 
 `--l2-size 4096/8192` 控制容量，默认 4096。DDR 软件初始化依赖 L2 启动 RAM，不提供关闭 L2 的构建。启动窗口固定、解除固定与栈交接见 [DDR 启动](ddr-boot.md)。8 KiB 需要重新评估 BSRAM、布局布线和实板，不继承默认 4 KiB 的验收。
 
-`tests/shared_l2_test.py --writeback` 检查 partial write、dirty 可见性、替换、flush/invalidate、禁用、取消、复位、三端轮转和混合参考序列。`tests/shared_l2_verilog_test.py` 用 Icarus 执行真正生成的 Verilog，检查四个 CPU word lane、十六个 byte lane 和替换；Migen 仿真不能替代它。SD 的四字打包和完整字节掩码另由 `tests/native_sd_verilog_test.py` 检查。
+`tests/primer20k_vexriscv/shared_l2_test.py --writeback` 检查 partial write、dirty 可见性、替换、flush/invalidate、禁用、取消、复位、三端轮转和混合参考序列。`tests/primer20k_vexriscv/shared_l2_verilog_test.py` 用 Icarus 执行真正生成的 Verilog，检查四个 CPU word lane、十六个 byte lane 和替换；Migen 仿真不能替代它。SD 的四字打包和完整字节掩码另由 `tests/primer20k_vexriscv/native_sd_verilog_test.py` 检查。
 
 实际 PnR 资源、时序和 full 实板边界见 [系统设计](system-design.md)。缓存策略、容量与 coherent 入口参与镜像 ABI，必须一起重新构建 FPGA 配置和固件。

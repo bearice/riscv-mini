@@ -55,7 +55,7 @@ HAL 提供 `hal_mic_start(right)`、`hal_mic_stop()`、`hal_mic_capture()`、
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build system --output-dir build/mic --synthesize
 .venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c --output-dir build/mic-demo
-.venv/Scripts/python.exe scripts/boot_upload.py --program --mode uart --output-dir build/mic --image build/mic-demo/firmware/app.img
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/boot_upload.py --program --mode uart --output-dir build/mic --image build/mic-demo/firmware/app.img
 ```
 
 麦克风 CSR（含输入活动标志）属于镜像 ABI，FPGA 配置与应用必须匹配；

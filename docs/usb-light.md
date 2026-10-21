@@ -81,13 +81,13 @@ bulk throughput qualification remain unsupported. The HCD rejects non-full-speed
 endpoint opens rather than scheduling them at 12 Mbit/s. A full-speed wireless
 receiver can carry keyboard/mouse reports without requiring low-speed PHY.
 
-Host tests: `tests/usb_ultra_hcd_test.c` exercises the actual adapter through
+Host tests: `tests/primer20k_vexriscv/usb_ultra_hcd_test.c` exercises the actual adapter through
 mocked registers, covering setup, ACK, NAK retry, short packet, duplicate
 toggle, zero-length status, STALL, CRC failure, bounds and removal. It also
 checks Hub/child address isolation, speed rejection and atomic EP0 allocation
 when the endpoint pool is exhausted. PHY tests
-are in `tests/usb_fs_phy_tb.v`. `sim/generate_usb_pio_bus.py` and
-`tests/usb_pio_bus_tb.v` exercise the actual registered bridge and upstream
+are in `tests/primer20k_vexriscv/usb_fs_phy_tb.v`. `scripts/primer20k_vexriscv/generate_usb_pio_bus.py` and
+`tests/primer20k_vexriscv/usb_pio_bus_tb.v` exercise the actual registered bridge and upstream
 Host registers, including request cancellation by reset and recovery.
 Existing Migen initialization and ULPI timing
 tests continue to apply.

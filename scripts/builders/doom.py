@@ -25,7 +25,7 @@ def build(a, run=None):
         a.define += [f'DOOM_TIMEDEMO="{a.timedemo}"',f'DOOM_BENCH_FRAMES={a.benchmark_frames}']
     app=a.source_dir.resolve()
     from types import SimpleNamespace
-    from .payload import build as payload
+    from scripts.builders.payload import build as payload
     payload(SimpleNamespace(source=None, source_dir=app, output_dir=a.output_dir,
         include_dir=[], define=['BIOS_LIBC_HEAP_BYTES=(48u*1024u*1024u)',
         'DOOMGENERIC_RESX=480','DOOMGENERIC_RESY=272',*a.define],

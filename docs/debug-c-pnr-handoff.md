@@ -8,9 +8,9 @@
 - `scripts/mini.py build cpu --generate` 增加了 `--compressed`，可以生成四种 MMU/FPU 组合的 C 版本。
 - `scripts/mini.py build cpu --generate` 增加了 `--pipelined-fetch`。它把 C 版本的 `twoCycleCache` 恢复为 `true`，并打开 `injectorStage`，用于缩短取指关键路径。
 - `scripts/mini.py build system` 和 `firmware/bootloader/primer20k_vexriscv/boot.ld` 支持 `--rom-size 4096/8192`；默认值仍为 8192。
-- `scripts/test_cpu_fence.py` 支持 `--compressed`，`tests/cpu_fence_program.S` 增加了跨 cache line 的压缩指令测试。
+- `scripts/primer20k_vexriscv/test_cpu_fence.py` 支持 `--compressed`，`tests/primer20k_vexriscv/cpu_fence_program.S` 增加了跨 cache line 的压缩指令测试。
 - CPU 外部 fence/atomic 补丁、L2 atomic bypass 和未使用的 posted write combiner 已删除；原生 CPU 的指令语义由 ACK-visible RTL 测试检查，旧候选仍保留在各自输出目录。
-- DDR 默认使用 1 项注册命令队列，关闭 auto precharge；`tests/ddr_queue_test.py` 默认验证生产深度，`tests/ddr_queue_structure_test.py` 检查实际 controller/crossbar 的组合反馈环。
+- DDR 默认使用 1 项注册命令队列，关闭 auto precharge；`tests/primer20k_vexriscv/ddr_queue_test.py` 默认验证生产深度，`tests/primer20k_vexriscv/ddr_queue_structure_test.py` 检查实际 controller/crossbar 的组合反馈环。
 - 默认 Gowin place 2/route 2；实验日志、生成的 CPU RTL 和 bitstream 留在忽略的 `build/c-fit` 目录，失败候选不能下载。发布和验收须核对具体产物身份。
 
 ## 复现环境
@@ -56,14 +56,14 @@ $vex = 'build/opensbi-cpu-source'
 配置和 DDR CSR 协议：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 tests/config_test.py
-.venv/Scripts/python.exe -X utf8 tests/ddr_boot_test.py
+.venv/Scripts/python.exe -X utf8 tests/common/config_test.py
+.venv/Scripts/python.exe -X utf8 tests/primer20k_vexriscv/ddr_boot_test.py
 ```
 
 带 C 的 RTL fence/取指测试：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/test_cpu_fence.py `
+.venv/Scripts/python.exe -X utf8 scripts/primer20k_vexriscv/test_cpu_fence.py `
   --cpu build/c-fit/cpu-native/VexRiscv_MmuFpu.v `
   --output-dir build/c-fit/native-fence-test `
   --iverilog C:/msys64/ucrt64/bin/iverilog.exe `
@@ -75,8 +75,8 @@ $vex = 'build/opensbi-cpu-source'
 DDR 队列仿真：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 tests/ddr_queue_test.py
-.venv/Scripts/python.exe -X utf8 tests/ddr_queue_test.py --depth 0
+.venv/Scripts/python.exe -X utf8 tests/primer20k_vexriscv/ddr_queue_test.py
+.venv/Scripts/python.exe -X utf8 tests/primer20k_vexriscv/ddr_queue_test.py --depth 0
 ```
 
 深度 8、1、0 都通过 48 个地址、bank/row 切换、16 字节 mask、原生读写数据时序和刷新后的读回。日志在 `build/c-fit/ddr-queue-test.log` 和 `build/c-fit/ddr-queue0-test.log`。
@@ -101,7 +101,7 @@ DDR 控制器队列深度实验曾把 bank command FIFO 从默认 8 项缩到 1/
 ## 关键边界和下一步建议
 
 1. `no-fence` 已获得零 setup/hold 的 full PnR，但不能据此宣称功能验收通过。
-2. 不能下载 `build/c-fit/queue0` 或 `build/c-fit/phase247` 的 bitstream；它们的 `validation.json` 会记录 timing violation，`scripts/boot_upload.py` 也会拒绝这类输出。
+2. 不能下载 `build/c-fit/queue0` 或 `build/c-fit/phase247` 的 bitstream；它们的 `validation.json` 会记录 timing violation，`scripts/primer20k_vexriscv/boot_upload.py` 也会拒绝这类输出。
 3. 原生 CPU 在 ACK 延迟 1/9/31 周期时通过压缩指令、自修改代码/FENCE.I、AMO、LR/SC；延迟 127 周期时自修改代码超时。取指在 cycle 2680 读到代码地址的旧值 0，两条代码 store 在 cycle 2717/2844 才 ACK。相同程序、ACK 模型和延迟下，旧补丁 CPU（done=1）在 3450 cycles 通过。日志在 `build/c-fit/native-fence-delay127/{simulation,trace,reference}.log`。
 4. 该压力模型有独立 I/D 总线，写入 ACK 时立即可见，已证明这种模型下的功能回归；尚未用完整 SoC 共享 Wishbone/L2 仲裁复现，不能把它直接当成实板故障。此前“flush 提前”断言本身也不能替代最终可见结果检查。
 5. 共享 L2（含 dirty 可见性、轮转、混合参考序列）、4/8 KiB boot RAM、L2 生成 Verilog 字节 lane、DDR 软件初始化、配置和 RTL 默认值/复位优先级测试均通过。
@@ -110,7 +110,7 @@ DDR 控制器队列深度实验曾把 bank command FIFO 从默认 8 项缩到 1/
 压力测试复现：
 
 ```powershell
-.venv/Scripts/python.exe -X utf8 scripts/test_cpu_fence.py `
+.venv/Scripts/python.exe -X utf8 scripts/primer20k_vexriscv/test_cpu_fence.py `
   --cpu build/c-fit/cpu-native/VexRiscv_MmuFpu.v `
   --output-dir build/c-fit/native-fence-delay127 `
   --iverilog C:/msys64/ucrt64/bin/iverilog.exe --compressed --ack-delay 127
@@ -129,7 +129,7 @@ C 版 boot ROM 为 3792 B，旧版无 C boot ROM 为 5292 B；当前结果为 `b
 - USB HID 枚举、拓扑、stop、三次 restart、共享 PHY reset 通过。接收器为 VID 046d/PID c52b、3 HID interfaces；未验证真实键鼠输入。
 - Ethernet PHY/协议解析器和单双麦克风采集通过；外部 Ethernet 测试口未连接，未验证真实网络收发，未听音或验证麦克风声学响应。
 - `test audio` 初次、三次重试及干净重启后一次均出现 `TEST audio refill FAIL`（5/5 失败）；`test dma` 的 SD 部分通过、音频部分失败。`test soak 60` 第一轮在约 1.4 秒退出，SD/LCD CRC 和 USB 检查通过，音频 refill 失败。终止后已静音并停止 DMA；根因尚未确定，不能直接归因于 fence 裁剪。
-- `scripts/boot_verify.py --reset` 通过坏 header/ABI/地址/长度、packet/payload CRC、UART timeout 的拒绝以及 UART BIOS 重新装载检查，没有请求 Flash install。
+- `scripts/primer20k_vexriscv/boot_verify.py --reset` 通过坏 header/ABI/地址/长度、packet/payload CRC、UART timeout 的拒绝以及 UART BIOS 重新装载检查，没有请求 Flash install。
 - 两次重新下载 SRAM 和三次软件复位均完成 DDR 训练及 BIOS POST；`test bios` 服务检查通过。日志见 `boot-repeat-verification.json`、`board-fresh.json` 及对应 UART 日志。
 
 原始报告保存在候选目录的 `firmware-verification.json`、`board-remaining.json`、`boot-verification.json` 及对应 UART 日志。整体结果为验收未通过，不把 PnR 通过改写为功能通过。
@@ -152,7 +152,7 @@ C 版 boot ROM 为 3792 B，旧版无 C boot ROM 为 5292 B；当前结果为 `b
 
 LiteDRAM depth 0 的 lookahead FIFO 是组合直通，而 `req.lock = lookahead.valid | buffer.valid`。crossbar 又用其它 bank 的 lock 抑制本 bank 的 valid，形成跨 bank 的 `lock -> valid -> lock` 组合环。旧综合报告包含 `AG0100 Find logical loop`，零违例 STA 并不能使这个组合结构成立。DFI 行为仿真会把反馈环迭代到稳定值，旧的 depth 0 仿真 PASS 因而不足以确认硬件可用。
 
-1. `gateware/ddr_boot.py` 使用 `DDR_CMD_BUFFER_DEPTH=1`，保留最浅注册队列，保持 `with_auto_precharge=False`。实际 controller/crossbar 的组合依赖检查显示 depth 0 有环、depth 1/8 无环；新的 `tests/ddr_queue_structure_test.py --depth 0` 会明确失败，默认生产配置通过。
+1. `gateware/machines/primer20k_vexriscv/ddr_boot.py` 使用 `DDR_CMD_BUFFER_DEPTH=1`，保留最浅注册队列，保持 `with_auto_precharge=False`。实际 controller/crossbar 的组合依赖检查显示 depth 0 有环、depth 1/8 无环；新的 `tests/primer20k_vexriscv/ddr_queue_structure_test.py --depth 0` 会明确失败，默认生产配置通过。
 2. `scripts/mini.py build system` 和 SoC 默认 Gowin 参数改为 place 2/route 2。depth 1/place 3 有 128 setup、0 hold 违例，未下载；depth 1/place 2 零违例。没有修改时序例外来隐藏失败。
 3. **不可把音频故障唯一归因于 DDR 环。** 同样的 depth 0/place 2 对照也零违例并通过音频 10/10；增加小型硬件采样器后的 depth 0/place 3 也通过。已确认旧失败 bitstream 对硬件布局敏感，已消除一个独立且明确的组合环缺陷；旧 bitstream 内部哪一个门级路径产生错误仍未唯一定位。
 
@@ -180,8 +180,8 @@ LiteDRAM depth 0 的 lookahead FIFO 是组合直通，而 `req.lock = lookahead.
   --cpu-variant linux --cpu-verilog build/c-fit/cpu-native/VexRiscv_MmuFpu.v `
   --feature mmu=on --feature fpu=on --rom-size 4096 --l2-size 4096 `
   --usb-backend ultra --sd-profile lite --audio-clock dds --synthesize
-.venv/Scripts/python.exe tests/ddr_queue_structure_test.py
-.venv/Scripts/python.exe tests/ddr_queue_test.py
+.venv/Scripts/python.exe tests/primer20k_vexriscv/ddr_queue_structure_test.py
+.venv/Scripts/python.exe tests/primer20k_vexriscv/ddr_queue_test.py
 ```
 
 原独立 I/D 总线 127-cycle ACK 压力模型的 FENCE.I 失败仍是另一项未关闭的边界；本轮音频/DMA 修复配置通过实板测试不等于已修复该模型。

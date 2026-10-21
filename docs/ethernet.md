@@ -61,11 +61,11 @@ RX IRQ 只屏蔽持续有效的 RX 通知，不确认释放包；主循环复制
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build system --synthesize --output-dir build/m8
 .venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/ethernet_demo.c --output-dir build/m8-demo
-.venv/Scripts/python.exe sim/test_ethernet.py
+.venv/Scripts/python.exe tests/primer20k_vexriscv/sim/test_ethernet.py
 # 先查看实际 USB 网卡名称、ifIndex、已存在的 IPv4；不要复制另一台机器的值。
 Get-NetAdapter
 Get-NetIPAddress -AddressFamily IPv4
-.venv/Scripts/python.exe scripts/ethernet_verify.py --program --host-ip 169.254.48.203 --interface-index 79 --soak-seconds 300
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/ethernet_verify.py --program --host-ip 169.254.48.203 --interface-index 79 --soak-seconds 300
 ```
 
 脚本绑定指定的现有IP和Windows IP_UNICAST_IF，并在启动/共享复位后通过源地址限定的SendARP解析邻居，依次检查协商、UDP 长度0..1472、ping、共享 reset 后恢复，以及最多300秒的网络/SD CRC/LCD/静音音频并发。不修改主机 IP、路由或防火墙配置。五分钟结论与实物拔插结果见 [系统设计](system-design.md)。
@@ -76,7 +76,7 @@ Linux/NixOS 使用现有接口名查 ifindex 和 IPv4，然后传给同一验收
 IFACE=veth302d823b
 cat "/sys/class/net/$IFACE/ifindex"
 ip -o -4 addr show dev "$IFACE"
-python scripts/ethernet_verify.py --output-dir <PnR候选目录> \
+python scripts/primer20k_vexriscv/ethernet_verify.py --output-dir <PnR候选目录> \
     --image <PnR候选目录>/firmware/app.img --program --port /dev/ttyUSB1 \
     --host-ip <该接口已有IPv4> --interface-index <上一步ifindex> --soak-seconds 0
 ```

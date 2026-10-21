@@ -33,8 +33,8 @@ all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测
 纯文档、报告整理与流程变更不生成 `reports/changes/` 记录，直接按第 1、3 节确认范围并完成适用检查。代码变更生成范围记录：
 
 ```powershell
-.venv/Scripts/python.exe tests/workflow_test.py --report build/reports/checks/workflow.json
-.venv/Scripts/python.exe scripts/prepare_commit.py `
+.venv/Scripts/python.exe tests/common/workflow_test.py --report build/reports/checks/workflow.json
+.venv/Scripts/python.exe scripts/tools/prepare_commit.py `
   --title '本次行为变化' --change '人工审阅的具体变化和原因' `
   --checks build/reports/checks/workflow.json --output reports/changes/pending.md
 ```
@@ -48,7 +48,7 @@ all/cache 各三轮，benchmark --build-dir 保存加载身份，在新目录测
 ```powershell
 git add <明确文件；代码变更同时加入范围记录>
 git diff --cached --check
-.venv/Scripts/python.exe scripts/prepare_commit.py --title verified --change verified `
+.venv/Scripts/python.exe scripts/tools/prepare_commit.py --title verified --change verified `
   --output reports/changes/pending.md --verify
 git diff --cached --stat
 git commit

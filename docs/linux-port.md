@@ -186,7 +186,7 @@ SPI panel framebuffer 驱动和 fb1 自检已删除。内核构建保留 RGB LCD
 
 Linux fb0 保留 480×272、960 B stride 和单帧分配，DT 提供两个可选回卷偏移时公布 ywrapstep=1，并启用 fbcon 环形滚屏策略；滚动改变 scanout base，无需搬动整屏像素。没有该属性时仍使用旧 redraw 路径。非回卷模式只接受 yoffset=0；YWRAP 接受 0≤yoffset<272，横向偏移不支持。用户态图形自检切换为 graphics 后先清除 YWRAP 并复位显示起点。
 
-前一高虚拟画布 pan 候选存在用户报告的显示错误，不能视为验收通过。地址级和完整像素 RTL 回归覆盖末尾回卷、跨边界帧、CSR 帧内更新、反压和范围拒绝；实板结果另以对应新 bitstream/kernel/bootstrap 收据记录。PTY/滚屏性能脚本为 `tests/linux_console_perf.py`，显式上板运行，比较 null、LCD 和 PTY-null，并核对终端文本连续；它会暂停 LCD 上的 top 并在测试后恢复。
+前一高虚拟画布 pan 候选存在用户报告的显示错误，不能视为验收通过。地址级和完整像素 RTL 回归覆盖末尾回卷、跨边界帧、CSR 帧内更新、反压和范围拒绝；实板结果另以对应新 bitstream/kernel/bootstrap 收据记录。PTY/滚屏性能脚本为 `scripts/primer20k_vexriscv/linux_console_perf.py`，显式上板运行，比较 null、LCD 和 PTY-null，并核对终端文本连续；它会暂停 LCD 上的 top 并在测试后恢复。
 
 回卷是默认关闭且保留全部旧寄存器语义的兼容扩展。启动镜像 ABI 仅对位于 LCD 基址 +0x24/+0x28、单字 RW 的这对精确追加寄存器保留旧签名；错位、缺失配对或其他 CSR 变化仍进入 ABI 校验。完整 CSR 表及 bitstream 仍保存各自身份。这样旧 Flash XIP 引导器可以接收匹配新硬件的 RAM 固件，无须为实验改写 Flash。
 

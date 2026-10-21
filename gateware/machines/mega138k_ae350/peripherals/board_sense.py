@@ -17,7 +17,7 @@ from migen import *
 from migen.fhdl.specials import Special, SPECIAL_INPUT, SPECIAL_OUTPUT
 from litex.gen import LiteXModule
 
-from .. import address_map as amap
+from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 FAN_HZ = 25_000

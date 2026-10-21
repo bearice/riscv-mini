@@ -34,7 +34,7 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-nyancat.txt
 启动一个只导出这个程序的 TFTP 服务，`--bind` 使用连接 Dock 的本机接口地址：
 
 ```powershell
-.venv/Scripts/python.exe scripts/bios_tftp.py `
+.venv/Scripts/python.exe scripts/primer20k_vexriscv/bios_tftp.py `
   --bind 169.254.25.153 --file build/nyancat/payload/BOOT.RPB --name NYANCAT.RPB
 ```
 
@@ -70,7 +70,7 @@ boot sd NYANCAT.RPB
 
 ```sh
 cc -fsanitize=address,undefined -Wall -Wextra -Werror -I build/nyancat \
-  tests/nyancat_render_test.c -o build/nyancat/render-test
+  tests/primer20k_vexriscv/nyancat_render_test.c -o build/nyancat/render-test
 build/nyancat/render-test
 ```
 

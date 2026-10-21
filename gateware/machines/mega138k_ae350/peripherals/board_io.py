@@ -12,7 +12,7 @@ from litex.gen import LiteXModule
 from gateware.boards.mega138k_pro import io_map
 from gateware.devices.gpio.core import ButtonEvents
 from gateware.devices.ws2812.core import WS2812Core
-from .. import address_map as amap
+from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 class FabricBoard(LiteXModule):

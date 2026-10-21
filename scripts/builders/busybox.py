@@ -6,7 +6,10 @@ import shlex
 import struct
 import urllib.request
 from pathlib import Path
-from .linux import ROOT, wsl_path
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.builders.linux import ROOT, wsl_path
 
 SOURCES = {
     'musl-1.2.5.tar.gz': ('https://musl.libc.org/releases/', 'a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4'),

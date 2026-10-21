@@ -1,8 +1,35 @@
-"""Target argument declarations registered by the single mini parser."""
+"""Target argument declarations registered by the single mini parser.
+
+This module is framework-side: it declares CLI surface only and must not import
+a machine backend or gateware. Machine backends read the parsed namespace.
+"""
 from pathlib import Path
-from gateware.machines.primer20k_vexriscv.features import Features
-from gateware.machines.primer20k_vexriscv.config import SD_PROFILES
-from .storage import ROOT
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular.storage import ROOT
+
+HARDWARE_OPTIONS = ('profile', 'cpu_verilog', 'cpu_variant', 'sd_profile', 'usb_backend',
+                    'audio_clock', 'boot_mode', 'rom_size', 'l2_size', 'place_option',
+                    'route_option', 'rtl_hierarchy')
+
+
+def add_arguments(parser):
+    """Hardware selection options shared by every machine target parser."""
+    parser.add_argument('--profile', choices=('minimal', 'full'), help='Start from a complete profile instead of selected hardware')
+    parser.add_argument('--cpu-verilog', type=Path, help='Explicit CPU RTL with paired generation metadata')
+    parser.add_argument('--cpu-variant', choices=('lite', 'full', 'linux'))
+    parser.add_argument('--feature', action='append', default=[], metavar='NAME=on|off')
+    parser.add_argument('--sd-profile', choices=('none', 'spi', 'lite', 'full'))
+    parser.add_argument('--usb-backend', choices=('ohci', 'ultra'))
+    parser.add_argument('--audio-clock', choices=('dds', 'legacy'))
+    parser.add_argument('--boot-mode', choices=('rom', 'xip'))
+    parser.add_argument('--rom-size', type=int, choices=(4096, 8192))
+    parser.add_argument('--l2-size', type=int, choices=(4096, 8192, 16384))
+    parser.add_argument('--place-option', type=int, choices=range(5))
+    parser.add_argument('--route-option', type=int, choices=range(3))
+    parser.add_argument('--rtl-hierarchy', choices=('flat', 'blocks', 'deep'))
+
 
 def busybox(parser):
 
@@ -38,7 +65,7 @@ def cpu_qualification(parser):
     parser.add_argument('--cpu-verilog', required=True, type=Path)
     parser.add_argument('--cpu-variant', choices=('lite','full','linux'), default=None)
     parser.add_argument('--usb-backend',choices=('ohci','ultra'),default='ultra')
-    parser.add_argument('--sd-profile',choices=SD_PROFILES,default=None)
+    parser.add_argument('--sd-profile',choices=('none','spi','lite','full'),default=None)
     parser.add_argument('--audio-clock',choices=('dds','legacy'),default='dds')
     parser.add_argument('--profile', choices=('full', 'minimal'), default='full')
 
@@ -127,3 +154,21 @@ def uboot(parser):
                         help="WSL-native build output path (default $HOME/uboot-port-obj)")
 
     parser.add_argument("--feature", action="append", default=[], metavar="video=on|off", help="Select video support")
+
+
+def release(parser):
+    """Release creation options; the 20K operation module parses the namespace."""
+    parser.add_argument('--hardware', dest='build',
+                        help='Explicit catalog template (configuration/input CPU RTL), e.g. current')
+    parser.add_argument('--version', help='System bundle version to release; must be pinned in RELEASES.yaml and tagged system/v<version>')
+    parser.add_argument('--snapshot', action='store_true', help='Archive a code commit without creating a new code release; retain version plus Git hash')
+    parser.add_argument('--source', dest='app', type=Path, help='Explicit application for legacy templates without application_source')
+    parser.add_argument('--feature', action='append', default=[], metavar='NAME=on|off',
+                        help='Override a template feature for this release (repeatable), e.g. --feature audio=on')
+    parser.add_argument('--boot-mode', choices=('rom', 'xip'), help='Override the template boot mode (rom boots from SRAM/ROM, xip runs resident in Flash)')
+    parser.add_argument('--place-option', type=int, choices=range(0, 4), help='Override the template placer option (0-3)')
+    parser.add_argument('--route-option', type=int, choices=range(0, 4), help='Override the template router option (0-3)')
+    parser.add_argument('--board-check', action='store_true', help='Program the board, run firmware checks and 60 s soak')
+    parser.add_argument('--baseline', help='Explicit baseline ID/reference; enables final all/cache measurements')
+    parser.add_argument('--baseline-results', type=Path, action='append', default=[])
+    parser.add_argument('--allow-legacy-results', action='store_true')

@@ -43,7 +43,7 @@ Build and load using PowerShell from `riscv-mini`:
 
 # Select an existing successfully routed FPGA build with the matching ABI.
 # The board must already be running that configuration.
-& ./.venv/Scripts/python.exe scripts/boot_upload.py --reset --mode uart `
+& ./.venv/Scripts/python.exe scripts/primer20k_vexriscv/boot_upload.py --reset --mode uart `
     --output-dir <that-fpga-build-dir> --image build/usb-input-demo/firmware/app.img
 ```
 

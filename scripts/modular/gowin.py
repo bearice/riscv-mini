@@ -3,7 +3,10 @@ import re
 import time
 from pathlib import Path
 
-from .storage import write
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular.storage import write
 
 RETRY_DELAYS = (5, 15, 30)
 

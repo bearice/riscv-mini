@@ -46,14 +46,14 @@ git worktree add --detach build/worktrees/<tag> <tag>
 - worktree 必须在仓库内用 `git worktree add` 创建；`git worktree move` 带进来的安全描述符缺少沙箱写权限，手工补 ACE 也不能修复。
 - 历史构建只运行该提交保存的入口和参数，以 recipe 为准；旧提交可能包含现在已删除的 build.py。不能把当前 mini CLI 或当前默认配置套到历史源码上，尤其是集成 SRAM、硬编码 ROM、旧 L2 模式。
 - 子进程只能写仓库内：`TMP`/`TEMP` 指到 `<worktree>/build/.tmp`，sbt 的 Coursier 缓存放进 `build/java-cache/coursier`；CPU RTL 用该提交 recipe 保存的生成入口和参数生成（Java 8、sbt-launch 1.9.7、VexRiscv 固定 hash），旧版本还会把 sbt 临时目录写进其 VexRiscv source 路径，需要把该源码目录也放进 worktree。
-- 打包与登记用的 helper 不入库，按下列契约现写，复用 HEAD 的 `scripts/build_records.py`，输出 `build/releases/<tag>/<配置>/`：`release.json` 标记 `release_kind: "code-release"`、不哈希自身、保存逐文件 SHA256；`validation.json` 补写的字段列进 `annotated_fields`；`profile` 含空格或斜杠时用 `--profile-slug` 与 `--config` 生成可作目录名的配置名，catalog 记录 id 同样必须文件系统安全。
+- 打包与登记用的 helper 不入库，按下列契约现写，复用 HEAD 的 `scripts/tools/build_records.py`，输出 `build/releases/<tag>/<配置>/`：`release.json` 标记 `release_kind: "code-release"`、不哈希自身、保存逐文件 SHA256；`validation.json` 补写的字段列进 `annotated_fields`；`profile` 含空格或斜杠时用 `--profile-slug` 与 `--config` 生成可作目录名的配置名，catalog 记录 id 同样必须文件系统安全。
 - 每个包都要 `scripts/mini.py release verify` 通过。
 
 ## 实板与基准
 
 按版本顺序逐个上板，用该提交自带的脚本；命令见同级 `riscv-mini-test/SKILL.md` 与 `riscv-mini-benchmark/SKILL.md`，现场条件见 `docs/lab-environment.md`。
 
-- 0.1.0 只有 `scripts/boot_verify.py`，0.2.0 起才有 `scripts/firmware_verify.py`。跑过使用 SPI SD 的版本后必须整机断电重启或重新拔插卡，卡才能回到 native SD。
+- 0.1.0 只有 `scripts/primer20k_vexriscv/boot_verify.py`，0.2.0 起才有 `scripts/primer20k_vexriscv/firmware_verify.py`。跑过使用 SPI SD 的版本后必须整机断电重启或重新拔插卡，卡才能回到 native SD。
 - 基准只跑该提交自带的 suite：0.4.0 没有 `cache`；`--suite net` 要求主机网卡持有板子配置的 server 地址。失败的 suite 不进包，现象与限制写进 `docs/version-history.md`，不写成已定位的根因。
 - 验收结果写回包：`release.json` 的 `board_checked`、`board_test`、`board_checks`、`board_evidence`、`performance`；原始 JSON 与 UART 日志进 `reports/`，基准数据进 `reports/performance/<suite>/`；对应 catalog 记录状态改为 `board-qualified`。
 - 全部结束后把当前正式版本的 bitstream 与镜像重新烧回板子，恢复板子状态。

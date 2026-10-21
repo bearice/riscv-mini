@@ -1,13 +1,13 @@
 """Native SD controller with bounded software-abort reset; one owner for SD pads."""
 from types import SimpleNamespace
-from migen import ResetInserter,Signal
+from migen import ResetInserter, Signal
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 from litex.soc.interconnect import wishbone
 from litex.soc.interconnect import stream
-from litex.soc.interconnect.csr_eventmanager import EventManager,EventSourcePulse
+from litex.soc.interconnect.csr_eventmanager import EventManager, EventSourcePulse
 from litesdcard.phy import SDPHY
-from gateware.machines.primer20k_vexriscv.peripherals.sddma import SDBlock2MemDMA,SDMem2BlockDMA
+from gateware.machines.primer20k_vexriscv.peripherals.sddma import SDBlock2MemDMA, SDMem2BlockDMA
 from gateware.vendor.litesdcard.sdcore import SDCore
 
 @ResetInserter()

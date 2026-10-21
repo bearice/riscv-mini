@@ -28,7 +28,7 @@
 
 前三种生成由 ROM 直接装载的 DDR 固件。`bios_demo.c` 和 `nyancat_demo.c` 使用独立裸机 SDK，生成由 BIOS 装载的 RPB1 程序，不能作为 `build.py --app` 入口。[Nyan Cat 示例](../docs/nyancat-demo.md) 包含 GIF 帧转换、动态背景和循环 BGM。ABI、内存所有权和命令见 [BIOS](../docs/bios.md)，硬件检查见 [固件测试命令](../docs/firmware-tests.md)。生产固件和诊断不引用 examples 内的实现。
 
-[GW-BASIC 解释器](../docs/gwbasic.md) 是 `apps/` 下的完整应用，同样由 BIOS 从 SD/TFTP 装载；它只用 BIOS 的 ecall 服务，所以主机侧可以用 `scripts/gwbasic_sim.py` 在 QEMU 上跑真实产物，验收见 `tests/gwbasic_test.py`。
+[GW-BASIC 解释器](../docs/gwbasic.md) 是 `apps/` 下的完整应用，同样由 BIOS 从 SD/TFTP 装载；它只用 BIOS 的 ecall 服务，所以主机侧可以用 `scripts/primer20k_vexriscv/gwbasic_sim.py` 在 QEMU 上跑真实产物，验收见 `tests/primer20k_vexriscv/gwbasic_test.py`。
 
 OpenSBI 的构建工具、镜像布局、CSR timer 和验收边界见 [OpenSBI 平台](../docs/opensbi-port.md)。它不链接 BIOS 的设备 HAL，普通 RPB1 程序仍使用原来的可返回 BIOS ABI。
 

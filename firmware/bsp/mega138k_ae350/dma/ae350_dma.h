@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 /* Shared ATCDMAC300 submit path. Error numbers are the DMA suite contract
- * (scripts/mini_ops/ae350_dma_contract.py). A caller-supplied device, ABI,
+ * (scripts/mini_ops/mega138k_ae350/ae350_dma_contract.py). A caller-supplied device, ABI,
  * MMIO base or IRQ id that does not match the published table is rejected
  * here, before any channel register is written.
  */

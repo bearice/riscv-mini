@@ -28,9 +28,9 @@ from migen.fhdl.specials import Special, SPECIAL_INPUT, SPECIAL_OUTPUT
 from litex.gen import LiteXModule
 from litex.soc.interconnect.ahb import AHBInterface
 
-from .interconnect import ErrorSlave, MemInterconnect
-from . import address_map as amap
-from .peripherals.board_io import FabricBoard
+from gateware.machines.mega138k_ae350.interconnect import ErrorSlave, MemInterconnect
+from gateware.machines.mega138k_ae350 import address_map as amap
+from gateware.machines.mega138k_ae350.peripherals.board_io import FabricBoard
 from gateware.machines.mega138k_ae350.peripherals.board_sense import BoardSense
 
 

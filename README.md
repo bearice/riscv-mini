@@ -83,7 +83,7 @@ test lcd clear
 
 网络收发使用 `test eth start/stop`，真实 HID 输入使用 `test usb input`；两秒音调使用显式
 `test audio tone`。这些检查只在请求时执行，boot ROM 不包含任何测试代码。批量自动验收使用
-`scripts/firmware_verify.py --reset --soak-seconds 300`，脚本调用固件命令，不要求 USB 拔插或物理键盘输入。
+`scripts/primer20k_vexriscv/firmware_verify.py --reset --soak-seconds 300`，脚本调用固件命令，不要求 USB 拔插或物理键盘输入。
 
 ## 开发环境
 

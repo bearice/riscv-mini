@@ -11,8 +11,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .storage import ROOT, canonical, digest, file_hash, text_file
-from .environment import process_environment
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.modular.storage import ROOT, canonical, digest, file_hash, text_file
+from scripts.modular.environment import process_environment
 
 BASE_FLAGS = ['-Os', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin',
               '-ffunction-sections', '-fdata-sections', '-nostdlib', '-nostartfiles', '-msmall-data-limit=0']

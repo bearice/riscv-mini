@@ -3,8 +3,8 @@ import json,shlex,shutil,subprocess,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
-from scripts.modular.rtl import generate_csr
-from scripts.bios_image import pack
+from scripts.modular.machines.primer20k_vexriscv.rtl import generate_csr
+from scripts.primer20k_vexriscv.bios_image import pack
 REV="6ad246a1494807ee91e36ffcf60e4c30bb309d45"
 from scripts.modular.executor import linux_path as linux
 COMMANDS=[]

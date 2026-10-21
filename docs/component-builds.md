@@ -123,7 +123,7 @@ python scripts/mini.py build system --locked <package>/release.lock.json
 
 ```text
 python scripts/mini.py compat --hardware <system-digest> --software <bios-manifest.json>
-python scripts/mini.py test --system <system-digest> -- python tests/modular_build_test.py
+python scripts/mini.py test --system <system-digest> -- python tests/common/modular_build_test.py
 python scripts/mini.py board run --build <system-digest> --dry-run
 python scripts/mini.py board verify --build <system-digest> --suite firmware
 ```
@@ -140,7 +140,7 @@ python scripts/mini.py board verify --build <system-digest> --suite firmware
 
 上述检查在 `contracts.assembly` 集中执行，覆盖系统组合、已存在系统的解析、导出/导入校验、locked build 和板端视图生成。检查结果写入 bundle lock 和 run。对没有 requires 的历史软件，只允许原来精确锁定的 SoC，不能据此宣称跨硬件兼容。
 
-硬件 ABI major 和接口行为修订由 provider 在 `gateware/config.py` 定义。追加寄存器不改已有接口修订；改变访问语义、IRQ 分发或缓存一致性规则必须改对应修订，即使地址没变也会拒绝。配置同时记录 SD/USB 后端、音频时钟等已有语义约束。源码审查仍须维护这些声明，哈希无法自动证明硬件行为相同。
+硬件 ABI major 和接口行为修订由 provider 在 `gateware/machines/primer20k_vexriscv/config.py` 定义。追加寄存器不改已有接口修订；改变访问语义、IRQ 分发或缓存一致性规则必须改对应修订，即使地址没变也会拒绝。配置同时记录 SD/USB 后端、音频时钟等已有语义约束。源码审查仍须维护这些声明，哈希无法自动证明硬件行为相同。
 
 当前 `scope=configured-sdk-snapshot` 保守保存所选硬件的完整 CSR/内存/IRQ 快照，**尚未自动分析每个消费者最小访问集合**；不能把它描述为“实际使用的寄存器”。因此追加未在快照中的 CSR 可以通过，快照内接口变化会拒绝。`requirements` 支持显式声明子集，但现有 HAL/BIOS 默认没有缩小范围。ABI 相容用于检查不同产物的组合，不能冒充精确缓存命中。
 

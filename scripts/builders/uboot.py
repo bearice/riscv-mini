@@ -25,7 +25,7 @@ import subprocess, sys, json
 import hashlib
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.versions import component_version
+from scripts.tools.versions import component_version
 ROOT = Path(__file__).resolve().parents[2]
 REV = "v2026.07"
 # WSL-native (ext4) build tree; never build on a /mnt/c path.

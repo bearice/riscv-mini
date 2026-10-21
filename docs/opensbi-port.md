@@ -68,8 +68,8 @@ FW_PAYLOAD 内部提供 DTB 与下一阶段地址。OSB1 不支持返回 BIOS；
 ```powershell
 & $MiniPython scripts/mini.py build system --cpu-verilog build/opensbi/cpu/VexRiscv_Mmu.v --output-dir build/opensbi/soc-time --synthesize
 ./mini.ps1 build opensbi -SocDir build/opensbi/soc-time
-& $MiniPython scripts/boot_upload.py --output-dir build/opensbi/soc-time --program --mode uart
-& $MiniPython scripts/opensbi_verify.py --host-ip 169.254.25.153 --reset-bios build/opensbi/soc-time/firmware/app.img
+& $MiniPython scripts/primer20k_vexriscv/boot_upload.py --output-dir build/opensbi/soc-time --program --mode uart
+& $MiniPython scripts/primer20k_vexriscv/opensbi_verify.py --host-ip 169.254.25.153 --reset-bios build/opensbi/soc-time/firmware/app.img
 ```
 
 PowerShell 包装器负责准备文件、直接调用 WSL LLVM/make/dtc，再生成 OSB1。

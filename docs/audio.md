@@ -54,9 +54,9 @@ PA_EN 开关及外部 AC 耦合输入会产生偏置/衰减瞬态，当前不实
 . .\scripts\env.ps1
 & $MiniPython scripts/mini.py build system --synthesize
 & $MiniPython scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/audio_demo.c --output-dir build/m7-demo
-& $MiniPython scripts/audio_verify.py --output-dir build/base --program --soak-seconds 300
+& $MiniPython scripts/primer20k_vexriscv/audio_verify.py --output-dir build/base --program --soak-seconds 300
 # 无 Windows line-in 环境时可加 --skip-capture，报告仅覆盖数字部分。
-& $MiniPython scripts/audio_capture.py --list
+& $MiniPython scripts/primer20k_vexriscv/audio_capture.py --list
 ```
 
 示例上电静音。`t` 验证 256 帧 PIO 后缺样补零；`d` 开始静音 DMA；`p/c/x` 暂停/恢复/停止；`u` 取消静音两秒后自动恢复；`r/f/s` 是 SD CRC/写换视频帧/状态。默认 DDS 下低幅度左音 750 Hz、右音 500 Hz，方便识别交换或串音。测试命令和大 ring 不进入基础 monitor。

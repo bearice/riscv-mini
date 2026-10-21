@@ -1,7 +1,10 @@
 """Board operation receipts shared by every machine's workflows."""
 from datetime import datetime, timezone
 
-from build_records import ROOT, write_json
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
+from scripts.tools.build_records import ROOT, write_json
 
 
 class Operation:

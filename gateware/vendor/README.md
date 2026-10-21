@@ -22,19 +22,19 @@ sdcore.py 来自锁定的 LiteSDCard commit
 本地补丁包括：
 
 - 将 cmd_crc 连接到 cmd_event.crc，并在响应 CRC 不符时置 cmd_error。
-  原版把 CRC 状态硬连为零；sim/test_sd.py 的坏 CRC 响应在原版失败，
+  原版把 CRC 状态硬连为零；tests/primer20k_vexriscv/sim/test_sd.py 的坏 CRC 响应在原版失败，
   本地补丁返回 done/error/crc=1。
 - M9 在 PHY 读请求侧加入寄存的描述符 FIFO（接线见 gateware/machines/primer20k_vexriscv/peripherals/sd.py），
   block_length 保持连续有效，读块计数仅在 valid & ready 时增加。
   这样避免请求/块边界计数的组合环路，并保持 PHY 停顿时的请求所有权。
-  sim/test_sd.py 验证早期请求、长停顿、精确块数和超时/终止清空。
+  tests/primer20k_vexriscv/sim/test_sd.py 验证早期请求、长停顿、精确块数和超时/终止清空。
 - 原生 SD 精简将命令 CSR 限为有效的 14 位，将块数及读写计数限为
   4 位，覆盖现有驱动的 1..8 块；仍保留 8-byte SCR 和 512-byte 数据块。
 
 sddma.py 同样来自上述 LiteSDCard revision 的 frontend/dma.py，保留版权。
 它只将通用 Wishbone DMA 替换为 gateware/machines/primer20k_vexriscv/peripherals/sd_dma.py 的有界传输引擎：
 32-bit DDR 地址、最多 4096 bytes、保留在途请求直至响应后再完成终止。
-两侧 512-byte FIFO 和字节转换器保持原有实现；sim/test_sd_dma_bounded.py
+两侧 512-byte FIFO 和字节转换器保持原有实现；tests/primer20k_vexriscv/tests/primer20k_vexriscv/sim/test_sd_dma_bounded.py
 覆盖 SCR、单块、八块、停顿、非法长度及终止时请求排空。
 
 不修改命令格式、PHY 或数据 CRC 算法。更新依赖时须逐项核对补丁，

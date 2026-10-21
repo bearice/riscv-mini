@@ -12,11 +12,11 @@ description: 在 TangPrimer-20K/riscv-mini 审阅并整理 Git 提交，执行�
 先按 SOP 完成适用检查及人工审阅。显式暂存本次文件，再生成记录：
 
 ```powershell
-.venv/Scripts/python.exe scripts/prepare_commit.py --title '<行为变化>' --change '<变化与原因>' `
+.venv/Scripts/python.exe scripts/tools/prepare_commit.py --title '<行为变化>' --change '<变化与原因>' `
   --checks build/reports/checks/workflow.json --output reports/changes/<本次记录>.md
 git add reports/changes/<本次记录>.md reports/changes/<本次记录>.json
 git diff --cached --check
-.venv/Scripts/python.exe scripts/prepare_commit.py --title verified --change verified `
+.venv/Scripts/python.exe scripts/tools/prepare_commit.py --title verified --change verified `
   --output reports/changes/<本次记录>.md --verify
 git commit -m '<本次提交说明>'
 ```
