@@ -96,13 +96,12 @@ class MiniSoC(SoCCore):
         features = features or Features()
         if boot_mode=='xip' and not features.flash:raise ValueError('XIP requires Flash')
         if cpu_verilog is None and (features.mmu or features.fpu):
-            from gateware.machines.primer20k_vexriscv.config import cpu_filename
-            cpu_verilog = (
-                Path(__file__).resolve().parents[3] / 'build/cpu-features'
-                / cpu_filename(features.mmu, features.fpu)
-            )
-            if not cpu_verilog.is_file():
-                raise ValueError('Generate matching CPU RTL with scripts/cpu_generate.py first')
+            from gateware.machines.primer20k_vexriscv.config import vendored_cpu_path
+            cpu_verilog = vendored_cpu_path(features.mmu, features.fpu)
+            if cpu_verilog is None:
+                raise ValueError('No committed CPU RTL for MMU=%d/FPU=%d; generate one with '
+                                 'mini.py build cpu --generate and pass --cpu-verilog'
+                                 % (bool(features.mmu), bool(features.fpu)))
             cpu_variant='linux' if features.mmu else 'full'
         self.features=features
         sd_profile=sd_profile or ('lite' if sd_backend=='native' else sd_backend)

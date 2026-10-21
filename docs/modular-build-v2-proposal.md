@@ -27,7 +27,7 @@ Release 定义为不可变的构建组合：源码引用、完整展开的构建
 
 当前 `build/refs/current.json` 指向 `ed50260` 的 ROM 启动归档：RV32IMA/ILP32、L2 8 KiB，组件 rtl 0.10.0、bootloader 0.9.1、hal 0.10.0、bios 0.11.0、opensbi 0.10.0、uboot 0.4.0。它与 HEAD 代码版本、系统包 0.10.0 是不同身份。这里核对的是归档和引用，未读取当前板上运行状态。
 
-当前 CPU 归档记录 `single_cycle_shift=true`、`single_cycle_muldiv=true`、`two_cycle_icache=true`、`injector_register=true`、`relaxed_pc_calculation=false`。RTL SHA256 为 `9f35e57b1cb182bb43d4d8a9ff408d09a290186d5df02a86d484af5a8fbe5d9d`。`s1m1` 文件名未表达 fetch pipeline，重新运行生成器缺少 `--pipelined-fetch` 会选到不同配置。
+当前 CPU 归档记录 `single_cycle_shift=true`、`single_cycle_muldiv=true`、`two_cycle_icache=true`、`injector_register=true`、`relaxed_pc_calculation=false`。RTL SHA256 为 `9f35e57b1cb182bb43d4d8a9ff408d09a290186d5df02a86d484af5a8fbe5d9d`。`s1m1` 文件名未表达 fetch pipeline，重新运行生成器缺少 `--pipelined-fetch` 会选到不同配置。该归档已被仓库内的生产核取代：[`gateware/vendor/vexriscv/`](../gateware/vendor/vexriscv/) 提交 `VexRiscv_Mmu.v`（同参数，重新生成后除文件头 commit 注释外逐字节一致）与 `generator.json`/`PROVENANCE.json` 参数记录，构建默认使用它，不再依赖归档路径下的输入。
 
 对当前归档 CSR 的只读计算：
 

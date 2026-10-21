@@ -76,6 +76,17 @@ def cpu_filename(mmu, fpu):
     return 'VexRiscv_' + ('MmuFpu' if mmu and fpu else 'Mmu' if mmu else 'Fpu' if fpu else 'Base') + '.v'
 
 
+# The selected production CPU variant is committed with the other third-party
+# hardware under gateware/vendor and is a declared build input (see closure).
+VENDOR_CPU_DIR = Path(__file__).resolve().parents[2] / 'vendor' / 'vexriscv'
+
+
+def vendored_cpu_path(mmu, fpu):
+    """Committed CPU RTL for this capability combination, or None if absent."""
+    path = VENDOR_CPU_DIR / cpu_filename(bool(mmu), bool(fpu))
+    return path if path.is_file() else None
+
+
 def pll_count(features, usb_backend, audio_clock):
     count = 1 + int(features.video) + int(features.usb)
     count += int(features.usb and usb_backend=='ohci')

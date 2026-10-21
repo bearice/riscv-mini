@@ -1,7 +1,7 @@
 """Resolve one hardware configuration for every build caller."""
 from pathlib import Path
 from gateware.machines.primer20k_vexriscv.features import Features
-from gateware.machines.primer20k_vexriscv.config import storage_profile, cpu_configuration, cpu_capabilities, cpu_isa, pll_count
+from gateware.machines.primer20k_vexriscv.config import storage_profile, cpu_configuration, cpu_capabilities, cpu_isa, pll_count, vendored_cpu_path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.modular.storage import canonical, digest
@@ -49,6 +49,12 @@ def resolve(store, run, args, base=None, plan=False):
     sd, features = storage_profile(args.sd_profile or default_sd, None, features, overrides)
     cpu_path = args.cpu_verilog
     cpu_ref = base['cpu'] if previous else None
+    if cpu_path is None and (features.mmu or features.fpu):
+        cpu_path = vendored_cpu_path(features.mmu, features.fpu)
+        if cpu_path is None and not previous:
+            raise ValueError('No committed CPU RTL for MMU=%d/FPU=%d; run '
+                             'mini.py build cpu --generate and pass --cpu-verilog'
+                             % (bool(features.mmu), bool(features.fpu)))
     if cpu_path:
         cpu_path = cpu_path.resolve(); lock = locked_cpu(cpu_path)
         features, variant, _ = cpu_configuration(features, overrides, cpu_path, args.cpu_variant)

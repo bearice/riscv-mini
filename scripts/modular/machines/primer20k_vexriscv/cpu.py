@@ -14,7 +14,9 @@ def locked_cpu(path):
     path = Path(path)
     metadata = path.parent / 'generator.json'
     if not metadata.is_file():
-        raise ValueError('CPU requires generator.json paired with RTL: ' + str(path))
+        raise ValueError('CPU requires generator.json paired with RTL: ' + str(path) +
+                         '; regenerate the committed core with '
+                         'mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv')
     data = read(metadata)
     pipeline = data.get('pipeline', {})
     variant = data.get('cpu_rtls', {}).get(path.stem, {})
@@ -22,7 +24,8 @@ def locked_cpu(path):
     if missing:
         raise ValueError('Incomplete CPU configuration: ' + ', '.join(missing))
     if variant.get('sha256') != file_hash(path):
-        raise ValueError('CPU RTL differs from generator metadata')
+        raise ValueError('CPU RTL differs from generator metadata: ' + str(path) +
+                         '; regenerate with mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv')
     rtl = path.read_text(encoding='utf-8')
     injector = bool(re.search(r'\breg\s+(?:\[[^\]]+\]\s*)?_zz_IBusCachedPlugin_injector_', rtl))
     if pipeline['injector_register'] != injector:

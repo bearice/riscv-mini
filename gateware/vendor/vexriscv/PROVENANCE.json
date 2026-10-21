@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "vendor": "Spinal HDL contributors (VexRiscv, MIT license)",
+  "component": "VexRiscv RV32IMA 'linux' CPU RTL: MMU, 2 KiB I-cache / 2 KiB D-cache, no FPU, single-cycle shift and mul/div",
+  "source": {
+    "generator": "pythondata_cpu_vexriscv vexriscv.GenCoreDefault",
+    "command": "runMain vexriscv.GenCoreDefault --csrPluginConfig linux --iCacheSize 2048 --dCacheSize 2048 --singleCycleMulDiv true --singleCycleShift true --fpu false --compressedGen false --outputFile VexRiscv_Mmu",
+    "toolchain": "Java 8, sbt-launch 1.9.7, mini.py build cpu --generate",
+    "note": "Only the selected production variant is committed as VexRiscv_Mmu.v. Regenerate with mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv; the tool refuses to overwrite differing bytes unless --force is given."
+  },
+  "device": {
+    "part": "GW2A-18C (Tang Primer 20K Dock)",
+    "system_clock": "60 MHz",
+    "reset_address": "0x20000000 (Flash) with high-MMIO / zero-RAM memory map"
+  },
+  "files": {
+    "VexRiscv_Mmu.v": {
+      "sha256": "199fe5d4b88da8015730496f50637469d8346331e9db0d4f43088d122445c04d",
+      "bytes": 476174,
+      "module": "VexRiscv",
+      "protected": false
+    },
+    "VexRiscv_Mmu.yaml": {
+      "sha256": "a5259d1e179a2e86dc102aba88ad6ea69b31af0b9cdc7515fafc9157bb6ee983",
+      "bytes": 143,
+      "note": "VexRiscv iBus BusReport (32-byte lines, 2048-byte cache), consumed by LiteX when the external variant is used"
+    },
+    "LICENSE.VexRiscv": {
+      "sha256": "42f28d2bdd58dfc05448f8111ae73e85377edf21891fdfc89981bce27aac4508",
+      "note": "MIT, Copyright (c) 2016 Spinal HDL contributors"
+    }
+  },
+  "verification": {
+    "regeneration": "Regenerated from the recorded command on 2026-10-22 (Java 1.8.0_504, sbt-launch 1.9.7, VexRiscv b6118e5c): the file matches the previously archived core byte for byte except the generator's embedded git-hash header line.",
+    "netlist_identity": "20K full-profile RTL generated from the committed file reproduces build/rtl-b4.json exactly (32 module files, zero differences), so vendoring the core did not change the netlist.",
+    "capability_check": "scripts/modular/machines/primer20k_vexriscv/cpu.py:locked_cpu validates sha256, pipeline flags, the single --outputFile command and the high-MMIO/XIP memory map before any build uses this RTL.",
+    "host_test": "tests/primer20k_vexriscv/cpu_vendor_test.py"
+  }
+}

@@ -27,20 +27,20 @@ full 的 HAL 当前仍以最多 8 扇区分块；更宽硬件不代表 HAL 已�
 
 音频默认 `--audio-clock dds`，DAC 与两路麦克风共用一个相位累加器，平均采样率 48 kHz，不新增 PLL。步进根据构建时系统频率计算；改变频率后必须重新构建，不支持运行时动态调频。边沿量化与 legacy 对比见 [时钟树](clocks.md)。
 
-首次使用 MMU/FPU 先生成四种 RTL（需要 Java 8、sbt-launch 1.9.7 与兼容的 VexRiscv checkout，固定版本为 `b6118e5cc2a33323425df6455697139021d50c72`）：
+生产使用的 MMU/无 FPU 核已提交在 [`gateware/vendor/vexriscv/`](../gateware/vendor/vexriscv/)（`VexRiscv_Mmu.v` + `generator.json` + `PROVENANCE.json` + MIT 许可），`full` 配置不再需要传 `--cpu-verilog`。生成参数（寄存器配置、cache 大小、single-cycle 移位/乘除、取指流水线标志）、生成器与上游 checkout 的哈希、Java/sbt 身份都记录在 `generator.json` 的 `commands` / `resolved_flags` / `fixed_parameters` / `source_lock` 中；`scripts/modular/machines/primer20k_vexriscv/cpu.py:locked_cpu` 在每次构建前校验 sha256 与参数一致性，文件缺失或被改动就直接报错。
 
-在 Linux 的 `nix develop` shell 中，flake 已提供 Java、sbt launcher 和默认兼容的 VexRiscv 源码路径：
-
-```sh
-python scripts/mini.py build cpu --generate --source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
-```
-
-Windows PowerShell 使用独立安装的 Java 8、sbt launcher 和 VexRiscv checkout：
+需要其它能力组合（FPU、压缩指令、不同取指流水线）时在本地生成实验核，不覆盖已提交的生产核：
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py build cpu --generate --source <VexRiscv 源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --output-dir build/cpu-features
 .venv/Scripts/python.exe scripts/mini.py build system --cpu-verilog build/cpu-features/VexRiscv_MmuFpu.v --feature mmu=on --feature fpu=on --sd-profile lite --audio-clock dds --synthesize --output-dir build/config-profiles/mmu-fpu-lite-dds
 .venv/Scripts/python.exe scripts/mini.py build matrix --configuration-only --cpu-rtl-dir build/cpu-features --output-dir build/config-matrix
+```
+
+调整生产核参数时，改完生成器参数后用 `--vendor-dir` 重新生成并入库；工具在重新生成的字节与已提交文件不一致时会拒绝覆盖（确认接受则加 `--force`），随后同步更新 `generator.json` 与 `PROVENANCE.json` 的哈希：
+
+```powershell
+.venv/Scripts/python.exe scripts/mini.py build cpu --generate --source <VexRiscv 源码目录> --java <JDK8>/bin/java.exe --sbt-launch <sbt-launch.jar> --vendor-dir gateware/vendor/vexriscv
 ```
 
 默认输出分模块 Verilog，转换规则见 [RTL 模块边界](rtl-defaults.md)。

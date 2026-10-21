@@ -3,3 +3,6 @@
 # 上游代码里有大量行尾空格；`git diff --check` 会因此刷屏，掩盖我们自己代码的问题。
 # 只关闭空白检查，不改变换行符（不要在这里加 text/eol，那会重写全仓库内容）。
 firmware/apps/doom/** -whitespace
+
+# 生成的 CPU 出厂物按字节锁定：records 里记录的是 sha256，checkout 时不得改写行尾。
+gateware/vendor/vexriscv/** -text

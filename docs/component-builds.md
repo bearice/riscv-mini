@@ -70,6 +70,8 @@ python scripts/mini.py build busybox
 
 完成产物按内容清单计算 SHA256，文件或 manifest 被修改后复用/导出/恢复均拒绝。同 key 生成不同产物会保留冲突并失败，不覆盖旧结果。输入源码在构建期间变化也会拒绝发布。
 
+硬件出厂物（厂商加密 IP 与代码生成的 CPU 核）不放在 `build/` 里当“输入”，而是入库到 `gateware/vendor/<vendor>/` 并附参数与来源记录：`generator.json`/`PROVENANCE.json` 记录生成命令、固定参数、生成器与上游文件哈希、工具链身份，同一目录保存许可证。声明式闭包必须列出这些文件，构建前校验哈希；文件缺失或被改动即报错，并按记录重新生成入库（`mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv`）。参数调整后的新出厂物随代码提交，历史产物只通过 `builds reproduce` 复现。
+
 每个稳定工作区持有 OS 文件锁，直到验证和成功归档完成；两个构建不能同时修改同一个工作区。需要独立实验时使用 `--workspace experiment-name`；目标内部 Ninja 仍并行编译。工作区名只选择可变缓存位置，不替代输入摘要或产物身份。编译环境过滤隐含的 CFLAGS/GCC_EXEC_PREFIX 等变量，并记录实际工具和库。源码路径和 map 文件中不稳定的本机根目录作规范化处理，以支持不同 checkout 路径下的同平台重放。
 
 `workspace.json` 记录 running/succeeded/failed、本次 run/input_key 以及最近一次成功产物。失败保留现场与上次成功引用，不发布新产物。成功结果仍复制进 `build/store`，清理工作区不影响已归档或固定版本。旧的按 key/run 划分的目录不自动迁移或删除。

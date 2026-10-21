@@ -53,3 +53,19 @@ are preserved. The local firmware HCD is a separate TinyUSB adapter, not a
 copy of upstream blocking software. The PHY tests cover RX sample phases,
 TX bit stuffing and EOP at both frequencies; the SoC uses 60MHz.
 Simulation and PnR do not establish electrical USB compliance.
+
+# VexRiscv CPU
+
+`vexriscv/` 保存 20K 生产核：`VexRiscv_Mmu.v`（RV32IMA + Zicsr/Zifencei，MMU，2 KiB I/D cache，
+single-cycle 移位与乘除），与 AE350 的 DDR3 IP 同样按“出厂物 + 参数记录”对待。
+上游为 VexRiscv `b6118e5cc2a33323425df6455697139021d50c72`，MIT 许可见 `LICENSE.VexRiscv`。
+
+- `generator.json`：生成命令、`resolved_flags`、`fixed_parameters`（cache 大小、high-MMIO/XIP 内存图、
+  CSR 的 time/TM 权限补丁）与 `source_lock`（生成器脚本/模板/上游 checkout 文件哈希、Java 与 sbt 身份）。
+  构建前由 `scripts/modular/machines/primer20k_vexriscv/cpu.py:locked_cpu` 校验，文件缺失或被改动即报错。
+- `PROVENANCE.json`：来源、工具链与验证记录。
+
+调整参数后用
+`mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv --source <VexRiscv 源码>` 重新生成并入库；
+工具会同步更新 `generator.json` 与 `PROVENANCE.json` 的哈希，字节与已提交文件不一致时拒绝覆盖（确认后加 `--force`）。
+VexRiscv 会把生成时的仓库 commit 写进文件头注释，因此跨 commit 比较时只有该注释行不同，其余内容逐字节一致。

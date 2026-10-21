@@ -97,9 +97,12 @@ python scripts/mini.py doctor
 
 flake 使用锁定的 Nixpkgs 26.05 提供 uv，由 uv 按 `.python-version` 安装和管理 Python 3.10.20、虚拟环境及 `requirements.lock` 中的 LiteX/Migen 依赖；同时提供 xPack RISC-V GCC 15.2.0-1、JDK 8 和 sbt-launch 1.9.7。首次进入时同步依赖并配置忽略提交的 `.tools.local.json`。CPU RTL 生成所需的 `JAVA_HOME`、`SBT_LAUNCH_JAR` 和兼容的 `VEXRISCV_SOURCE` 也会自动设置，可用 `sbt` 命令启动 sbt。Gowin EDA 使用 [Gowin IDE Wrapper](https://github.com/bearice/gowin-ide-wrapper) 提供的 FHS 启动器；无 X/Wayland 显示时自动使用 Qt offscreen。EDA 本体因需注册下载，不放入仓库或 Nix store。将发行包解压到 `~/Gowin_V1.9.12.04_linux`，或在进入 shell 前设置 `GOWIN_HOME` 指向解压目录。使用其他已许可版本时也通过 `GOWIN_HOME` 指定。
 
-需要完整 MMU/FPU CPU RTL 时，在 shell 中运行：
+需要完整 MMU CPU RTL 时：生产核已提交在 `gateware/vendor/vexriscv/`（`VexRiscv_Mmu.v` 与生成参数、来源记录），`full` 直接可用，无需生成。只有调整参数或需要 FPU/压缩指令等其它组合时才在本地生成：
 
 ```sh
+# 调整生产核参数并入库（会重写 generator.json / PROVENANCE.json 的哈希）
+python scripts/mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv --source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR"
+# 其它能力组合只在本地生成，用 --cpu-verilog 覆盖
 python scripts/mini.py build cpu --generate --source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
 ```
 
@@ -123,9 +126,10 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败
 （`Filename too long` → `invalid index-pack output`）；若全局 uv 缓存不可用
 （`Failed to initialize cache ... sdists-v9\.git`），把 `UV_CACHE_DIR` 指到短路径，例如
-`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。从零使用 full profile（MMU、无 FPU）还需要先生成并明确选择 CPU RTL
-`build/cpu-features/VexRiscv_Mmu.v`，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)；
-消费 CPU 时必须通过 `--cpu-verilog` 选择 RTL 和配对元数据。构建把编译器临时目录重定向到组件 work/tmp，
+`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。从零使用 full profile（MMU、无 FPU）不需要额外生成：
+生产核 `gateware/vendor/vexriscv/VexRiscv_Mmu.v` 与生成参数、来源记录一起随仓库提交，构建自动选用并由
+`locked_cpu` 校验哈希；只有调整参数或需要其它能力组合时才重新生成，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)。
+实验核仍通过 `--cpu-verilog` 选择 RTL 和配对元数据。构建把编译器临时目录重定向到组件 work/tmp，
 `%TEMP%` 不可写时也不会失败。
 
 系统输出视图的 `validation.json` 记录两级固件的二进制大小；ELF 保留 text/data/BSS 信息，综合构建还记录
