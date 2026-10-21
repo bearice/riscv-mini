@@ -92,6 +92,6 @@
 第三轮（针对 `c8d9a61`）**ACCEPT**，无阻断；四条 minor 中三条属代码、一条属历史回执，处理如下：
 
 - `scripts/primer20k_vexriscv/boot_upload.py` 直接执行时缺 `sys.path` 引导（`python scripts/primer20k_vexriscv/boot_upload.py --help` 会 `ModuleNotFoundError: tools`）；已补 `parents[2]` + `parents[2]/'scripts'`，`--help` 正常。
-- `artifacts.py` 只把 `ROOT` 放进 `sys.path`，其 `boot_image` 依赖 `tools.*`；`probe.py` 与 `ae350_upload.py` 的引导行在原 import 之后。前者的路径改为 `[ROOT, ROOT/'scripts']`，后两者把引导行提到被使能的 import 之前。
+- `artifacts.py` 只把 `ROOT` 放进 `sys.path`，其 `boot_image` 依赖 `tools.*`；`probe.py` 与 `ae350_upload.py` 的引导行在原 import 之后。前者的路径改为 `[ROOT, ROOT/'scripts']`，后两者把引导行提到被使能的 import 之前（`ae350_upload.py` 的次序整理在 `21103ef` 里漏改，由其后一个收尾提交补齐；该文件不在任何构建闭包内，不影响输入键）。
 - `ae350.py` 的 `rtl()` 里第二处重复 `address_map` import（与 `DDR_PROFILE` import 交错，上一轮的对偶替换没命中）已删除；因此 AE350 输入键变化，重新 PnR 得 gateware `24e74f6ce918`，timing 仍 `{0, 0, 0.142}`（run `20261021T153506996468Z-build-reorg-review3-ae350-bd4949`）。
 - `reports/ae350-p2.md` 里的 `../scripts/ae350_report.py` 链接保持原样：它是历史验收回执，按计划"旧回执不再复核"且在登记保持不改的清单内，不做追溯改写。

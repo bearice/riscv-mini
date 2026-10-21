@@ -6,16 +6,18 @@ image rules (`boot_image.pack_image`/`unpack_image`) with the AE350 load address
 JTAG is used only to restart the ROM entry and to read where the CPU ended up.
 """
 import json
+import sys
 import time
+from pathlib import Path
+
+sys.path[:0] = [str(Path(__file__).resolve().parents[3]),
+                str(Path(__file__).resolve().parents[3] / 'scripts')]
 
 from modular.storage import Store, file_hash
 from mini_ops.common import Operation
 from gateware.machines.mega138k_ae350 import address_map as amap
 from mini_ops.mega138k_ae350.ae350 import candidate
 from tools.boot_session import BootSession
-import sys
-from pathlib import Path
-sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
 from mini_ops.mega138k_ae350 import ae350_image
 
 
