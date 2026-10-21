@@ -74,6 +74,7 @@ PRIMER20K_CLOSURE = (
     'scripts/tools/build_records.py',
     'scripts/mini.py',
     'scripts/modular/compile.py',
+    'scripts/modular/machines/__init__.py',
     'scripts/modular/machines/primer20k_vexriscv/contracts.py',
     'scripts/modular/environment.py',
     'scripts/modular/gowin.py',

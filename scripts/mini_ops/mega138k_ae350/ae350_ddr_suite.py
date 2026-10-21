@@ -58,7 +58,7 @@ def perform(args):
         params = dict(stress_seconds=args.stress_seconds, seed=args.seed, region_kb=args.region_kb,
                       flags=args.flags, traversal_mb=args.traversal_mb)
         payload = application_parameters(payload_root, params)
-        import scripts.mini_ops.mega138k_ae350.ae350_image
+        from mini_ops.mega138k_ae350 import ae350_image
         import hashlib
         image = ae350_image.build(payload)
         (op.path / 'image.bin').write_bytes(image)

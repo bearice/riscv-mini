@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.primer20k_vexriscv.boot_image import abi_tag
-from tools.boot_image import FLASH_OFFSET, FLASH_SIZE, unpack_image
+from scripts.tools.boot_image import FLASH_OFFSET, FLASH_SIZE, unpack_image
 from scripts.tools.build_records import ROOT, artifact_identity, get_record, pnr_passed
 
 

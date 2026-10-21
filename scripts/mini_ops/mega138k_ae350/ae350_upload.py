@@ -16,7 +16,7 @@ from tools.boot_session import BootSession
 import sys
 from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
-import scripts.mini_ops.mega138k_ae350.ae350_image
+from mini_ops.mega138k_ae350 import ae350_image
 
 
 from mini_ops.mega138k_ae350.ae350_payload import resolve_payload, payload_file

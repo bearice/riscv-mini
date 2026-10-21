@@ -68,3 +68,21 @@
 已知红清单（本阶段不修，统一测试修整时处理）：上述 3 个主机测试，以及 13 个需要 `--iverilog`/`--cpu`/`--output-dir` 且本机无 Icarus Verilog 的驱动式 verilog 测试。
 
 环境副作用（非缺陷，记录备查）：在全新 workspace 第一次起 Gowin PnR 时 `gw_sh` 偶发静默退出（rc=1、无日志），同 workspace 重跑即成功；stage 0 亦观察到同样现象。
+
+### 6.1 第二轮评审补正（同一评审人，针对 `a24e1e8`）
+
+第二轮确认 B1/B3/B4/B5 已闭环，但指出 B2 只修了被点名的 8 个文件，同类 Stage-D 改写缺陷仍在三处；已全部修复（本次提交）：
+
+- **4 个 AE350 生产模块会在运行期 `NameError`**：`ae350_upload.py`、`ae350_ddr_suite.py`、`ae350_dma_suite.py`、`ae350_io_suite.py` 里 `import scripts.mini_ops.mega138k_ae350.ae350_image` 只绑定 `scripts`，后面的 `ae350_image.build/abi_tag/LOAD` 全部未定义——即任何 `mini.py board ... --machine mega138k_ae350`（含 `--dry-run`）都会崩。统一改为 `from mini_ops.mega138k_ae350 import ae350_image`，与同文件其余 import 一致。
+- **`tests/mega138k_ae350/ae350_memory_test.py`** 的 `from modular import ae350`、`from mini_ops import ae350_upload` 已随 Stage D 失效，且两处 `import scripts.mini_ops...` 同样留下裸名引用；改为从新包导入后 33 个用例全绿（该文件此前被扫描器列入 `SKIP`，因此两轮扫描都没暴露）。
+- **`tests/primer20k_vexriscv/linux_port_test.py`** 的 `sys.path` 缺 `ROOT`，且仍从旧 `tests/` 导入 `mini_operations_test`；补齐后 47 个用例全绿。
+- **`scripts/mini_ops/primer20k_vexriscv/artifacts.py`** 用裸名 `tools.boot_image`，在没有 `ROOT/scripts` 的导入环境下 `ModuleNotFoundError`；改为 `scripts.tools.boot_image`。
+
+同时补掉评审列出的 5 条 minor：`test_audio_capture.py`/`test_boot_image.py` 重复插入的 `sys.path` 行、`Microphone.fifo` 与 `Audio.fifo` 一致的 property 化、`ae350.py` `rtl()` 里第二处重复 import、`PRIMER20K_CLOSURE` 补上 `scripts/modular/machines/__init__.py`、扫描器 `SKIP` 收窄到唯一真正开串口的 `bios_ls_serial_test.py`（其余 5 个纯 host 用例已纳入常态扫描，并全部转绿）。
+
+复验（本提交）：
+
+- **host 全量扫描**：`build/reorg-final2-hosttests.json`，83 个目标 → 66 pass / 3 fail / 14 needs-args。3 个红仍是既有（`sim/test_audio.py`、`sim/test_sd_dma_bounded.py`、`test_features.py`）；`ae350_memory_test.py`（33 例）与 `linux_port_test.py`（47 例）本轮转绿。
+- **20K minimal**：run `20261021T151114537880Z-build-reorg-review2-20k-minimal-564f23`，setup 0 / hold 0，最差 +4.214 ns（同路径同域），Logic 6284/20736、Register 3596/16173、CLS 4574/10368、BSRAM 13/46。
+- **AE350 gateware**：run `20261021T151250260136Z-build-reorg-review2-ae350-faee1a` → `REUSE 28acfbbc4552`，timing 仍 `{0, 0, 0.142}`；输入键未变，证明本轮的麦克风/音频改动不触及 138K。
+- **20K full-profile RTL**：gateware `6cf7a0f905e5`，与上一轮 `build/rtl-review.json` 逐文件一致（`build/rtl-review2.json` 比对：无新增、无删除、无变化），即 FIFO property 化不改变网表。

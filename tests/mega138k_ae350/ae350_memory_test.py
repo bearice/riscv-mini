@@ -20,12 +20,10 @@ from gateware.machines.mega138k_ae350.interconnect import MemInterconnect, Error
 from litex.soc.interconnect.ahb import AHBInterface
 from tests.mega138k_ae350.test_ae350_interconnect import DUT as InterconnectDUT, xact
 from mini_ops.mega138k_ae350.ae350_boot_ops import RunRequest, _engine_args
-from modular import ae350
+from modular.machines.mega138k_ae350 import ae350
 from modular.storage import Store
-import scripts.mini_ops.mega138k_ae350.ae350_report
-import scripts.mini_ops.mega138k_ae350.ae350_image
+from mini_ops.mega138k_ae350 import ae350_image, ae350_report, ae350_upload
 from tools.programmer_cable import resolve_location
-from mini_ops import ae350_upload
 from mini_ops.mega138k_ae350.ae350_session import HardwareSession, SessionError
 from mini_ops.mega138k_ae350.ae350_jtag import CPUJTAG
 from mini_ops.mega138k_ae350.ae350_payload import payload_file, application_parameters

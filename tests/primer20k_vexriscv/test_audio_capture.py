@@ -6,7 +6,6 @@ import tempfile
 import wave
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
 from scripts.primer20k_vexriscv.audio_capture import analyze
 

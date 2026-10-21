@@ -36,4 +36,6 @@ class Microphone(LiteXModule):
             self._activity.status.eq(core.activity), self._activity_right.status.eq(core.activity_right),
         ]
         # Kept for adapters/tests that observed the FIFO end-stop through the old name.
-        self.fifo = core.fifo
+    @property
+    def fifo(self):
+        return self.core.fifo

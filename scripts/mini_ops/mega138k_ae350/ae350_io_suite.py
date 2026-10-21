@@ -28,7 +28,7 @@ def perform(args):
             raise ValueError('Selected hardware uses a different address ABI')
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None))
         payload = payload_file(payload_root).read_bytes()
-        import scripts.mini_ops.mega138k_ae350.ae350_image
+        from mini_ops.mega138k_ae350 import ae350_image
         image = ae350_image.build(payload)
         (op.path / 'image.bin').write_bytes(image)
         fs = root / 'gateware/impl/pnr/project.fs'

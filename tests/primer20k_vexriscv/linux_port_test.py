@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT/'scripts'), str(ROOT/'tests')]
+sys.path[:0] = [str(ROOT), str(ROOT/'scripts'), str(ROOT/'tests'), str(ROOT/'tests'/'common')]
 from scripts.primer20k_vexriscv.bios_image import pack
 from tools.boot_image import unpack_image
 from mini_ops.primer20k_vexriscv.linux import preflight
