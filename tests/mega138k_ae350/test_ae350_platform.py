@@ -78,6 +78,19 @@ def main():
         check('fabric reader is not advertised', err == 0 and (value & amap.CAP_FABRIC_READER) == 0, hex(value))
         err, value, _ = yield from apb(cpu, False, amap.SYSINFO_BASE + 0x40)
         check('loopback device entry', err == 0 and value == amap.LOOPBACK_ID, hex(value))
+        for base, identity, table, selector_off, selector in (
+            (amap.AUDIO_BASE, amap.AUDIO_ID, 0xe0, 0x44, 9),
+            (amap.MIC_BASE, amap.MIC_ID, 0x100, 0x48, 10)):
+            err, value, _ = yield from apb(cpu, False, base)
+            check('audio device identity', err == 0 and value == identity, hex(value))
+            err, value, _ = yield from apb(cpu, False, amap.SYSINFO_BASE + table + 28)
+            check('controller selector in device table', err == 0 and value == selector, value)
+            err, value, _ = yield from apb(cpu, False, base + selector_off)
+            check('controller selector in device page', err == 0 and value == selector, value)
+        err, _, _ = yield from apb(cpu, True, amap.AUDIO_BASE + 0x0c, 1, strb=1)
+        check('partial audio control write rejected', err == 1)
+        _, value, _ = yield from apb(cpu, False, amap.AUDIO_BASE + 0x0c)
+        check('rejected write has no audio side effect', value == 2, value)
         err, _, _ = yield from apb(cpu, False, amap.SYSINFO_BASE + 0x1000)
         check('unmapped apb errors', err == 1, err)
         err, _, _ = yield from apb(cpu, False, amap.DDR_CSR_BASE + 1)
@@ -165,6 +178,8 @@ def main():
         yield cpu.dma_ack.eq(0)
         yield
         yield
+        yield
+        yield
         req = yield cpu.dma_req
         check('tx request rises after ack falls', (req & 1) == 1, hex(req))
         err, value, _ = yield from apb(cpu, False, amap.DMA_SVC_BASE + 0x2c)
@@ -189,7 +204,15 @@ def main():
         err, value, _ = yield from apb(cpu, False, amap.DMA_SVC_BASE + 0x10)
         check('soft reset clears sticky errors', err == 0 and value == 1, hex(value))
 
-    run_simulation(dut, tb(), clocks={'sys': 10})
+    fragment = dut.get_fragment()
+    # Pinned Migen needs an unused read signal on write-only FIFO RAM ports.
+    from migen.fhdl.specials import Memory
+    for memory in fragment.specials:
+        if isinstance(memory, Memory):
+            for port in memory.ports:
+                if port.dat_r is None:
+                    port.dat_r = Signal(memory.width)
+    run_simulation(fragment, tb(), clocks={'sys': 10})
     print('RESULT', 'PASS' if not fails else 'FAIL: ' + ','.join(fails))
     return 0 if not fails else 1
 

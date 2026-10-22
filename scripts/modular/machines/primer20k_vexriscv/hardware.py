@@ -21,6 +21,7 @@ PRIMER20K_CLOSURE = (
     'gateware/devices/__init__.py',
     'gateware/devices/audio/__init__.py',
     'gateware/devices/audio/core.py',
+    'gateware/devices/audio/clock.py',
     'gateware/devices/gpio/__init__.py',
     'gateware/devices/gpio/core.py',
     'gateware/devices/microphone/__init__.py',

@@ -122,10 +122,20 @@
       "bck": "E22",
       "ws": "F24",
       "data": "G24",
-      "pa_en": "H17"
+      "pa_en": "H17",
+      "io_standard": "LVCMOS33",
+      "bank_vccio": 3.3
     },
     "microphone": {
       "connector": "J28",
+      "active_owner": "microphone",
+      "data": "N18",
+      "bck": "N26",
+      "lr": "R16",
+      "ws": "R17",
+      "io_standard": "LVCMOS33",
+      "bank_vccio": 3.3,
+      "wiring_evidence": "user-confirmed 2026-10-22: DA CK LR WS",
       "data_lines": 4,
       "shared_with": [
         "PMOD0",

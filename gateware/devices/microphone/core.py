@@ -24,6 +24,7 @@ class MicrophoneCore(LiteXModule):
         self.right = Signal()
         self.stereo = Signal()
         self.arm = Signal()
+        self.stream = Signal()     # 0: bounded snapshot, 1: continuous/drop-new on full
         self.clear = Signal()
         self.pop = Signal()
         self.sample = Signal(32)
@@ -36,6 +37,7 @@ class MicrophoneCore(LiteXModule):
         self.busy = Signal()
         self.done = Signal()
         self.captured = Signal(16)
+        self.accepted = Signal(32)
         self.activity = Signal()
         self.activity_right = Signal()
         run = self.enable
@@ -43,7 +45,7 @@ class MicrophoneCore(LiteXModule):
         stereo = self.stereo
         clear = self.clear
         arm = self.arm
-        self.fifo = fifo = ResetInserter()(SyncFIFOBuffered(48 if second is not None else 24, snapshot_samples))
+        self.fifo = fifo = ResetInserter()(SyncFIFOBuffered(48 if second is not None else 24, snapshot_samples-1))
         count = Signal(max=max(2, half_period))
         bit = Signal(6, reset=63)
         bck = Signal(); ws = Signal(reset=1)
@@ -91,16 +93,18 @@ class MicrophoneCore(LiteXModule):
             ).Else(self.last_sample.eq(Cat(word, Replicate(word[23], 8)))),
             If(self.busy & ~arm & ~clear,
                 If(fifo.writable,
-                    self.captured.eq(self.captured+1),
-                    If(self.captured == snapshot_samples-1,
+                    self.accepted.eq(self.accepted+1),
+                    If(~self.stream, self.captured.eq(self.captured+1)),
+                    If(~self.stream & (self.captured == snapshot_samples-1),
                         self.busy.eq(0), self.done.eq(1)))
                 .Else(self.overruns.eq(self.overruns+1),
-                      self.busy.eq(0), self.done.eq(1))))
+                      If(~self.stream, self.busy.eq(0), self.done.eq(1)))))
         self.sync += If(run & serial, self.activity.eq(1))
         self.sync += If(run & serial_right, self.activity_right.eq(1))
         self.sync += If(clear | arm | ~run, have_left.eq(0))
-        self.sync += If(arm, self.busy.eq(1), self.done.eq(0), self.captured.eq(0))
+        self.sync += If(arm, self.busy.eq(1), self.done.eq(0), self.captured.eq(0), self.accepted.eq(0))
         self.sync += If(clear | ~run,
             self.busy.eq(0), self.done.eq(0), self.captured.eq(0),
+            self.accepted.eq(0),
             self.overruns.eq(0), self.samples.eq(0), self.last_sample.eq(0),
             self.activity.eq(0), self.activity_right.eq(0), self.last_right.eq(0), shift_right.eq(0))

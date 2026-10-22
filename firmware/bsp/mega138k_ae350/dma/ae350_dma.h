@@ -17,7 +17,11 @@ enum {
     AE350_DMA_ERR_ABI = 7,
     AE350_DMA_ERR_TIMEOUT = 8,
     AE350_DMA_ERR_DRAIN = 9,
-    AE350_DMA_ERR_WIDTH = 10
+    AE350_DMA_ERR_WIDTH = 10,
+    AE350_DMA_ERR_BUSY = 11,
+    AE350_DMA_ERR_HW = 12,
+    AE350_DMA_ERR_ABORT = 13,
+    AE350_DMA_ERR_INCOMPLETE = 14
 };
 
 #define AE350_DMA_LINE 32u
@@ -41,6 +45,9 @@ struct ae350_dma_req {
 
 int ae350_dma_submit(const struct ae350_dma_req *req);
 int ae350_dma_wait(uint32_t channel);
+/* Nonblocking: error/abort take precedence over BUSY; OK requires idle + TC.
+ * An error does not release ownership: stop/drain before reusing a buffer. */
+int ae350_dma_poll(uint32_t channel);
 int ae350_dma_abort_drain(uint32_t channel);
 uint32_t ae350_dma_busy(uint32_t channel);
 void ae350_dma_reset(void);

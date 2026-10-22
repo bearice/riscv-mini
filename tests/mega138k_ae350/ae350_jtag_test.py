@@ -8,6 +8,26 @@ from mini_ops.mega138k_ae350.ae350_jtag import CPUJTAG, restart
 
 
 class JTAGTest(unittest.TestCase):
+    def test_linux_requires_explicit_interface_serial(self):
+        library=mock.Mock()
+        with mock.patch('mini_ops.mega138k_ae350.ae350_jtag.os.name','posix'), \
+             mock.patch('mini_ops.mega138k_ae350.ae350_jtag.c.CDLL',return_value=library):
+            with self.assertRaisesRegex(ValueError,'serial:'):
+                CPUJTAG(123,'unused')
+        library.FT_OpenEx.assert_not_called()
+
+    def test_linux_serial_is_passed_to_d2xx_as_serial(self):
+        library=mock.Mock();library.FT_OpenEx.return_value=0
+        with mock.patch('mini_ops.mega138k_ae350.ae350_jtag.os.name','posix'), \
+             mock.patch('mini_ops.mega138k_ae350.ae350_jtag.c.CDLL',return_value=library), \
+             mock.patch.object(CPUJTAG,'scan',side_effect=[0x1000563d,0,0x71,0,0]), \
+             mock.patch.object(CPUJTAG,'tms'),mock.patch.object(CPUJTAG,'send'), \
+             mock.patch.object(CPUJTAG,'call'),mock.patch.object(CPUJTAG,'write'):
+            cpu=CPUJTAG('serial:FactoryAIOT ProA','unused')
+        args=library.FT_OpenEx.call_args.args
+        self.assertEqual(args[0].value,b'FactoryAIOT ProA')
+        self.assertEqual(args[1],1)
+
     def test_rom_mismatch_does_not_change_pc_or_release_capture(self):
         cpu = mock.Mock(spec=CPUJTAG)
         cpu.read_memory.return_value = b'wrong'

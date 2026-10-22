@@ -21,6 +21,11 @@ AE350_CLOSURE = (
     'gateware/devices/gpio/core.py',
     'gateware/devices/ws2812/__init__.py',
     'gateware/devices/ws2812/core.py',
+    'gateware/devices/audio/__init__.py',
+    'gateware/devices/audio/core.py',
+    'gateware/devices/audio/clock.py',
+    'gateware/devices/microphone/__init__.py',
+    'gateware/devices/microphone/core.py',
     'gateware/machines/mega138k_ae350/__init__.py',
     'gateware/machines/mega138k_ae350/address_map.py',
     'gateware/machines/mega138k_ae350/clock.py',
@@ -30,6 +35,7 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/machine.json',
     'gateware/machines/mega138k_ae350/peripherals/board_io.py',
     'gateware/machines/mega138k_ae350/peripherals/board_sense.py',
+    'gateware/machines/mega138k_ae350/peripherals/audio.py',
     'gateware/machines/mega138k_ae350/platform.py',
     'gateware/machines/mega138k_ae350/soc.py',
     'gateware/vendor/gowin_gw5ast/ae350_soc/DDR3_TOP.v',
@@ -401,7 +407,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     # subdirectory is staged as its own include root, keeping the bare
     # #include names the sources use today.
     runtime = store.root / 'firmware/bsp/mega138k_ae350'
-    payload_dirs = ('runtime', 'dma', 'io')
+    payload_dirs = ('runtime', 'dma', 'io', 'audio')
     for sub in payload_dirs:
         for path in sorted((runtime / sub).iterdir()):
             if path.is_file():

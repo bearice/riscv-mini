@@ -32,6 +32,7 @@ from gateware.machines.mega138k_ae350.interconnect import ErrorSlave, MemInterco
 from gateware.machines.mega138k_ae350 import address_map as amap
 from gateware.machines.mega138k_ae350.peripherals.board_io import FabricBoard
 from gateware.machines.mega138k_ae350.peripherals.board_sense import BoardSense
+from gateware.machines.mega138k_ae350.peripherals.audio import FabricAudio
 
 
 def _onehot(off, offsets):
@@ -166,9 +167,12 @@ class Ae350Platform(LiteXModule):
         fifo_bus = AHBInterface(data_width=32, address_width=32)
         err_bus = AHBInterface(data_width=32, address_width=32)
         self.fifo = LoopbackFifo(fifo_bus)
+        self.audio = FabricAudio()
         self.err = ErrorSlave(err_bus)
         # HSEL is the macro's decode of the 128MiB extended-AHB window.
         self.ic = MemInterconnect(cpu.ahb_exts, [
+            (amap.AUDIO_DATA, 0x10000, self.audio.tx_bus),
+            (amap.MIC_DATA, 0x10000, self.audio.rx_bus),
             (amap.LOOPBACK_DATA, 4, fifo_bus),
             (0, 1 << 32, err_bus),
         ], require_sel=True)
@@ -186,6 +190,10 @@ class Ae350Platform(LiteXModule):
             AckCatch(cpu.dma_ack[0], catch_tx),
             AckCatch(cpu.dma_ack[1], catch_rx),
         ]
+        for bit, signal in ((amap.AUDIO_REQ, self.audio.tx_ack), (amap.MIC_REQ, self.audio.rx_ack)):
+            caught = Signal()
+            self.specials += AckCatch(cpu.dma_ack[bit], caught)
+            self.comb += signal.eq(caught | cpu.dma_ack[bit])
         self.board = FabricBoard()
         self.sense = BoardSense()
         wait = Signal()
@@ -203,11 +211,17 @@ class Ae350Platform(LiteXModule):
             off.eq(addr_q[:12]),
             commit.eq(cpu.apb_select & cpu.apb_enable & wait),
             self.fifo.req_enable.eq(self.req_enable),
-            self.fifo.ack_tx.eq(cpu.dma_ack[0]),
-            self.fifo.ack_rx.eq(cpu.dma_ack[1]),
-            cpu.dma_req.eq(Cat(self.fifo.req_tx, self.fifo.req_rx, Constant(0, 6))),
-            cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 6),
+            # The pulse catcher must gate REQ as well as the counter. Otherwise
+            # two CPU-clock ACK pulses can merge before the next fabric edge.
+            self.fifo.ack_tx.eq(level_tx),
+            self.fifo.ack_rx.eq(level_rx),
+            cpu.dma_req.eq(Cat(self.fifo.req_tx, self.fifo.req_rx,
+                              self.audio.tx_req, self.audio.rx_req, Constant(0, 4))),
+            cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 1),
+                                 self.audio.tx_irq, self.audio.rx_irq, Constant(0, 3),
                                  self.board.irq, Constant(0, 8))),
+            self.audio.off.eq(off), self.audio.write.eq(write_q), self.audio.wdata.eq(wdata_q),
+            self.audio.commit.eq(commit),
             self.board.off.eq(off),
             self.board.write.eq(write_q),
             self.board.wdata.eq(wdata_q),
@@ -224,11 +238,13 @@ class Ae350Platform(LiteXModule):
         ws = addr_q[12:] == (amap.WS2812_BASE >> 12)
         board = addr_q[12:] == (amap.IO_BASE >> 12)
         sense = addr_q[12:] == (amap.SENSE_BASE >> 12)
+        audio = addr_q[12:] == (amap.AUDIO_BASE >> 12)
+        mic = addr_q[12:] == (amap.MIC_BASE >> 12)
         legal = (addr_q[:2] == 0) & (~write_q | (strb_q == 0xf))
         sys_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24,
                                *range(0x40, 0x40 + 32, 4), *range(0x60, 0x60 + 32, 4),
                                *range(0x80, 0x80 + 32, 4), *range(0xa0, 0xa0 + 32, 4),
-                               *range(0xc0, 0xc0 + 32, 4)))
+                               *range(0xc0, 0x120, 4)))
         irq_ro = _onehot(off, (0x00, 0x04, 0x08, 0x10, 0x20))
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
@@ -248,7 +264,13 @@ class Ae350Platform(LiteXModule):
                     **{0x80 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.WS2812_EP)},
                     **{0xa0 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.IO_EP)},
                     **{0xc0 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.SENSE_EP)},
-                })).Elif(legal & sense & self.sense.ok,
+                    **{0xe0 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.AUDIO_EP)},
+                    **{0x100 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.MIC_EP)},
+                })).Elif(legal & audio & self.audio.tx_ok,
+                error.eq(0), read_data.eq(self.audio.tx_rdata)
+                ).Elif(legal & mic & self.audio.rx_ok,
+                error.eq(0), read_data.eq(self.audio.rx_rdata)
+                ).Elif(legal & sense & self.sense.ok,
                 error.eq(0), read_data.eq(self.sense.rdata)
                 ).Elif(legal & ws & self.board.ws_ok,
                 error.eq(0), read_data.eq(self.board.ws_rdata)
@@ -298,6 +320,8 @@ class Ae350Platform(LiteXModule):
             self.board.commit.eq(commit),
             self.sense.selected.eq(legal & sense),
             self.sense.commit.eq(commit),
+            self.audio.tx_selected.eq(legal & audio),
+            self.audio.rx_selected.eq(legal & mic),
         ]
         self.sync += [
             If(~cpu.apb_select,

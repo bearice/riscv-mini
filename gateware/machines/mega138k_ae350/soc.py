@@ -177,6 +177,8 @@ class DDRSoC(LiteXModule):
         resources = board['resources']
         uart = resources['debug_uart']
         jtag = resources['cpu_jtag']
+        sound = io_map.audio_binding()
+        tx, rx = sound['tx'], sound['rx']
         io = [
             ('clk50', 0, Pins('P16'), IOStandard('LVCMOS33')),
             ('reset_key', 0, Pins('U4'), IOStandard('LVCMOS15')),
@@ -187,6 +189,13 @@ class DDRSoC(LiteXModule):
              Subsignal('tdo', Pins(jtag['tdo']['pin'])), IOStandard(jtag['io_standard'])),
             ('fan_pwm', 0, Pins('T17'), IOStandard('LVCMOS33')),
             ('fan_tach', 0, Pins('T18'), IOStandard('LVCMOS33')),
+            ('audio', 0, Subsignal('bck', Pins(tx['bck'])), Subsignal('ws', Pins(tx['ws'])),
+             Subsignal('din', Pins(tx['data'])), Subsignal('pa_en', Pins(tx['pa_en'])),
+             IOStandard(tx['io_standard']), Misc('PULL_MODE=NONE')),
+            ('microphone', 0, Subsignal('data', Pins(rx['data']), Misc('PULL_MODE=DOWN')),
+             Subsignal('bck', Pins(rx['bck']), Misc('PULL_MODE=NONE')),
+             Subsignal('lr', Pins(rx['lr']), Misc('PULL_MODE=NONE')),
+             Subsignal('ws', Pins(rx['ws']), Misc('PULL_MODE=NONE')), IOStandard(rx['io_standard'])),
         ] + _ddr3_io() + _user_io()
         platform = GowinPlatform(board['reference_part'], io, devicename=board['reference_device'])
         ip_dir = self.ddr_ip_dir
@@ -335,6 +344,13 @@ class DDRSoC(LiteXModule):
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
         # Not self.platform: that attribute is the Gowin board platform.
         self.ext = Ae350Platform(self.cpu, registers)
+        tx_pad = platform.request('audio')
+        rx_pad = platform.request('microphone')
+        for name in ('bck', 'ws', 'din', 'pa_en'):
+            self.comb += getattr(tx_pad, name).eq(getattr(self.ext.audio.tx_pads, name))
+        for name in ('bck', 'lr', 'ws'):
+            self.comb += getattr(rx_pad, name).eq(getattr(self.ext.audio.rx_pads, name))
+        self.comb += self.ext.audio.rx_pads.data.eq(rx_pad.data)
         self.comb += self.cpu.gpio_in.eq(self.ext.board.gpio_pin)
         for led in io_map.leds():
             pad = platform.request('user_led', led['index'])

@@ -80,12 +80,12 @@ def pio_and_serial(enable_period=1,rate_sys=False):
 def dma_and_stop():
     dut,pads,bus=fixture();requests=[];idle_gaps=[]
     def bench():
-        yield dut._base.storage.eq(0x40810000);yield dut._capacity.storage.eq(3)
+        yield dut._base.storage.eq(0x00010000);yield dut._capacity.storage.eq(3)
         yield dut._producer.storage.eq(3);yield dut._control.storage.eq(2|4)
         for _ in range(80):yield
         assert (yield dut._fetched.status)==3
         assert (yield dut._wraps.status)==1
-        assert requests==[0x40810000//4+i for i in range(3)],requests
+        assert requests==[0x00010000//4+i for i in range(3)],requests
         assert (yield dut.fifo.dout)==0x13572468,'PCM word byte order changed'
         # Commit a second ring lap only after the previous slots were fetched.
         yield dut._producer.storage.eq(6)
@@ -117,13 +117,13 @@ def dma_and_stop():
         assert (yield dut._errors.status)==2
         yield dut._control.storage.eq(0);yield dut._clear.wr_stb.eq(1);yield
         yield dut._clear.wr_stb.eq(0);yield
-        yield dut._base.storage.eq(0x47dffffc);yield dut._capacity.storage.eq(2)
+        yield dut._base.storage.eq(0x07dffffc);yield dut._capacity.storage.eq(2)
         yield dut._producer.storage.eq(1);yield dut._control.storage.eq(2)
         for _ in range(5):yield
         assert (yield dut._errors.status)==1,'Framebuffer boundary accepted'
         yield dut._control.storage.eq(0);yield dut._clear.wr_stb.eq(1);yield
         yield dut._clear.wr_stb.eq(0);yield
-        yield dut._base.storage.eq(0x40820000);yield dut._capacity.storage.eq(2)
+        yield dut._base.storage.eq(0x00020000);yield dut._capacity.storage.eq(2)
         yield dut._producer.storage.eq(1);yield dut._control.storage.eq(2)
         for _ in range(50):yield
         assert (yield dut._errors.status)==4
@@ -137,7 +137,7 @@ def dma_and_stop():
             for _ in range(10):
                 assert (yield bus.cyc) and (yield bus.adr)==address
                 yield
-            if address==0x40820000//4:
+            if address==0x00020000//4:
                 yield bus.err.eq(1);yield;yield bus.err.eq(0);yield
             else:
                 yield bus.dat_r.eq(0x13572468+(address&3));yield bus.ack.eq(1);yield

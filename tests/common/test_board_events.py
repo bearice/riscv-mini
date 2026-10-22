@@ -350,7 +350,14 @@ def pages(failures):
               (status, raw, mdeg))
         err, _, _ = yield from apb(cpu, False, amap.WS2812_BASE + 0x1000)
         check(failures, 'next peripheral page is empty', err == 1, err)
-    run_simulation(dut, tb())
+    fragment = dut.get_fragment()
+    from migen.fhdl.specials import Memory
+    for memory in fragment.specials:
+        if isinstance(memory, Memory):
+            for port in memory.ports:
+                if port.dat_r is None:
+                    port.dat_r = Signal(memory.width)
+    run_simulation(fragment, tb())
 
 
 def main():

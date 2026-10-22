@@ -38,6 +38,22 @@ SENSE_BASE = CSR_BASE + 0x7000  # fan PWM and die temperature; first 4 KiB only
 # still returns an error.
 WS2812_BASE = 0xF8070000
 IO_BASE = 0xF8080000
+AUDIO_BASE = 0xF8010000
+MIC_BASE = 0xF8020000
+AUDIO_DATA = 0xE8000000
+MIC_DATA = 0xE8010000
+AUDIO_REQ = 2
+MIC_REQ = 3
+# The encrypted AE350 mux is not identity-mapped: port REQ[0:1] use
+# selectors 0:1, but REQ[2:3] use 9:10. Qualified by gated board transfers.
+AUDIO_DMA_SEL = 9
+MIC_DMA_SEL = 10
+EXT_INT_AUDIO = 2
+EXT_INT_MIC = 3
+AUDIO_ID = 0xAE350401
+MIC_ID = 0xAE350402
+AUDIO_CAP = 7  # PIO, handshake DMA, PCM16 stereo
+MIC_CAP = 7  # snapshot, stream DMA, signed PCM24 in 32-bit words
 GPIO_BASE = 0xF0700000
 PLIC_BASE = 0xE4000000
 PLIC_CLAIM = PLIC_BASE + 0x200004
@@ -74,12 +90,14 @@ CAP_DMAC_DECLARED = 16
 CAP_BOARD_IO = 32
 CAP_WS2812 = 64
 CAP_SENSE = 128
+CAP_AUDIO = 256
+CAP_MIC = 512
 FLAG_PRESENT = 1
 FLAG_DATA = 2
 FLAG_DMA = 4
 FLAG_IRQ = 8
 SYSINFO_CAP = (CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED |
-               CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE)
+               CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE | CAP_AUDIO | CAP_MIC)
 WS2812_ID = 0xAE350301
 IO_ID = 0xAE350302
 WS2812_CAP = 3  # wired controller present
@@ -126,7 +144,13 @@ IO_EP = (
 SENSE_EP = (
     SENSE_ID, SENSE_BASE, 0x1000, 0, 0, ABI_VERSION,
     0 | (0 << 8) | (FLAG_PRESENT << 16), 0)
-DEVICE_COUNT = 5
+AUDIO_EP = (
+    AUDIO_ID, AUDIO_BASE, 0x1000, AUDIO_DATA, 4, ABI_VERSION,
+    EXT_INT_AUDIO | (AUDIO_REQ << 8) | ((FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16), AUDIO_DMA_SEL)
+MIC_EP = (
+    MIC_ID, MIC_BASE, 0x1000, MIC_DATA, 4, ABI_VERSION,
+    EXT_INT_MIC | (MIC_REQ << 8) | ((FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16), MIC_DMA_SEL)
+DEVICE_COUNT = 7
 STATUS_ADDR = DDR_CSR_BASE
 CALIB_CYCLES_ADDR = DDR_CSR_BASE + 4
 READ_COUNT_ADDR = DDR_CSR_BASE + 0x18
@@ -148,8 +172,8 @@ WINDOWS = (
     ('ilm', ILM_BASE, ILM_SIZE, 'hard-local-memory'),
     ('dlm', DLM_BASE, DLM_SIZE, 'hard-local-memory'),
     ('platform-csr', CSR_BASE, CSR_SIZE, 'implemented'),
-    ('periph-csr', 0xF8010000, 0x80000, 'ws2812-and-board-io-pages'),
-    ('ext-ahb', EXT_AHB_BASE, EXT_AHB_SIZE, 'loopback-data-word'),
+    ('periph-csr', 0xF8010000, 0x80000, 'audio-mic-ws2812-board-io'),
+    ('ext-ahb', EXT_AHB_BASE, EXT_AHB_SIZE, 'audio-mic-loopback-data'),
 )
 SUBRANGES = (
     ('ilm.code', ILM_BASE, ILM_CODE_BYTES),
@@ -165,6 +189,11 @@ def interface():
     from gateware.boards.mega138k_pro import io_map
     binding = io_map.gpio_binding()
     return dict(cpu='ae350-rv32imac', image_version=1, load=DDR_CODE,
+        audio=dict(pins=io_map.audio_binding(), sample_rate=48000,
+            tx=dict(csr=AUDIO_BASE, data=AUDIO_DATA, irq=EXT_INT_AUDIO, request=AUDIO_REQ,
+                    selector=AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=ABI_VERSION),
+            rx=dict(csr=MIC_BASE, data=MIC_DATA, irq=EXT_INT_MIC, request=MIC_REQ,
+                    selector=MIC_DMA_SEL, pcm='mono-s24-in-s32-le', abi=ABI_VERSION)),
         memories=WINDOWS, reserved=SUBRANGES,
         registers=dict(ddr_status=STATUS_ADDR, calib_cycles=CALIB_CYCLES_ADDR,
                        reads=READ_COUNT_ADDR, writes=WRITE_COUNT_ADDR,

@@ -36,6 +36,22 @@ def inject_bit():
     return user_io()['gpio_inject_bit']
 
 
+def audio_binding():
+    """One authoritative pin map for the audio output and user-wired mic."""
+    resources = load()['resources']
+    tx, rx = resources['audio'], resources['microphone']
+    if rx['active_owner'] != 'microphone':
+        raise ValueError('PMOD0/J28/SSPI must be owned exclusively by microphone')
+    pins = [tx[k] for k in ('bck', 'ws', 'data', 'pa_en')]
+    pins += [rx[k] for k in ('data', 'bck', 'lr', 'ws')]
+    if len(set(pins)) != 8 or set(pins) & (reserved_pins() | set(published_pins())):
+        raise ValueError('audio/microphone pins collide with board resources')
+    if any(r['io_standard'] != 'LVCMOS33' or r['bank_vccio'] != 3.3 for r in (tx, rx)):
+        raise ValueError('audio/microphone require the documented 3.3V banks')
+    return {'tx': {k: tx[k] for k in ('bck', 'ws', 'data', 'pa_en', 'io_standard')},
+            'rx': {k: rx[k] for k in ('data', 'bck', 'lr', 'ws', 'io_standard')}}
+
+
 def _mask(bits):
     value = 0
     for bit in bits:

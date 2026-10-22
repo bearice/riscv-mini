@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "date": "2026-10-22",
+  "machine": "mega138k_ae350",
+  "stage": "P5",
+  "status": "digital-qualified; host analog verification skipped by user; physical qualification incomplete",
+  "artifact": {
+    "component": "gateware",
+    "digest": "b527a0ae09e58f4e0c72cf923ade7e705e6a2b636e8201828a5a65687ddccb35"
+  },
+  "fs_sha256": "d2c1e4ef461a1e6769ba74a6d2be47c9428e22f77571c8d450c5374794f963ba",
+  "rom_build_id": "d68c52c23fdf",
+  "clocks_hz": {
+    "sys": 80000000,
+    "mem": 100000000,
+    "ddr_ck": 400000000
+  },
+  "timing": {
+    "setup": 0,
+    "hold": 0,
+    "min_pulse_width_slack_ns": 0.131
+  },
+  "wiring": {
+    "mic": {
+      "DA": "N18",
+      "CK": "N26",
+      "LR": "R16",
+      "WS": "R17"
+    },
+    "audio": {
+      "BCK": "E22",
+      "WS": "F24",
+      "DIN": "G24",
+      "PA_EN": "H17"
+    }
+  },
+  "digital": {
+    "short": {
+      "receipt": "build/runs/20261022T095507020637Z-board-ae350-audio-suite/result.json",
+      "passed": true,
+      "payload": {
+        "component": "payload",
+        "digest": "9fa5b1d19b6d6d5c9c86f646486d188c08197154199eabc3ce5ddcdbd1fc0b64"
+      },
+      "results": {
+        "stage": 3306160129,
+        "error": 0,
+        "pio": 256,
+        "pio_gaps": 65,
+        "restarts": 100,
+        "snapshot": 512,
+        "minimum": 836,
+        "maximum": 42156,
+        "activity": 1,
+        "overflow": 513,
+        "busy_reject": 11,
+        "hw_error": 12,
+        "frames": 2880129,
+        "played": 2880129,
+        "underruns": 0,
+        "rx_overruns": 0,
+        "tx_blocks": 1875,
+        "rx_blocks": 1875,
+        "rx_bad_sign": 0,
+        "guards": 0,
+        "cpu_writes": 561784,
+        "sample_rate": 48000,
+        "accepted": 2880224,
+        "physical": 0,
+        "seconds": 60,
+        "min_tx_level": 511,
+        "max_rx_level": 1,
+        "cache_control": 2,
+        "mic_stream_peak": 117067,
+        "tx_selector": 9,
+        "dma_restarts": 100,
+        "schema": 1096089601
+      }
+    },
+    "soak": {
+      "receipt": "build/runs/20261022T095849048718Z-board-ae350-audio-suite/result.json",
+      "status": "passed",
+      "passed": true,
+      "payload": {
+        "component": "payload",
+        "digest": "15538c9d38cb38fa8999fcf9aac65beedcad164497e755fa17eec6ab9cdfddb2"
+      },
+      "payload_sha256": "413749964ccc924dc4bc6f1c7cac5114bdbca1715cff0a677ed5bf7ee7f0ab7f",
+      "results": {
+        "stage": 3306160129,
+        "error": 0,
+        "pio": 256,
+        "pio_gaps": 65,
+        "restarts": 100,
+        "snapshot": 512,
+        "minimum": 4294966217,
+        "maximum": 32950,
+        "activity": 1,
+        "overflow": 513,
+        "busy_reject": 11,
+        "hw_error": 12,
+        "frames": 86400129,
+        "played": 86400129,
+        "underruns": 0,
+        "rx_overruns": 0,
+        "tx_blocks": 56250,
+        "rx_blocks": 56250,
+        "rx_bad_sign": 0,
+        "guards": 0,
+        "cpu_writes": 16849846,
+        "sample_rate": 48000,
+        "accepted": 86400224,
+        "physical": 0,
+        "seconds": 1800,
+        "min_tx_level": 511,
+        "max_rx_level": 1,
+        "cache_control": 2,
+        "mic_stream_peak": 4664691,
+        "tx_selector": 9,
+        "dma_restarts": 100,
+        "schema": 1096089601
+      },
+      "pcm_observations": {
+        "name": "pcm-observations",
+        "schema": "0x50434d01",
+        "observed": 262984,
+        "nonzero": 256937,
+        "out_of_range": 0,
+        "last": "0x239fd2c",
+        "source_words": [
+          "0xc800c8",
+          "0x40002d4"
+        ],
+        "examples": [
+          "0x23902d4",
+          "0xfc1403b2",
+          "0x3b203ec",
+          "0xfdc70239",
+          "0x2d4fc4e",
+          "0xfc00",
+          "0xfd2cfcad",
+          "0x3b2ff38"
+        ]
+      },
+      "serializer_rate": {
+        "name": "serializer-rate",
+        "frames": 86400129,
+        "uart_window_seconds": 1800.0112851459999,
+        "observed_frame_rate_hz": 47999.77073087741,
+        "method": "serializer frame counter / host monotonic UART STREAM-to-DONE; includes stop/report overhead"
+      },
+      "realtime_debugger_halts": 0,
+      "mic_peaks": "build/runs/20261022T095849048718Z-board-ae350-audio-suite/mic-peaks.json",
+      "rate_error_percent": 0.000477644005392186
+    },
+    "dma_regression": {
+      "receipt": "build/runs/20261022T095312806742Z-board-ae350-dma-suite/result.json",
+      "passed": true
+    },
+    "io_regression": {
+      "receipt": "build/runs/20261022T095348862345Z-board-ae350-io-suite/result.json",
+      "passed": true
+    },
+    "route_qualification": {
+      "receipt": "build/runs/20261022T102942533886Z-board-ae350-audio-suite/result.json",
+      "passed": true,
+      "payload": {
+        "component": "payload",
+        "digest": "984339c8ec3cd675beec30eada1b8dd9e8383c841bb5ef262d2f0d5cd59da775"
+      },
+      "observations": {
+        "name": "route-qualification",
+        "audio_on": "0x240",
+        "audio_off": "0xc0",
+        "mic_on": "0x440",
+        "mic_off": "0x40",
+        "loopback": [
+          "0x41",
+          "0x40",
+          "0x42",
+          "0x40"
+        ]
+      },
+      "gated_selectors": {
+        "audio": 9,
+        "mic": 10,
+        "loopback_tx": 0,
+        "loopback_rx": 1
+      },
+      "schema_note": "qualification mode uses terminal code 34 and overloads normal audio result slots with masks"
+    },
+    "source_closure_plan": "build/runs/20261022T100947215411Z-plan-candidate-1f22b0/result.json"
+  },
+  "physical": {
+    "user_stimulus": "user reports clapping or speaking during soak",
+    "controlled_acoustic_response": "not verified; no exact stimulus timestamp or controlled quiet interval",
+    "analog_output": "not verified: no usable tone on current Mic capture path; this does not establish an FPGA output fault",
+    "listening": "not verified",
+    "host_capture": "PCH ALC662 rev3 / hw:0,0; driver labels pin 0x18 Rear Mic/Pink, user confirms one physical jack",
+    "steady_capture": "build/runs/20261022T095507020637Z-board-ae350-audio-suite/late-line-in.wav",
+    "steady_capture_analysis": "build/runs/20261022T095507020637Z-board-ae350-audio-suite/late-line-in.json",
+    "peak_windows_recorded": 180,
+    "maximum_mic_peak": 4664691,
+    "host_input_mode": {
+      "adc_route": [
+        "0x08",
+        "0x23",
+        "0x18"
+      ],
+      "pin_control": "0x24 IN VREF_80",
+      "line_in_verified": false,
+      "mixer_line_in_selector": false,
+      "interpretation": "current biased Mic input; hw:0,0 selects PCM only; physical jack remapping capability unknown"
+    },
+    "analog_verification_status": "skipped-by-user",
+    "skip_decision": {
+      "date": "2026-10-22",
+      "scope": "host sound card analog capture and jack-mode investigation",
+      "reason": "user requested skipping this item and organizing/committing existing work"
+    }
+  },
+  "flash_written": false,
+  "catalog_current_changed": false,
+  "host_cleanup": {
+    "status": "restored",
+    "capture_volume": [
+      0,
+      0
+    ],
+    "capture_enabled": [
+      false,
+      false
+    ],
+    "sound_device_acl": "restored from build/audio-host-state/acl.before; readback matches",
+    "ftdi_interface_a_drivers": {
+      "2025030317": "ftdi_sio",
+      "FactoryAIOT Pro": "ftdi_sio"
+    },
+    "uart_interface_b": "left bound",
+    "board": "SRAM candidate b527a0ae09e5, route payload finished, TX muted/stopped, mic disabled; CPU in final idle loop"
+  },
+  "source_status": "development candidate evidence; source commit is recorded in Git history"
+}

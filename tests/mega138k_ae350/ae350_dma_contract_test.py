@@ -41,6 +41,16 @@ def good(overrides=None):
 
 
 class ContractTest(unittest.TestCase):
+    def test_cache_may_evict_before_explicit_cpu_sync(self):
+        self.assertEqual(judge(good({13: 0x55}),0x3340,0,0x3000,0x1000),[])
+
+    def test_previous_schema_is_not_reinterpreted(self):
+        self.assertTrue(any('schema' in item for item in judge(good({31:0x50330001}),0x3340,0,0x3000,0x1000)))
+
+    def test_post_invalidate_data_and_neighbor_guard_remain_mandatory(self):
+        for missing in (1,4,16,64):
+            self.assertTrue(judge(good({13: 0x7f & ~missing}),0x3340,0,0x3000,0x1000))
+
     def test_write_through_observation_passes_without_claiming_a_dirty_line(self):
         self.assertEqual(judge(good(), 0x3340, 0, 0x3000, 0x1000), [])
 

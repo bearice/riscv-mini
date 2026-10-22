@@ -5,17 +5,17 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
 from migen.sim import run_simulation
 from gateware.machines.primer20k_vexriscv.peripherals.audio_clock import AudioDDS
 
-for clock_hz in (48000000,60000000,120000000):
+for clock_hz in (48000000,60000000,80000000,120000000):
     reference=AudioDDS(clock_hz); ticks=[[],[]]
     def bench():
-        for cycle in range(4*clock_hz//48000):
+        for cycle in range(12*clock_hz//48000):
             if (yield reference.dac_tick):ticks[0].append(cycle)
             if (yield reference.mic_tick):ticks[1].append(cycle)
             yield
     run_simulation(reference,bench())
-    for events,expected,stride in zip(ticks,(256,512),(64,128)):
+    for events,expected,stride in zip(ticks,(768,1536),(64,128)):
         assert len(events)==expected,(clock_hz,len(events))
-        assert all(events[i+stride]-events[i]==clock_hz//48000 for i in range(len(events)-stride))
+        assert all(abs(events[i+stride]-events[i]-clock_hz/48000)<1 for i in range(len(events)-stride))
         ideal=clock_hz/(48000*stride)
         assert all(abs((b-a)-ideal)<1 for a,b in zip(events,events[1:]))
     assert ticks[0]==ticks[1][1::2], 'DAC and microphones lost their common phase'

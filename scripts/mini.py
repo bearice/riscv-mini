@@ -28,11 +28,12 @@ def parser():
         ('ddr-suite','AE350 memory: upload DDR diagnostics over UART and observe results'),
         ('dma-suite','AE350 DMA: upload the DMA suite and judge its result contract'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
+        ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
         ('ae350-upload','AE350 memory: autonomous ROM POST then UART image upload and execution'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -40,7 +41,7 @@ def parser():
         op.add_argument('--build',default='current',help='Catalog ID/reference or artifact directory; default qualified current')
         op.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
         if name in ('run', 'recover', 'verify'):
-            op.add_argument('--cpu-jtag-location', type=int,
+            op.add_argument('--cpu-jtag-location',
                             help='AE350 independent D2XX JTAG location; verify ROM and restart entry after SRAM programming')
             if getattr(op, 'machine_default', None) is None:
                 pass
@@ -52,12 +53,12 @@ def parser():
             op.add_argument('--self-test', action='store_true',
                             help='also exercise the loader rejection paths')
         if name == 'jtag-test':
-            op.add_argument('--cpu-jtag-location', type=int, required=True)
+            op.add_argument('--cpu-jtag-location', required=True)
             op.add_argument('--repeat', type=int, default=1,
                             help='repeat SRAM configuration and autonomous calibration/POST')
         if name == 'ae350-upload':
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
-            op.add_argument('--cpu-jtag-location', type=int, default=None)
+            op.add_argument('--cpu-jtag-location', default=None)
             op.add_argument('--timeout', type=int, default=30)
             op.add_argument('--self-test', action='store_true',
                             help='also exercise the loader rejection paths before the good upload')
@@ -65,21 +66,31 @@ def parser():
                             help='upload the image this many times, restarting the ROM between rounds')
         if name == 'dma-suite':
             op.add_argument('--payload', required=True, help='AE350 DMA suite payload build result')
-            op.add_argument('--cpu-jtag-location', type=int, required=True)
+            op.add_argument('--cpu-jtag-location', required=True)
             op.add_argument('--poll-interval', type=float, default=0.25,
                             help='seconds between completion polls; every poll halts the CPU')
             op.add_argument('--timeout', type=int, default=90,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
         if name == 'io-suite':
             op.add_argument('--payload', required=True, help='AE350 I/O suite payload build result')
-            op.add_argument('--cpu-jtag-location', type=int, required=True)
+            op.add_argument('--cpu-jtag-location', required=True)
             op.add_argument('--poll-interval', type=float, default=0.25,
                             help='seconds between completion polls; every poll halts the CPU')
             op.add_argument('--timeout', type=int, default=60,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
+        if name == 'audio-suite':
+            op.add_argument('--qualify-routes', action='store_true', help='judge the gated DMA routing diagnostic payload')
+            op.add_argument('--payload', required=True, help='AE350 audio suite payload result')
+            op.add_argument('--cpu-jtag-location', required=True,
+                            help='Windows location or serial:<FTDI interface serial> on Linux')
+            op.add_argument('--soak-seconds', type=int, default=5,
+                            help='minimum playback duration required by the result contract')
+            op.add_argument('--timeout', type=int, default=120,
+                            help='UART completion deadline, including warmup (1..4000 s)')
+            op.add_argument('--capture-device', help='explicit host line input; hw:0,0 on Linux')
         if name == 'ddr-suite':
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
-            op.add_argument('--cpu-jtag-location', type=int, required=True)
+            op.add_argument('--cpu-jtag-location', required=True)
             op.add_argument('--seed', type=int, default=0x12345678)
             op.add_argument('--region-kb', type=int, default=1024)
             op.add_argument('--flags', type=lambda x: int(x, 0), default=0,

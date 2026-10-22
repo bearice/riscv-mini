@@ -12,10 +12,9 @@ static int in_ddr(uint32_t addr, uint32_t bytes) {
 
 __attribute__((section(".ilm.text"), noinline))
 static int endpoint(uint32_t addr, uint32_t width, uint32_t handshake, uint32_t source) {
-    if ((handshake == 1 && !source) || (handshake == 2 && source)) {
-        if (addr == AE350_LOOPBACK_DATA && width == 4u) return 1;
-        return 0;
-    }
+    if (handshake && ((source && !(handshake & 1u)) || (!source && (handshake & 1u))))
+        return width == 4u && addr == (handshake <= 2u ? AE350_LOOPBACK_DATA :
+                                     (source ? AE350_MIC_DATA : AE350_AUDIO_DATA));
     return in_ddr(addr, width);
 }
 
@@ -55,7 +54,8 @@ static uint32_t width_code(uint32_t width) {
 
 __attribute__((section(".ilm.text"), noinline, aligned(4)))
 uint32_t ae350_dma_busy(uint32_t channel) {
-    return DMAC(0x40u + channel * 0x20u) & 1u;
+    if (channel > 7u) return 0;
+    return (DMAC(0x34u) >> channel) & 1u;
 }
 
 __attribute__((section(".ilm.text"), noinline, aligned(4)))
@@ -71,9 +71,18 @@ int ae350_dma_abort_drain(uint32_t channel) {
     if (channel > 7u) return AE350_DMA_ERR_BIND;
     bit = 1u << channel;
     ctrl = 0x40u + channel * 0x20u;
-    if ((DMAC(ctrl) & 1u) != 0u) DMAC(0x24) = bit;
+    uint32_t enabled = (DMAC(0x34u) & bit) != 0;
+    if (enabled) {
+        DMAC(0x24) = bit;
+    }
+    /* Abort plus disable, then observe the global activity word. */
+    DMAC(ctrl) = DMAC(ctrl) & ~1u;
+    __asm__ volatile("fence" ::: "memory");
     for (uint32_t i = 0; i < 20000u; i++) {
-        if ((DMAC(ctrl) & 1u) == 0u) {
+        uint32_t status = DMAC(0x30);
+        uint32_t ended = (status & (bit << 16)) && DMAC(ctrl+4u)==0u && DMAC(ctrl+0x18u)==0u;
+        if ((DMAC(0x34u) & bit) == 0u && (!enabled || (status & (bit | (bit << 8))) || ended)) {
+            __asm__ volatile("fence" ::: "memory");
             DMAC(0x30) = (bit << 16) | (bit << 8) | bit;
             return AE350_DMA_OK;
         }
@@ -82,13 +91,31 @@ int ae350_dma_abort_drain(uint32_t channel) {
 }
 
 __attribute__((section(".ilm.text"), noinline, aligned(4)))
+int ae350_dma_poll(uint32_t channel) {
+    uint32_t status, bit, busy;
+    if (channel > 7u) return AE350_DMA_ERR_BIND;
+    bit = 1u << channel;
+    /* Read activity BEFORE terminal status. Reading status first can race a
+       completion between the two reads and invent an INCOMPLETE result. */
+    busy = ae350_dma_busy(channel);
+    __asm__ volatile("fence" ::: "memory");
+    /* MUG1029-1.3E table14-8: Error[7:0], Abort[15:8], TC[23:16].
+       Errors take precedence even if TC happens to be set as well. */
+    status = DMAC(0x30);
+    if (status & bit) return AE350_DMA_ERR_HW;
+    if (status & (bit << 8)) return AE350_DMA_ERR_ABORT;
+    if (busy) return AE350_DMA_ERR_BUSY;
+    __asm__ volatile("fence" ::: "memory");
+    return (status & (bit << 16)) ? AE350_DMA_OK : AE350_DMA_ERR_INCOMPLETE;
+}
+
+__attribute__((section(".ilm.text"), noinline, aligned(4)))
 int ae350_dma_wait(uint32_t channel) {
-    uint32_t ctrl;
     int drained;
     if (channel > 7u) return AE350_DMA_ERR_BIND;
-    ctrl = 0x40u + channel * 0x20u;
     for (uint32_t i = 0; i < 20000u; i++) {
-        if ((DMAC(ctrl) & 1u) == 0u) return AE350_DMA_OK;
+        int result = ae350_dma_poll(channel);
+        if (result != AE350_DMA_ERR_BUSY) return result;
     }
     drained = ae350_dma_abort_drain(channel);
     if (drained == AE350_DMA_OK) return AE350_DMA_ERR_TIMEOUT;
@@ -127,6 +154,7 @@ int ae350_dma_submit(const struct ae350_dma_req *req) {
     uint32_t ctrl;
     int src;
     int dst;
+    if (req == 0) return AE350_DMA_ERR_BIND;
     if (req->abi != W(AE350_SYSINFO_BASE + 0x04u)) return AE350_DMA_ERR_ABI;
     if (W(AE350_SYSINFO_BASE) != AE350_SYSINFO_ID) return AE350_DMA_ERR_BIND;
     if (req->device != W(AE350_SYSINFO_BASE + 0x60u)) return AE350_DMA_ERR_DEVICE;
@@ -134,7 +162,10 @@ int ae350_dma_submit(const struct ae350_dma_req *req) {
     if (req->irq_id != W(AE350_IRQ_BASE)) return AE350_DMA_ERR_BIND;
     if ((req->need_cap & ~W(AE350_SYSINFO_BASE + 0x08u)) != 0) return AE350_DMA_ERR_CAP;
     if (req->channel > 7u) return AE350_DMA_ERR_BIND;
-    if (req->handshake > 2u) return AE350_DMA_ERR_BIND;
+    if (req->handshake > 4u) return AE350_DMA_ERR_BIND;
+    if (ae350_dma_busy(req->channel)) return AE350_DMA_ERR_BUSY;
+    if (req->handshake && (((req->handshake & 1u) && req->dst_mode != 2u) ||
+                           (!(req->handshake & 1u) && req->src_mode != 2u))) return AE350_DMA_ERR_BIND;
     code = width_code(req->width_bytes);
     if (code == 0xffu) return AE350_DMA_ERR_WIDTH;
     if (req->bytes == 0) return AE350_DMA_ERR_SIZE;
@@ -147,10 +178,13 @@ int ae350_dma_submit(const struct ae350_dma_req *req) {
     }
     /* Bits 3 and 1 are interrupt masks: 1 disables the output (MUG1029). */
     ctrl = (code << 21) | (code << 18) | (req->src_mode << 14) | (req->dst_mode << 12) |
-           (1u << 3) | (1u << 1);
-    if (req->handshake == 1u) ctrl |= 1u << 16;
-    if (req->handshake == 2u) ctrl |= (1u << 17) | (1u << 8);
+           (1u << 3) | (1u << 2) | (1u << 1);
+    if (req->handshake & 1u)
+        ctrl |= (1u << 16) | ((req->handshake == 1u ? 0u : AE350_AUDIO_DMA_SEL) << 4);
+    else if (req->handshake)
+        ctrl |= (1u << 17) | ((req->handshake == 2u ? 1u : AE350_MIC_DMA_SEL) << 8);
     base = 0x40u + req->channel * 0x20u;
+    DMAC(0x30) = (1u << req->channel) * 0x10101u;
     DMAC(base) = 0;
     DMAC(base + 0x04u) = req->bytes / req->width_bytes;
     DMAC(base + 0x08u) = req->src;
@@ -159,6 +193,8 @@ int ae350_dma_submit(const struct ae350_dma_req *req) {
     DMAC(base + 0x14u) = 0;
     DMAC(base + 0x18u) = req->llp;
     DMAC(base + 0x1cu) = 0;
+    __asm__ volatile("fence" ::: "memory");
     DMAC(base) = ctrl | 1u;
+    __asm__ volatile("fence" ::: "memory");
     return AE350_DMA_OK;
 }

@@ -1,13 +1,23 @@
-"""AE350 D2XX/JTAG operations using the installed Windows FTDI driver."""
+"""AE350 D2XX/JTAG using the installed Windows or Linux FTDI library."""
 import ctypes as c
+import os
 import time
 
 
 class CPUJTAG:
     def __init__(self, location, dll):
-        self.dll = c.WinDLL(str(dll))
+        self.dll = (c.WinDLL if os.name == 'nt' else c.CDLL)(str(dll))
         self.handle = c.c_void_p()
-        self.check(self.dll.FT_OpenEx(c.c_void_p(int(location)), 4, c.byref(self.handle)))
+        selector = str(location)
+        if selector.startswith('serial:'):
+            serial = selector[7:].encode('ascii')
+            if not serial or len(serial) > 63:
+                raise ValueError('Expected serial:<FTDI interface serial>')
+            self.check(self.dll.FT_OpenEx(c.c_char_p(serial), 1, c.byref(self.handle)))
+        else:
+            if os.name != 'nt':
+                raise ValueError('Linux D2XX requires serial:<FTDI interface serial> rather than a Windows location')
+            self.check(self.dll.FT_OpenEx(c.c_void_p(int(location)), 4, c.byref(self.handle)))
         self.closed = False
         self.active = False
         try:
@@ -44,7 +54,7 @@ class CPUJTAG:
         self.check(getattr(self.dll, name)(self.handle, *args))
 
     def send(self, data):
-        count = c.c_ulong()
+        count = c.c_uint32()
         self.call('FT_Write', c.create_string_buffer(data), len(data), c.byref(count))
         if count.value != len(data):
             raise RuntimeError('Short D2XX JTAG write')
@@ -57,7 +67,7 @@ class CPUJTAG:
         data = bytes(sum(([0x6b, 0, int(n == bits - 1) | (((value >> n) & 1) << 7)]
                           for n in range(bits)), []))
         self.send(data + b'\x87')
-        buffer, got = c.create_string_buffer(bits), c.c_ulong()
+        buffer, got = c.create_string_buffer(bits), c.c_uint32()
         self.call('FT_Read', buffer, bits, c.byref(got))
         if got.value != bits:
             raise RuntimeError(f'Short D2XX JTAG read: {got.value}/{bits}')

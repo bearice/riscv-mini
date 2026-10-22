@@ -563,7 +563,7 @@ static void handshake(void) {
 
 void main(void) {
     for (uint32_t i = 0; i < 32u; i++) slot[i] = 0;
-    slot[SCHEMA] = 0x50330001u;
+    slot[SCHEMA] = 0x50330002u;
     slot[STAGE] = 0xC3100001u;
     dc_off();
     inval_all();

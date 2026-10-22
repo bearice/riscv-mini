@@ -5,13 +5,14 @@ mcause 0. This contract is the suite result. Word order matches
 firmware/diagnostics/mega138k_ae350/ae350_dma_suite.c.
 """
 
-SCHEMA = 0x50330001
+SCHEMA = 0x50330002
 DONE = 0xC3100004
 WORDS = 32
 DMAC_CFG = 0xC141C108
 REJECT = 0xFFF
 CYCLIC = 0xF
 STALE = 0x7F
+CACHE_REQUIRED = 0x55  # initial value and all post-invalidate/neighbor checks
 ERR_ALIGN = 1
 ERR_DEVICE = 5
 ERR_BIND = 6
@@ -36,7 +37,7 @@ SCOPE = {
     'irq': 'published IRQ-page identity only; no PLIC-to-CPU handler',
     'fabric_reader': 'unsupported; the capability bit stays clear and a request for it is rejected',
     'frequency': 'the programmed bitstream point only; a failed build is not a device limit',
-    'cache': 'stale line plus ranged invalidate; DMA-visible stores are not a dirty-line pass',
+    'cache': 'post-invalidate values/guards required; pre-sync stale reads are observations, not guaranteed cache residency',
     'drain': 'abort waits until the channel enable bit is clear and the buffer is stable before reuse',
 }
 
@@ -78,7 +79,8 @@ def judge(words, pc, mcause, load, image_bytes):
     _need(failures, named['cyclic'] == CYCLIC, 'cyclic/drain bits %#x' % named['cyclic'])
     _need(failures, named['late_writes'] == 0, 'late writes after stop %d' % named['late_writes'])
     _need(failures, named['width_errors'] == 0, 'byte/halfword errors %d' % named['width_errors'])
-    _need(failures, named['cache_stale'] == STALE, 'stale/invalidate bits %#x' % named['cache_stale'])
+    _need(failures, (named['cache_stale'] & CACHE_REQUIRED) == CACHE_REQUIRED and
+          (named['cache_stale'] & ~STALE) == 0, 'invalidate/guard bits %#x' % named['cache_stale'])
     policy = named['cache_policy']
     if policy == POLICY_WRITE_THROUGH:
         _need(failures, named['vis_before'] == 1 and named['vis_after'] == 1,
@@ -108,4 +110,5 @@ def observe(words):
     else:
         policy = {POLICY_WRITE_THROUGH: 'write-through', POLICY_DIRTY: 'dirty-then-clean'}.get(
             named['cache_policy'], 'unresolved')
-    return dict(values=named, policy=policy, scope=SCOPE)
+    return dict(values=named, policy=policy, scope=SCOPE,
+                pre_sync_stale_observations=hex(named['cache_stale'] & 0x2a))

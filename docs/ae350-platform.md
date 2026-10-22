@@ -2,6 +2,8 @@
 
 硬核 DMAC 的公共 API、通道/缓存所有权限制及 `board dma-suite` 入口见 [DMA 服务](ae350-dma.md)。当前 80/100/400 MHz 运行点已完成轮询式 DMA 和[板级 I/O](ae350-io.md)交付；GPIO/fabric 的 PLIC 到 CPU ISR 已验收，DMAC 自身的 CPU ISR 尚未验收。
 
+PT8211 和单只 I2S 麦克风的接线、端点、DMA 所有权及 `board audio-suite` 见[音频与麦克风](ae350-audio.md)，本次候选的结果见[音频验收记录](../reports/ae350-audio.md)。Linux 的 CPU JTAG 支持 `serial:<FTDI interface serial>`；该选择器与 Gowin FPGA 编程器的 location 分开指定。
+
 准确候选和证据见[最终验收报告](../reports/ae350-p2.md)，回归范围见[内存验证合同](ae350-memory-validation.md)。
 
 ## 内存分工

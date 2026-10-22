@@ -7,6 +7,7 @@ while recording cleanup failures instead of hiding them.
 import json
 import subprocess
 import time
+import os
 from pathlib import Path
 
 import sys
@@ -67,8 +68,9 @@ class HardwareSession:
             if self.cpu_location is None:
                 raise SessionError('this operation needs --cpu-jtag-location')
             self._acquire()
+            library = 'ftd2xx.dll' if os.name == 'nt' else 'libftd2xx.so'
             self._cpu = CPUJTAG(self.cpu_location,
-                                Path(self.tools['programmer']).with_name('ftd2xx.dll'))
+                                Path(self.tools['programmer']).with_name(library))
         return self._cpu
 
     def halt(self):

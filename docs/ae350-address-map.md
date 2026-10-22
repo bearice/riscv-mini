@@ -83,6 +83,8 @@ DMA buffer/描述符在DDR中分配，描述符里的地址是物理字节地址
 
 硬DMAC通道动态申请：首轮memcpy/loopback，再audio TX和mic RX。SD/网络/USB按后端能力申请；HDMI首选专用reader。物理DMA request/ack编号由vendor配置及端点表生成，不等于固定通道号，不能凭“8通道”预分配全部资源。
 
+当前 audio/mic 的 APB 控制页各实现前 4 KiB，AHB 仅实现表中固定的 32 位 DATA 地址，其他保留地址返回 ERROR。导出的 REQ 线号和 DMAC selector 是两个字段：loopback REQ[0]/[1]→selector 0/1，audio REQ[2]→selector 9，mic REQ[3]→selector 10。后两项已按请求门开关和真实传输核对，不能把 REQ 线号直接写入 SrcReqSel/DstReqSel；端点表末字与设备 CSR 发布实际 selector，参与机器 image ABI。
+
 ## 5. CSR、发现与兼容性
 
 新项目CSR使用32位小端、4字节对齐访问；非法访问有界报错。64位地址/计数使用明确的lo/hi与提交/快照协议，不能靠两次独立读取假定原子性。FIFO和W1C寄存器明确标注副作用，reserved字段按各块合同处理。
