@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
-from scripts.modular.storage import ROOT, canonical, digest, file_hash, read, write, workspace_lock
+from scripts.modular.storage import ROOT, canonical, digest, file_hash, source_bytes, SOURCE_HASH_FORMAT, read, write, workspace_lock
 from scripts.modular.environment import discover, identity, python_packages
 from scripts.modular.machines.primer20k_vexriscv.contracts import hardware
 from scripts.modular.workspace import working, clear_generated, invalidate_pnr, gateware_files, remove_file
@@ -98,7 +98,8 @@ def source_closure(root):
 
 
 def source_files(root):
-    return {name: file_hash(root / name) for name in source_closure(root)}
+    from scripts.modular.storage import source_file_hash
+    return {name: source_file_hash(root / name) for name in source_closure(root)}
 
 
 def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
@@ -108,7 +109,8 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
     inputs = source_files(store.root)
     env = discover(['python'], store.root)
     options = dict(v)
-    config = dict(schema=1, options=options, sources=inputs, environment=identity(env), packages=python_packages())
+    config = dict(schema=1, options=options, sources=inputs, source_hash_format=SOURCE_HASH_FORMAT,
+                  environment=identity(env), packages=python_packages())
     key = digest(dict(config=config, cpu=cpu_ref))
     found = store.lookup('soc-description', key)
     if found:
@@ -153,7 +155,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
         # A complete generated source tree, not only top-level Verilog.
         for folder in ('gateware', 'software/include'):
             for p in (work / folder).rglob('*'):
-                if p.is_file(): files[p.relative_to(work).as_posix()] = p
+                if p.is_file(): files[p.relative_to(work).as_posix()] = source_bytes(p)
         if source_files(store.root) != inputs:
             raise ValueError('Hardware inputs changed during generation')
         ref = store.publish('soc-description', key, files, config=cfg, dependencies={'cpu': cpu_ref})
@@ -165,7 +167,7 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
     soc_data = store.get(soc); v = soc_data['config']['validation']
     env = discover(['python', *(['gowin'] if synthesize else [])], store.root)
     config = dict(schema=1, options=v, environment=identity(env), packages=python_packages(), synthesize=synthesize,
-                  sources=source_files(store.root))
+                  source_hash_format=SOURCE_HASH_FORMAT, sources=source_files(store.root))
     deps = {'soc-description': soc}
     if v['boot_mode'] == 'rom': deps['bootloader'] = boot
     key = digest(dict(config=config, dependencies=deps))
@@ -228,7 +230,8 @@ def build_gateware(store, run, soc, boot, plan=False, synthesize=True):
         files['gateware-attempts.json'] = run.path / 'gateware-attempts.json'
         files.update({'logs/' + p.name: p for p in run.path.glob('gateware-attempt-*.log')})
         for path in gateware_files(work, synthesize):
-            files['project/' + path.relative_to(work/'gateware').as_posix()] = path
+            relative = path.relative_to(work/'gateware')
+            files['project/' + relative.as_posix()] = path if 'impl' in relative.parts else source_bytes(path)
         if synthesize: files['outputs/riscv_mini.fs'] = work/'gateware/riscv_mini.fs'
         ref = store.publish('gateware', key, files, config=dict(build=config, validation=report), dependencies=deps)
         workspace.success(ref)

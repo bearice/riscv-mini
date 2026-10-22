@@ -17,6 +17,8 @@ import pythondata_cpu_vexriscv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.modular.storage import normalize_text_eol, text_file_hash, source_file_hash, SOURCE_HASH_FORMAT
+
 
 def build(args, run=None):
     if args.locked_config:
@@ -33,20 +35,20 @@ def build(args, run=None):
     for role,path in [('java',args.java),('sbt-launch',args.sbt_launch),('VexRiscv source',args.vexriscv_source)]:
         if not path.exists():raise ValueError('Missing '+role+': '+str(path))
     from scripts.modular.storage import file_hash, digest
-    source_files={p.relative_to(args.vexriscv_source).as_posix():file_hash(p)
+    source_files={p.relative_to(args.vexriscv_source).as_posix():source_file_hash(p)
                   for folder in ('src','project') for p in (args.vexriscv_source/folder).rglob('*')
                   if p.is_file() and 'target' not in p.parts}
     for name in ('build.sbt',):
-        if (args.vexriscv_source/name).is_file():source_files[name]=file_hash(args.vexriscv_source/name)
-    source_lock=dict(generator_script_sha256=file_hash(__file__),upstream_files=source_files,
+        if (args.vexriscv_source/name).is_file():source_files[name]=source_file_hash(args.vexriscv_source/name)
+    source_lock=dict(source_hash_format=SOURCE_HASH_FORMAT, generator_script_sha256=source_file_hash(__file__),upstream_files=source_files,
                      java_binary_sha256=file_hash(args.java),sbt_launcher_sha256=file_hash(args.sbt_launch),
                      java_version=subprocess.check_output([str(args.java),'-version'],stderr=subprocess.STDOUT,text=True).strip(),
-                     template_sha256=file_hash(base/'src/main/scala/vexriscv/GenCoreDefault.scala'))
-    source_lock['generator_files']={p.relative_to(base).as_posix():file_hash(p)
+                     template_sha256=source_file_hash(base/'src/main/scala/vexriscv/GenCoreDefault.scala'))
+    source_lock['generator_files']={p.relative_to(base).as_posix():source_file_hash(p)
                                    for folder in ('src','project') for p in (base/folder).rglob('*')
                                    if p.is_file() and 'target' not in p.parts}
-    source_lock['generator_build_sbt_sha256']=file_hash(base/'build.sbt')
-    source_lock['requirements_sha256']=file_hash(Path(__file__).resolve().parents[2]/'requirements.lock')
+    source_lock['generator_build_sbt_sha256']=source_file_hash(base/'build.sbt')
+    source_lock['requirements_sha256']=source_file_hash(Path(__file__).resolve().parents[2]/'requirements.lock')
     if '"1.8.' not in source_lock['java_version']:raise ValueError('CPU generation requires Java 8')
     if args.locked_config and lock.get('source_lock') != source_lock:
         raise ValueError('CPU source/tool identities differ from locked config')
@@ -140,8 +142,7 @@ def build(args, run=None):
                   'extra_fetch_stage': args.relaxed_pc_calculation},
               'cpu_rtls': {},
               'vexriscv_source': str(args.vexriscv_source.resolve()),
-              'upstream_generator_sha256': hashlib.sha256(
-                  (base/'src/main/scala/vexriscv/GenCoreDefault.scala').read_bytes()).hexdigest()}
+              'upstream_generator_sha256': source_file_hash(base/'src/main/scala/vexriscv/GenCoreDefault.scala')}
     report['pipeline'].update(two_cycle_icache=args.pipelined_fetch or not args.compressed,
                               injector_register=args.pipelined_fetch)
     report['source_lock']=source_lock
@@ -150,7 +151,8 @@ def build(args, run=None):
                                     csr_permission_patch='time/TM',high_mmio_xip=True)
     for csr, fpu, name, shift, mul in variants:
         path = output/(name+'.v')
-        report['cpu_rtls'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+        report['cpu_rtls'][name] = {'path': str(path), 'sha256': text_file_hash(path),
+                                  'hash_normalization': 'lf',
                                   'mmu':csr=='linux','fpu':fpu=='true','dcache':True,
                                   'compressed':args.compressed,'bitmanip':[],
                                   'single_cycle_shift':shift,'single_cycle_muldiv':mul}
@@ -167,7 +169,7 @@ VENDOR_CPU = 'VexRiscv_Mmu'
 
 def _without_commit_comment(data):
     """VexRiscv stamps the generating commit into a header comment; ignore it."""
-    return b'\n'.join(line for line in data.split(b'\n') if not line.startswith(b'// Git hash'))
+    return b'\n'.join(line for line in normalize_text_eol(data).split(b'\n') if not line.startswith(b'// Git hash'))
 
 
 def install_vendor(report, output, vendor_dir, args, force=False):
@@ -178,7 +180,7 @@ def install_vendor(report, output, vendor_dir, args, force=False):
     target = vendor/(VENDOR_CPU+'.v')
     if target.is_file():
         current, regenerated = target.read_bytes(), produced.read_bytes()
-        if current != regenerated and not force:
+        if normalize_text_eol(current) != normalize_text_eol(regenerated) and not force:
             if _without_commit_comment(current) == _without_commit_comment(regenerated):
                 print('CPU RTL matches the committed file apart from the embedded git hash line')
             else:
@@ -199,7 +201,8 @@ def install_vendor(report, output, vendor_dir, args, force=False):
         source = ''
     record = {'commands': report['commands'], 'high_mmio_xip': report['high_mmio_xip'],
               'pipeline': report['pipeline'],
-              'cpu_rtls': {VENDOR_CPU: dict(report['cpu_rtls'][VENDOR_CPU], path=relative)},
+              'cpu_rtls': {VENDOR_CPU: dict(report['cpu_rtls'][VENDOR_CPU], path=relative,
+                                           sha256=text_file_hash(target), hash_normalization='lf')},
               'vexriscv_source': ('tools/vexriscv (VexRiscv '+source+')') if source else str(args.vexriscv_source),
               'upstream_generator_sha256': report['upstream_generator_sha256'],
               'source_lock': report['source_lock'], 'resolved_flags': report['resolved_flags'],
@@ -219,9 +222,10 @@ def install_vendor(report, output, vendor_dir, args, force=False):
                                'Regenerate with mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv; '
                                'the tool refuses to overwrite differing bytes unless --force is given.')
     files = data.setdefault('files', {})
-    for path in (target, vendor/(VENDOR_CPU+'.yaml')):
+    for path in (target, vendor/(VENDOR_CPU+'.yaml'), vendor/'LICENSE.VexRiscv'):
         if path.is_file():
-            files[path.name] = dict(files.get(path.name, {}), sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            files[path.name] = dict(files.get(path.name, {}), sha256=text_file_hash(path),
+                                    hash_normalization='lf',
                                     bytes=path.stat().st_size)
     files.setdefault(VENDOR_CPU+'.v', {}).update(module='VexRiscv', protected=False)
     provenance.write_text(json.dumps(data, indent=2)+'\n', encoding='utf-8')

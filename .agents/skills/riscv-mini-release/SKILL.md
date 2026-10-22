@@ -1,9 +1,11 @@
 ---
 name: riscv-mini-release
-description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码提交快照或历史阶段构建包，完成实板与基准验收，并把 tag 与构建包发布到 GitHub Release。
+description: 在明确要求正式 release 时构建、验收并发布版本包；开发构建归档或提交快照须单独明确请求，普通提交不触发发布流程。
 ---
 
 # 发布与最终归档
+
+只有用户明确要求正式 release 时才执行下面的完整发布验收。普通代码提交完成后不自动进入本 skill；`--snapshot` 也仅在用户明确要求保留某次构建时使用。普通提交按 `riscv-mini-commit/SKILL.md` 的轻量流程完成。
 
 在 riscv-mini 仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
 
@@ -17,11 +19,11 @@ description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码�
 
 顺序不可颠倒：
 
-1. 递增被改动组件在 `VERSIONS.yaml` 的版本，并在 `CHANGELOG.md` 写该组件本版条目，与功能代码同一个提交；提交后打 `<component>/v<版本>` tag。
+1. 发布时递增被改动组件在 `VERSIONS.yaml` 的版本，并在 `CHANGELOG.md` 汇总自上一正式版本以来的功能变化。已有普通提交不补版本、tag 或归档，也不为此改写提交历史。
 2. 在 `RELEASES.yaml` 写系统包：`components` 钉住六个组件版本（须等于 `VERSIONS.yaml`），`external` 列出不在本包构建/验证的组件。
-3. 提交，得到 git hash，打 `system/v<版本>` tag 指向该提交。
+3. 提交发布版本、清单、说明和待发布源码，得到 git hash；需要发布的 `<component>/v<版本>`、`system/v<版本>` tag 指向对应的最终干净提交。
 4. 从该提交运行构建（干净工作树，产物身份不带 `.dirty`），并在实板完成测试。
-5. 归档 report/change 记录（`reports/changes/<commit7>.md` 与同名 `.json`），然后运行 `mini.py release create` 生成最终包。
+5. 保存实际发布验收记录；需要汇总说明时可放在 `reports/changes/`，不复制 Git 文件清单。运行 `mini.py release create` 生成最终包。`prepare_commit.py` 为可选记录工具，显式 `--release` 或 `--release-version` 才启用其发布检查，不能用普通轻量记录替代最终发布验收。
 
 被测试与被发布的 binary 必须来自已提交树；dirty 树的构建只能作为候选验证，不能作为发布验收。
 
@@ -32,7 +34,7 @@ description: 在 TangPrimer-20K/riscv-mini 生成正式版本发布包、代码�
 .venv/Scripts/python.exe scripts/mini.py release verify <生成的最终包目录>
 ```
 
-不发布新版本的代码提交加 `--snapshot --version <版本>`，输出 `build/archives/v<版本>-<Git>/`。纯文档提交无需 FPGA 重建。
+只有用户明确要求提交快照时才加 `--snapshot --version <版本>`，输出 `build/archives/v<版本>-<Git>/`。普通提交不自动构建、归档或发布；既有 store/runs 保留开发构建即可。
 
 ## 历史阶段补建 tag 与构建包
 
@@ -75,4 +77,4 @@ foreach($tag in <本次 tag 列表>){
 
 ## 完成条件
 
-最终包 complete 且 verify 通过，含二进制、报告、参数、CPU 与工具输入、版本、完整 Git hash 和文件 SHA256。正式包位于 `build/releases/system/v<版本>/`，提交快照位于 `build/archives/v<版本>-<Git>/`。GitHub 上每个 tag 有对应 Release 与可校验的 archive。
+正式发布的最终包 complete 且 verify 通过，含二进制、报告、参数、CPU 与工具输入、版本、完整 Git hash 和文件 SHA256；发布到 GitHub 时对应 tag 有 Release 与可校验 archive。正式包位于 `build/releases/system/v<版本>/`。显式要求的提交快照位于 `build/archives/v<版本>-<Git>/`，不自动创建 GitHub Release。

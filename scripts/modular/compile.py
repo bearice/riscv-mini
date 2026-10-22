@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
-from scripts.modular.storage import ROOT, canonical, digest, file_hash, text_file
+from scripts.modular.storage import ROOT, canonical, digest, source_file_hash, text_file
 from scripts.modular.environment import process_environment
 
 BASE_FLAGS = ['-Os', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin',
@@ -27,9 +27,9 @@ def source_files(root, names):
         if path.is_dir():
             for child in sorted(path.rglob('*')):
                 if child.is_file() and child.suffix in ('.c', '.h', '.S', '.ld', '.py'):
-                    files[child.relative_to(root).as_posix()] = file_hash(child)
+                    files[child.relative_to(root).as_posix()] = source_file_hash(child)
         elif path.is_file():
-            files[name] = file_hash(path)
+            files[name] = source_file_hash(path)
         else:
             raise ValueError('Missing component input: ' + str(path))
     return files

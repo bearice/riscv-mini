@@ -1,4 +1,4 @@
-"""Record reviewed changes and validation; keep Git scope checks local. Never commits."""
+"""Optionally record reviewed changes; require validation only for explicit releases. Never commits."""
 import argparse
 import hashlib
 import json
@@ -61,7 +61,7 @@ def selected_build(selection, root=ROOT):
     receipt = json.loads(path.read_text(encoding='utf-8'))
     if receipt.get('passed') is not True or receipt.get('dry_run'):
         raise ValueError('Successful non-dry-run board receipt required')
-    from scripts.modular.storage import Store, file_hash
+    from scripts.modular.storage import Store, file_hash, source_file_hash, SOURCE_HASH_FORMAT
     from scripts.modular.machines import description as machine_description
     store = Store(root)
     ref, payload = receipt['artifact'], receipt['payload_artifact']
@@ -85,10 +85,11 @@ def selected_build(selection, root=ROOT):
             return
         seen.add(key)
         manifest = store.get(reference)
+        input_hash = source_file_hash if manifest['config'].get('source_hash_format') == SOURCE_HASH_FORMAT else file_hash
         for name, expected in manifest['config'].get('sources', {}).items():
             if name.startswith('inputs/source/'):
                 source = (root / name.removeprefix('inputs/source/')).resolve()
-                if not source.is_relative_to(root.resolve()) or file_hash(source) != expected:
+                if not source.is_relative_to(root.resolve()) or input_hash(source) != expected:
                     raise ValueError('Qualified source differs: ' + name)
         for dependency in manifest['dependencies'].values():
             inputs(dependency)
@@ -99,18 +100,16 @@ def selected_build(selection, root=ROOT):
                 source=dict(source_identity(root), kind='modular-captured'))
 
 
-def prepare(title, changes, revision=None, build=None, performance=None, checks=None):
+def prepare(title, changes, revision=None, build=None, performance=None, checks=None, release=False):
     selected = scope(revision)
-    # Only RTL (gateware) changes re-qualify the hardware: they affect timing
-    # and resources, so they need a captured board-qualified build and a
-    # performance baseline. With RTL unchanged the prior hardware qualification
-    # still holds, so software-only changes (bootloader/BIOS/drivers/HAL under
-    # firmware/) skip every hardware-related test and are checked on the host.
+    # Ordinary commits do not require test, hardware or performance receipts.
+    # Explicitly supplied evidence must still match; release preparation keeps
+    # the existing validation gates. Final release acceptance is owned by mini.
     rtl = any(f['path'].startswith('gateware/') for f in selected['files'])
     if not revision:
-        if not checks or checks.get('passed') is not True or checks.get('source_inputs_sha256') != source_identity()['inputs_sha256']:
+        if (release or checks is not None) and (not checks or checks.get('passed') is not True or checks.get('source_inputs_sha256') != source_identity()['inputs_sha256']):
             raise ValueError('Matching successful check record required; rerun checks after code edits')
-        if rtl:
+        if release and rtl:
             if not build or build['status'] != 'board-qualified' or build['source'].get('kind') not in ('captured', 'modular-captured'):
                 raise ValueError('RTL/gateware changes require a new captured and board-qualified build')
             if build['source']['inputs_sha256'] != source_identity()['inputs_sha256']:
@@ -129,7 +128,8 @@ def prepare(title, changes, revision=None, build=None, performance=None, checks=
             raise ValueError('Performance report candidate does not match selected build')
     return dict(created_at=now(), title=title, changes=changes, scope=selected,
                 build=build, performance_report=str(performance) if performance else None,
-                checks=checks, mode='historical commit documentation' if revision else 'staged review')
+                checks=checks, release=release,
+                mode='historical commit documentation' if revision else 'release review' if release else 'staged review')
 
 
 def main():
@@ -140,15 +140,17 @@ def main():
     p.add_argument('--build', help='Catalog identity or successful content-addressed board receipt')
     p.add_argument('--performance-report', type=Path)
     p.add_argument('--checks', type=Path)
-    p.add_argument('--output', type=Path, required=True, help='Tracked change-record Markdown; JSON beside it')
+    p.add_argument('--release', action='store_true', help='Require release validation; also enabled by --release-version')
+    p.add_argument('--output', type=Path, required=True, help='Optional review report Markdown and JSON; this tool is not required for ordinary commits')
     p.add_argument('--write-changelog', action='store_true')
     p.add_argument('--component', choices=(*COMPONENTS, 'system'),
                    help='Which version stream this release belongs to; required with --write-changelog')
-    p.add_argument('--release-version',help='Only code releases enter CHANGELOG; documentation/workflow commits omit this and --write-changelog')
+    p.add_argument('--release-version',help='Explicit release preparation; enables release validation and is required for CHANGELOG')
     p.add_argument('--verify', action='store_true', help='Compare current scope with existing change record')
     a = p.parse_args()
+    release = a.release or bool(a.release_version)
     if a.write_changelog and not (a.component and a.release_version):
-        p.error('--write-changelog requires --component and an explicit --release-version; other commits use scope records only')
+        p.error('--write-changelog requires --component and an explicit --release-version; ordinary commits need no scope record')
     if a.component and a.release_version:
         from scripts.modular.machines import PRIMARY, release as release_operation
         version = release_operation(PRIMARY, 'release_version')(a.release_version)
@@ -159,17 +161,20 @@ def main():
             p.error(f'{a.component} version {version} does not match VERSIONS.yaml ({component_version(a.component)}); bump VERSIONS.yaml in this commit')
     if a.verify:
         saved = json.loads(review_receipt(a.output).read_text(encoding='utf-8'))
-        if saved != scope_identity(scope(a.revision)):
+        if release and not saved.get('release'):
+            p.exit(1, 'This record was prepared without release validation; prepare it again with --release\n')
+        if scope_identity(saved) != scope_identity(scope(a.revision)):
             p.exit(1, 'Scope changed; regenerate change record and changelog before committing\n')
         print('Commit scope unchanged'); return
     record = prepare(a.title, a.change, a.revision, selected_build(a.build) if a.build else None,
-                     a.performance_report, json.loads(a.checks.read_text(encoding='utf-8')) if a.checks else None)
+                     a.performance_report, json.loads(a.checks.read_text(encoding='utf-8')) if a.checks else None,
+                     release=release)
     if a.release_version:
         from scripts.modular.machines import PRIMARY, release as release_operation
         record['release_version']=release_operation(PRIMARY, 'release_version')(a.release_version)
     a.output.parent.mkdir(parents=True, exist_ok=True)
     identity=scope_identity(record.pop('scope'))
-    write_json(review_receipt(a.output),identity)
+    write_json(review_receipt(a.output),dict(identity, release=release))
     record['base_revision']=identity['base']
     record['source_revision']=identity['target'] if identity['target']!='staged' else None
     lines = ['# '+a.title, '', f"生成：{record['created_at']}；模式：{record['mode']}。", '',

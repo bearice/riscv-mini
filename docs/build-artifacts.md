@@ -30,7 +30,7 @@ build/
     gateware/          最终bitstream
     reports/           PnR、板测、性能、提交记录
     replay/            自包含复现输入
-  archives/v<版本>-<Git版本>/<配置>/  普通代码提交快照，不占用新发布版本
+  archives/v<版本>-<Git版本>/<配置>/  显式要求的代码提交快照，不占用新发布版本
 reports/
   changes/             改动说明与验证依据，不重复 Git 文件清单
   performance/         可提交的性能报告及摘要 JSON
@@ -78,7 +78,7 @@ $Baseline = & .venv/Scripts/python.exe scripts/mini.py builds path baseline
 
 `mini.py builds clean obsolete` 用于盘点旧构建输出和无引用组件；加 `--execute` 才删除。计划及执行回执写入 `build/reports/cleanup/obsolete-*.json`，删除失败会记录原因并使命令失败。它保留 archives/releases、固定引用的组件及其递归依赖、catalog 指定路径、Git 工作树、文档引用的运行证据，以及 vendor、源码和 WAD 输入。可清理项包括已知旧实验目录、顶层散落日志、无引用 store 组件、对应失效索引/候选引用和有 result.json 的旧运行目录。未知目录保留。历史报告引用的顶层散落文件需要先归档；该命令不会自动打包这些文件。清理前必须审阅计划。`clean work` 单独管理可重建工作缓存，`clean <ID>` 仍按下述登记规则执行。
 
-代码变更先提交。系统包发布的 RELEASES.yaml 条目、system/v<版本> tag 和 HEAD 必须一致，mini.py release create 输出 releases/system/v<版本>/<配置>/。不发布新系统包的代码提交使用 --snapshot，输出 archives/v<版本>-<Git hash>/<配置>/；文档提交只保存范围记录。两种最终产物均保留二进制、报告、参数和复现输入，不可覆盖；每个文件有 SHA256，release.json 只有完整生成后才标 complete。组件版本与系统包见 [版本追溯](version-history.md)。
+只有明确要求正式 release 时才执行完整发布验收和归档；普通代码或文档提交不强制生成范围记录、构建产物或快照。正式系统包的 RELEASES.yaml 条目、system/v<版本> tag 和 HEAD 必须一致，mini.py release create 输出 releases/system/v<版本>/<配置>/。用户明确要求保留提交快照时才使用 --snapshot，输出 archives/v<版本>-<Git hash>/<配置>/。这些最终产物保留二进制、报告、参数和复现输入，不可覆盖；每个文件有 SHA256，release.json 只有完整生成后才标 complete。组件版本与系统包见 [版本追溯](version-history.md)。
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py builds clean <中间构建ID>          # 先列出清理目标

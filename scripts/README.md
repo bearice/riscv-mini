@@ -89,7 +89,7 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 
 | 任务 | 实现或专项工具 | 使用条件 / 文档 |
 | --- | --- | --- |
-| 环境初始化 | `bootstrap.ps1`、`configure_tools.py`、`env.ps1`、`doctor.py` | [开发环境](../README.md)；`keep_awake.ps1` 仅为长任务保持主机唤醒 |
+| 环境初始化 | `bootstrap.ps1`、`tools/configure_tools.py`、`env.ps1`、`tools/doctor.py` | [开发环境](../README.md)；`tools/keep_awake.ps1` 仅为长任务保持主机唤醒 |
 | FPGA 配置与 CPU 生成 | `mini.py build system`、`mini.py build matrix`、`mini.py build cpu --generate`、`mini.py build cpu-gcb`、`mini.py build cpu-qualification`、`test_cpu_fence.py` | [构建 skill](../.agents/skills/riscv-mini-build/SKILL.md)；参数扫描和 ISA 改动用这些专项工具 |
 | 构建身份、复现和清理 | `mini.py builds`、`build_records.py`、`build_recipe.py` | [产物组织](../docs/build-artifacts.md)；records/recipe 为内部模块；clean 默认仅列计划，保护固定版本和发布包 |
 | 启动镜像与串口协议 | `boot_upload.py`、`boot_image.py`、`boot_size.py` | [bootloader](../docs/bootloader.md)；旧 install 仅适用于 ROM，XIP 更新用正式入口 |
@@ -99,7 +99,7 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 | OpenSBI / U-Boot | `mini.py build opensbi`、`opensbi_verify.py`、`mini.py build uboot`、`uboot_verify.py` | [OpenSBI 与 U-Boot 移植](../docs/opensbi-port.md)；需相应源树和工具链 |
 | 外设专项验收 | `sd_verify.py`、`sd_clock_verify.py`、`ethernet_verify.py`、`raw_icmp.py`、`audio_verify.py`、`audio_capture.py` | 查工具 `--help`；raw_icmp 为网络验收实现；网络、音频、SD 的外部条件不会由一般板测推断 |
 | 性能测量与比较 | `benchmark.py`、`performance_report.py` | [性能 skill](../.agents/skills/riscv-mini-benchmark/SKILL.md)；加载身份与测量身份须匹配，显式候选/基线 |
-| 提交、版本与发布 | `prepare_commit.py`、`versions.py`、`mini.py release create` | [提交 SOP](../docs/pre-commit-sop.md)、[版本历史](../docs/version-history.md)；与日常板子更新是不同任务 |
+| 提交、版本与发布 | 普通提交直接使用 Git；`tools/prepare_commit.py` 为可选记录；`mini.py release create` 用于显式发布 | [轻量提交 / release SOP](../docs/pre-commit-sop.md)、[版本历史](../docs/version-history.md)；完整验收与归档仅用于正式 release |
 | Nyan Cat 素材 | `mini.py build nyancat` | 生成应用素材，非板子更新入口 |
 
 `mini_ops/` 是正式入口的内部实现：产物解析、构建配置、板端流程和探针编译。不要另写临时 UART/Gowin 探针；补充能力时进入这些模块，给任务入口增加支持条件和回归。

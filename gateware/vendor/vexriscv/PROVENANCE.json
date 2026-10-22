@@ -16,17 +16,20 @@
   "files": {
     "VexRiscv_Mmu.v": {
       "sha256": "199fe5d4b88da8015730496f50637469d8346331e9db0d4f43088d122445c04d",
+      "hash_normalization": "lf",
       "bytes": 476174,
       "module": "VexRiscv",
       "protected": false
     },
     "VexRiscv_Mmu.yaml": {
       "sha256": "a5259d1e179a2e86dc102aba88ad6ea69b31af0b9cdc7515fafc9157bb6ee983",
+      "hash_normalization": "lf",
       "bytes": 143,
       "note": "VexRiscv iBus BusReport (32-byte lines, 2048-byte cache), consumed by LiteX when the external variant is used"
     },
     "LICENSE.VexRiscv": {
-      "sha256": "42f28d2bdd58dfc05448f8111ae73e85377edf21891fdfc89981bce27aac4508",
+      "sha256": "230178ba3f6cb6cf94ec301a9208fa6870e62c1ed83f20543f059622c3619760",
+      "hash_normalization": "lf",
       "note": "MIT, Copyright (c) 2016 Spinal HDL contributors"
     }
   },

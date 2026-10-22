@@ -28,6 +28,7 @@ def git(*args, root=ROOT):
 
 def source_identity(root=ROOT):
     """Hash build inputs, including dirty/untracked code, independently of docs."""
+    from scripts.modular.storage import source_bytes
     names = set(git('ls-files', '-z', root=root).decode().split('\0'))
     names.update(git('ls-files', '--others', '--exclude-standard', '-z', root=root).decode().split('\0'))
     digest = hashlib.sha256()
@@ -36,7 +37,7 @@ def source_identity(root=ROOT):
             continue
         path = root / name
         digest.update(name.encode() + b'\0')
-        digest.update(path.read_bytes() if path.is_file() else b'<deleted>')
+        digest.update(source_bytes(path) if path.is_file() else b'<deleted>')
     return dict(commit=git('rev-parse', 'HEAD', root=root).decode().strip(),
                 dirty=bool(git('status', '--porcelain', root=root)),
                 inputs_sha256=digest.hexdigest())

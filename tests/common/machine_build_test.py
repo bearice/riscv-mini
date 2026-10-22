@@ -74,11 +74,47 @@ class MachineBuildTests(unittest.TestCase):
         self.assertFalse(run.result['board_identity_confirmed'])
         self.assertFalse((self.store.build / 'refs/current.json').exists())
 
+    def test_payload_uses_explicit_vendor_root_for_build_and_plan(self):
+        artifact = dict(component='payload', digest='a' * 64)
+        for command in ('build', 'plan'):
+            with self.subTest(command=command), mock.patch(
+                    'scripts.modular.machines.mega138k_ae350.ae350.build',
+                    return_value=artifact) as backend:
+                ref, _ = self.run_target('payload', command)
+                self.assertEqual(ref, artifact)
+                backend.assert_called_once()
+                self.assertEqual(backend.call_args.args[2].reference_root, self.vendor)
+                self.assertEqual(backend.call_args.args[2].target, 'payload')
+                self.assertEqual(backend.call_args.args[-1], command == 'plan')
+
     def test_repeated_build_reuses_the_same_inputs(self):
         first, _ = self.run_target()
         second, run = self.run_target()
         self.assertEqual(first, second)
         self.assertEqual(run.result['steps'][0]['status'], 'REUSE')
+
+    def test_ae350_eol_changes_reuse_and_cold_capture_the_same_artifact(self):
+        first, _ = self.run_target()
+        paths = [p for p in self.vendor.rglob('*') if p.is_file()]
+        paths += [self.root / 'gateware/boards/mega138k_pro/board.json',
+                  self.root / 'gateware/machines/mega138k_ae350/machine.json']
+        for path in paths:
+            path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+        second, run = self.run_target()
+        self.assertEqual(second, first)
+        self.assertEqual(run.result['steps'][0]['status'], 'REUSE')
+        with mock.patch.object(self.store, 'lookup', return_value=None):
+            third, _ = self.run_target()
+        self.assertEqual(third, first)
+        self.store.get(first, recursive=True)
+
+    def test_20k_hardware_key_ignores_eol(self):
+        from scripts.modular.machines.primer20k_vexriscv.hardware import source_files
+        before = source_files(self.root)
+        for name in PRIMER20K_CLOSURE:
+            path = self.root / name
+            path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+        self.assertEqual(source_files(self.root), before)
 
     def test_jtag_cannot_take_camera_pins(self):
         path = self.root / 'gateware/boards/mega138k_pro/board.json'

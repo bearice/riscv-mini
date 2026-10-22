@@ -86,11 +86,12 @@ def import_legacy(store, name, run):
     versions = v['component_versions']
     cpu_path = path / 'inputs/cpu' / Path(v['cpu_verilog']).name if v.get('cpu_verilog') else None
     if cpu_path and not cpu_path.is_file(): cpu_path = Path(v['cpu_verilog'])
+    from scripts.modular.storage import source_file_hash
     legacy_key=digest(dict(validation=file_hash(path/'validation.json'),csr=file_hash(path/'csr.json'),
                           contract=hardware(csr,config),
                           cpu=file_hash(cpu_path) if cpu_path else None,
                           generator=file_hash(cpu_path.parent/'generator.json') if cpu_path and (cpu_path.parent/'generator.json').is_file() else None,
-                          importer={name:file_hash(Path(__file__).parent/name) for name in ('system.py','cpu.py','contracts.py')}))
+                          importer={name:source_file_hash(Path(__file__).parent/name) for name in ('system.py','cpu.py','contracts.py')}))
     cached=store.build/'index/legacy-imports'/(legacy_key+'.json')
     if cached.is_file():
         ref=read(cached);store.get(ref,recursive=True)

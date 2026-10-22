@@ -70,13 +70,13 @@ SD lite 与 LCD 分别使用 32-bit / 16-bit 客户端接口，由 [共享内存
 cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 .\scripts\bootstrap.ps1          # 可重复执行；缺工具时传 -GowinBin / -RiscvBin
 . .\scripts\env.ps1
-& $MiniPython .\scripts\doctor.py
+& $MiniPython .\scripts\tools\doctor.py
 & $MiniPython .\scripts\mini.py build system --synthesize
 ```
 
-`build.py` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件，两种方式都不自动下载板卡。默认产物在 `build/runs/<时间>-<Git版本>-<配置>-<用途>/`：boot ELF/map/bin、DDR app ELF/map/bin/img、CSR、含 boot ROM 的 RTL、Gowin 工程和 `validation.json`。`validation.json` 的 `firmware_sizes` 记录两级固件的 text/data/BSS 与二进制大小；综合构建记录实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 与全部时钟资源，缺失必要资源或 setup/hold 报告会使构建失败。`board_test` 字段只表示构建脚本未做上板测试。构建把编译器临时目录重定向到 `build/.tmp`，因此 `%TEMP%` 不可写也不会影响构建。
+`mini.py build system` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件，两种方式都不自动下载板卡。工作目录统一为 `build/work/<machine>/<target>/<workspace>`，成功产物进入 `build/store/<component>/<digest>`，构建收据和日志进入 `build/runs/<run-id>`。日常构建不传 `--output-dir`；实验用 `--workspace`，用途用 `--purpose`。编译器临时目录位于组件工作目录的 `tmp/`。完整目录约定见[组件构建](component-builds.md#目录所有权)。
 
-CPU RTL 缺失时构建会提示先运行 `scripts/mini.py build cpu --generate`（需要兼容的 VexRiscv 源码 checkout、Java 8、sbt-launch 1.9.7）。`bootstrap.ps1` 的 smoke 构建使用 `--profile minimal` 写入 `build/bootstrap-smoke`，只依赖 `pythondata-cpu-vexriscv` 自带的 lite CPU RTL，全新 checkout 无需先生成 CPU RTL。
+`bootstrap.ps1` 的 smoke 构建使用 `--profile minimal --purpose bootstrap-smoke`，沿用受管理的 work/store/runs 目录，只依赖 `pythondata-cpu-vexriscv` 自带的 lite CPU RTL，全新 checkout 无需先生成 CPU RTL。full 配置使用已入库的生产 CPU；调整 CPU 参数时再通过 `mini.py build cpu --generate` 生成。
 
 全新 checkout 在 Windows 上的环境前提：`git config --global core.longpaths true`（否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败：`Filename too long` → `fatal: fetch-pack: invalid index-pack output`）；全局 uv 缓存不可用时把 `UV_CACHE_DIR` 指到短路径，例如 `$env:UV_CACHE_DIR='C:\uv-cache-mini'`。
 

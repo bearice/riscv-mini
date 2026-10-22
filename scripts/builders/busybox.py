@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
 from scripts.builders.linux import ROOT, wsl_path
+from scripts.modular.storage import source_file_hash, file_hash, SOURCE_HASH_FORMAT
 
 SOURCES = {
     'musl-1.2.5.tar.gz': ('https://musl.libc.org/releases/', 'a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4'),
@@ -58,7 +59,8 @@ def build(args, run=None):
         previous = json.loads((out/'validation.json').read_text())
         inputs = {k.replace('\\','/'):v for k,v in previous['inputs'].items()}
         config = ROOT/'firmware/linux/busybox/busybox.config'
-        if inputs.get('firmware/linux/busybox/busybox.config') != hashlib.sha256(config.read_bytes()).hexdigest():
+        input_hash = source_file_hash(config) if previous.get('source_hash_format') == SOURCE_HASH_FORMAT else file_hash(config)
+        if inputs.get('firmware/linux/busybox/busybox.config') != input_hash:
             raise ValueError('BusyBox config changed; a full rebuild is required')
     cache = ROOT/'build/cache/upstream'
     cache.mkdir(parents=True,exist_ok=True)
@@ -148,7 +150,8 @@ riscv64-elf-gcc --version > "$OUT/toolchain.txt"
     metadata = dict(busybox_version='1.37.0', musl_version='1.2.5', abi='ilp32',
                     isa='RV32IM BusyBox + RV32IMA musl; no C/FPU', static=True, board_verified=False, archive_entries=entry_count,
                     sources={n:d for n,(_,d) in SOURCES.items()},
-                    inputs={str(f.relative_to(ROOT)).replace('\\','/'):hashlib.sha256(f.read_bytes()).hexdigest()
+                    source_hash_format=SOURCE_HASH_FORMAT,
+                    inputs={str(f.relative_to(ROOT)).replace('\\','/'):source_file_hash(f)
                             for f in list((ROOT/'firmware/linux/busybox').rglob('*'))+[Path(__file__),ROOT/'scripts/mini.py'] if f.is_file()},
                     artifacts={n:dict(bytes=(out/n).stat().st_size,sha256=hashlib.sha256((out/n).read_bytes()).hexdigest())
                                for n in ('busybox','initrd.cpio','initrd.cpio.gz','.config')})

@@ -31,7 +31,7 @@ def add_targets(parser):
         if name in CORE or name == 'payload':
             target.add_argument('--ae350-profile', choices=('ddr',), default='ddr',
                                 help='AE350 DDR memory platform')
-        if name in CORE or name == 'machine-description':
+        if name in CORE or name in ('machine-description', 'payload'):
             target.add_argument('--reference-root', type=Path, help='AE350 vendor input directory; archived by content, never an unidentified dependency')
         if name == 'machine-description':
             continue

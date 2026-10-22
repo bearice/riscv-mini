@@ -4,7 +4,7 @@ import shlex
 from pathlib import Path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
-from scripts.modular.storage import file_hash, read
+from scripts.modular.storage import file_hash, text_file_hash, read
 
 PIPELINE = ('relaxed_pc_calculation', 'extra_fetch_stage', 'two_cycle_icache', 'injector_register')
 VARIANT = ('mmu', 'fpu', 'dcache', 'compressed', 'bitmanip', 'single_cycle_shift', 'single_cycle_muldiv')
@@ -23,7 +23,11 @@ def locked_cpu(path):
     missing = [k for k in PIPELINE if k not in pipeline] + [k for k in VARIANT if k not in variant]
     if missing:
         raise ValueError('Incomplete CPU configuration: ' + ', '.join(missing))
-    if variant.get('sha256') != file_hash(path):
+    normalization = variant.get('hash_normalization')
+    if normalization not in (None, 'lf'):
+        raise ValueError('Unsupported CPU hash normalization: ' + str(normalization))
+    rtl_hash = text_file_hash(path) if normalization == 'lf' else file_hash(path)
+    if variant.get('sha256') != rtl_hash:
         raise ValueError('CPU RTL differs from generator metadata: ' + str(path) +
                          '; regenerate with mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv')
     rtl = path.read_text(encoding='utf-8')
@@ -41,7 +45,7 @@ def locked_cpu(path):
         raise ValueError('CPU command disagrees with MMU setting')
     if options.get('--iCacheSize')!='2048' or options.get('--dCacheSize')!='2048':
         raise ValueError('Unsupported/unrecorded CPU cache configuration')
-    return dict(schema=1, rtl_sha256=file_hash(path), pipeline={k: pipeline[k] for k in PIPELINE},
+    return dict(schema=1, rtl_sha256=rtl_hash, pipeline={k: pipeline[k] for k in PIPELINE},
                 variant={k: variant[k] for k in VARIANT}, command=commands[0],
                 upstream_generator_sha256=data.get('upstream_generator_sha256'),
                 high_mmio_xip=data.get('high_mmio_xip', False),

@@ -1,28 +1,22 @@
 ---
 name: riscv-mini-commit
-description: 在 TangPrimer-20K/riscv-mini 审阅并整理 Git 提交，执行适用验证、生成改动记录、校验暂存指纹并提交；按代码发布与文档提交规则维护 changelog。
+description: 在 riscv-mini 审阅并完成普通 Git 提交；普通提交只做基本 Git 检查，完整验收与归档仅用于明确的正式 release。
 ---
 
 # 整理与提交
 
-在 riscv-mini 仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
+先确认仓库、Git 状态与本次改动，读取 `docs/pre-commit-sop.md`。Linux/NixOS 使用项目 Nix shell 中的 Python；Windows 使用 `.venv/Scripts/python.exe`。
 
-提交前读取 `docs/pre-commit-sop.md`；代码发布分配版本时读取 `docs/version-history.md`。
+## 普通提交
 
-先按 SOP 完成适用检查及人工审阅。显式暂存本次文件，再生成记录：
+1. 审阅 diff、新增文件和本次行为，明确选择暂存文件。
+2. 审阅 `git diff --cached`，运行 `git diff --cached --check`。
+3. 写清提交说明，执行 Git commit 并检查状态；推送按用户要求。
 
-```powershell
-.venv/Scripts/python.exe scripts/tools/prepare_commit.py --title '<行为变化>' --change '<变化与原因>' `
-  --checks build/reports/checks/workflow.json --output reports/changes/<本次记录>.md
-git add reports/changes/<本次记录>.md reports/changes/<本次记录>.json
-git diff --cached --check
-.venv/Scripts/python.exe scripts/tools/prepare_commit.py --title verified --change verified `
-  --output reports/changes/<本次记录>.md --verify
-git commit -m '<本次提交说明>'
-```
+普通提交不要求测试、构建、PnR、实板、性能报告、改动记录、`prepare_commit.py` 或本地暂存指纹，不改版本、CHANGELOG 或发布 tag，也不在提交后自动生成快照。已有结果如实说明即可；只完成用户另行要求或解决当前问题所需的针对性检查，不为提交补齐 release 验收。
 
-硬件/固件提交还需为 prepare 指定本次 `--build` 和 `--performance-report`。暂存内容变化后重新 prepare；本地指纹丢失也重新生成。报告写行为、验收和限制，文件清单与精确范围直接查 Git。
+完成条件是本次提交完成；不要自动继续执行 release skill。
 
-产品代码发布只递增被改动组件在 `VERSIONS.yaml` 里的版本（rtl/bootloader/hal/bios/opensbi/uboot 各自独立），prepare 增加 `--component <组件> --release-version <版本> --write-changelog`（版本必须等于该组件在 `VERSIONS.yaml` 的值），提交后创建命名空间 tag `<component>/v<版本>`。系统包版本不在此递增——它由 `RELEASES.yaml` 在发布时定义，见 `riscv-mini-release/SKILL.md`。文档、报告与流程提交直接按第 1、3 节确认范围并提交，不生成 `reports/changes/` 记录，版本和 CHANGELOG 不增加条目。推送按用户要求执行。
+## 只有明确发布时
 
-代码提交后继续生成最终产物，读取同级 `riscv-mini-release/SKILL.md`。
+用户明确要求正式 release 才读取同级 `riscv-mini-release/SKILL.md`，按整个发布范围执行适用验收、版本管理和最终归档。可选的 `prepare_commit.py` 默认轻量模式；`--release` 或 `--release-version` 才启用发布检查，普通提交无需调用。

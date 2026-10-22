@@ -11,7 +11,7 @@ description: 在 TangPrimer-20K/riscv-mini 选择和执行主机、RTL、DFI 回
 
 日常上板入口与支持条件读取 `scripts/README.md`。恢复用 `scripts/mini.py board recover --build <ID>`；临时运行用 `board run`；完整功能验收用 `board verify --suite firmware`；精确 Flash 读回用 `--suite flash`，不写 Flash。每次日志在 `build/operations/`；持久写入仅在用户明确要求时用 `board update`，不要拼接 Gowin/临时串口探针。**给 BIOS 写二级程序（新载荷）或这类程序上板时，先读 `docs/bios-payload-porting.md`**：浮点前提、ecall 服务选择、主循环归属、SD/TFTP 准备、以及“不要重置状态机/不要跨调用缓存文件句柄”这些已踩过的坑都在那里。
 
-按改动选择验证层级，使用 SOP 的验证矩阵。常用主机与 L2 检查：
+按用户要求或当前问题选择验证层级；正式 release 使用 SOP 的发布验证矩阵。普通提交不自动触发本 skill，也不要求补齐完整验收。常用主机与 L2 检查：
 
 ```powershell
 .venv/Scripts/python.exe tests/common/config_test.py
@@ -19,7 +19,7 @@ description: 在 TangPrimer-20K/riscv-mini 选择和执行主机、RTL、DFI 回
 .venv/Scripts/python.exe tests/common/workflow_test.py --report build/reports/checks/workflow.json
 ```
 
-CPU/DDR/外设改动另外选择相关 `tests/*_verilog_test.py`、DFI 回归或 `scripts/primer20k_vexriscv/test_cpu_fence.py`；先查脚本参数和所需仿真工具。模型通过后仍需实际配置 PnR 和受影响板测。
+CPU/DDR/外设问题可选择相关 `tests/*_verilog_test.py`、DFI 回归或 `scripts/primer20k_vexriscv/test_cpu_fence.py`；先查脚本参数和所需仿真工具。正式发布或用户明确要求完整硬件验收时，模型通过后还需实际配置 PnR 和受影响板测；普通开发与提交不自动追加这些任务。
 
 ```powershell
 .venv/Scripts/python.exe scripts/mini.py board verify --build <本次完整ID> --suite firmware

@@ -8,6 +8,7 @@ import json
 import shlex
 import os
 from pathlib import Path
+from scripts.modular.storage import source_file_hash, SOURCE_HASH_FORMAT
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = '6.12.112'
@@ -32,7 +33,8 @@ def build(args, run=None):
                       artifacts={name: hashlib.sha256((out / name).read_bytes()).hexdigest()
                                  for name in files}, board_verified=False, board_devices_verified=False)
         inputs = sorted((ROOT / 'firmware/linux').rglob('*')) + [Path(__file__)]
-        record['port_inputs'] = {str(path.relative_to(ROOT)).replace('\\', '/'): hashlib.sha256(path.read_bytes()).hexdigest()
+        record['source_hash_format'] = SOURCE_HASH_FORMAT
+        record['port_inputs'] = {str(path.relative_to(ROOT)).replace('\\', '/'): source_file_hash(path)
                                 for path in inputs if path.is_file()}
         if args.board_evidence:
             evidence = json.loads(args.board_evidence.read_text())

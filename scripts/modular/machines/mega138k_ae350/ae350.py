@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
-from scripts.modular.storage import canonical, digest, file_hash, write, read, text_file
+from scripts.modular.storage import canonical, digest, file_hash, source_file_hash, source_bytes, SOURCE_HASH_FORMAT, write, read, text_file
 from scripts.modular.workspace import working, clear_generated, invalidate_pnr, gateware_files, cached_implementation, record_implementation, remove_file
 from scripts.modular.environment import discover, identity, python_packages, output
 from scripts.modular.compile import BASE_FLAGS, ROLES, ninja_build
@@ -116,7 +116,7 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
     if profile not in PROFILES:
         raise ValueError('Unknown AE350 profile: ' + profile)
     files = _inputs(store, profile=profile)
-    hashes = {name: file_hash(path) for name, path in files.items()}
+    hashes = {name: source_file_hash(path) for name, path in files.items()}
     env = discover(ROLES, store.root)
     flags = [*BASE_FLAGS, '-march=rv32ima_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none']
@@ -124,7 +124,7 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
     ae350_map.require()
     config = dict(schema=1, machine='mega138k_ae350', profile='AE350-ROM-bootloader',
                   purpose='AE350-ROM-bootloader',
-                  sources=hashes, flags=flags, tools=identity(env),
+                  source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, flags=flags, tools=identity(env),
                   rom_base=ae350_map.ROM_BASE, rom_bytes=ae350_map.ROM_SIZE,
                   dlm_base=ae350_map.DLM_BASE, dlm_bytes=ae350_map.DLM_SIZE,
                   results_base=ae350_map.RESULTS_BASE,
@@ -164,7 +164,7 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         rom_limit = ae350_map.ROM_CODE_BYTES
         if '0x80000000' not in attributes or (work / 'boot.bin').stat().st_size > rom_limit:
             raise ValueError('Invalid AE350 ROM image entry or size (limit %d bytes)' % rom_limit)
-        snapshot = {name: path.read_bytes() for name, path in files.items()}
+        snapshot = {name: source_bytes(path) for name, path in files.items()}
         import hashlib
         if any(hashlib.sha256(data).hexdigest() != hashes[name] for name, data in snapshot.items()):
             raise ValueError('AE350 firmware inputs changed during build')
@@ -250,11 +250,11 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
     if profile not in PROFILES:
         raise ValueError('Unknown AE350 profile: ' + profile)
     files = _inputs(store, hardware=True, profile=profile)
-    hashes = {name: file_hash(path) for name, path in files.items()}
+    hashes = {name: source_file_hash(path) for name, path in files.items()}
     from gateware.machines.mega138k_ae350 import address_map as ae350_map
     from scripts.modular.machines.mega138k_ae350.ddr_inputs import DDR_PROFILE
     config = dict(schema=1, machine='mega138k_ae350', profile='AE350-DDR3-' + DDR_PROFILE['name'],
-                  sources=hashes, cpu_integration='AE350-vendor-ITCM-wrapper',
+                  source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, cpu_integration='AE350-vendor-ITCM-wrapper',
                   instruction_memory='vendor-ITCM-bootstrap+hard-ILM', data_memory='hard-DLM+DDR3-IP',
                   fabric_bus='native-AHB-burst+async-FIFO', data_memory_clock_hz=ae350_map.DATA_HZ,
                   tools=identity(discover(['python', 'gowin'], store.root)), packages=python_packages(),
@@ -308,7 +308,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
         # the encrypted sources so no stale installation config can win.
         for name in ('riscv_ae350_top.v', 'riscv_ae350_soc.v', 'gw_itcm.v', 'gw_dtcm.v',
                      'riscv_ae350_config.v', 'gw_dtcm_config.v'):
-            (ip_out / name).write_bytes((vendor / name).read_bytes())
+            (ip_out / name).write_bytes(source_bytes(vendor / name))
         (ip_out / 'gw_itcm_config.v').write_text(
             '`define ITCM_SIZE 13\n`define ITCM_INIT_PATH "%s"\n' % init.as_posix(), encoding='utf-8')
         soc = DDRSoC(board, soc_sources_dir=ip_out)
@@ -362,8 +362,9 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
             if not bitstream.is_file():
                 raise ValueError('AE350 Gowin did not produce a bitstream; inspect ' + str(work / 'gowin.log'))
             write(work / 'timing.json', timing_report(work))
-        generated = {p.relative_to(work).as_posix(): p for p in gateware_files(work, synthesize)}
-        generated.update({p.relative_to(work).as_posix(): p for directory in (init, ip_out)
+        generated = {p.relative_to(work).as_posix(): p if 'impl' in p.relative_to(work).parts else source_bytes(p)
+                     for p in gateware_files(work, synthesize)}
+        generated.update({p.relative_to(work).as_posix(): source_bytes(p) for directory in (init, ip_out)
                           for p in directory.rglob('*') if p.is_file()})
         if synthesize:
             generated.update({'gowin.log': work / 'gowin.log', 'timing.json': work / 'timing.json',
@@ -372,7 +373,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
             generated.update({'logs/' + p.name: p for p in run.path.glob('gowin-attempt-*.log')})
         generated['memory-map.json'] = work / 'memory-map.json'
         import hashlib
-        snapshot = {name: path.read_bytes() for name, path in files.items()}
+        snapshot = {name: source_bytes(path) for name, path in files.items()}
         if any(hashlib.sha256(data).hexdigest() != hashes[name] for name, data in snapshot.items()):
             raise ValueError('AE350 RTL inputs changed during generation')
         generated.update(snapshot)
@@ -448,7 +449,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     files['inputs/source/gateware/boards/mega138k_pro/io_map.py'] = store.root / 'gateware/boards/mega138k_pro/io_map.py'
     files['inputs/source/gateware/boards/mega138k_pro/board.json'] = (
         store.root / 'gateware/boards/mega138k_pro/board.json')
-    hashes = {name: file_hash(path) for name, path in files.items()}
+    hashes = {name: source_file_hash(path) for name, path in files.items()}
     env = discover(ROLES, store.root)
     optimize = getattr(args, 'optimize', '-Os')
     if optimize not in ('-O0', '-O1', '-O2', '-O3', '-Os', '-Oz', '-Og'):
@@ -461,7 +462,7 @@ def payload(store, run, cpu, args, profile, plan=False):
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none',
              *['-D' + value for value in getattr(args, 'define', [])], *extra_flags]
     config = dict(schema=1, machine='mega138k_ae350', purpose='AE350-memory-diagnostics' if diagnostic else 'AE350-application',
-                  binary='outputs/payload.bin', translation_units=units, sources=hashes, tools=identity(env), flags=flags,
+                  binary='outputs/payload.bin', translation_units=units, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, tools=identity(env), flags=flags,
                   entry=ae350_map.DDR_CODE, max_bytes=ae350_map.DDR_CODE_MAX,
                   stack_top=ae350_map.PAYLOAD_STACK_TOP, image_abi=ae350_map.image_abi(),
                   parameters='outputs/parameters.json' if diagnostic else None,
@@ -490,8 +491,8 @@ def payload(store, run, cpu, args, profile, plan=False):
             if name.startswith('inputs/payload/'):
                 destination = staged / name.removeprefix('inputs/payload/')
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                if not destination.is_file() or destination.read_bytes() != path.read_bytes():
-                    destination.write_bytes(path.read_bytes())
+                if not destination.is_file() or destination.read_bytes() != source_bytes(path):
+                    destination.write_bytes(source_bytes(path))
         flags += ['-I' + str(staged / 'application')]
         flags += ['-I' + str(staged / sub) for sub in payload_dirs]
         flags += ['-I' + str(staged / ('include%d' % i)) for i in range(len(getattr(args, 'include_dir', [])))]
@@ -509,7 +510,7 @@ def payload(store, run, cpu, args, profile, plan=False):
         size = (work / 'payload.bin').stat().st_size
         if '0x%x' % ae350_map.DDR_CODE not in attrs or size > ae350_map.DDR_CODE_MAX:
             raise ValueError('Invalid AE350 payload entry or size')
-        snapshot = {name: path.read_bytes() for name, path in files.items()}
+        snapshot = {name: source_bytes(path) for name, path in files.items()}
         import hashlib
         if any(hashlib.sha256(data).hexdigest() != hashes[name] for name, data in snapshot.items()):
             raise ValueError('AE350 payload inputs changed during build')

@@ -32,18 +32,17 @@ if ($LASTEXITCODE -ne 0 -or $MiniLongPaths -notin @('true', '1')) {
     Write-Warning 'git core.longpaths is not enabled; uv git dependency clones can fail with "Filename too long". Run: git config --global core.longpaths true'
 }
 Invoke-MiniChecked -Executable $MiniUv -Arguments @('pip', 'sync', '--python', $MiniPython, (Join-Path $MiniRoot 'requirements.lock'))
-$MiniConfigureArgs = @((Join-Path $PSScriptRoot 'configure_tools.py'))
+$MiniConfigureArgs = @((Join-Path $PSScriptRoot 'tools/configure_tools.py'))
 if ($GowinBin) { $MiniConfigureArgs += @('--gowin-bin', $GowinBin) }
 if ($RiscvBin) { $MiniConfigureArgs += @('--riscv-bin', $RiscvBin) }
 Invoke-MiniChecked -Executable $MiniPython -Arguments $MiniConfigureArgs
 . (Join-Path $PSScriptRoot 'env.ps1')
-Invoke-MiniChecked -Executable $MiniPython -Arguments @((Join-Path $PSScriptRoot 'doctor.py'))
+Invoke-MiniChecked -Executable $MiniPython -Arguments @((Join-Path $PSScriptRoot 'tools/doctor.py'))
 if (-not $SkipSmoke) {
     # Smoke build uses the minimal profile: the lite core ships inside
     # pythondata-cpu-vexriscv, so a fresh checkout needs no generated CPU RTL.
-    # The default full profile (MMU+FPU) additionally requires
-    # mini build cpu --generate output in build/cpu-features.
+    # The full profile uses the production MMU CPU in gateware/vendor/vexriscv.
     Invoke-MiniChecked -Executable $MiniPython -Arguments @(
         (Join-Path $PSScriptRoot 'mini.py'), 'build', 'system', '--profile', 'minimal',
-        '--output-dir', (Join-Path $MiniRoot 'build/bootstrap-smoke'))
+        '--purpose', 'bootstrap-smoke')
 }

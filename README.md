@@ -112,10 +112,10 @@ Windows PowerShell 仍可使用独立 Python 环境、Gowin FPGA Designer 和 xP
 cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 .\scripts\bootstrap.ps1
 . .\scripts\env.ps1
-& $MiniPython .\scripts\doctor.py
+& $MiniPython .\scripts\tools\doctor.py
 & $MiniPython .\scripts\mini.py build system --synthesize
 # SPI 回退拥有相同 SD 引脚，需要重新下载匹配的 FPGA 配置和应用。
-& $MiniPython .\scripts\mini.py build system --sd-profile spi --output-dir build/spi --synthesize
+& $MiniPython .\scripts\mini.py build system --sd-profile spi --synthesize
 ```
 
 `bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。smoke 调用统一的 `mini.py build system --profile minimal`，使用随依赖分发的 lite CPU，无需已有 CPU 生成产物。日常固件更新用 `mini.py build bios --hardware current`，硬件改动用 `build system --hardware current --refresh-hardware`；只有 `--synthesize` 才运行 Gowin，构建不编程板子。

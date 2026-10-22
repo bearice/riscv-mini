@@ -1,5 +1,6 @@
 """Immutable artifacts, rebuildable indexes, and typed operation runs."""
 import hashlib
+import codecs
 import json
 import os
 import re
@@ -13,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 1
+SOURCE_HASH_FORMAT = 'sha256-text-eol-lf-v1'
 
 
 def canonical(value):
@@ -29,6 +31,46 @@ def file_hash(path):
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             h.update(block)
     return h.hexdigest()
+
+
+def normalize_text_eol(data):
+    """Canonical LF line endings, preserving all other bytes and final newlines."""
+    return data.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+
+
+def text_file_hash(path):
+    """Compatibility name for the shared build-input normalization policy."""
+    return source_file_hash(path)
+
+
+def normalize_source_bytes(data):
+    """Recognize text by content, never by filename; keep opaque inputs exact."""
+    for bom, encoding in ((codecs.BOM_UTF32_LE, 'utf-32-le'), (codecs.BOM_UTF32_BE, 'utf-32-be'),
+                          (codecs.BOM_UTF16_LE, 'utf-16-le'), (codecs.BOM_UTF16_BE, 'utf-16-be')):
+        if data.startswith(bom):
+            try:
+                text = data[len(bom):].decode(encoding)
+            except UnicodeError:
+                return data
+            if any(ord(c) < 32 and c not in '\t\n\r\v\f' for c in text):
+                return data
+            return bom + text.replace('\r\n', '\n').replace('\r', '\n').encode(encoding)
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError:
+        return data
+    if any(ord(c) < 32 and c not in '\t\n\r\v\f' for c in text):
+        return data
+    return normalize_text_eol(data)
+
+
+def source_bytes(path):
+    return normalize_source_bytes(Path(path).read_bytes())
+
+
+def source_file_hash(path):
+    """Build-input identity: canonical text EOL, exact binary bytes."""
+    return hashlib.sha256(source_bytes(path)).hexdigest()
 
 
 def read(path):

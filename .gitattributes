@@ -4,5 +4,5 @@
 # 只关闭空白检查，不改变换行符（不要在这里加 text/eol，那会重写全仓库内容）。
 firmware/apps/doom/** -whitespace
 
-# 生成的 CPU 出厂物按字节锁定：records 里记录的是 sha256，checkout 时不得改写行尾。
+# CPU 出厂物保持入库字节；文本来源哈希另外按 hash_normalization=lf 归一化 EOL。
 gateware/vendor/vexriscv/** -text

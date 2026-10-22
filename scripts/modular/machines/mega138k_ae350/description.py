@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
-from scripts.modular.storage import canonical, digest, file_hash, member, read, write
+from scripts.modular.storage import canonical, digest, source_file_hash, source_bytes, SOURCE_HASH_FORMAT, member, read, write
 from scripts.modular.environment import discover, identity
 from scripts.modular.machines.mega138k_ae350.ae350 import timing_report  # re-export for tools
 
@@ -110,7 +110,7 @@ def resolve(store, reference=None):
                        ('storage.py', store.root / 'scripts/modular/storage.py'),
                        ('environment.py', store.root / 'scripts/modular/environment.py')):
         files['inputs/build/' + name] = path
-    hashes = {name: file_hash(path) for name, path in sorted(files.items())}
+    hashes = {name: source_file_hash(path) for name, path in sorted(files.items())}
     external = []
     for name, path in vendor.items():
         if path.suffix.lower() not in ('.ipc', '.v', '.mod', '.sdc', '.cst'):
@@ -119,7 +119,7 @@ def resolve(store, reference=None):
             if re.search(r'[A-Za-z]:[/\\]', line):
                 external.append(dict(file=name, line=number, text=line.strip()))
     env = discover(['python', 'gowin'], store.root)
-    lock = dict(schema=1, machine=machine, board=board, sources=hashes,
+    lock = dict(schema=1, machine=machine, board=board, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes,
                 tools=identity(env), vendor_project_device=device,
                 evidence=dict(host_description=True, physical_board=False,
                               rtl_generated=False, synthesized=False, board_tested=False),
@@ -161,7 +161,7 @@ def execute(store, run, args, dry):
     run.step('machine-description', 'REUSE' if found else 'BUILD', found,
              reason='exact Board/Machine/vendor/tool input closure')
     if not dry and not found:
-        snapshot = {name: path.read_bytes() for name, path in files.items()}
+        snapshot = {name: source_bytes(path) for name, path in files.items()}
         if any(hashlib.sha256(data).hexdigest() != lock['sources'][name] for name, data in snapshot.items()):
             raise ValueError('Machine inputs changed during capture')
         current_lock, _ = resolve(store, getattr(args, 'reference_root', None))

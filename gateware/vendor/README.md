@@ -63,9 +63,9 @@ single-cycle 移位与乘除），与 AE350 的 DDR3 IP 同样按“出厂物 + 
 - `generator.json`：生成命令、`resolved_flags`、`fixed_parameters`（cache 大小、high-MMIO/XIP 内存图、
   CSR 的 time/TM 权限补丁）与 `source_lock`（生成器脚本/模板/上游 checkout 文件哈希、Java 与 sbt 身份）。
   构建前由 `scripts/modular/machines/primer20k_vexriscv/cpu.py:locked_cpu` 校验，文件缺失或被改动即报错。
-- `PROVENANCE.json`：来源、工具链与验证记录。
+- `PROVENANCE.json`：来源、工具链与验证记录。CPU RTL、YAML 和许可证的 `sha256` 在计算前将 CRLF/CR 统一为 LF，并以 `hash_normalization: "lf"` 标明；其它空白与文件末尾换行保留。`generator.json` 的 CPU RTL 哈希采用同样规则，生成、安装和构建校验均接受纯 EOL 差异。没有该字段的历史 CPU 记录仍按原始字节校验；历史 `source_lock` 不改写。store 归档与二进制校验保留实际字节哈希。
 
 调整参数后用
 `mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv --source <VexRiscv 源码>` 重新生成并入库；
-工具会同步更新 `generator.json` 与 `PROVENANCE.json` 的哈希，字节与已提交文件不一致时拒绝覆盖（确认后加 `--force`）。
+工具会同步更新 `generator.json` 与 `PROVENANCE.json` 的哈希，忽略 EOL 和下述 commit 头注释后仍与已提交内容不一致时拒绝覆盖（确认后加 `--force`）。
 VexRiscv 会把生成时的仓库 commit 写进文件头注释，因此跨 commit 比较时只有该注释行不同，其余内容逐字节一致。

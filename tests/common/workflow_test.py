@@ -1,6 +1,8 @@
 """Workflow gates: identity mismatch, bad performance, scope drift and replay/cleanup."""
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import subprocess
 import sys
@@ -17,6 +19,7 @@ from scripts.tools.build_recipe import create_recipe, reproduce, verify_recipe
 from scripts.mini_ops.catalog import clean_build
 from scripts.tools.performance_report import compare, load_measurements
 from scripts.tools.prepare_commit import scope
+from scripts.tools import prepare_commit as preparation
 from scripts.mini_ops.primer20k_vexriscv.release import bundle_mismatch, release_version, verify_bundle
 from scripts.tools.versions import COMPONENTS, bundle_external, bundle_versions, read_releases, read_versions
 
@@ -136,6 +139,101 @@ class WorkflowTests(unittest.TestCase):
         code.write_text(code.read_text()+'# second change\n')
         subprocess.run(['git','add','scripts'],cwd=self.root,check=True)
         self.assertNotEqual(a['patch_sha256'],scope(root=self.root)['patch_sha256'])
+
+    def review_scope(self, path='gateware/core.py'):
+        return dict(base='baseline', target='staged', patch_sha256='a'*64,
+                    files=[dict(status='M', path=path)])
+
+    def test_ordinary_commits_require_no_validation_receipts(self):
+        for path in ('gateware/core.py', 'firmware/main.c', 'docs/guide.md'):
+            with self.subTest(path=path), patch.object(preparation, 'scope', return_value=self.review_scope(path)), \
+                    patch.object(preparation, 'source_identity') as identity:
+                record = preparation.prepare('ordinary', ['reviewed change'])
+                self.assertFalse(record['release'])
+                self.assertEqual(record['mode'], 'staged review')
+                self.assertIsNone(record['checks'])
+                self.assertIsNone(record['build'])
+                identity.assert_not_called()
+
+    def test_release_requires_current_successful_checks(self):
+        with patch.object(preparation, 'scope', return_value=self.review_scope()), \
+                patch.object(preparation, 'source_identity', return_value=dict(inputs_sha256='current')):
+            for checks in (None, dict(passed=False), dict(passed=True, source_inputs_sha256='old')):
+                with self.subTest(checks=checks), self.assertRaisesRegex(ValueError, 'Matching successful check'):
+                    preparation.prepare('release', ['change'], checks=checks, release=True)
+
+    def test_release_rtl_keeps_hardware_and_performance_gates(self):
+        checks = dict(passed=True, source_inputs_sha256='current')
+        build = dict(status='board-qualified', source=dict(kind='captured', inputs_sha256='current'),
+                     bitstream_sha256='bits', image_sha256='image')
+        with patch.object(preparation, 'scope', return_value=self.review_scope()), \
+                patch.object(preparation, 'source_identity', return_value=dict(inputs_sha256='current')):
+            with self.assertRaisesRegex(ValueError, 'board-qualified'):
+                preparation.prepare('release', ['change'], checks=checks, release=True)
+            stale = dict(build, source=dict(kind='captured', inputs_sha256='old'))
+            with self.assertRaisesRegex(ValueError, 'Build inputs no longer match'):
+                preparation.prepare('release', ['change'], build=stale, checks=checks, release=True)
+            with self.assertRaisesRegex(ValueError, 'performance report'):
+                preparation.prepare('release', ['change'], build=build, checks=checks, release=True)
+            performance = self.root / 'performance.md'
+            performance.write_text('Reviewed performance result')
+            write_json(performance.with_suffix('.json'), dict(candidate=dict(
+                bitstream_sha256='bits', image_sha256='image')))
+            result = preparation.prepare('release', ['change'], build=build,
+                                         performance=performance, checks=checks, release=True)
+            self.assertTrue(result['release'])
+            self.assertEqual(result['mode'], 'release review')
+
+    def test_software_release_needs_checks_without_new_hardware(self):
+        with patch.object(preparation, 'scope', return_value=self.review_scope('firmware/main.c')), \
+                patch.object(preparation, 'source_identity', return_value=dict(inputs_sha256='current')):
+            result = preparation.prepare('release', ['change'],
+                checks=dict(passed=True, source_inputs_sha256='current'), release=True)
+            self.assertTrue(result['release'])
+            self.assertIsNone(result['build'])
+
+    def test_explicit_optional_evidence_cannot_claim_a_failed_check_passed(self):
+        with patch.object(preparation, 'scope', return_value=self.review_scope()):
+            with self.assertRaisesRegex(ValueError, 'Matching successful check'):
+                preparation.prepare('ordinary', ['change'], checks=dict(passed=False))
+
+    def test_release_version_alone_enables_release_validation(self):
+        argv = ['prepare_commit.py', '--title', 'release', '--change', 'change',
+                '--release-version', '1.2.3', '--output', str(self.root / 'review.md')]
+        with patch.object(preparation, 'ROOT', self.root), \
+                patch.object(preparation, 'scope', return_value=self.review_scope()), \
+                patch.object(sys, 'argv', argv):
+            with self.assertRaisesRegex(ValueError, 'Matching successful check'):
+                preparation.main()
+
+    def test_lightweight_record_cannot_be_promoted_to_release_verification(self):
+        output = self.root / 'review.md'
+        argv = ['prepare_commit.py', '--title', 'review', '--change', 'change',
+                '--verify', '--release', '--output', str(output)]
+        error = io.StringIO()
+        with patch.object(preparation, 'ROOT', self.root), patch.object(sys, 'argv', argv), \
+                contextlib.redirect_stderr(error):
+            write_json(preparation.review_receipt(output), dict(
+                preparation.scope_identity(self.review_scope()), release=False))
+            with self.assertRaises(SystemExit) as caught:
+                preparation.main()
+        self.assertEqual(caught.exception.code, 1)
+        self.assertIn('without release validation', error.getvalue())
+
+    def test_optional_review_still_detects_staged_drift(self):
+        output = self.root / 'review.md'
+        argv = ['prepare_commit.py', '--title', 'review', '--change', 'change',
+                '--verify', '--output', str(output)]
+        with patch.object(preparation, 'ROOT', self.root), patch.object(sys, 'argv', argv), \
+                patch.object(preparation, 'scope', return_value=self.review_scope()) as selected, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            write_json(preparation.review_receipt(output), dict(
+                preparation.scope_identity(self.review_scope()), release=False))
+            preparation.main()
+            selected.return_value = dict(self.review_scope(), patch_sha256='b'*64)
+            with self.assertRaises(SystemExit) as caught:
+                preparation.main()
+            self.assertEqual(caught.exception.code, 1)
     def test_dirty_recipe_replays_commit_patch_and_untracked_inputs(self):
         self.init_git()
         code=self.root/'scripts/build.py';code.write_text(code.read_text().replace('original','dirty'))

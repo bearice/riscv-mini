@@ -8,7 +8,7 @@ import sys
 import hashlib
 from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
-from scripts.modular.storage import ROOT, file_hash, read
+from scripts.modular.storage import ROOT, file_hash, source_file_hash, read
 
 COMMANDS = {'cc': 'gcc', 'cxx': 'g++', 'ar': 'ar', 'make': 'make', 'dtc': 'dtc',
             'clang': 'clang', 'lld': 'ld.lld', 'objcopy': 'llvm-objcopy', 'java': 'java'}
@@ -58,7 +58,7 @@ def discover(roles, root=ROOT):
                 details['specs_sha256']=hashlib.sha256(output([path,'-dumpspecs']).encode()).hexdigest()
                 include=Path(output([path,'-print-file-name=include']))
                 if not include.is_dir():raise ValueError('Missing compiler builtin headers')
-                headers={p.relative_to(include).as_posix():file_hash(p) for p in sorted(include.rglob('*')) if p.is_file()}
+                headers={p.relative_to(include).as_posix():source_file_hash(p) for p in sorted(include.rglob('*')) if p.is_file()}
                 from scripts.modular.storage import digest
                 details['builtin_headers_sha256']=digest(headers)
         elif role == 'gowin':

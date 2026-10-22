@@ -13,6 +13,7 @@
     "VexRiscv_Mmu": {
       "path": "gateware/vendor/vexriscv/VexRiscv_Mmu.v",
       "sha256": "199fe5d4b88da8015730496f50637469d8346331e9db0d4f43088d122445c04d",
+      "hash_normalization": "lf",
       "mmu": true,
       "fpu": false,
       "dcache": true,

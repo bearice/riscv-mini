@@ -4,7 +4,7 @@ from gateware.machines.primer20k_vexriscv.features import Features
 from gateware.machines.primer20k_vexriscv.config import storage_profile, cpu_configuration, cpu_capabilities, cpu_isa, pll_count, vendored_cpu_path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
-from scripts.modular.storage import canonical, digest
+from scripts.modular.storage import canonical, digest, source_bytes
 from scripts.modular.machines.primer20k_vexriscv.cpu import locked_cpu
 from scripts.modular.machines.primer20k_vexriscv.contracts import hardware
 
@@ -59,9 +59,9 @@ def resolve(store, run, args, base=None, plan=False):
         cpu_path = cpu_path.resolve(); lock = locked_cpu(cpu_path)
         features, variant, _ = cpu_configuration(features, overrides, cpu_path, args.cpu_variant)
         capabilities = cpu_capabilities(cpu_path)
-        files = {'outputs/' + cpu_path.name: cpu_path, 'inputs/generator.json': cpu_path.parent / 'generator.json',
+        files = {'outputs/' + cpu_path.name: source_bytes(cpu_path), 'inputs/generator.json': source_bytes(cpu_path.parent / 'generator.json'),
                  'cpu.lock.json': canonical(lock)}
-        if cpu_path.with_suffix('.yaml').is_file(): files['outputs/' + cpu_path.with_suffix('.yaml').name] = cpu_path.with_suffix('.yaml')
+        if cpu_path.with_suffix('.yaml').is_file(): files['outputs/' + cpu_path.with_suffix('.yaml').name] = source_bytes(cpu_path.with_suffix('.yaml'))
         cpu_ref=store.lookup('cpu',digest(lock))
         if not plan and not cpu_ref: cpu_ref = store.publish('cpu', digest(lock), files, config=lock)
     elif previous:

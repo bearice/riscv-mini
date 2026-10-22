@@ -19,7 +19,7 @@ python scripts/mini.py build system --hardware current
 
 ## 独立目标与硬件生成
 
-138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建厂商 ITCM 启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断。构建与板测使用准确产物身份，不消费 20K current。恢复在当前平台执行，不再构建或切换到已退役的 P1 ROM/SRAM 镜像。
+138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建厂商 ITCM 启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断。厂商参考工程不在默认位置时，这些目标均可用 `--reference-root <ae350_customized_demo目录>` 显式选择。构建与板测使用准确产物身份，不消费 20K current。恢复在当前平台执行，不再构建或切换到已退役的 P1 ROM/SRAM 镜像。
 
 ```text
 python scripts/mini.py build hal-sdk --hardware current
@@ -55,6 +55,8 @@ python scripts/mini.py build busybox
 
 `--output-dir` 可为系统创建含 validation/catalog 的输出视图，为独立组件导出其产物树，为上游或 payload 指定工作/输出目录。日常操作使用 run 中的 system 或 artifact 身份；目录名不承担兼容性判断。构建不会修改 current 或编程板子。
 
+日常构建、bootstrap 和构建验收不传 `--output-dir`，统一使用下表的受管理目录，不在 `build/` 顶层创建按任务命名的目录。实验使用 `--workspace <名称>` 选择工作缓存，使用 `--purpose <用途>` 标注收据；只有明确需要额外交付文件或兼容工具视图时才指定 `--output-dir`。
+
 ## 目录所有权
 
 | 位置 | 内容 |
@@ -69,6 +71,8 @@ python scripts/mini.py build busybox
 | `build/releases` | 导出的自包含产物包 |
 
 完成产物按内容清单计算 SHA256，文件或 manifest 被修改后复用/导出/恢复均拒绝。同 key 生成不同产物会保留冲突并失败，不覆盖旧结果。输入源码在构建期间变化也会拒绝发布。
+
+所有 machine 的构建输入哈希统一使用 `sha256-text-eol-lf-v1`：公共层按内容识别 UTF-8（可带 BOM）及带 BOM 的 UTF-16/32 文本，将 CRLF/CR 转为 LF；不改变其它空白、编码、BOM 或末尾换行。规则不依赖扩展名。包含二进制控制字符或无法按上述编码解码的输入保留原字节。源码快照同步归一化，使纯 EOL 变化对应相同的输入 key 和快照。编译器/工具、下载压缩包、二进制产物及 store/导出包完整性清单仍使用原始字节 SHA256；已保存的历史锁与归档不改写。
 
 硬件出厂物（厂商加密 IP 与代码生成的 CPU 核）不放在 `build/` 里当“输入”，而是入库到 `gateware/vendor/<vendor>/` 并附参数与来源记录：`generator.json`/`PROVENANCE.json` 记录生成命令、固定参数、生成器与上游文件哈希、工具链身份，同一目录保存许可证。声明式闭包必须列出这些文件，构建前校验哈希；文件缺失或被改动即报错，并按记录重新生成入库（`mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv`）。参数调整后的新出厂物随代码提交，历史产物只通过 `builds reproduce` 复现。
 
@@ -176,6 +180,6 @@ python scripts/mini.py clean --execute
 候选 system 为 `a85beb451b43fa4ce9af59df391fd6b419212d08b2ed132a218b4de96824130f`；最小系统为 `0132b59e30d169de5836a3a6b929a0f4d59fe55e4970e2dfb280d3916f32ddbf`。未访问板子、未执行新 PnR、未修改 current，未提交或创建正式代码 release。CPU 生成和上游 OS 的完整重编不在本轮真实执行范围内；它们的入口注册、plan/调度协议和现有功能回归通过，不等同于完成了一次全量 OS 构建或板测。
 
 
-提交硬件变更时，`prepare_commit.py --build` 也可接收内容寻址平台的成功板测 `result.json`。它核对实际 bitstream/payload、PnR、执行结果与当前源码闭包，不生成伪造的旧 catalog 身份。性能报告必须指向同一组 artifact。
+正式 release 的可选记录工具 `prepare_commit.py --release --build` 也可接收内容寻址平台的成功板测 `result.json`。它核对实际 bitstream/payload、PnR、执行结果与当前源码闭包，不生成伪造的旧 catalog 身份。性能报告必须指向同一组 artifact。普通提交不要求这些材料，也不自动构建或生成提交快照。
 
 `mini.py builds clean work` 先显示可重建工作缓存的清理计划，`--execute` 才执行。它保留 store、原始 runs/证据、归档、recipes、refs、vendor、已登记工作目录和 Git worktree；单个旧式中间 run 仍用 `builds clean <catalog-id>`。未知历史顶层目录不自动删除。

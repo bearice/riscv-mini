@@ -76,9 +76,9 @@
 
           python_version="$(tr -d '\r\n' < .python-version)"
           if ! uv python find --managed-python --system "$python_version" >/dev/null 2>&1; then
-            uv python install --no-bin "$python_version"
+            uv python install --no-bin "$python_version" || exit $?
           fi
-          managed_python="$(uv python find --managed-python --system "$python_version")"
+          managed_python="$(uv python find --managed-python --system "$python_version")" || exit $?
           venv_python_version="$(.venv/bin/python -c 'import platform; print(platform.python_version())' 2>/dev/null || true)"
           venv_managed_version="$(cat .venv/.managed-python-version 2>/dev/null || true)"
 
@@ -89,14 +89,14 @@
           fi
 
           if [ "$venv_python_version" != "$python_version" ] || [ "$venv_managed_version" != "$python_version" ]; then
-            uv venv --clear --python "$managed_python" .venv
+            uv venv --clear --python "$managed_python" .venv || exit $?
             printf '%s\n' "$python_version" > .venv/.managed-python-version
           fi
 
           lock_hash="$(sha256sum requirements.lock | cut -d' ' -f1)"
           installed_lock="$(cat .venv/.requirements.lock.sha256 2>/dev/null || true)"
           if [ "$lock_hash" != "$installed_lock" ]; then
-            uv pip sync --python .venv/bin/python requirements.lock
+            uv pip sync --python .venv/bin/python requirements.lock || exit $?
             printf '%s\n' "$lock_hash" > .venv/.requirements.lock.sha256
           fi
 
@@ -104,9 +104,9 @@
           export VEXRISCV_SOURCE="$(python -c 'from pathlib import Path; import pythondata_cpu_vexriscv as p; print(Path(p.data_location) / "ext/VexRiscv")')"
           sbt() { java -jar "$SBT_LAUNCH_JAR" "$@"; }
           if [ -x "$GOWIN_HOME/IDE/bin/gw_sh" ]; then
-            python scripts/configure_tools.py --gowin-bin "${gowin}/bin" --riscv-bin "${riscvGcc}/bin"
+            python scripts/tools/configure_tools.py --gowin-bin "${gowin}/bin" --riscv-bin "${riscvGcc}/bin" || exit $?
           else
-            python scripts/configure_tools.py --riscv-bin "${riscvGcc}/bin"
+            python scripts/tools/configure_tools.py --riscv-bin "${riscvGcc}/bin" || exit $?
           fi
         '';
       };

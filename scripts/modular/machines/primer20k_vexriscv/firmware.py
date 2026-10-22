@@ -11,7 +11,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).res
 from scripts.tools.boot_image import pack_image
 from scripts.modular.machines.primer20k_vexriscv.rtl import generate_csr
 from scripts.tools.versions import read_versions
-from scripts.modular.storage import ROOT, canonical, digest, file_hash, read, text_file, write, workspace_lock
+from scripts.modular.storage import ROOT, canonical, digest, file_hash, SOURCE_HASH_FORMAT, read, text_file, write, workspace_lock
 from scripts.modular.environment import discover, identity, output, process_environment
 from scripts.modular.machines.primer20k_vexriscv.contracts import requirements
 from scripts.modular.workspace import working
@@ -126,7 +126,7 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
             from gateware.machines.primer20k_vexriscv.flash_xip import FLASH_BASE, XIP_OFFSET, XIP_SIZE
             flags += [f'-Wl,--defsym,BOOT_XIP_ORIGIN={FLASH_BASE+XIP_OFFSET}', f'-Wl,--defsym,BOOT_XIP_SIZE={XIP_SIZE}']
     inputs = source_files(store.root, own)
-    config = dict(schema=1, component=component, version=ver, sources=inputs, flags=flags,
+    config = dict(schema=1, component=component, version=ver, sources=inputs, source_hash_format=SOURCE_HASH_FORMAT, flags=flags,
                   rebuild_entrypoint=['scripts/mini.py','_worker','rebuild-one'],
                   translation_units=names,
                   dependencies=deps, environment=identity(env), libraries=gcc_inputs(env, v),
@@ -200,7 +200,8 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
         if component == 'hal-sdk':
             files.update({'include/' + p.relative_to(include).as_posix(): p for p in include.rglob('*') if p.is_file()})
         files['build.lock.json'] = canonical(config)
-        files.update({'inputs/source/' + name: store.root / name for name in inputs})
+        from scripts.modular.storage import source_bytes
+        files.update({'inputs/source/' + name: source_bytes(store.root / name) for name in inputs})
         from scripts.tools.versions import COMPONENTS
         files['inputs/source/VERSIONS.yaml'] = ''.join(n + ': ' + (ver if n==('hal' if component=='hal-sdk' else component) else '0.0.0') + '\n' for n in COMPONENTS).encode()
         contract = requirements(sm['config']['contract'])
