@@ -22,7 +22,7 @@ enum {
      * card), cost ~250 ms more in the read path (the LRU scan is linear), and
      * did not change the panel's `rgb_lcd underflows` count (148 vs 137 over a
      * comparable run).  The underruns track CPU memory traffic, not SD reads:
-     * see docs/doom.md.  The BIOS region is 4 MiB at 0x00800000 and its
+     * see docs/platforms/primer20k_vexriscv/doom.md.  The BIOS region is 4 MiB at 0x00800000 and its
      * text+rodata+data is ~120 KiB, so this is 128 KiB of a 4 MiB budget.
      */
     BC_BLOCKS = 32u

@@ -9,7 +9,7 @@
 - 新增 scripts/doom_image.py（构建 BOOT.RPB，固定 480x272、强制 --soft-float，板上 FPU=0）、scripts/doom_sim.py（QEMU 跑真实产物 + 面板抓帧 + 脚本化按键）、scripts/doom_verify.py（实板验收）、tests/doom_test.py（RPB1 布局 + QEMU 回归）。
 - bios_payload.py 增加 --define/--cflag；boot_upload.py 的 until() 增加 on_chunk 回调——长等待必须逐块回显 UART，否则 15 分钟的等待看起来像死机。
 - 新增 .gitattributes：只对 firmware/apps/doom/** 关闭空白检查（上游代码自带大量行尾空格，--check 会刷屏），不引入 text/eol，不改任何文件内容。
-- 文档：docs/doom.md（构建/上卡/运行/验证/边界，含实测 2.48 帧/秒）、docs/bios-payload-porting.md（二级程序作者的 13 个坑）、docs/system-design.md 指向二者。
+- 文档：docs/platforms/primer20k_vexriscv/doom.md（构建/上卡/运行/验证/边界，含实测 2.48 帧/秒）、docs/platforms/primer20k_vexriscv/bios-payload-porting.md（二级程序作者的 13 个坑）、docs/platforms/primer20k_vexriscv/system-design.md 指向二者。
 - 验收：scripts/doom_verify.py 全项 PASS（build/doom-verify/doom-verification.json，presents=200，无 FAULT）；主机回归 tests/doom_test.py 7 项 OK、tests/workflow_test.py 18 项 OK；帧率 2.48 帧/秒（600 帧 / 241.9 s，被动观察 build/operations/*-status/uart.log）。
 - 边界：鼠标不支持（i_input.c 不投递 ev_mouse）、无声音、WAD 是 1.8 shareware（吸引模式提示版本不符，非致命）、存档路径未在板上验证；本提交不动 BIOS/HAL/RTL，不递增组件版本。
 

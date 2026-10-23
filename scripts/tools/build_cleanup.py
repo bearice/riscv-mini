@@ -75,7 +75,7 @@ def plan(root, active_run=None):
             protected_paths.add(Path(value['path']).resolve())
     # Published performance and maintained platform docs identify raw evidence.
     documents = [*(root / 'reports/performance').glob('*'),
-                 *(root / 'docs').glob('*ae350*.md'), root / 'reports/ae350-p2.md',
+                 *(root / 'docs').rglob('*.md'), root / 'reports/ae350-p2.md',
                  root / 'reports/ae350-p2.json']
     for path in documents:
         if path.is_file() and path.suffix in ('.md', '.json'):

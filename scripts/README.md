@@ -1,111 +1,37 @@
 # 操作入口
 
-独立构建和跨 build 复用使用 `mini.py build bios --hardware current` / `build system --hardware current`；自动环境发现用 `configure`，计划用 `plan bios`。完整参数包使用 `release export` / `release verify`，恢复用 `reproduce`。新构建、测试和板端操作统一记录在 `build/runs/`，历史 `build/operations/` 保留。详见 [组件构建操作](../docs/component-builds.md)。
+所有机器使用 `python scripts/mini.py`；Windows PowerShell 可用 `./mini.ps1`。命令支持情况和执行语义由目标机器决定。
 
-Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/mini.py`；Windows PowerShell 使用 `./mini.ps1`。
-
-在仓库根目录运行 `./mini.ps1`（自动选择本仓库 Python 和工作目录）。Python 等价入口是 `.venv/Scripts/python.exe scripts/mini.py`。从 `--help` 或 `guide` 开始，日常操作按任务选择命令；不需要先读底层脚本源码。
-
-```powershell
-./mini.ps1 --help
-./mini.ps1 guide
-./mini.ps1 doctor
-./mini.ps1 builds show current
+```sh
+python scripts/mini.py --help
+python scripts/mini.py guide
+python scripts/mini.py doctor
+python scripts/mini.py plan <target> --machine <machine>
+python scripts/mini.py build <target> --machine <machine> --purpose candidate
 ```
 
-`current` 是 catalog 中明确固定的已验收构建，不是最近修改的目录。`--build` 也接受完整 catalog ID 或含 `validation.json` 的产物目录。入口验证应用、bitstream hash、ABI 与 PnR setup/hold 0/0；不会自动改变 `current`。
+硬件配置来自 Board/Machine JSON，CLI 不覆盖硬件参数。相同 machine/target 的重复构建始终沿用原 workspace（默认 `default`），用 purpose 和 run 收据区分尝试。构建不自动编程板子，不修改 current。
 
-## 基本操作
+| 任务 | 公共入口 / 规则 |
+| --- | --- |
+| 环境发现 | `configure`、`doctor`；见 [开发环境](../docs/common/development.md) |
+| 生成、编译、PnR | `plan <target>` / `build <target>`；见 [组件构建](../docs/common/component-builds.md) |
+| 产物查询与身份 | `builds list` / `builds show <ref>`；见 [产物组织](../docs/common/build-artifacts.md) |
+| 运行、恢复、验收 | `board`；从下表选择机器操作页和准确产物身份 |
+| 导出与验证 | `release export` / `release verify`；导出不等于正式发布 |
+| 历史复现 | `builds reproduce`，使用历史 checkout 的配方 |
+| 清理 | `clean` / `builds clean`，先审阅计划，再显式执行 |
+| 提交与正式发布 | [SOP](../docs/common/pre-commit-sop.md)；普通提交不触发 release |
 
-| 想做什么 | 命令 | 执行结果与影响 |
+## 按机器操作
+
+| machine | 操作与验收 | 关键区别 |
 | --- | --- | --- |
-| 检查开发环境 | `./mini.ps1 doctor` | 主机依赖和工具检查，不接触板子 |
-| 找当前版本或候选 | `./mini.ps1 builds list` / `builds show current` | 查询 catalog 和校验产物身份 |
-| 按现役配置重建源码 | `./mini.ps1 build system --hardware current` | 复用配置、CPU RTL 和应用路径；按组件闭包复用，记录 run，不编程板子 |
-| 从零构建最小系统 | `./mini.ps1 build system --machine primer20k_vexriscv` | 先在机器 JSON 选择最小配置，自动生成 CPU IP；增加 `--synthesize` 才做 PnR |
-| 看板子目前有没有输出 | `./mini.ps1 board status` | 被动观察 UART，列出串口；静默显示 unknown，不推断为卡死 |
-| 恢复到启动菜单 | `./mini.ps1 board recover --build current` | 下载选定 gateware 到 SRAM，验证 DDR 启动并查询镜像头 |
-| 修复损坏的 XIP 启动区 | `./mini.ps1 board repair-xip --build current` | 外部下载器单独写目标 XIP，再 SRAM 重载、独立读回确认；会写 Flash，应用可仍不匹配 |
-| 临时运行当前固件 | `./mini.ps1 board run --build current` | SRAM gateware + UART 应用到 DDR，验证就绪，不写 Flash |
-| 检查 AE350 CPU/启动镜像 | `./mini.ps1 board jtag-test --build <AE350-run/result.json> --cpu-jtag-location <CPU位置> --location <FPGA位置>` | SRAM 重配置；核对 ITCM 身份、本地内存配置与自主 POST；不注入程序或写 magic |
-| AE350 上传与执行 | `./mini.ps1 board run --machine mega138k_ae350 --build <gateware-result.json> --payload <payload-result.json> --port COM9` | 自主 POST 后走统一 UART loader；执行核验/重入需显式 CPU JTAG；`passed` 只表示载荷执行，不表示套件通过 |
-| AE350 DMA 套件 | `./mini.ps1 board dma-suite --machine mega138k_ae350 --build <gateware-result.json> --payload <dma-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --location <FPGA位置>` | 轮询完成字并按结果合同判定；不写 Flash |
-| AE350 I/O 套件 | `./mini.ps1 board io-suite --machine mega138k_ae350 --build <gateware-result.json> --payload <io-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --location <FPGA位置>` | 判定数字合同；灯、按键和 WS2812 颜色仍须单独观察；不写 Flash |
-| AE350 audio/mic 套件 | `./mini.ps1 board audio-suite --build <gateware-result.json> --payload <audio-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --soak-seconds 1800 --timeout 1900` | 实时双 DMA 与 CPU DDR 并发，结束后才 halt 读结果；可追加显式 `--capture-device`，见 [音频合同](../docs/ae350-audio.md)；不写 Flash |
-| 启动并验收最小 Linux | `./mini.ps1 board linux --os-image <UBOOT.OSB> --kernel <Image> --tftp-python <已放行Python>` | SRAM/UART BIOS，经 TFTP 进入 Linux PID 1 并检查用户态；[构建与验收](../docs/linux-port.md) |
-| 验收 Linux 全外设 | 上述 `board linux` 命令追加 `--devices` | 在用户态/fb0 回归后测试 Linux Ethernet UDP、SD/FAT 只读、Flash MTD、GPIO/LED、ALSA、USB 枚举（SPI 控制器保留，不提供 SPI 屏幕 fb1）；详情与实际资格见 [Linux 移植](../docs/linux-port.md) |
-| 构建 BusyBox initrd | `./mini.ps1 build busybox` | 固定 BusyBox/musl 源码与 SHA，自动 native/WSL runner 编译静态 RV32 用户态；需要先构建 Linux 以生成 UAPI headers |
-| 启动 BusyBox shell | 上述 `board linux` 命令追加 `--initrd build/linux/busybox/initrd.cpio.gz` | TFTP 校验外部 initramfs、检查 PID 1 init、串口/LCD tty1 shell、PTY、进程、tmpfs 与 loopback，记录 USB 键盘输入设备；不与 `--devices` 同时使用 |
-| 持久更新完整系统 | `./mini.ps1 board update --build current` | 编程器直接写配置与应用/XIP，关闭 SPI Verify 和读回，再从 Flash 启动 |
-| 验收 BIOS/monitor 功能 | `./mini.ps1 board verify --build current --suite firmware` | SRAM/UART 装载后执行固件命令测试；支持 `--soak-seconds 60` |
-| 验收启动协议与错误边界 | `./mini.ps1 board verify --build current --suite boot` | SRAM/UART 执行协议测试，不安装 Flash |
-| 确认 Flash 中是目标文件 | `./mini.ps1 board verify --build current --suite flash` | SRAM gateware，DDR 只读探针，应用/XIP 逐字节比较，然后 Flash 启动 |
-| 验证 XIP 关闭及软件 SPI 交接 | `./mini.ps1 board verify --build current --suite spi` | SRAM/DDR 程序关闭 XIP、等待 busy=0、确认软件 SPI CS 空闲，再恢复 loader；不写 Flash，仅适用 XIP |
-| 观察断电冷启动 | `./mini.ps1 board verify --build current --suite cold` | 等待用户外部断电重启；不发送复位，默认等待 300 秒。不属于默认流程，仅在用户主动要求时执行 |
+| `primer20k_vexriscv` | [20K 操作与更新](../docs/platforms/primer20k_vexriscv/operations.md) | 软件 DDR 初始化、ROM/XIP、BIOS、Flash 分区与固件套件 |
+| `mega138k_ae350` | [AE350 操作与验收](../docs/platforms/mega138k_ae350/operations.md) | ITCM 启动、ILM/DLM、UART payload、CPU JTAG 与结果合同 |
 
-表中命令可直接在 PowerShell 运行。串口默认 `COM4`，Linux 使用 `--port /dev/ttyUSB1` 等实际串口。Gowin location 默认在每次编程前通过 `--scan-cables F` 自动发现；USB 重枚举后会重新扫描，不缓存旧 location。只选择 USB Debugger A 的 JTAG channel 0，多个候选时停止并要求显式 `--location`。Linux 若 `ftdi_sio` 占用 JTAG interface A，仍需先解除该接口的驱动绑定；UART interface B 保持绑定。冷启动和 Flash 验收要求已经安装目标应用；它们不会替你安装。
+选择准确的 build/artifact 或 run `result.json`；已有 current 必须核对所属机器。串口、FPGA location、CPU JTAG、启动存储和可用测试套件都按机器与实际连接选择，不从另一机器继承默认值。
 
-板端命令（status 除外）和 build 支持 `--dry-run`。下面是完整、可复制的更新预检：
+日常板测使用 FPGA SRAM 和 UART 临时装载；只有用户明确要求时才写 Flash。写入地址、更新方法与读回要求见支持该操作的机器文档。PnR、上传交接、应用执行与套件通过分别记录。
 
-```powershell
-./mini.ps1 board update --build current --dry-run
-```
-
-`board update --build <ID>` 默认通过编程器直接写 Flash（`--method programmer`）。
-此路径使用 operation 8 写 FPGA 配置，使用 Erase,Program（operation 31）
-按声明地址分别写 XIP 和应用，再 reload、等待 Flash 启动。
-不执行 SPI Verify、Flash 读回、SRAM 下载或 DDR 软件 SPI；收据明确记录这一验收边界。
-
-去掉 `--dry-run` 才执行更新。`run`、`update`、firmware/flash 验收支持 `--image <app.img>`，先检查目标 ABI。boot/cold 验收不接受被忽略的镜像参数。
-
-## 更新与验证契约
-
-默认编程器路径使用 operation 8 写配置、operation 31 写应用/XIP、operation 1 reload，不执行 SPI Verify、Flash 读回或 SRAM 下载。下述软件 SPI 与精确读回契约仅适用于显式 `--method auto` 的旧流程。ROM 的旧流程通过下载器写配置并 reload，再由 bootloader UART 安装应用。XIP 的旧流程需要配置、1 MiB 启动代码、2 MiB 应用三个产物；地址来自选定构建的元数据，应用分区遵循 `boot_image.py`。XIP 与应用由 UART 加载的 DDR 工具通过片上软件 SPI 写入；配置最后由 Gowin op 8 写入并 reload。入口不要求发布包包含 Gowin 中间文件 `project.bin`，通过 FS 的二进制行计算配置空间，并检查与启动分区不重叠。
-
-更新前验证全部输入、分区、CSR ABI，编译 DDR 工具，暂存并核对文件，然后打开串口。XIP 分支先 SRAM 加载目标 gateware，上传 DDR 工具，在禁用中断的 DDR 代码中关闭 XIP，等待 busy=0 并确认软件 SPI CS 空闲。收不到 `XIP QUIESCED enable=0 busy=0 spi_cs=idle` 确认就禁止写入。写入版工具仅由 update 编译，范围和长度固定为选定构建的两个区域；每个区域擦除前独立读取 JEDEC 三次并要求本板 `0x0B4017`，检查 WEL/WIP，接收带序号和 CRC32 的 128 字节数据包，逐页片段写入并读回确认后才 ACK。随后写配置并 reload。只读验收工具不编译写入命令。
-
-`--suite spi` 单独验证 XIP 关闭和恢复，不执行持久写入。连续外部 op 32 在交接通过后仍发生容量误识别，正式完整更新已避开该路径；外部下载器的根因未确定。`repair-xip` 保留单次外部写入作为启动区损坏的恢复入口，并要求 XIP 独立读回匹配。Gowin 地址参数使用完整 `0x000000` 格式，子进程临时目录写入本次 operation 目录。
-
-读回应用（包含头）和 XIP 的每个字节，与选定文件比较，保存 SHA256。一个区域内容不匹配仍继续读取后续区域，完整收集后汇总失败并恢复 loader；数据流截断则停止，因为后续区域边界无法信任。只有全部匹配才继续 Flash 启动。仅有 `FLASH HEADER VALID`、CRC 合法或下载器 `Finished` 都不足以证明装入了目标文件。
-
-SRAM 下载和复位后先同步完整的新启动横幅，再判断 DDR 状态；旧读回数据中嵌入的固件报错字符串保留在 UART 日志中，不作为本次启动报错。新横幅后的真实 DDR 初始化错误仍立即失败。
-
-只允许有有效地址区间、零退出码且仅报 `SPI Verify failed!` 的已知 Gowin 警告继续到独立读回；其他错误、结束地址小于起始地址立即失败。警告本身永远不是验收成功。gateware 通过所选 bitstream 编程和启动关联，不宣称做过配置区独立读回。
-
-更新涉及单份 Flash 分区，不是原子更新：断电或中途失败可能留下部分写入。每次操作在 `build/operations/<UTC时间>-<任务>/` 保存 `result.json`、UART、下载器、编译日志和原始读回，不覆盖前一轮。失败记录给出恢复命令；XIP 启动区损坏时，单独 SRAM 加载 gateware 无法修复启动代码，需要重新写入目标 XIP。`recover` 成功表示 DDR/菜单已恢复，不表示常驻系统更新完成。
-
-探针从所选构建的 `csr.json` 生成地址。新发布包包含该文件；旧包只有在原始 run 的 bitstream/app hash 和 CSR ABI 全部匹配时才使用其 CSR。原始 run 丢失则更新预检失败，不从其他配置猜地址。
-
-`board verify --suite firmware/boot/cold` 调用现有专项验收实现，将日志写入本次操作目录。固件验收支持当前 BIOS/monitor；物理屏幕、听音、键鼠输入等观察仍按各专项验收说明执行。冷启动检查是外部断电后的启动和状态检查，不替代精确 Flash 读回；冷启动不属于默认验收或发布流程，只在用户主动要求时执行。
-
-boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验收。firmware 的 `--mic` 明确测试已连接的麦克风；`--soak-seconds` 要求文件系统、视频、USB、音频全部启用。不满足条件在板端操作前失败。
-
-新 XIP 更新与只读探针已有主机编译和模拟串口/下载器回归，实板验收状态记录在操作结果中；主机测试不能作为该新流程已经实板通过的证据。
-
-2026-10-08 完整更新实板通过，收据 `build/operations/20261008T111029678667Z-update`：DDR 软件 SPI 写入 XIP 3708 字节和应用 104812 字节、逐页确认，Gowin 配置写入及 reload 成功，两个区域完整独立读回均精确匹配，Flash 启动到 SYSTEM READY。先前失败收据仍保留。DDR 工具每次读取 UART RXTX 后清除 RX pending，避免重复处理同一命令；SPI 8 位读回比较取寄存器低 8 位；退出工具通过 SRAM 重载恢复完整设计。此验收覆盖完整更新、读回及 Flash 启动，未执行物理断电冷启动。
-
-## 专项操作导航
-
-以下是开发和专项验收实现。日常板端操作使用上面的入口；改变硬件配置、网络或专项测试范围时，再读对应文档和工具 `--help`。
-
-| 任务 | 实现或专项工具 | 使用条件 / 文档 |
-| --- | --- | --- |
-| 环境初始化 | `bootstrap.ps1`、`tools/configure_tools.py`、`env.ps1`、`tools/doctor.py` | [开发环境](../README.md)；`tools/keep_awake.ps1` 仅为长任务保持主机唤醒 |
-| FPGA 配置与 CPU 生成 | `mini.py build system`、`mini.py build matrix`、`mini.py build cpu`、`mini.py build cpu-gcb`、`mini.py build cpu-qualification`、`test_cpu_fence.py` | [构建 skill](../.agents/skills/riscv-mini-build/SKILL.md)；参数扫描和 ISA 改动用这些专项工具 |
-| 构建身份、复现和清理 | `mini.py builds`、`build_records.py`、`build_recipe.py` | [产物组织](../docs/build-artifacts.md)；records/recipe 为内部模块；clean 默认仅列计划，保护固定版本和发布包 |
-| 启动镜像与串口协议 | `boot_upload.py`、`boot_image.py`、`boot_size.py` | [bootloader](../docs/bootloader.md)；旧 install 仅适用于 ROM，XIP 更新用正式入口 |
-| 基础板测 | `firmware_verify.py`、`boot_verify.py`、`boot_repeat_verify.py`、`cold_boot.py` | [测试 skill](../.agents/skills/riscv-mini-test/SKILL.md)；分别为功能、协议、重复启动、外部冷启动 |
-| BIOS 载荷与网络装载 | `bios_image.py`、`mini.py build payload`、`bios_tftp.py`、`bios_verify.py`、`monitor_external_verify.py` | [BIOS](../docs/bios.md)、[给 BIOS 写二级程序](../docs/bios-payload-porting.md)；RPB/OSB 载荷与 bootloader app.img 是不同格式；TFTP 解释器需要防火墙放行 |
-| DOOM 载荷 | `mini.py build doom`、`doom_sim.py`、`doom_verify.py`、`doom_debug.py` | [DOOM（BIOS 二级程序）](../docs/doom.md)；sim 在 QEMU 上跑同一份目标码作参考实现，debug 经 UART 暂停并取回帧 |
-| OpenSBI / U-Boot | `mini.py build opensbi`、`opensbi_verify.py`、`mini.py build uboot`、`uboot_verify.py` | [OpenSBI 与 U-Boot 移植](../docs/opensbi-port.md)；需相应源树和工具链 |
-| 外设专项验收 | `sd_verify.py`、`sd_clock_verify.py`、`ethernet_verify.py`、`raw_icmp.py`、`audio_verify.py`、`audio_capture.py` | 查工具 `--help`；raw_icmp 为网络验收实现；网络、音频、SD 的外部条件不会由一般板测推断 |
-| 性能测量与比较 | `benchmark.py`、`performance_report.py` | [性能 skill](../.agents/skills/riscv-mini-benchmark/SKILL.md)；加载身份与测量身份须匹配，显式候选/基线 |
-| 提交、版本与发布 | 普通提交直接使用 Git；`tools/prepare_commit.py` 为可选记录；`mini.py release create` 用于显式发布 | [轻量提交 / release SOP](../docs/pre-commit-sop.md)、[版本历史](../docs/version-history.md)；完整验收与归档仅用于正式 release |
-| Nyan Cat 素材 | `mini.py build nyancat` | 生成应用素材，非板子更新入口 |
-
-`mini_ops/` 是正式入口的内部实现：产物解析、构建配置、板端流程和探针编译。不要另写临时 UART/Gowin 探针；补充能力时进入这些模块，给任务入口增加支持条件和回归。
-
-
-AE350 平台操作合同见 [当前上板说明](../docs/ae350-platform.md)。普通工作使用 `board run/recover/verify`，诊断使用 `board ddr-suite`；`ae350-upload` 仅保留为兼容别名。上传必须明确传入 `--payload <payload-build-result.json>`，不再自动挑选其他构建的最新载荷。无 JTAG 的上传只证明 ROM 接收与交接，执行核验和拒绝路径测试使用显式 CPU JTAG。完整时序检查包含 setup、hold 和 minimum pulse width。
-
-AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独立于内存诊断。普通应用和 DDR suite 都经同一 UART loader 装载；`board jtag-test` 只读核验 ITCM、本地内存和 POST，`board recover` 执行显式恢复。
+新构建、测试与板端操作的请求、结果和日志统一放在 `build/runs/<run-id>/`，历史 `build/operations/` 保留。内部 `mini_ops/` 和各机器脚本负责具体实现；扩展操作能力时修改现有入口，不临时拼接 UART/编程器探针。

@@ -8,7 +8,7 @@ script for what is emulated and what is not.
 
 Both the QEMU run and the WAD are external inputs: the sim is skipped when
 qemu-system-riscv32 is missing, and when the shareware `DOOM1.WAD` has not been
-placed in build/doom-assets/ (see docs/doom.md for the source and hash).
+placed in build/doom-assets/ (see docs/platforms/primer20k_vexriscv/doom.md for the source and hash).
 """
 import subprocess
 import sys

@@ -21,14 +21,14 @@ and invalid transfer length handling. Loopback CSRs were removed from the
 base SoC; actual Flash, SD and SPI LCD transactions are verified on hardware.
 
 DDR training, CPU DDR access, SD file CRC, and LCD display are checked on the
-board; see docs/ddr-boot.md and docs/system-design.md. SPI
+board; see docs/platforms/primer20k_vexriscv/ddr-boot.md and docs/platforms/primer20k_vexriscv/system-design.md. SPI
 simulation does not verify electrical timing.
 
 `tests/primer20k_vexriscv/sim/test_video.py` checks full 480x272 LCD scan periods, sync pulse widths,
 pixel order and last-marked frame recovery after an injected pixel underrun.
 This covers the scanner, not real DDR arbitration or connector electrical timing.
 
-`tests/primer20k_vexriscv/shared_l2_test.py --writeback` checks shared CPU/video/SD ownership, dirty visibility, byte writes, maintenance, cancellation and round-robin fairness against delayed memory. `tests/primer20k_vexriscv/shared_l2_verilog_test.py` and `tests/primer20k_vexriscv/native_sd_verilog_test.py` execute generated Verilog in Icarus to check CPU byte lanes and SD packed write masks. These do not model the DDR PHY or prove electrical timing; full board acceptance is described in docs/system-design.md.
+`tests/primer20k_vexriscv/shared_l2_test.py --writeback` checks shared CPU/video/SD ownership, dirty visibility, byte writes, maintenance, cancellation and round-robin fairness against delayed memory. `tests/primer20k_vexriscv/shared_l2_verilog_test.py` and `tests/primer20k_vexriscv/native_sd_verilog_test.py` execute generated Verilog in Icarus to check CPU byte lanes and SD packed write masks. These do not model the DDR PHY or prove electrical timing; full board acceptance is described in docs/platforms/primer20k_vexriscv/system-design.md.
 
 `tests/primer20k_vexriscv/test_boot_image.py` verifies the host image header, CRC, truncation,
 entry/load boundaries and UART packet framing. `scripts/primer20k_vexriscv/boot_verify.py` also
@@ -52,7 +52,7 @@ long PHY stalls, exactly three read blocks and timeout/abort flush. This checks
 the registered request seam added for M9 timing without replacing the core.
 `scripts/primer20k_vexriscv/sd_verify.py` runs the independent SD demo on the board: existing file
 CRC, single/multi-block and unaligned callers, optional unique-file write/read,
-and five-minute LCD frame switching. See docs/native-sd.md.
+and five-minute LCD frame switching. See docs/platforms/primer20k_vexriscv/native-sd.md.
 
 `tests/primer20k_vexriscv/sim/test_audio.py` decodes actual BCK/WS/DIN for stereo sample/bit order,
 including the current DDS 48k clock enables and the legacy integer-divider path.
@@ -63,7 +63,7 @@ stop during a delayed DDR reply, framebuffer boundary rejection and bus errors.
 and requires actual suppression of the test tone; an unmuted tone fails.
 `scripts/primer20k_vexriscv/audio_verify.py` runs the independent audio demo: PIO underrun,
 DMA/pause/resume/stop, optional Windows line-in capture, and five minutes
-of muted PCM DMA + SD file CRC + DDR LCD frame switching. See docs/audio.md.
+of muted PCM DMA + SD file CRC + DDR LCD frame switching. See docs/platforms/primer20k_vexriscv/audio.md.
 
 `tests/primer20k_vexriscv/sim/test_ethernet.py` exercises the real LiteEth Wishbone packet SRAM:
 little-endian RX words, two-slot ownership, queue-full/CRC/oversize drops,
@@ -73,7 +73,7 @@ It does not prove RMII electrical timing. The independent Ethernet app checks
 ARP/IP/ICMP/UDP parsing on the real CPU; `scripts/primer20k_vexriscv/ethernet_verify.py` checks
 Flash UID-derived MAC against host computation/ARP, UDP payloads through MTU,
 ping, shared reset, and at most five minutes of SD/display/muted-audio coexistence.
-Raw slot drops and actual UDP timeouts are reported separately. See docs/ethernet.md.
+Raw slot drops and actual UDP timeouts are reported separately. See docs/platforms/primer20k_vexriscv/ethernet.md.
 
 `tests/primer20k_vexriscv/sim/test_bus.py` exercises the registered Wishbone request/reply seam with
 delayed transfers, byte enables, bus errors and an abandoned transaction.
@@ -84,7 +84,7 @@ edge/delay model at two propagation corners; these checks do not prove USB
 electrical timing or HID input. `scripts/primer20k_vexriscv/ethernet_verify.py --usb` checks the
 connected FS HID receiver, three local software restarts, shared F10 reset,
 DDR HCCA alignment, OHCI progress and <=5 minute media coexistence on hardware.
-Physical keyboard transitions remain a separate acceptance step. See docs/usb.md.
+Physical keyboard transitions remain a separate acceptance step. See docs/platforms/primer20k_vexriscv/usb.md.
 
 `tests/common/test_build_report.py` checks routed resource extraction, including full
 PLL/global clock usage, setup/hold violations and rejection of incomplete reports.

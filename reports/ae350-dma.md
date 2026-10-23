@@ -16,6 +16,6 @@
 
 正式入口为 `board dma-suite`，载荷为 `firmware/examples/ae350_dma_suite.c`，驱动为 `firmware/ae350/dma/`。旧 P3 命令与探针退役，历史回执保留原名。命名整理后重新构建的载荷与上述已验收 binary 字节一致。
 
-PLIC→CPU handler 没有实板证据；IRQ 仅验收 fabric pending/clear 与发布身份。专用 fabric reader 未实现且能力位清零。大于 32-bit 的 DMA 访问明确拒绝。当前 API 限单一调用者独占空闲通道；忙通道 submit 保护、wait 区分硬件错误停止尚未实现，正式 DMA 外设接入前必须修复。链表内容由调用者验证并保持生存期，部分行同步要求整行所有权。详见 [DMA 服务](../docs/ae350-dma.md)。
+PLIC→CPU handler 没有实板证据；IRQ 仅验收 fabric pending/clear 与发布身份。专用 fabric reader 未实现且能力位清零。大于 32-bit 的 DMA 访问明确拒绝。当前 API 限单一调用者独占空闲通道；忙通道 submit 保护、wait 区分硬件错误停止尚未实现，正式 DMA 外设接入前必须修复。链表内容由调用者验证并保持生存期，部分行同步要求整行所有权。详见 [DMA 服务](../docs/platforms/mega138k_ae350/dma.md)。
 
 这不是正式系统发布，不授权 Flash 写入。最终整理后的复验与提交快照在本地 build 回执和归档保存，不把旧实板结果重标为新源码执行。

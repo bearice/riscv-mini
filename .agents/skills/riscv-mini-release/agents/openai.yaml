@@ -1,4 +1,4 @@
 interface:
-  display_name: "riscv-mini 发布与最终归档"
-  short_description: "生成正式包、提交快照或历史阶段包，完成实板与基准验收并发布到 GitHub Release"
-  default_prompt: "使用 $riscv-mini-release 完成本次发布与最终归档，保存适用结果与可追溯证据。"
+  display_name: "riscv-mini 正式发布"
+  short_description: "按明确发布请求管理版本和最终包，完成适用验收及授权的发布"
+  default_prompt: "使用 $riscv-mini-release 完成本次明确要求的正式发布，核验版本、产物与实际验收结果。"

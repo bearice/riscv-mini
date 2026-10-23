@@ -1,17 +1,19 @@
 ---
 name: riscv-mini-reproduce
-description: 在 TangPrimer-20K/riscv-mini 根据保存的构建 ID 和 recipe 复现历史或已清理构建，在独立 checkout 恢复源码、参数与 CPU 输入并生成新产物。
+description: 使用 riscv-mini 保存的构建身份与配方复现历史产物，在独立 checkout 恢复对应源码和参数。
 ---
 
-# 复现构建
+# 复现历史构建
 
-在仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。先读 `docs/build-artifacts.md` 的复现流程；以下占位符使用本次实际完整 ID 与新目录。
+读取 [历史复现与产物身份](../../../docs/common/build-artifacts.md)。确认用户选择的机器、catalog ID、recipe 和工具/依赖可用；普通增量重建使用构建流程，普通产物不承诺已保存完整源码归档。
 
-```powershell
-.venv/Scripts/python.exe scripts/mini.py builds show <完整构建ID>
-.venv/Scripts/python.exe scripts/mini.py builds reproduce <完整构建ID> --output-dir build/runs/<新复现目录>
+```sh
+python scripts/mini.py builds show <catalog-id>
+python scripts/mini.py builds reproduce <catalog-id> --output-dir <复现输出目录>
 ```
 
-确认 catalog、recipe 和匹配的工具/依赖可用。脚本在独立 detached checkout 恢复 Git 源码、VERSIONS.yaml、dirty patch、未跟踪源码、构建参数与 CPU RTL/元数据。使用新目录，保留原身份和证据。
+由保存的配方在独立 checkout 恢复源码、参数与 CPU/IP 输入，并运行该历史提交自己的入口。不要用当前 CLI、机器 JSON 或默认值补造旧输入；没有配方或必要源码时明确报告缺失。
 
-完成条件：新产物及 validation 可查，参数和输入对应原 recipe。PnR、板测或性能按实际复验记录，复现生成不继承旧板测；需要验证时读取同级 `riscv-mini-test/SKILL.md`。
+输出与原始身份和证据分开保存。重复尝试沿用已选择的复现工作区/输出位置，不以时间戳持续创建新缓存目录；具体目录规则由历史配方决定。
+
+完成条件：新产物和输入可对应原配方，说明字节校验或重新构建的实际范围。PnR、板测与性能仅报告本次实际执行结果，不继承原构建的通过标记。

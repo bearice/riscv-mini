@@ -3,7 +3,7 @@
 `firmware/apps/doom/` 是 **doomgeneric**（`PACKAGE_NAME "Doom Generic"`、`PACKAGE_VERSION 0.1`，启动横幅里的 `Doom Generic 0.1` 就来自 `config.h`）的扁平化源码副本，doomgeneric 本身是 **Chocolate Doom** 的最小可嵌入移植层。这里只保留编译需要的 `.c/.h`，**没有**上游 Git 元数据，也没有保留上游目录结构（`src/`、`textscreen/`、各平台驱动、构建脚本都被裁掉）。
 
 - **许可证**：GPL-2.0-only（沿用上游各源文件头部的版权声明）。本目录**未附带许可证全文**；需要时取 <https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt>。整个 `BOOT.RPB` 是这些源码的衍生作品，分发时要按 GPL-2.0 提供对应源码。
-- **不含游戏数据**：`DOOM1.WAD` 不在仓库里，也不进镜像；准备与上卡方式见 [docs/doom.md](../../../docs/doom.md)。
+- **不含游戏数据**：`DOOM1.WAD` 不在仓库里，也不进镜像；准备与上卡方式见 [docs/platforms/primer20k_vexriscv/doom.md](../../../docs/platforms/primer20k_vexriscv/doom.md)。
 - **上游精确版本未记录**：移植时没有保存上游 commit。要精确对齐请重新取上游后逐文件 diff，不要假设本目录等于某个 tag。
 
 ## 本地改动（相对上游）

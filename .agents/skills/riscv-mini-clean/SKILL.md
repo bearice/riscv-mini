@@ -1,18 +1,21 @@
 ---
 name: riscv-mini-clean
-description: 在 TangPrimer-20K/riscv-mini 清理已登记的中间构建目录，先检查清理计划，保留 catalog、复现 recipe、固定版本和最终发布/提交产物。
+description: 清理 riscv-mini 的受管理构建缓存和无引用中间产物，先检查计划并保留固定版本及证据。
 ---
 
-# 清理中间构建
+# 清理构建产物
 
-在仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。先读 `docs/build-artifacts.md` 的目录与清理保护规则；以下占位符使用本次实际完整 ID。
+先读 [产物与保护规则](../../../docs/common/build-artifacts.md)，确认本次范围；不并行运行构建或板端操作。
 
-```powershell
-.venv/Scripts/python.exe scripts/mini.py builds list
-.venv/Scripts/python.exe scripts/mini.py builds clean <中间构建ID>
-.venv/Scripts/python.exe scripts/mini.py builds clean <中间构建ID> --execute
+```sh
+python scripts/mini.py builds clean work
+python scripts/mini.py builds clean obsolete
 ```
 
-先查看计划，再执行。清理对象限于已登记且未被 refs 固定的 `build/runs` 中间目录。正式发布、提交快照和旧未知目录分别管理。
+只查看与请求范围对应的计划，检查目标、固定引用、文档/报告证据及依赖保护；确认计划符合已授权范围后，对同一命令加 `--execute` 执行。单个已登记旧构建使用 `builds clean <catalog-id>`，不用手工删除其 catalog 或 recipe。
 
-完成条件：目标目录清理成功，catalog/recipe 仍可查；失败保留状态与原因，修复后用同一命令重试。需要复现时读取同级 `riscv-mini-reproduce/SKILL.md`。
+work 清理保留稳定目录约定；同一目标后续重建继续使用原 workspace。obsolete 可回收无引用 store、run、候选引用与索引，不能把所有 store 都当作永久保留，也不能删除固定引用及其递归依赖。
+
+正式包、源码、vendor、recipe、Git 工作树与有引用证据按清理器规则保留。未知目录或未覆盖的文件先核对用途，不扩大为整棵 build 删除。
+
+完成条件：检查执行收据与退出状态，报告删除范围、保留项及失败原因；失败保留记录，修复后重试原命令。

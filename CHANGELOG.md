@@ -94,7 +94,7 @@
 
 发布二进制、Git hash、构建参数和逐文件 SHA256 见对应版本的 release.json；完整改动以 Git 记录为准，已知失败和未验收项保留在性能/验收报告中。
 
-版本与功能阶段的对应关系见 [docs/version-history.md](docs/version-history.md)。0.7.1 及之前所有组件共享一个版本号（条目形如 `## v0.7.1`）。从 0.7.2 起版本按组件独立递增，条目形如 `## <组件> v<版本>`（如 `## bios v0.7.2`、`## uboot v0.1.0`），系统包条目形如 `## system v<版本>`；组件版本见 `VERSIONS.yaml`，已验收的组件组合见 `RELEASES.yaml`。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/lab-environment.md](docs/lab-environment.md)。v0.7.1 是合并版本时代的最后一次正式发布。
+版本与功能阶段的对应关系见 [docs/common/version-history.md](docs/common/version-history.md)。0.7.1 及之前所有组件共享一个版本号（条目形如 `## v0.7.1`）。从 0.7.2 起版本按组件独立递增，条目形如 `## <组件> v<版本>`（如 `## bios v0.7.2`、`## uboot v0.1.0`），系统包条目形如 `## system v<版本>`；组件版本见 `VERSIONS.yaml`，已验收的组件组合见 `RELEASES.yaml`。每个版本的构建包都由该版本提交自己的 `scripts/build.py` 生成；2026-10-06 按版本顺序逐个上板，用该提交自己的验收脚本做实板测试，并运行该提交自带的基准，现场条件见 [docs/platforms/primer20k_vexriscv/lab-environment.md](docs/platforms/primer20k_vexriscv/lab-environment.md)。v0.7.1 是合并版本时代的最后一次正式发布。
 
 ## system v0.8.0 — RAM 零基址与 Flash XIP 启动
 
@@ -185,7 +185,7 @@
 
 - 内存调度改为 crossbar（`gateware/dma_scheduler.py`、`gateware/cpu_order.py`），L2 走原生后端加 burst-refill 快速预取，新增 write-combine 与 posted 写路径实验。
 - CPU 侧引入外部 FENCE handshake：`scripts/cpu_fence.py` 给 DBusCachedPlugin 打补丁，生成带 `o_externalFenceRequest/i_externalFenceDone` 的 CPU RTL，`scripts/test_cpu_fence.py` 与 `tests/cpu_fence_tb.v` 验证握手。
-- 构建包 `build/releases/v0.5.0/full-rv32imaf-rom4k-l24k/`：commit ff84bfb，place 3/route 2，L2 4 KiB write-through，PnR setup/hold 0/0，Logic 19415/20736、BSRAM 43/46，bitstream `0444301e…`；实板测试 41 项通过，`--suite cpu`、`--suite cache`、`--suite io` 三轮全部 PASS，`--suite mem` 在 1 MiB 的 `read32`/`copy32` 自检失败且可复现，原因见 [docs/version-history.md](docs/version-history.md)。
+- 构建包 `build/releases/v0.5.0/full-rv32imaf-rom4k-l24k/`：commit ff84bfb，place 3/route 2，L2 4 KiB write-through，PnR setup/hold 0/0，Logic 19415/20736、BSRAM 43/46，bitstream `0444301e…`；实板测试 41 项通过，`--suite cpu`、`--suite cache`、`--suite io` 三轮全部 PASS，`--suite mem` 在 1 MiB 的 `read32`/`copy32` 自检失败且可复现，原因见 [docs/common/version-history.md](docs/common/version-history.md)。
 - 这套外部 fence 与 write-combine 设施在 v0.7.0 被 CPU 原生 fence 取代，`scripts/cpu_fence.py` 已删除；只有该版本的检出能表达这套配置。
 
 ## v0.4.0 — 常驻 BIOS、OpenSBI 与 benchmark
@@ -215,4 +215,4 @@
 - 建立 Flash/UART 双入口 boot（`scripts/boot_image.py`、`boot_upload.py`、`boot_verify.py`、`cold_boot.py`）与工具发现脚本 `scripts/configure_tools.py`、环境脚本 `bootstrap.ps1`、`env.ps1`。
 - 构建包 `build/releases/v0.1.0/base-rv32im-rom8k-l20k/`：commit 88ece43，PnR setup/hold 0/0，Logic 7347/20736、BSRAM 16/46，bitstream `81ec497f…`；实板测试 20 项通过，用该提交的 `scripts/boot_verify.py`，它没有 `firmware_verify.py`，也没有基准工具。该版本的 `requirements.lock` 是后续版本的子集，缺少 liteeth、liteiclink 与 USB OHCI 数据源。
 
-各版本包的生成方式、补写字段与限制见 [docs/version-history.md](docs/version-history.md)；逐文件 SHA256 用 `scripts/release.py --verify <包路径>` 校验。
+各版本包的生成方式、补写字段与限制见 [docs/common/version-history.md](docs/common/version-history.md)；逐文件 SHA256 用 `scripts/release.py --verify <包路径>` 校验。

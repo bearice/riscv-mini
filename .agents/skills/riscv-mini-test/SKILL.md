@@ -1,29 +1,19 @@
 ---
 name: riscv-mini-test
-description: 在 TangPrimer-20K/riscv-mini 选择和执行主机、RTL、DFI 回归或 FPGA 实板验收，核对固件/bitstream 身份及受影响功能，记录检查结果。
+description: 在 riscv-mini 选择并执行主机、RTL 或指定机器的实板测试，核对镜像身份和受影响功能。
 ---
 
 # 测试与实板验收
 
-在 riscv-mini 仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
+按用户请求与改动选择主机、RTL、内存接口或实板层级，运行能验证受影响行为的检查；已有有效结果无需重复。此流程不自动扩展为完整发布验收。
 
-验证矩阵读取 `docs/pre-commit-sop.md`，板测身份读取 `docs/build-artifacts.md`。
+主机/RTL 回归按 `tests/common/`、`tests/<machine>/` 选择，先查脚本参数及所需工具。仿真、编译、PnR 和板测分别记录，不能互相替代。
 
-日常上板入口与支持条件读取 `scripts/README.md`。恢复用 `scripts/mini.py board recover --build <ID>`；临时运行用 `board run`；完整功能验收用 `board verify --suite firmware`；精确 Flash 读回用 `--suite flash`，不写 Flash。每次日志在 `build/operations/`；持久写入仅在用户明确要求时用 `board update`，不要拼接 Gowin/临时串口探针。**给 BIOS 写二级程序（新载荷）或这类程序上板时，先读 `docs/bios-payload-porting.md`**：浮点前提、ecall 服务选择、主循环归属、SD/TFTP 准备、以及“不要重置状态机/不要跨调用缓存文件句柄”这些已踩过的坑都在那里。
+板端操作先读 [公共入口](../../../scripts/README.md) 和对应机器的操作页，确认位流、软件、ABI、PnR 与准确产物身份：
 
-按用户要求或当前问题选择验证层级；正式 release 使用 SOP 的发布验证矩阵。普通提交不自动触发本 skill，也不要求补齐完整验收。常用主机与 L2 检查：
+- [20K](../../../docs/platforms/primer20k_vexriscv/operations.md)：BIOS/monitor 的功能命令见 [固件测试](../../../docs/platforms/primer20k_vexriscv/firmware-tests.md)。综合 soak、麦克风等按功能与实际连接选择。测试 BIOS 二级程序时读 [载荷移植](../../../docs/platforms/primer20k_vexriscv/bios-payload-porting.md)。
+- [AE350](../../../docs/platforms/mega138k_ae350/operations.md)：显式选择 gateware 与 payload；UART 交接、应用执行和 ddr/dma/io/audio/video 套件分别判定，CPU JTAG 按该操作要求配置。
 
-```powershell
-.venv/Scripts/python.exe tests/common/config_test.py
-.venv/Scripts/python.exe tests/primer20k_vexriscv/shared_l2_test.py
-.venv/Scripts/python.exe tests/common/workflow_test.py --report build/reports/checks/workflow.json
-```
+日常测试用 FPGA SRAM 和 UART loader，Flash 写入仅在明确请求时执行；冷启动也须用户明确要求。复用公共 `mini.py board` 工作流，不临时拼接编程器或 UART 探针。
 
-CPU/DDR/外设问题可选择相关 `tests/*_verilog_test.py`、DFI 回归或 `scripts/primer20k_vexriscv/test_cpu_fence.py`；先查脚本参数和所需仿真工具。正式发布或用户明确要求完整硬件验收时，模型通过后还需实际配置 PnR 和受影响板测；普通开发与提交不自动追加这些任务。
-
-```powershell
-.venv/Scripts/python.exe scripts/mini.py board verify --build <本次完整ID> --suite firmware
-.venv/Scripts/python.exe scripts/mini.py builds pin current <本次完整ID> --evidence <本次operation目录>/firmware-verification.json
-```
-
-对支持文件系统、视频、USB、音频的完整系统增加 `--soak-seconds 60`；连接麦克风且配置支持时再加 `--mic`。最小系统选择其实际支持的测试。匹配 FS/app 两个 hash 且板测通过后才 pin；记录未跑项和听音、屏幕、物理输入等观察限制。
+完成条件：结果和日志保存在本次 `build/runs/`，关联准确镜像；说明通过、失败、未执行与外部限制。物理显示、听音、真实输入与数字回执分开记录。测试不自动 pin current 或更新 baseline。

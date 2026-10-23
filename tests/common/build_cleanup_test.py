@@ -61,11 +61,15 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue((self.root / 'build/doom-old').exists())
 
     def test_document_evidence_and_git_worktree_are_preserved(self):
-        run = '20261019T123456Z-board-test'
-        self.put('build/runs/' + run + '/result.json', {})
-        doc = self.root / 'docs/ae350-platform.md'
-        doc.parent.mkdir()
-        doc.write_text('Evidence: build/runs/' + run + '/', encoding='utf-8')
+        for index, document in enumerate((
+                'docs/platforms/mega138k_ae350/operations.md',
+                'docs/platforms/primer20k_vexriscv/history/build-artifacts.md',
+                'docs/common/component-builds.md')):
+            run = f'20261019T12345{index}Z-board-test'
+            self.put('build/runs/' + run + '/result.json', {})
+            doc = self.root / document
+            doc.parent.mkdir(parents=True, exist_ok=True)
+            doc.write_text('Evidence: build/runs/' + run + '/', encoding='utf-8')
         (self.root / '.git').mkdir()
         self.put('build/doom-checkout/data.json', {})
         with patch('scripts.tools.build_cleanup.subprocess.run') as proc:

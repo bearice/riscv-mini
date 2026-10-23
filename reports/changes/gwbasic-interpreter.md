@@ -9,7 +9,7 @@
 - `scripts/bios_payload.py` 增加 `--source-dir`（整目录编译）、`--helper string`（复用仓库既有的 freestanding memcpy/memset/strlen）与 `--soft-float` 回退；默认改用 rv32imaf/ilp32f 以利用板上单精度 FPU（无 F 的配置用 --soft-float）。
 - 把 5x7 字模抽到 `firmware/common/font5x7.h` 共用，`firmware/common/rgb_canvas.h` 只保留绘制助手，图形模式文字与既有画布使用同一份字模。
 - 新增 `scripts/gwbasic_image.py`（打包 BOOT.RPB）、`scripts/gwbasic_sim.py`（在 QEMU 上运行真实目标产物，含 mstatus.FS 使能与 ecall shim）、`scripts/gwbasic_verify.py`（板端 TFTP 装载与交互验收，不写 Flash、不改主机网络）、`tests/gwbasic_test.py`（4 项镜像断言 + 4 项 QEMU 回归）。
-- 文档：新增 `docs/gwbasic.md`；`docs/bios.md` 的内存表改为与 `firmware/common/memory_layout.h` 一致的零基址并补 GW-BASIC 交叉引用；`firmware/README.md` 增加 `apps/` 分类与构建入口；`docs/system-design.md` 补文档索引。
+- 文档：新增 `docs/platforms/primer20k_vexriscv/gwbasic.md`；`docs/platforms/primer20k_vexriscv/bios.md` 的内存表改为与 `firmware/common/memory_layout.h` 一致的零基址并补 GW-BASIC 交叉引用；`firmware/README.md` 增加 `apps/` 分类与构建入口；`docs/platforms/primer20k_vexriscv/system-design.md` 补文档索引。
 - 验证：主机 8 项 GW-BASIC 回归与 18 项 workflow 检查通过；实板在 v0.8.0 full 配置上、由 Flash 启动的 BIOS（`romf0bea070`）经 `boot net BASIC.RPB` 装载本次 98984 B 产物（sha256 745dc18c…，重新构建后字节一致），`TESTS` 报 `ALL TESTS PASSED (77 checks)`、`PRINT 1+1` 显示 ` 2 `、`LIST`/`RUN` 输出 ` 1  2  3 BOARD OK`、`SYSTEM` 回到 BIOS。未验收项：物理断电冷启动、SD 路径 `boot sd`、真实 LCD/键盘与 SD `LOAD`。
 
 ## 验证

@@ -1,0 +1,61 @@
+# 原生 SD 与 SPI 回退
+
+> 适用机器：`primer20k_vexriscv`。配置以机器 JSON 和所选硬件产物的导出为准。
+
+原生 SD 使用锁定版 LiteSDCard 的 SDPHY、SDCore 和双向 Wishbone DMA。协议是 SD memory，一位初始化后协商四位 SDR；不支持 SDIO I/O function 卡。现有 FatFs 和公共 `hal_sd_*` 接口复用，bootloader 不链接任何 SD 驱动。
+
+## 频率与引脚
+
+sys 为 60 MHz。初始化 divider=150 得到 400 kHz；默认读取 divider=4，**15 MHz**；写入 divider=8，**7.5 MHz**。驱动仅在空闲、命令之间切换，等待旧半周期结束；相同频率不重复等待。15 MHz 读取已通过重复 CRC 和五分钟检查，15 MHz 写数据响应仍未验收，所以写路径保持 7.5 MHz，不能把读通过当作写通过。
+
+`hal_sd_set_read_clock()` 可在主循环空闲时选择 7.5/10/15/30 MHz，对应 divider=8/6/4/2；SPI/disabled 返回 UNSUPPORTED，重新初始化恢复默认 15 MHz。`hal_sd_get_info()` 的 clock_hz 是当前实际时钟，另有 read_clock_hz、write_clock_hz、high_speed 表示读策略、写策略与 CMD6 协商状态。
+
+30 MHz 超过默认速度模式 25 MHz 上限，驱动先以低速执行 CMD6 check/set，读取 64 B switch status，检查 Group1 的 High Speed 支持和选择结果，不进行 UHS/1.8 V 切换。此次实卡 CMD6 成功，但 30 MHz 读取失败，因此该档仅保留为显式实验接口，默认不用。支持/选择字段对应 [Linux MMC 的原始实现](https://github.com/torvalds/linux/blob/master/drivers/mmc/core/sd.c)，速度模式参见 [SD Association](https://www.sdcard.org/developers/sd-standard-overview/bus-speed-default-speed-high-speed-uhs-sd-express/)。
+
+| 信号 | FPGA 引脚 |
+| --- | --- |
+| CLK | N10 |
+| CMD | R14 |
+| DAT0..3 | M8、M7、M10、N11 |
+| Card Detect | D15，低表示插卡，两级同步 |
+
+引脚使用 LVCMOS33。同一构建只能由原生或 SPI 控制器之一使用这些脚。无需新 PLL；SD 使用 sys 分频和 SDR IO。
+
+卡进入 SPI 模式后需要重新上电才能返回 SD 模式；仅 FPGA 软件复位、SRAM 下载或 CMD0 不能完成这一转换。本板 SD 供电直连，没有 CPU 可控的卡电源开关。切换时先写入原生 FPGA 配置和匹配应用，再拔插 SD 卡或给整板重新上电；否则原来的 SPI 启动应用会再次将卡置为 SPI。[Espressif 官方说明](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c61/api-reference/peripherals/sdspi_share.html)记录了这一模式限制。
+
+## 传输与错误处理
+
+初始化发送初始时钟、CMD0/CMD8、CMD55/ACMD41、CID/RCA/CSD、选择卡、读取 SCR 和协商四位。SDHC 使用块地址，SDSC 使用字节地址并设置 512 字节块；容量来自 CSD，超过当前 32 位 LBA 能力的卡拒绝初始化。实卡验收使用 SDHC，SDSC 分支尚无对应实卡验证。
+
+默认 lite DMA 通过 128-bit coherent streaming 入口访问共享 L2；full 保留通用 32-bit Wishbone DMA。传输经 **4 KiB、16 字节对齐的 DDR bounce buffer**，因此上层缓冲不必对齐。每次最多八块；大请求分段，单块用 CMD17/24、多块用 CMD18/25，随后 CMD12 停止。读操作只有在数据 CRC 和 DMA 完成都成功后才复制到调用者；写操作先复制到 DMA 缓冲。默认构建启用 4 KiB 共享 writeback L2，SD lite 读写能观察与更新 dirty 行，所有权切换仍使用 `fence rw,rw`。
+
+命令与数据使用硬件 CRC7/CRC16；软件检查 R1/R6 和 event 错误。锁定版 SDCore 未把命令 CRC 错误传给 CSR，本地 `gateware/vendor/litesdcard/sdcore.py` 只修正该状态连接，保留原版权。仿真能复现原版坏 CRC 返回成功，本地返回 done/error/crc。上游功能依据见 [LiteSDCard](https://github.com/enjoy-digital/litesdcard)。
+
+命令 PHY timeout 为 250 ms，数据读 timeout 为 500 ms；软件 event / DMA 等待各最多一秒，ACMD41 初始化循环最多两秒。写响应/busy 超时也由软件等待覆盖。失败禁用 DMA、复位 SD 控制器及 FIFO，并标记未初始化，后续 `hal_sd_mount()` 重新初始化。CMD13 检查写后状态，`CTRL_SYNC` 不添加额外的数据读回。
+
+CD 在每次等待与块操作中检查。检测无卡时标记介质不可用，重新插卡后需要重新 mount；该路径仍需独立实物拔插验证。控制器 event IRQ 已定义，但当前 DMA 使用有界轮询；应用 timer/UART/GPIO IRQ 继续工作。
+
+`hal_sd_get_info()` 返回 backend、宽度、当前时钟、容量、介质/初始化状态，以及原生读块/写块/错误累计值。SPI 回退仍复用原驱动，其三个累计统计目前为 0，表示未实现统计；模式/时钟/容量/状态仍有效。原生构建的 `hal_spi_transfer(HAL_SPI_SD,...)` 与 `hal_spi_select(HAL_SPI_SD,...)` 返回 `HAL_UNSUPPORTED`，SPI LCD 不受影响。调用模型仍为一个裸机主循环，不支持 ISR/多个任务并发访问 SD/FatFs。
+
+## 块缓存
+
+`disk_read()` 默认经过 `firmware/drivers/blockcache.c`：32 个 4 KiB 块的全相联 LRU（128 KiB BSS，原生与 SPI 回退共用同一份）。块大小取 4 KiB 是因为它正好是原生主机单条命令的上限——未命中只多付一次本来就要发的读，之后的扇区是免费预读；对 BIOS 的文件服务尤其划算，因为一次 `FS_READ` 的上限就是 4096 字节。
+
+写是**直通**的：`disk_write()` 先落卡，再用 `bc_written()` 把同一批数据刷进缓存副本。这样任何时刻都没有待写数据，控制器复位、拔卡、`board reset` 之前不需要 flush，也不会出现“写返回成功但卡上还是旧数据”。`disk_initialize()` 复位控制器后调用 `bc_invalidate()`，卡容量变化或重新初始化不会读到旧块；填充失败（短卡尾、CRC 错）的槽位保持无效。
+
+`bc_set_enabled(0)` 整体绕过缓存并清空内容，`bc_stats()` 读命中/未命中/逐出。`bench sd` 进入时会临时关闭缓存、退出时恢复——它回答的是“这张卡多快”，不能让重复读同一 1 MiB 的基准从缓存里拿答案。`test sd cache` 校验缓存路径与直读路径逐字节一致（见 [固件测试](firmware-tests.md)）。
+
+## 构建、下载与验收
+
+先在机器 JSON 配置 `rtl.sd_profile` 与相关 features；`spi`、`lite`、`full` 使用各自匹配的 gateware 与固件，不能混用。
+
+```sh
+python scripts/mini.py build system --machine primer20k_vexriscv --synthesize
+python scripts/mini.py build system --machine primer20k_vexriscv --source firmware/examples/primer20k_vexriscv/sd_demo.c
+```
+
+运行与恢复走 [板端操作](operations.md)，专项 SD 参数查看 `scripts/primer20k_vexriscv/sd_verify.py --help`，并传入准确的硬件/固件产物。
+
+独立示例中 `r` 读取现有 `RVTEST00.BIN` 并计算 CRC；`b` 比较 16 次单块和一次 16 块读取，使用未对齐缓冲；`w` 用 `FA_CREATE_NEW` 选择未占用的 `RV6Txxxx.BIN`，写入 64 KiB、关闭、重新打开并逐字节/CRC 验证。它不会格式化或覆盖既有文件。`f` 换帧，`s` 状态，`!` 复位。测试文件保留在卡上。
+
+`sd_verify.py` 默认只读，`--write-test` 才新建一个文件；所有后续持续轮次只读原有测试文件和换帧。构建脚本检查 backend 与生成的硬件常数匹配，镜像 ABI 包含 CSR/IRQ，不能将 SPI 应用混用于原生 FPGA 配置。当前配置与限制见 [系统设计](system-design.md)。

@@ -1,6 +1,6 @@
 # 多平台目录重组 — 阶段 E 收口报告
 
-日期：2026-10-21。范围：`primer20k_vexriscv` 与 `mega138k_ae350` 平权机器包、设备解耦、scripts/mini_ops/tests 归属、firmware 树重组。计划见 [repo-reorg-execution-plan.md](repo-reorg-execution-plan.md)，阶段 0 基线见 [reorg-stage0-baselines.md](reorg-stage0-baselines.md)。
+日期：2026-10-21。范围：`primer20k_vexriscv` 与 `mega138k_ae350` 平权机器包、设备解耦、scripts/mini_ops/tests 归属、firmware 树重组。计划见 repo-reorg-execution-plan.md（文档已移除，见 Git 历史），阶段 0 基线见 [reorg-stage0-baselines.md](reorg-stage0-baselines.md)。
 
 ## 1. 提交链
 
@@ -45,7 +45,7 @@
 
 - 未做 HDMI、`hal/src` 跨机重构、`interfaces/requires`；这些仍在计划 §5“不做”。
 - 全部验收为主机侧：无实板烧写、无 Flash 写入、无真实外设观测。full-profile 的 50 条 setup 违例只登记，未修。
-- 旧发布包在新树上 `build --locked` 失败是预期（见 [component-builds.md](component-builds.md)），历史复现只用 `mini.py builds reproduce`。
+- 旧发布包在新树上 `build --locked` 失败是预期（见 [component-builds.md](../docs/common/component-builds.md)），历史复现只用 `mini.py builds reproduce`。
 
 ## 6. 验收评审（gemini-4）与修复
 
@@ -55,7 +55,7 @@
 - **B2 搬迁后 import/sys.path 残留**：`tests/primer20k_vexriscv/sim/test_video.py` 仍从旧适配器取 `WIDTH/HEIGHT`（B4 已移到 `devices/video/core.py`）；`tests/common/test_board_events.py` 仍插入已删除的 `scripts/tests` 并 import 兄弟模块；`test_audio_capture.py`、`test_boot_image.py`、`doom_debug.py`、`doom_verify.py`、`gwbasic_verify.py`、`mini_operations_test.py`、`firmware_verify_test.py` 只把 `ROOT/scripts` 放进 `sys.path` 却 import `scripts.*`。上述 8 处全部改正；`firmware_verify_test.py` 同时修掉 `import scripts.x.y` 后仍用裸名的 `NameError`，`mini_operations_test.py` 的 mock 目标改为 `scripts.primer20k_vexriscv.boot_upload.*`。
 - **B3 AE350 输入仍是 glob**：`ae350.py` 的 `_inputs()` 用两处 `.glob('*.py')` 收集脚本且无 `source_closure()`。改为显式 `AE350_SCRIPTS` 允许列表 + `source_closure(root)`（缺文件即 `ValueError`），并补上此前漏登记的 `scripts/modular/machines/__init__.py`。
 - **B4 框架/shared tools 仍直连机器包**：`cli.py` 在构造 parser 时就 import 20K release（并硬编码两处）；`worker.py` 直连 20K `system/firmware/rtl`；`targets.py` 用 `machine == AE350` 分支与三次硬编码机器名；`prepare_commit.py`、`build_records.py` 直连 AE350/20K 后端。现统一走 `scripts.modular.machines` 注册表（新增 `release()`；`description()` 再导出 `timing_report`），未知机器不再落入 20K 管线。
-- **B5 文档破坏**：`docs/ddr-boot.md` 相对链接指向已删除的 `../gateware/ddr_boot.py`；`scripts/README.md` 把 `board verify --suite firmware/boot/cold` 误改成 `firmware/bsp/primer20k_vexriscv/cold`（与 `board.py` 的判据不符）；`gateware/vendor/README.md` 出现双重前缀路径；`tests/primer20k_vexriscv/sim/README.md` 的示例命令仍是旧 `sim/test_*.py`。全部改正。
+- **B5 文档破坏**：`docs/platforms/primer20k_vexriscv/ddr-boot.md` 相对链接指向已删除的 `../gateware/ddr_boot.py`；`scripts/README.md` 把 `board verify --suite firmware/boot/cold` 误改成 `firmware/bsp/primer20k_vexriscv/cold`（与 `board.py` 的判据不符）；`gateware/vendor/README.md` 出现双重前缀路径；`tests/primer20k_vexriscv/sim/README.md` 的示例命令仍是旧 `sim/test_*.py`。全部改正。
 
 修复后的复验（本提交）：
 

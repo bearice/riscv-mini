@@ -1,6 +1,6 @@
 # 重组阶段 0 —— 基线与 manifest 记录
 
-生成：2026-10-21。基线树：`5acca4d` + `284e10d`（`sim/test_build_report.py` 的 `scripts.build` 死 import 修复，独立小提交，复跑通过）。本文是 [多平台目录重组执行计划](repo-reorg-execution-plan.md)（修订三）阶段 0 的记录件；阶段 A–D 的对比门一律以本文为基线。构建均走 `scripts/mini.py` 托管流程；本阶段未写板卡 Flash、未跑板卡操作。
+生成：2026-10-21。基线树：`5acca4d` + `284e10d`（`sim/test_build_report.py` 的 `scripts.build` 死 import 修复，独立小提交，复跑通过）。本文是 多平台目录重组执行计划（文档已移除，见 Git 历史）（修订三）阶段 0 的记录件；阶段 A–D 的对比门一律以本文为基线。构建均走 `scripts/mini.py` 托管流程；本阶段未写板卡 Flash、未跑板卡操作。
 
 ## 1. 两机 plan 记录（当日实测）
 
@@ -60,7 +60,7 @@ FAIL 分类（无一例进入阶段判定，登记为现状）：
 
 ## 5. 阶段 0 manifest
 
-`build/reorg-manifest.json`（`build/` 不入库，工作产物）：生成器 `build/reorg_stage0_manifest.py`，基础提交 `5acca4d`。**280 条**：P 6 / A 52 / B2-B4 各 2 / C 47 / D 169；`unmapped=0`（gateware/firmware/scripts/sim/tests 全部跟踪文件已映射或显式 stay）；引用扫描 656 个文件（模板 `gateware/|firmware/|scripts/[a-z0-9_]+\.py|sim/|__file__|parents\[|os\.path\.join`，范围 `*.py,*.md,*.ps1,*.c,*.h,*.ld,SKILL.md,AGENTS.md`）；185 条至少一处现役引用。历史表 `docs/version-history.md`、`docs/lab-environment.md` 命中 9 对，登记为 register-only 不改写（`CHANGELOG.md` 无命中）。
+`build/reorg-manifest.json`（`build/` 不入库，工作产物）：生成器 `build/reorg_stage0_manifest.py`，基础提交 `5acca4d`。**280 条**：P 6 / A 52 / B2-B4 各 2 / C 47 / D 169；`unmapped=0`（gateware/firmware/scripts/sim/tests 全部跟踪文件已映射或显式 stay）；引用扫描 656 个文件（模板 `gateware/|firmware/|scripts/[a-z0-9_]+\.py|sim/|__file__|parents\[|os\.path\.join`，范围 `*.py,*.md,*.ps1,*.c,*.h,*.ld,SKILL.md,AGENTS.md`）；185 条至少一处现役引用。历史表 `docs/common/version-history.md`、`docs/platforms/primer20k_vexriscv/lab-environment.md` 命中 9 对，登记为 register-only 不改写（`CHANGELOG.md` 无命中）。
 
 与计划正文的两处偏差（按"以代码为准更新 manifest"规则记录）：
 

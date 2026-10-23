@@ -239,7 +239,7 @@ static int doom_main(const struct bios_info *info) {
     /* doomgeneric contract: D_DoomMain returns after D_DoomLoop has run one
      * tick, so the platform owns the loop (see the other doomgeneric ports).
      * dbg_service() is the UART debug channel: it costs one BIOS_GETC per frame
-     * and holds the loop while the console is paused (docs/doom.md). */
+     * and holds the loop while the console is paused (docs/platforms/primer20k_vexriscv/doom.md). */
     for(;;) {
         dbg_service();
         if(dbg_frozen())continue;

@@ -30,7 +30,7 @@ converts the 8-bit source with the palette the board itself reported and counts
 the bytes that disagree with the panel, which is how a band or block artefact is
 attributed to the write path instead of to the data.
 
-See docs/doom.md for the command list and what each dump is for.
+See docs/platforms/primer20k_vexriscv/doom.md for the command list and what each dump is for.
 """
 import argparse
 import base64

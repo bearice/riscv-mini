@@ -8,7 +8,7 @@
  *
  * It is diagnostic only: no command here changes what the game renders, and
  * with no UART input pending the cost is one BIOS_GETC ecall per frame.
- * Commands and the host side are documented in docs/doom.md ("调试通道") and
+ * Commands and the host side are documented in docs/platforms/primer20k_vexriscv/doom.md ("调试通道") and
  * scripts/doom_debug.py.
  */
 #ifndef DG_DEBUG_H

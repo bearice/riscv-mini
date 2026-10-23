@@ -1,25 +1,17 @@
 ---
 name: riscv-mini-benchmark
-description: 在 TangPrimer-20K/riscv-mini 运行 BIOS benchmark 或对比历史性能，选择明确的候选和基线，保存三轮 all/cache 数据并生成可追溯性能报告。
+description: 在 riscv-mini 测量或比较指定机器的性能，关联准确候选、基线和工作负载并生成报告。
 ---
 
-# 性能测试与对比
+# 性能测量与对比
 
-在 riscv-mini 仓库根目录使用 PowerShell 和 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
+先读 [产物身份](../../../docs/common/build-artifacts.md)，明确机器、候选与基线、时钟、ISA、工作负载及外部条件。通过 [平台索引](../../../docs/README.md) 选择实际支持的套件，不将20K BIOS命令用于AE350。
 
-性能身份与目录读取 `docs/build-artifacts.md`，验收要求读取 `docs/pre-commit-sop.md`。
+- 20K：[BIOS benchmark](../../../docs/platforms/primer20k_vexriscv/benchmark.md)，运行前核对 [实板条件](../../../docs/platforms/primer20k_vexriscv/lab-environment.md)。完整对比保存 all/cache 各三轮，按报告工具组织双方结果。
+- AE350：[内存验证合同](../../../docs/platforms/mega138k_ae350/memory-validation.md) 与 [操作口径](../../../docs/platforms/mega138k_ae350/operations.md)。隔离测试使用 ILM 代码、DLM 栈/结果；保存原始 cycles、内存流量和计时边界，未标定频率不声称已验证吞吐。
 
-先明确候选和用户指定基线，确认各自配置、时钟与工作量；按测试顺序加载对应镜像。`--build-dir` 记录选择的镜像身份，不会自动编程，也不读回 FPGA 镜像。补测基线后恢复候选。
+按测量顺序加载准确镜像；20K 的 `benchmark.py --build-dir` 只关联选定身份，不自动编程或读回 FPGA。每次测量保存独立结果，不能覆盖上一轮；测量目录与稳定构建 workspace 是不同用途。
 
-```powershell
-$Candidate = & .venv/Scripts/python.exe scripts/mini.py builds path <候选完整ID>
-$Run = "build/reports/performance/$(Get-Date -Format yyyyMMdd-HHmmss)-<候选标识>"
-.venv/Scripts/python.exe scripts/primer20k_vexriscv/benchmark.py --build-dir $Candidate --suite all --rounds 3 --output-dir "$Run/all"
-.venv/Scripts/python.exe scripts/primer20k_vexriscv/benchmark.py --build-dir $Candidate --suite cache --rounds 3 --output-dir "$Run/cache"
-.venv/Scripts/python.exe scripts/tools/performance_report.py --candidate <候选ID> --baseline <基线ID> `
-  --candidate-results "$Run/all" --candidate-results "$Run/cache" `
-  --baseline-results <基线all目录> --baseline-results <基线cache目录> `
-  --output reports/performance/<本次对比名>.md
-```
+对比须采用一致工作量与计时口径，原始数据、配置、产物 hash 和结果可互相追溯。失败、零字节、未执行或旧身份无法关联的数据说明原因并排除有效吞吐比较。存储默认只读，网络/物理输入按请求范围选择。
 
-每次测量使用新目录。完成条件：三轮原始结果、身份与 hash、Markdown/JSON 报告可查，失败或零字节项目保留原因并排除吞吐对比，结束后的 BIOS/音频检查通过。旧数据仅有下载/UART 证据时使用 `--allow-legacy-results` 并说明关联限制。storage 默认只读；网络专用测试按任务选择。
+完成条件：适用轮次的原始数据与报告可查，说明比较结果、限制和结束后的板卡状态；不自动改变 baseline/current。

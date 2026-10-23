@@ -1,204 +1,41 @@
 # riscv-mini
 
-仓库同时维护 `mega138k_ae350` 平台：厂商 ITCM 启动、硬核 ILM/DLM、零基址 DDR 与统一 UART loader。入口见 [AE350 平台](docs/ae350-platform.md)、[当前内存验收](reports/ae350-p2.md) 和 [内存性能 baseline](reports/performance/ae350-memory-baseline.md)。旧 AE350 P1 ROM/SRAM 系统已退役；以下配置表仍描述 20K，两个机器的产物与 baseline 分开。
+多平台 RISC-V FPGA 工程。板卡物理资源由 Board JSON 描述，CPU、启动、内存、设备绑定和 IP 参数由 Machine JSON 描述；各机器通过同一构建与产物管理入口开发。
 
-Tang Primer 20K + Dock 3713 上的裸机 RISC-V 基础系统。CPU 从片上 8 KiB boot ROM 或 Flash XIP 启动（v0.8.0 默认 XIP，片内 ROM 为 0），使用 L2 RAM 作为启动栈，
-由软件完成 DDR 初始化与训练，把 Flash 或 UART 中的应用镜像载入 DDR，然后在 DDR 中执行。
-默认 DDR 固件为常驻 BIOS，提供 POST、LCD/UART 文字终端、USB 键盘、图形与 IO 服务，
-支持从 SD/TFTP 引导自定义裸机程序；OSB1 可一次性交接给 OpenSBI，进入 S-mode，见 [OpenSBI](docs/opensbi-port.md)。接口与用法见 [BIOS](docs/bios.md)。
-验收统一为 BIOS/DDR monitor 的 `test ...` 命令。系统整体结构、地址映射、中断映射与文档索引见
-[系统设计](docs/system-design.md)；板级引脚与电气约束见 [板级参考](docs/board-reference.md)。
+| machine | 板卡 / CPU | 文档入口 |
+| --- | --- | --- |
+| `primer20k_vexriscv` | Tang Primer 20K + Dock 3713 / VexRiscv 软核 | [20K 平台](docs/platforms/primer20k_vexriscv/README.md) |
+| `mega138k_ae350` | Tang Mega 138K Pro / AE350 硬核 | [138K / AE350 平台](docs/platforms/mega138k_ae350/README.md) |
 
-当前代码发布为 **system v0.8.0**（RAM 零基址与 Flash XIP 启动），版本依据见 [Git 里程碑追溯](docs/version-history.md)。
-提交前按 [SOP](docs/pre-commit-sop.md) 保存范围和适用报告；仅代码发布更新 [changelog](CHANGELOG.md)，文档/流程提交另存范围记录。代码提交后从 clean Git hash 重建最终二进制并归档。
-构建与历史产物入口见 [目录说明](docs/build-artifacts.md)，本地 `build/README.md` 列出当前实板版本、基线和最新候选。
+启动流程、时钟、地址、外设、固件 ABI 和验收资格分别由各机器定义。共同的配置格式不表示两台机器的镜像或驱动兼容。
 
-## 当前配置
+## 开始开发
 
-| 项目 | 配置 |
-| --- | --- |
-| CPU / 总线 | full 默认 VexRiscv MMU、无 FPU，RV32IMA，60 MHz，2 KiB I/D-cache、Sv32、4 KiB 共享 writeback L2；可独立关闭 MMU/FPU |
-| 片上存储 | Flash XIP 启动（ROM 模式可选 4/8 KiB boot ROM）、无独立工作 SRAM；软件初始化 DDR，bootloader 栈/data/BSS 复用 4 KiB L2 RAM；SD/LCD/音频/网络/USB 驱动均在 DDR 应用中 |
-| DDR | H5TQ1G63EFR-PBC，128 MiB，CK 120 MHz，DLL-off，CL6/CWL6 |
-| Flash | 本机 JEDEC `0x0b4017`，XTX 8 MiB；独立 SPI，10 MHz |
-| UART / timer | 115200 8N1；应用 UART IRQ RX，timer0 ticks/uptime，timer1 1 ms IRQ |
-| SD | 原生四位 SD lite + 32-bit DMA 端口 / 内存侧 burst buffer，初始化 400 kHz、读 15 MHz / 写 7.5 MHz，FatFs；可选 SPI 回退 |
-| SPI LCD | 240×135，6 MHz；显示系统和 SD 状态 |
-| RGB LCD | 480×272 RGB565，9 MHz，约 59.94 Hz；DDR 双缓冲、8 KiB FIFO |
-| 音频 | PT8211 PCM16 stereo，48,000 Hz 共用 DDS；512 帧 FIFO、DDR ring DMA；默认静音 |
-| Ethernet | RTL8201F + LiteEth RMII，100 Mbps 全双工；50 MHz PHY REF_CLK，MDIO、2 RX / 2 TX packet slots、Flash UID 派生 MAC |
-| USB Host | USB3317 + Ultraembedded PIO Host + TinyUSB；FS 12 Mbit/s，sys 60 MHz 串行收发，IRQ、Boot 键盘/鼠标和 raw HID HAL；可选 OHCI 回退 |
-
-完整频率、时钟来源和复位关系见 [时钟树](docs/clocks.md)。默认轻量 USB 移除了 48 MHz PLL，
-当前 PLL 为 3/4；ULPI 仅用于 USB3317 初始化，仍保留相移 60 MHz PLL。CPU/DDR 保持 60/120 MHz。
-当前 USB 实现、资源和验收见 [轻量 USB](docs/usb-light.md)，后端选择与 OHCI 回退见
-[USB Host](docs/usb.md)。PRIMARY 和 LW 仍为 8/8，扩展前需重新评估时钟布线。
-
-MMU/FPU 独立开关、SD none/spi/lite/full 四种 profile 及 48 kHz 共用 DDS 见
-[功能配置](docs/configuration-profiles.md)。full 默认启用 MMU、关闭 FPU、SD lite；minimal 默认关闭
-MMU/FPU。分模块 RTL 的转换语义与模块粒度见 [分模块 RTL](docs/rtl-defaults.md)。
-
-软件 DDR 启动、L2 启动 RAM和函数大小见 [DDR 启动](docs/ddr-boot.md)。
-默认包含 4 KiB 共享 writeback L2（`--l2-size 4096`）：CPU/音频 32-bit，LCD 16-bit / SD lite 32-bit，内存侧 128-bit coherent，帧缓冲不分配缓存行，
-后端直接连接 LiteDRAM native crossbar；启动 RAM 要求 L2 至少 4 KiB。缓存路径和一致性约束见 [L2 缓存](docs/l2-cache.md)。
-MMU/FPU 的资源与布线边界见 [CPU 能力](docs/cpu-mmu-fpu.md)。
-
-RGB LCD 默认显示 BIOS 的 80×34 字符终端；图形模式提供 RGB565 双帧槽。独立基础 monitor
-（`--source firmware/examples/primer20k_vexriscv/monitor.c`）启动时显示黑色画布；扫描器和 DMA 保留，
-`video_frame()` / `video_present()` 提供写帧和换帧接口，见 [显示规格](docs/video-spec.md)。HDMI 暂缓。
-独立 [键鼠图形 demo](docs/usb-input-demo.md) 在大 LCD 上显示鼠标光标、键盘文字和输入状态，
-通过 UART 装入 DDR；源码为 `firmware/examples/primer20k_vexriscv/usb_input_demo.c`。
-
-复位后的本机网络初始化流量会短时占满两个未过滤 RX 槽，并发窗口前显式等待其结束；
-限制与失败现场见 [Ethernet](docs/ethernet.md)。Flash 启动后首次 USB 枚举存在未定位的间歇失败，
-`test usb restart` 可恢复，见 [轻量 USB](docs/usb-light.md)。
-
-C/C++ HAL、machine trap/IRQ、六个 LED、四用户按键、四位 DIP、WS2812B 和 F10 共用 PHY reset
-的接口与示例见 [HAL](docs/hal.md)。原生四位 SD 见 [原生 SD](docs/native-sd.md)，PT8211 与
-DDR ring DMA 见 [音频](docs/audio.md)，外接 I2S 麦克风见 [麦克风](docs/microphone.md)。
-RTOS 属于后续工作。
-
-## 固件测试命令
-
-构建功能开关、最小配置及分模块 Verilog 输出见 [模块化构建](docs/modular-build.md)。默认启用
-全部功能，使用 `--profile minimal` 或 `--without-NAME` 裁剪外设；关闭的功能同时从硬件和应用
-驱动中移除，未启用功能的测试命令返回 `UNSUPPORTED`。
-
-接线以用户更正为准：麦克风 DA=P11、CK=R11、LR=M15、WS=J16，另接 GND/3V3；T9 继续用于
-WS2812。双麦克风 demo 为 `firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c`，第二只接 DA=T6、
-CK=R8、LR=T8、WS=P9；monitor 命令为 `test mic stereo`。
-
-输入 `test` 列出 DDR、Flash、UART/IRQ、SD、两块 LCD、板级 IO、音频、Ethernet、USB 和并发
-测试命令。完整参数、读写影响和外部验收边界见 [固件测试命令](docs/firmware-tests.md)。例如：
-
-```text
-test ddr
-test sd blocks
-test lcd
-test usb restart
-test audio
-test soak 300
-test lcd clear
-```
-
-网络收发使用 `test eth start/stop`，真实 HID 输入使用 `test usb input`；两秒音调使用显式
-`test audio tone`。这些检查只在请求时执行，boot ROM 不包含任何测试代码。批量自动验收使用
-`scripts/primer20k_vexriscv/firmware_verify.py --reset --soak-seconds 300`，脚本调用固件命令，不要求 USB 拔插或物理键盘输入。
-
-## 开发环境
-
-Linux/NixOS 开发环境使用仓库根目录的 Nix flake：
+Linux/NixOS 使用仓库 Nix flake；其他环境的工具路径由 `.tools.local.json` 发现。
 
 ```sh
 nix develop
 python scripts/mini.py --help
 python scripts/mini.py doctor
+python scripts/mini.py plan gateware --machine primer20k_vexriscv
+python scripts/mini.py plan gateware --machine mega138k_ae350
 ```
 
-flake 使用锁定的 Nixpkgs 26.05 提供 uv，由 uv 按 `.python-version` 安装和管理 Python 3.10.20、虚拟环境及 `requirements.lock` 中的 LiteX/Migen 依赖；同时提供 xPack RISC-V GCC 15.2.0-1、JDK 8 和 sbt-launch 1.9.7。首次进入时同步依赖并配置忽略提交的 `.tools.local.json`。CPU RTL 生成所需的 `JAVA_HOME`、`SBT_LAUNCH_JAR` 和兼容的 `VEXRISCV_SOURCE` 也会自动设置，可用 `sbt` 命令启动 sbt。Gowin EDA 使用 [Gowin IDE Wrapper](https://github.com/bearice/gowin-ide-wrapper) 提供的 FHS 启动器；无 X/Wayland 显示时自动使用 Qt offscreen。EDA 本体因需注册下载，不放入仓库或 Nix store。将发行包解压到 `~/Gowin_V1.9.12.04_linux`，或在进入 shell 前设置 `GOWIN_HOME` 指向解压目录。使用其他已许可版本时也通过 `GOWIN_HOME` 指定。
+构建使用 `mini.py build <target> --machine <machine>`。先编辑对应机器 JSON，再运行相同命令；CLI 不提供硬件覆盖。重复构建保留同一 workspace 和缓存，默认 `default`。准确产物和收据记录在 `build/store` 与 `build/runs`，候选不自动成为 current。
 
-需要完整 MMU CPU RTL 时：生产核已提交在 `gateware/vendor/vexriscv/`（`VexRiscv_Mmu.v` 与生成参数、来源记录），`full` 直接可用，无需生成。只有调整参数或需要 FPU/压缩指令等其它组合时才在本地生成：
+完整入口见 [文档目录](docs/README.md)、[开发环境](docs/common/development.md)、[操作指南](scripts/README.md) 和 [组件构建](docs/common/component-builds.md)。
 
-```sh
-# 调整生产核参数并入库（会重写 generator.json / PROVENANCE.json 的哈希）
-python scripts/mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv --source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR"
-# 其它能力组合只在本地生成，用 --cpu-verilog 覆盖
-python scripts/mini.py build cpu --generate --source "$VEXRISCV_SOURCE" --java "$JAVA_HOME/bin/java" --sbt-launch "$SBT_LAUNCH_JAR" --output-dir build/cpu-features
-```
+## 源码目录
 
-Windows PowerShell 仍可使用独立 Python 环境、Gowin FPGA Designer 和 xPack RISC-V GCC。机器路径写入忽略提交的 `.tools.local.json`。
-
-```powershell
-cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
-.\scripts\bootstrap.ps1
-. .\scripts\env.ps1
-& $MiniPython .\scripts\tools\doctor.py
-& $MiniPython .\scripts\mini.py build system --synthesize
-# SPI 回退拥有相同 SD 引脚，需要重新下载匹配的 FPGA 配置和应用。
-& $MiniPython .\scripts\mini.py build system --sd-profile spi --synthesize
-```
-
-`bootstrap.ps1` 可重复执行；缺少工具时可传 `-GowinBin` 和 `-RiscvBin`。smoke 调用统一的 `mini.py build system --profile minimal`，使用随依赖分发的 lite CPU，无需已有 CPU 生成产物。日常固件更新用 `mini.py build bios --hardware current`，硬件改动用 `build system --hardware current --refresh-hardware`；只有 `--synthesize` 才运行 Gowin，构建不编程板子。
-
-所有目标都通过 `mini.py build <target>` / `mini.py plan <target>` 调用，旧独立构建脚本已删除。组件默认保存到 `build/store`，临时对象在 `build/work`，请求、工具环境、完整 flags 和结果在 `build/runs/<run-id>`。`--output-dir` 可创建系统输出视图或指定上游输出目录。跨 build 复用、CPU 与上游目标、导出和复现详见 [组件构建](docs/component-builds.md)。历史 catalog/archives/recipes 保留，查询使用 `mini.py builds list`，发布使用 `mini.py release create/export/verify`。
-
-全新 checkout 在 Windows 上的两个环境前提：先执行 `git config --global core.longpaths true`，
-否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败
-（`Filename too long` → `invalid index-pack output`）；若全局 uv 缓存不可用
-（`Failed to initialize cache ... sdists-v9\.git`），把 `UV_CACHE_DIR` 指到短路径，例如
-`$env:UV_CACHE_DIR='C:\uv-cache-mini'`。从零使用 full profile（MMU、无 FPU）不需要额外生成：
-生产核 `gateware/vendor/vexriscv/VexRiscv_Mmu.v` 与生成参数、来源记录一起随仓库提交，构建自动选用并由
-`locked_cpu` 校验哈希；只有调整参数或需要其它能力组合时才重新生成，命令与依赖见 [CPU 能力](docs/cpu-mmu-fpu.md)。
-实验核仍通过 `--cpu-verilog` 选择 RTL 和配对元数据。构建把编译器临时目录重定向到组件 work/tmp，
-`%TEMP%` 不可写时也不会失败。
-
-系统输出视图的 `validation.json` 记录两级固件的二进制大小；ELF 保留 text/data/BSS 信息，综合构建还记录
-实际 PnR 的 Logic、Register、CLS、BSRAM、I/O 和所有时钟资源。缺失必要资源或 setup/hold 报告会使
-构建失败。`board_test` 字段只表示构建脚本未做上板测试，实板结果记录在独立验收 JSON 和验证文档中。
-软件构建不产生新的 PnR 证据，建议使用不同输出目录保存 FPGA 构建与独立示例。
-
-## 基本操作与固件更新
-
-统一入口是 `./mini.ps1`（Python 实现 `scripts/mini.py`），按任务查 [操作指南](scripts/README.md)。它读取所选构建的身份和 ROM/XIP 模式，负责检查、步骤顺序、读回验证与独立日志。
-
-```powershell
-# 找到已验收版本；按其配置编译当前源码（不编程板子）。
-./mini.ps1 builds show current
-./mini.ps1 build system --hardware current
-
-# 静默表示 unknown；恢复/临时运行均使用 SRAM 和 DDR。
-./mini.ps1 board status
-./mini.ps1 board recover --build current
-./mini.ps1 board run --build current
-
-# 持久更新先检查完整计划；去掉 --dry-run 才写 Flash。
-./mini.ps1 board update --build current --dry-run
-
-# 固件验收不写 Flash；精确读回和外部断电启动是不同验收项目。
-./mini.ps1 board verify --build current --suite firmware --soak-seconds 60
-./mini.ps1 board verify --build current --suite flash
-./mini.ps1 board verify --build current --suite cold
-```
-
-`--build` 接受 catalog ID、明确引用或产物目录。临时应用使用 `board run --image <app.img>`，入口检查 ABI；重建应用可用 `build system --hardware current --source firmware/bios/main.c`。操作结果保存在 `build/operations/<时间>-<任务>/`，不覆盖发布包或上一轮日志。
-
-XIP 持久更新包含 FPGA 配置、Flash 启动代码和应用三个产物。旧 `boot_upload.py --mode install` 与 `boot_verify.py --install` 仅支持 ROM，XIP 会在板端操作前拒绝。完整更新走 `board update`；不再手工拼接下载器调用。更新涉及单份 Flash，不是原子更新，失败时按本次 `result.json` 的恢复说明处理。
-
-### TFTP 引导服务器
-
-`boot net` 需要主机侧 TFTP 服务器；UDP69 防火墙规则绑定的是 Python313 解释器，`.venv` 的 python 被防火墙阻断：
-
-```powershell
-& C:\Users\bearice\AppData\Local\Programs\Python\Python313\python.exe .\scripts\bios_tftp.py `
-    --bind 169.254.25.153 --file build\uboot\firmware\UBOOT.OSB --name UBOOT.OSB
-```
-
-板端 `boot net <file>` 的文件名必须与 `--name` 一致；payload 校验只接受匹配当前布局的 OS 载荷
-（OSB1/OSB2，如 `UBOOT.OSB`，当前默认 load=0x01000000），BIOS 自身的 `app.img`（load=0x00800000）会被拒绝。
-ARP 解析每 250 ms 重试一次，最长 10 秒；link 位由 HAL 每 250 ms 轮询刷新，首包 `HAL_NO_MEDIA` 属正常。
-
-详细启动流程、镜像格式、分区、恢复命令和验证范围见 [bootloader](docs/bootloader.md)。
-当前默认 full 配置的结构、时钟和资源见
-[系统设计](docs/system-design.md)。
-
-## 目录
-
-| 路径 | 内容 |
+| 路径 | 职责 |
 | --- | --- |
-| `gateware/` | SoC、可选 SD backend、DDR 端口调度、视频扫描、时序约束和板级配置 |
-| `firmware/bsp/primer20k_vexriscv/` | 共用启动汇编；ROM 使用 L2 启动 RAM 建立栈 |
-| `firmware/bootloader/` | ROM 装载器、镜像协议、boot / DDR app linker script |
-| `firmware/bios/` | 默认常驻 BIOS：POST、TTY、设置、系统服务与 SD/TFTP 引导 |
-| `firmware/diagnostics/` | BIOS 与 monitor 共用的板级自检命令 |
-| `firmware/common/` | 固件与示例共用的绘图、网络辅助代码 |
-| `firmware/drivers/` | UART、timer、Flash、SD/FatFs、两块 LCD 的软件接口 |
-| `firmware/hal/` | 公共 C/C++ API、trap/IRQ、板级 IO、音频、Ethernet 和 USB Host |
-| `firmware/examples/` | 可选 monitor、HAL/SD/音频/网络/键鼠应用；bios_demo.c 使用二级程序 SDK |
-| `firmware/vendor/` / `gateware/vendor/` | 固定版本第三方源码、许可证与本地补丁说明 |
-| `scripts/` | 环境、构建、镜像打包、上传和板级验收 |
-| `sim/` | SPI、DDR 调度、视频扫描、镜像/传输协议验证 |
-| `docs/` | 当前系统设计、板级参考和各子系统接口说明 |
+| `gateware/boards/` | 物理板卡 JSON |
+| `gateware/machines/<machine>/` | 机器配置、SoC、总线、内存和设备适配 |
+| `gateware/devices/`、`gateware/vendor/` | 可复用设备核心与固定厂商输入 |
+| `firmware/bsp/<machine>/`、`firmware/bootloader/<machine>/` | 机器运行时与启动固件 |
+| `firmware/` | HAL、BIOS、诊断、应用与依赖，见 [固件目录](firmware/README.md) |
+| `scripts/`、`tests/` | 共享工具与按机器划分的操作、回归 |
+| `docs/` | 通用规则、各机器设计、历史提案的独立入口 |
+| `reports/` | 带准确候选身份的改动、验收和性能记录 |
 
-源码仓库在本目录，父目录 `../docs/` / `../examples/` 为硬件参考资料。
-
-历史设计和测试记录由 Git 历史保留；docs 仅维护当前设计，不依赖本地构建证据。
+普通提交遵循 [轻量 SOP](docs/common/pre-commit-sop.md)。版本、CHANGELOG、完整发布验收与源码归档仅在明确要求正式 release 时处理；发布记录见 [版本追溯](docs/common/version-history.md)。

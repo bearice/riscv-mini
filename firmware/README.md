@@ -1,35 +1,32 @@
 # 固件目录
 
-默认构建 `bios/main.c`：ROM 从 Flash/UART 装载 BIOS 到 DDR，BIOS 再从 SD/TFTP 引导裸机程序。ROM 不链接显示、文件系统、USB、音频或网络驱动。
+固件的启动存储、链接布局、IRQ/cache/DMA 合同由机器定义。共用设备核心和镜像传输不表示两台机器的程序可互换。
 
 | 目录 | 职责 |
 | --- | --- |
-| `bios/` | 默认常驻 BIOS：setup/POST、TTY、图形与 IO 服务、设置、SD/TFTP 引导；`include/bios.h` 为二级程序的公开 ABI |
-| `opensbi/` | 单 hart M-mode SBI 平台、兼容补丁和 S/U-mode 硬件探针；使用 OSB1 镜像由 BIOS 一次性交接 |
-| `bootloader/` | 小型 ROM loader、ROM Flash 驱动和镜像协议；`boot.ld` 为 ROM，`app.ld` 为 DDR 固件链接布局 |
-| `boot/` | ROM 与 DDR 固件共用的启动汇编，按构建宏选择启动路径 |
-| `hal/` | 公共设备 API、IRQ/trap、板级 IO，以及音频/麦克风/网络/USB 实现 |
-| `drivers/` | UART、timer、SPI、Flash、SD/FatFs、LCD 和 freestanding 字符串后端 |
-| `diagnostics/` | BIOS 与 monitor 共用的 `test ...` 检查与输入事件观察；不属于 ROM |
-| `common/` | BIOS、诊断与示例共用的 RGB 绘图/font 和网络报文辅助函数 |
-| `examples/` | 可选独立示例；旧串口 monitor 为 `monitor.c`，不是默认固件 |
-| `apps/` | 独立二级程序应用；`gwbasic/` 是可被 BIOS 加载的 GW-BASIC 解释器 |
-| `vendor/` | FatFs、TinyUSB 固定版本源代码及许可证 |
+| `bootloader/<machine>/` | 各机器独立的常驻启动固件 |
+| `bsp/<machine>/` | 机器启动运行时、链接布局及设备适配 |
+| `diagnostics/<machine>/`、`examples/<machine>/` | 按机器划分的诊断和应用 |
+| `hal/`、`drivers/` | HAL 和驱动；实际支持范围见机器文档 |
+| `bios/` | 20K 常驻 BIOS、服务 ABI 与 SDK |
+| `opensbi/` | 20K OS 引导平台和探针 |
+| `common/`、`libc/` | 按目标选择的辅助代码和应用运行库 |
+| `apps/` | BIOS 二级程序等独立应用 |
+| `vendor/` | 固定第三方源码及许可证 |
 
-构建入口：
+## 按机器构建
 
-```powershell
-& $MiniPython scripts/build.py                            # BIOS
-& $MiniPython scripts/build.py --app firmware/examples/primer20k_vexriscv/monitor.c
-& $MiniPython scripts/build.py --app firmware/examples/primer20k_vexriscv/usb_input_demo.c
-& $MiniPython scripts/bios_payload.py --source firmware/examples/bios_payload/bios_demo.c
-& $MiniPython scripts/gwbasic_image.py                    # GW-BASIC 解释器 RPB1
+所有构建使用 `mini.py build <target>`。硬件相关参数来自机器 JSON，软件消费所选硬件产物的导出。
+
+```sh
+python scripts/mini.py build bios --hardware <20K-system-digest>
+python scripts/mini.py build system --machine primer20k_vexriscv --source firmware/examples/primer20k_vexriscv/monitor.c
+python scripts/mini.py build bootloader --machine mega138k_ae350
+python scripts/mini.py build payload --machine mega138k_ae350
 ```
 
-前三种生成由 ROM 直接装载的 DDR 固件。`bios_demo.c` 和 `nyancat_demo.c` 使用独立裸机 SDK，生成由 BIOS 装载的 RPB1 程序，不能作为 `build.py --app` 入口。[Nyan Cat 示例](../docs/nyancat-demo.md) 包含 GIF 帧转换、动态背景和循环 BGM。ABI、内存所有权和命令见 [BIOS](../docs/bios.md)，硬件检查见 [固件测试命令](../docs/firmware-tests.md)。生产固件和诊断不引用 examples 内的实现。
+20K 的 bootloader 完成 DDR 初始化和 Flash/UART 装载，BIOS 再装载 RPB/OSB；见 [20K 固件与接口](../docs/platforms/primer20k_vexriscv/README.md)、[BIOS](../docs/platforms/primer20k_vexriscv/bios.md) 和 [二级程序移植](../docs/platforms/primer20k_vexriscv/bios-payload-porting.md)。ROM 不链接 BIOS 的全部外设驱动。
 
-[GW-BASIC 解释器](../docs/gwbasic.md) 是 `apps/` 下的完整应用，同样由 BIOS 从 SD/TFTP 装载；它只用 BIOS 的 ecall 服务，所以主机侧可以用 `scripts/primer20k_vexriscv/gwbasic_sim.py` 在 QEMU 上跑真实产物，验收见 `tests/primer20k_vexriscv/gwbasic_test.py`。
+AE350 启动固件在 `bootloader/mega138k_ae350/`，负责 ITCM 启动、ILM/DLM 初始化、自主 POST 和 UART loader；应用运行时在 `bsp/mega138k_ae350/`，诊断在 `diagnostics/mega138k_ae350/`。见 [AE350 平台](../docs/platforms/mega138k_ae350/README.md) 与 [启动固件](../docs/platforms/mega138k_ae350/bootloader.md)。
 
-OpenSBI 的构建工具、镜像布局、CSR timer 和验收边界见 [OpenSBI 平台](../docs/opensbi-port.md)。它不链接 BIOS 的设备 HAL，普通 RPB1 程序仍使用原来的可返回 BIOS ABI。
-
-AE350 平台的常驻 ROM 启动固件位于 `bootloader/ae350/`，由统一构建入口生成独立 bootloader 产物，供各阶段共用。`bsp/mega138k_ae350_payload/` 是应用启动运行时；`diagnostics/ae350_memory/` 是后续可复用的内存诊断。
+产物复用、ABI 校验与稳定 workspace 规则见 [组件构建](../docs/common/component-builds.md)。

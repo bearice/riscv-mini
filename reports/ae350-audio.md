@@ -1,6 +1,6 @@
 # AE350 P5 音频与麦克风验收
 
-2026-10-22，Tang Mega 138K Pro，sys/mem/DDR CK 为 80/100/400 MHz。候选只下载 FPGA SRAM；Flash、catalog `current` 与版本未修改。接口与复现命令见[音频合同](../docs/ae350-audio.md)。
+2026-10-22，Tang Mega 138K Pro，sys/mem/DDR CK 为 80/100/400 MHz。候选只下载 FPGA SRAM；Flash、catalog `current` 与版本未修改。接口与复现命令见[音频合同](../docs/platforms/mega138k_ae350/audio.md)。
 
 ## 候选身份
 

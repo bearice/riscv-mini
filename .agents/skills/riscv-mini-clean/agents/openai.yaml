@@ -1,4 +1,4 @@
 interface:
-  display_name: "riscv-mini 清理中间构建"
-  short_description: "检查清理计划，删除中间构建并保留可复现输入与固定版本"
-  default_prompt: "使用 $riscv-mini-clean 完成本次清理中间构建，保存适用结果与可追溯证据。"
+  display_name: "riscv-mini 清理构建产物"
+  short_description: "审阅缓存和无引用产物清理计划，保护固定版本及被引用证据"
+  default_prompt: "使用 $riscv-mini-clean 检查并清理已授权范围的构建产物，报告执行结果。"
