@@ -8,7 +8,7 @@
 
 ```powershell
 & $MiniPython scripts/mini.py build doom --soft-float      # 现役 rv32ima 配置必须软浮点
-& $MiniPython scripts/mini.py build doom                   # 只在带 FPU 的 --feature fpu=on 配置上用
+& $MiniPython scripts/mini.py build doom                   # 只在机器 JSON 开启 FPU 的配置上用
 ```
 
 产物是 `build/doom-payload/BOOT.RPB`（约 366 KiB，入口 `0x01000000`，另声明约 48 MiB `.bss` 作为 DOOM 的堆）。

@@ -21,12 +21,8 @@ from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 FAN_HZ = 25_000
-FAN_PERIOD = amap.FABRIC_HZ // FAN_HZ
 TEMP_CODE = 100  # 25.00 C in the vendor's quarter-degree sample
-SAMPLE_GUARD = amap.FABRIC_HZ // 10
 TACH_DIV = 16
-TACH_MIN = 800 // TACH_DIV  # ignore edges closer than 10 us
-TACH_TIMEOUT = (amap.FABRIC_HZ // 2) // TACH_DIV
 
 
 class _TempSim(Module):
@@ -89,7 +85,11 @@ class GowinTempAdc:
 
 
 class BoardSense(LiteXModule):
-    def __init__(self):
+    def __init__(self, clock_hz):
+        FAN_PERIOD = clock_hz // FAN_HZ
+        SAMPLE_GUARD = clock_hz // 10
+        TACH_TIMEOUT = (clock_hz // 2) // TACH_DIV
+        TACH_MIN = round(clock_hz * 10e-6) // TACH_DIV
         self.pull = Signal(reset=1)
         self.tach = Signal()
         self.off = Signal(12)

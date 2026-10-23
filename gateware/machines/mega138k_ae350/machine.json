@@ -1,154 +1,158 @@
 {
-  "schema": 1,
+  "$schema": "../../schemas/machine.schema.json",
+  "schema_version": 2,
   "id": "mega138k_ae350",
   "board": "mega138k_pro",
-  "stage": "native-memory",
   "cpu": {
     "kind": "hard",
-    "vendor": "Gowin/Andes",
-    "subsystem": "AE350",
-    "core": "A25",
-    "xlen": 32,
-    "hardware_isa": "rv32imafdc_zicsr_zifencei",
-    "initial_software_abi": "ilp32",
-    "software_qualification": "integer ABI; floating-point, MMU and interrupt software outside memory qualification",
-      "subsystem_configuration": "gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_config.v",
-    "core_clock_route": "PLL_R[0]/CLKOUT1"
-  },
-  "memory": {
-    "backend": "gowin-customized-ddr3-ahb",
-    "shared_l2": false,
-    "physical_geometry": {
-      "part": "H5TQ4G63EFR-RDC",
-      "chips": 2,
-      "chip_data_width": 16,
-      "data_width": 32,
-      "row_bits": 15,
-      "bank_bits": 3,
-      "column_bits": 10,
-      "size_bytes": 1073741824,
-      "status": "identified-from-photo-and-reference-not-memory-tested"
-    },
-    "published_ram_bytes": null,
-    "fabric_access": "pending-P3-arbitration",
-    "cache_dma_ownership": "pending-P3"
+    "implementation": "ae350",
+    "abi": "ilp32"
   },
   "clocks": {
-    "policy": "characterize-specification-limits",
-    "core": {
-      "target_hz": 800000000,
-      "max_hz": 800000000
-    },
-    "data_memory_bus": {
-      "reference_hz": 50000000,
-      "exclusive_max_hz": 200000000
-    },
-    "ahb": {
-      "reference_hz": 100000000,
-      "exclusive_max_hz": 200000000
-    },
-    "apb": {
-      "reference_hz": 100000000,
-      "exclusive_max_hz": 200000000,
-      "synchronous_with": "ahb",
-      "ratio": "1:1"
-    },
-    "ddr_ck": {
-      "target_hz": 400000000,
-      "max_hz": 400000000
-    },
-    "ddr_rw": {
-      "reference_hz": 100000000,
-      "min_ddr_ck_ratio": "1:4"
-    },
-    "ddr_reference": {
-      "reference_hz": 50000000
-    },
-    "rtc": {
-      "required_hz": 32768,
-      "demo_hz": 10000000,
-      "status": "reference-only"
-    }
+    "sys": 80000000,
+    "cpu": 800000000,
+    "data_memory_bus": 100000000,
+    "video": 25175000
   },
-  "runtime_abi": "rv32ima_zicsr_zifencei / ilp32; generated address ABI",
-  "loader_format": "ae350-20k-frame-v1; 48-byte header, 128-byte packets, ABI/range/CRC checks",
-  "video": "hdmi",
-  "pending": [
-    "floating-point-and-MMU-software",
-    "timer-IRQ-software",
-    "DMAC-and-shared-DDR-arbitration",
-    "XIP-and-HDMI"
-  ],
-  "ddr3": {
-    "ip_component": "gateware/vendor/gowin_gw5ast/gowin_ddr3_400 (Gowin DDR3 Memory Interface, 256-bit user interface)",
-    "ip_config": {
-      "MEMORY_CLK_MHZ": 400,
-      "CLK_RATIO": "1:4",
-      "DQ_WIDTH_BITS": 32,
-      "DRAM_WIDTH_BITS": 16,
-      "RANKS": 1,
-      "ROW_BITS": 15,
-      "BANK_BITS": 3,
-      "COLUMN_BITS": 10,
-      "BURST_MODE": "8",
-      "BURST_TYPE": "SEQ",
-      "ADDR_CMD_MODE": "1T",
-      "CL": 6,
-      "CWL": 5,
-      "AL": "0",
-      "RTT_NOM": "60",
-      "RTT_WR": "OFF",
-      "OUTPUT_DRV": "LOW",
-      "tCK_ps": 2500,
-      "tRP_ps": 15000,
-      "tRRD_ps": 10000,
-      "tRTP_ps": 7500,
-      "tRCD_ps": 15000,
-      "tRC_ps": 55000,
-      "tRAS_ps": 37500,
-      "tFAW_ps": 40000,
-      "tWTR_ps": 7500,
-      "tCKE_ps": 10000,
-      "tREFI_ps": 7800000,
-      "tRFC_ps": 260000,
-      "tDLLK": 512,
-      "ip_source_sha256": "ae7db3c0bb476e4d132518c3b5f3824abfd02fe2b6a163b006752a74b4bb159e"
+  "memory": {
+    "resource": "ddr3",
+    "controller": "gowin_ddr3_400",
+    "base": 0,
+    "size_bytes": 1073741824
+  },
+  "boot": {
+    "mode": "rom",
+    "rom_size_bytes": 32768
+  },
+  "devices": {
+    "video": "video_0",
+    "audio": "audio",
+    "microphones": [
+      "microphone"
+    ],
+    "ws2812": "ws2812",
+    "fan": "fan",
+    "cpu_jtag": "cpu_jtag"
+  },
+  "gpio": {
+    "leds": [
+      "led_0",
+      "led_1",
+      "led_2",
+      "led_3",
+      "led_4",
+      "led_5"
+    ],
+    "buttons": [
+      "button_0",
+      "button_1",
+      "button_2",
+      "button_3"
+    ],
+    "switches": [],
+    "button_bit_offset": 8,
+    "inject_bit": 16,
+    "debounce_ms": 5
+  },
+  "rtl": {
+    "place_option": 2,
+    "route_option": 2
+  },
+  "ip": {
+    "cpu": {
+      "generator": "gowin_ae350",
+      "module": "RiscV_AE350_SOC_Top",
+      "parameters": {
+        "LOCAL_MEMORY_ACCESS_MODE": false,
+        "ENABLE_CUSTOMIZED_DATA": true,
+        "ENABLE_DTCM": false,
+        "ENABLE_DDR3": false,
+        "ENABLE_CUSTOMIZED_INSTRUCTION": false,
+        "ENABLE_ITCM": true,
+        "ENABLE_SPI_FLASH": false,
+        "ENABLE_EXTENDED_APB_SLAVE": true,
+        "ENABLE_SMU": false,
+        "ENABLE_RTC": true,
+        "ENABLE_WDT": false,
+        "ENABLE_GPIO": true,
+        "ENABLE_UART2": true,
+        "ENABLE_UART1": false,
+        "ENABLE_SPI": false,
+        "ENABLE_PIT": false,
+        "ENABLE_I2C": false,
+        "ENABLE_DMAC": true,
+        "ENABLE_EXTENDED_AHB_SLAVE": true,
+        "ENABLE_EXTENDED_AHB_MASTER": false,
+        "ENABLE_PLIC": true,
+        "ENABLE_GPIO_IO_PORTS": false,
+        "ENABLE_SPI2_IO_PORTS": false,
+        "ENABLE_I2C_IO_PORTS": false,
+        "PWM_CHANNEL_3": false,
+        "PWM_CHANNEL_2": false,
+        "PWM_CHANNEL_1": false,
+        "PWM_CHANNEL_0": false,
+        "ItcmSize": 0,
+        "ItcmInstructionMemory": true,
+        "LANG": 0
+      }
     },
-    "user_interface": {
-      "data_width_bits": 256,
-      "bytes_per_beat": 32,
-      "addr_unit_bytes": 4,
-      "clock_hz": 100000000,
-      "clock_ratio": "CK/4",
-      "single_beat_per_command": true
+    "ddr3": {
+      "generator": "gowin_ddr3",
+      "module": "DDR3_Memory_Interface_Top",
+      "parameters": {
+        "User_Interface": "Controller",
+        "Memory_Type": "Components",
+        "Memory_Clock": 400,
+        "CLK_Ratio": "1:4",
+        "Dq_Width": 32,
+        "Dram_Width": 16,
+        "Ecc": false,
+        "Rank_Address": 1,
+        "Bank_Address": 3,
+        "Row_Address": 15,
+        "Column_Address": 10,
+        "Burst_Mode": 8,
+        "Burst_Type": "SEQ",
+        "CAS_Latency": 6,
+        "CW_Latency": 5,
+        "Additive_Latency": 0,
+        "Wrire_Recovery": 6,
+        "Rtt_Nom": "60",
+        "Rtt_Wr": "OFF",
+        "Addr_Cmd_Mode": "1T",
+        "OUTPUT_DRV": "LOW",
+        "User_Refresh": false,
+        "Debug_Parameter_Enable": false,
+        "Debug_Port_Enable": false,
+        "tRTP_Period": 7500,
+        "tRP_Period": 15000,
+        "tWTR_Period": 7500,
+        "tRC_Period": 55000,
+        "tRAS_Period": 37500,
+        "tRCD_Period": 15000,
+        "tFAW_Period": 40000,
+        "tRRD_Period": 10000,
+        "tCKE_Period": 10000,
+        "tREFI_Period": 7800000,
+        "tRFC_Period": 260000,
+        "tDLLK": 512
+      }
     },
-    "cpu_window": {
-      "base": 0,
-      "size_bytes": 1073741824,
-      "dram_offset_bytes": 0,
-      "note": "DDR is zero based: CPU byte address == DRAM byte address; fabric SRAM owns 0x40000000-0x40001FFF"
-    },
-    "pins": {
-      "addr": "N1 R1 R2 N2 P1 T2 N4 U1 T4 T3 M1 P4 N3 U2 U5",
-      "ba": "M4 L5 K3",
-      "cs_n": "L4",
-      "ras_n": "H2",
-      "cas_n": "H1",
-      "we_n": "J3",
-      "cke": "L3",
-      "odt": "J1",
-      "reset_n": "N8",
-      "ck": "M2 L2 (single differential SSTL15D port)",
-      "dm": "F4 H9 E3 A3",
-      "dq": "G4 J6 L8 G5 K7 J5 K8 K6 E6 H8 H6 G8 D6 F8 G6 F7 C4 F3 B4 E5 D3 D5 A4 D4 E1 A2 G2 C2 F2 E2 G1 D1",
-      "dqs": "J4,H4 H7,G7 B5,A5 C1,B1 (four differential SSTL15D ports)",
-      "io_standard": "SSTL15 / SSTL15D, BANK_VCCIO=1.5, PULL_MODE=NONE, DRIVE=8 (ADDR[14] DRIVE=12)"
-    },
-    "clock_plan": {
-      "ddr_reference_clk_hz": 50000000,
-      "memory_clk_hz": 400000000,
-      "ui_clk_hz": 100000000,
-      "pll": "Gowin_PLL_DDR3 (IDIV 1, FBDIV 1, ODIV0 16 -> 50 MHz, ODIV2 2 -> 400 MHz)"
+    "ddr_pll": {
+      "generator": "gowin_pll",
+      "module": "Gowin_PLL_DDR3",
+      "parameters": {
+        "General_Mode": true,
+        "CLKIN_FREQ": 50,
+        "PLL_Reset": true,
+        "LOCK_EN": true,
+        "Clock_Enable_Ports": true,
+        "CLKOUT0_FREQ": 50,
+        "CLKOUT0_TOLERANCE": "0.0",
+        "CLKOUT2_EN": true,
+        "CLKOUT2_FREQ": 400,
+        "CLKOUT2_TOLERANCE": "0.0"
+      }
     }
   }
 }

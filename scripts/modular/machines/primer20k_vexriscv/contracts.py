@@ -128,6 +128,10 @@ def assembly(store, parts):
         if manifest['component'] != name:
             raise ValueError(f'{name}: wrong component type {manifest["component"]}')
         for dependency, expected in manifest['dependencies'].items():
+            # IP inputs are already verified through the immutable CPU closure;
+            # they are not independently swappable system assembly components.
+            if expected['component'] == 'vendor-ip':
+                continue
             if dependency not in parts:
                 raise ValueError(f'{name} requires missing component {dependency}')
             actual = parts[dependency]

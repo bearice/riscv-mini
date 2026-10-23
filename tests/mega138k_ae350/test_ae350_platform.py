@@ -14,8 +14,13 @@ from migen.sim import run_simulation
 from litex.gen import LiteXModule
 from litex.soc.interconnect.ahb import AHBInterface
 
-from gateware.machines.mega138k_ae350 import address_map as amap
-from gateware.machines.mega138k_ae350.platform import Ae350Platform
+from gateware.description import resolve_machine
+from gateware.machines.mega138k_ae350.address_map import AddressMap
+from gateware.machines.mega138k_ae350.ports import bind_ports
+_machine = resolve_machine('mega138k_ae350')
+_io = bind_ports(_machine)
+amap = AddressMap(_machine)
+from gateware.machines.mega138k_ae350.fabric import AE350Fabric
 from test_ae350_interconnect import xact
 
 
@@ -69,7 +74,7 @@ def main():
 
     cpu = Cpu()
     diag = Signal(32, reset=0xA3500300)
-    dut = Ae350Platform(cpu, {0: diag, 4: Signal(32, reset=7)})
+    dut = AE350Fabric(cpu, {0: diag, 4: Signal(32, reset=7)}, io=_io, layout=amap)
     bus = cpu.ahb_exts
 
     def tb():

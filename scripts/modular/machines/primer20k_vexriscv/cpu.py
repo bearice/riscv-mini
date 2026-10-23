@@ -16,7 +16,7 @@ def locked_cpu(path):
     if not metadata.is_file():
         raise ValueError('CPU requires generator.json paired with RTL: ' + str(path) +
                          '; regenerate the committed core with '
-                         'mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv')
+                         'mini.py build cpu')
     data = read(metadata)
     pipeline = data.get('pipeline', {})
     variant = data.get('cpu_rtls', {}).get(path.stem, {})
@@ -29,7 +29,7 @@ def locked_cpu(path):
     rtl_hash = text_file_hash(path) if normalization == 'lf' else file_hash(path)
     if variant.get('sha256') != rtl_hash:
         raise ValueError('CPU RTL differs from generator metadata: ' + str(path) +
-                         '; regenerate with mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv')
+                         '; regenerate with mini.py build cpu')
     rtl = path.read_text(encoding='utf-8')
     injector = bool(re.search(r'\breg\s+(?:\[[^\]]+\]\s*)?_zz_IBusCachedPlugin_injector_', rtl))
     if pipeline['injector_register'] != injector:
@@ -43,7 +43,9 @@ def locked_cpu(path):
         if options.get(flag)!=str(variant[field]).lower():raise ValueError('CPU command disagrees with '+field)
     if (options.get('--csrPluginConfig')=='linux')!=variant['mmu']:
         raise ValueError('CPU command disagrees with MMU setting')
-    if options.get('--iCacheSize')!='2048' or options.get('--dCacheSize')!='2048':
+    fixed = data.get('fixed_parameters', {})
+    if (options.get('--iCacheSize') != str(fixed.get('icache_bytes', 2048)) or
+            options.get('--dCacheSize') != str(fixed.get('dcache_bytes', 2048))):
         raise ValueError('Unsupported/unrecorded CPU cache configuration')
     return dict(schema=1, rtl_sha256=rtl_hash, pipeline={k: pipeline[k] for k in PIPELINE},
                 variant={k: variant[k] for k in VARIANT}, command=commands[0],

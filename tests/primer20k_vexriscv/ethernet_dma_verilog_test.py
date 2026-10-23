@@ -13,6 +13,9 @@ from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBu
 from gateware.machines.primer20k_vexriscv.memory.native_dma import NativeDMAArbiter
 from litex.soc.interconnect import wishbone
 from gateware.machines.primer20k_vexriscv.peripherals.ethernet_dma import EthernetDMA
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 TB = r'''
 module tb;
@@ -135,7 +138,7 @@ def main():
     reader,writer=MemoryPort('read'),MemoryPort('write')
     dut.submodules.read_buffer=PortBuffer(reader,arbiter.ports[0])
     dut.submodules.write_buffer=PortBuffer(writer,arbiter.ports[1])
-    dut.submodules.engine=engine=EthernetDMA(bus,reader,writer)
+    dut.submodules.engine=engine=EthernetDMA(bus,reader,writer, layout=_layout)
     ports=dict(control=engine._control.storage,memory_base=engine._memory.storage,
         slot_base=engine._slot.storage,length=engine._length.storage,busy=engine._busy.status,
         done=engine._done.status,error=engine._error.status,

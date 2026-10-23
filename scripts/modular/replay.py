@@ -70,6 +70,8 @@ def rebuild_preserved(store, ref, run):
         if name not in parts:raise ValueError('Legacy firmware is not source-rebuildable; build a modular candidate first')
         artifact=store.path(parts[name]);manifest=store.get(parts[name])
         if not manifest['config'].get('build'):raise ValueError('Missing source/tool lock for '+name)
+        if not (artifact / 'inputs/source').is_dir():
+            raise ValueError('Ordinary builds do not archive source; select an explicitly archived source recipe')
         parent=store.build/'work/replays';parent.mkdir(parents=True,exist_ok=True)
         checkout=Path(tempfile.mkdtemp(prefix=name+'-',dir=parent))
         # Component snapshots contain the build implementation and all declared source inputs.

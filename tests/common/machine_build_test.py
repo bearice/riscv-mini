@@ -43,6 +43,15 @@ class MachineBuildTests(unittest.TestCase):
             platform={'os': 'test', 'arch': 'test'}, tools={'python': {'sha': '1'}, 'gowin': {'sha': '2'}}, bindings={}))
         self.tools.start()
         self.addCleanup(self.tools.stop)
+        from gateware.description import load_machine
+        def resolved_ip(store, run, machine, plan=False):
+            if plan: return None
+            board, configuration = load_machine(machine, store.root)
+            return dict(board=board, machine=configuration, artifacts={})
+        ip = mock.patch('scripts.modular.ip.manager.ensure', side_effect=resolved_ip)
+        ip.start()
+        self.addCleanup(ip.stop)
+
 
     def args(self, target='machine-description', command='build', extra=()):
         return parser().parse_args([command, target, '--machine', machines.AE350, *extra])
@@ -57,7 +66,7 @@ class MachineBuildTests(unittest.TestCase):
         ref, run = self.run_target('cpu')
         data = self.store.get(ref, recursive=True)
         self.assertEqual(data['config']['kind'], 'hard')
-        self.assertEqual(data['config']['cpu']['subsystem'], 'AE350')
+        self.assertEqual(data['config']['cpu']['implementation'], 'ae350')
         self.assertEqual(set(data['files']), {'cpu.lock.json'})
         self.assertFalse(run.result['hardware_qualified'])
         self.assertFalse(run.result['board_identity_confirmed'])
@@ -72,14 +81,9 @@ class MachineBuildTests(unittest.TestCase):
                 ref, _ = self.run_target('payload', command)
                 self.assertEqual(ref, artifact)
                 backend.assert_called_once()
-                self.assertFalse(hasattr(backend.call_args.args[2], 'reference_root'))
                 self.assertEqual(backend.call_args.args[2].target, 'payload')
                 self.assertEqual(backend.call_args.args[-1], command == 'plan')
 
-    def test_reference_root_is_not_a_build_option(self):
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            parser().parse_args(['build', 'gateware', '--machine', machines.AE350,
-                                 '--reference-root', '/tmp/vendor-example'])
 
     def test_repeated_build_reuses_the_same_inputs(self):
         first, _ = self.run_target()
@@ -112,9 +116,9 @@ class MachineBuildTests(unittest.TestCase):
     def test_jtag_cannot_take_camera_pins(self):
         path = self.root / 'gateware/boards/mega138k_pro/board.json'
         board = json.loads(path.read_text())
-        board['resources']['cpu_jtag']['tdi']['pin'] = 'E23'
+        board['resources']['cpu_jtag']['signals']['tdi']['pins'] = ['E23']
         path.write_text(json.dumps(board))
-        with self.assertRaisesRegex(ValueError, 'reserved camera pins: E23'):
+        with self.assertRaisesRegex(ValueError, 'Pin E23 claimed'):
             ae350_description.resolve(self.store)
 
     def test_board_and_machine_inputs_invalidate_description(self):
@@ -163,10 +167,9 @@ class MachineBuildTests(unittest.TestCase):
     def test_illegal_clock_profiles_rejected(self):
         path = self.root / 'gateware/machines/mega138k_ae350/machine.json'
         original = read(path)
-        for domain, field, value in (('apb', 'reference_hz', 50000000), ('ahb', 'reference_hz', 200000000),
-                                     ('core', 'target_hz', 800000001), ('ddr_ck', 'target_hz', 400000001)):
+        for domain, value in (('sys', 200000000), ('data_memory_bus', 200000000), ('cpu', 800000001), ('unexpected', 1)):
             changed = json.loads(json.dumps(original))
-            changed['clocks'][domain][field] = value
+            changed['clocks'][domain] = value
             write(path, changed)
             with self.subTest(domain=domain), self.assertRaises(ValueError):
                 ae350_description.resolve(self.store)
@@ -174,8 +177,8 @@ class MachineBuildTests(unittest.TestCase):
 
     def test_plan_marks_missing_rtl_backend_blocked(self):
         _, run = self.run_target('system', 'plan')
-        self.assertFalse(run.result['ready_for_execution'])
-        self.assertEqual(run.result['steps'][-1]['status'], 'BLOCKED')
+        self.assertTrue(run.result['plan'])
+        self.assertEqual(run.result['steps'][-1]['status'], 'BUILD')
         self.assertFalse((self.store.build / 'store').exists())
 
     def test_unimplemented_targets_never_dispatch_to_legacy(self):
@@ -183,12 +186,6 @@ class MachineBuildTests(unittest.TestCase):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, 'pending P1'):
                 self.run_target(target)
 
-    def test_legacy_overrides_are_not_silently_ignored(self):
-        for options in (('--compressed',), ('--generate',), ('--java', 'some-java')):
-            with self.subTest(options=options), self.assertRaisesRegex(ValueError, 'overrides'):
-                self.run_target('cpu', extra=options)
-        with self.assertRaisesRegex(ValueError, 'hardware generation target'):
-            self.run_target('system', 'plan', ('--place-option', '0'))
 
     def test_p0_cpu_cannot_be_assembled_as_system(self):
         cpu, _ = self.run_target('cpu')

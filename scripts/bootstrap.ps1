@@ -39,10 +39,8 @@ Invoke-MiniChecked -Executable $MiniPython -Arguments $MiniConfigureArgs
 . (Join-Path $PSScriptRoot 'env.ps1')
 Invoke-MiniChecked -Executable $MiniPython -Arguments @((Join-Path $PSScriptRoot 'tools/doctor.py'))
 if (-not $SkipSmoke) {
-    # Smoke build uses the minimal profile: the lite core ships inside
-    # pythondata-cpu-vexriscv, so a fresh checkout needs no generated CPU RTL.
-    # The full profile uses the production MMU CPU in gateware/vendor/vexriscv.
+    # Smoke uses the checked-in machine JSON; CPU IP is generated automatically.
     Invoke-MiniChecked -Executable $MiniPython -Arguments @(
-        (Join-Path $PSScriptRoot 'mini.py'), 'build', 'system', '--profile', 'minimal',
+        (Join-Path $PSScriptRoot 'mini.py'), 'build', 'system', '--machine', 'primer20k_vexriscv',
         '--purpose', 'bootstrap-smoke')
 }

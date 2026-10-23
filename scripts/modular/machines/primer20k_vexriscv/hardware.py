@@ -15,9 +15,16 @@ from scripts.modular.workspace import working, clear_generated, invalidate_pnr, 
 # repo-relative and must exist; a missing entry fails the build instead of
 # silently shrinking the key. No other machine's files may appear here.
 PRIMER20K_CLOSURE = (
+    'gateware/description.py',
+    'gateware/io.py',
+    'gateware/gowin_platform.py',
+    'gateware/schemas/board.schema.json',
+    'gateware/schemas/machine.schema.json',
+    'requirements.lock',
     'gateware/__init__.py',
     'gateware/boards/__init__.py',
     'gateware/boards/primer20k_dock3713/board.json',
+    'gateware/machines/primer20k_vexriscv/machine.json',
     'gateware/devices/__init__.py',
     'gateware/devices/audio/__init__.py',
     'gateware/devices/audio/core.py',
@@ -42,7 +49,7 @@ PRIMER20K_CLOSURE = (
     'gateware/machines/primer20k_vexriscv/memory/native_dma.py',
     'gateware/machines/primer20k_vexriscv/memory/ports.py',
     'gateware/machines/primer20k_vexriscv/memory/shared_l2.py',
-    'gateware/machines/primer20k_vexriscv/memory_map.py',
+    'gateware/machines/primer20k_vexriscv/address_map.py',
     'gateware/machines/primer20k_vexriscv/peripherals/audio.py',
     'gateware/machines/primer20k_vexriscv/peripherals/audio_clock.py',
     'gateware/machines/primer20k_vexriscv/peripherals/board_io.py',
@@ -58,6 +65,7 @@ PRIMER20K_CLOSURE = (
     'gateware/machines/primer20k_vexriscv/peripherals/video.py',
     'gateware/machines/primer20k_vexriscv/rtl.py',
     'gateware/machines/primer20k_vexriscv/soc.py',
+    'gateware/machines/primer20k_vexriscv/ports.py',
     'gateware/vendor/gowin_gw2a/gw2ddrphy.py',
     'gateware/vendor/litesdcard/LICENSE.litedram',
     'gateware/vendor/litesdcard/sdcore.py',
@@ -70,11 +78,7 @@ PRIMER20K_CLOSURE = (
     'gateware/vendor/usb_host/src_v/usbh_host.v',
     'gateware/vendor/usb_host/src_v/usbh_host_defs.v',
     'gateware/vendor/usb_host/src_v/usbh_sie.v',
-    'gateware/vendor/vexriscv/VexRiscv_Mmu.v',
-    'gateware/vendor/vexriscv/VexRiscv_Mmu.yaml',
-    'gateware/vendor/vexriscv/generator.json',
     'scripts/primer20k_vexriscv/boot_image.py',
-    'scripts/tools/build_recipe.py',
     'scripts/tools/build_records.py',
     'scripts/mini.py',
     'scripts/modular/compile.py',
@@ -125,6 +129,7 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
         names = [n for n in cpu_manifest['files'] if n.startswith('outputs/') and n.endswith('.v')]
         cpu_path = store.path(cpu_ref) / names[0] if names else None
         from scripts.modular.machines.primer20k_vexriscv.rtl import generate
+        from gateware.description import from_snapshot
         from gateware.machines.primer20k_vexriscv.features import Features
         # The CPU is consumed by exact digest. Place matching metadata next to it.
         if cpu_path and 'inputs/generator.json' in cpu_manifest['files']:
@@ -144,7 +149,8 @@ def generate_soc(store, run, base_soc, cpu_ref, plan=False, validation=None):
                      cpu_variant=v['cpu_variant'], cpu_verilog=cpu_path, sd_profile=v['sd_profile'],
                      audio_clock=v['audio_clock'], deep_verilog=v['rtl_hierarchy']=='deep',
                      place_option=v['place_option'], route_option=v['route_option'], l2_size=v['l2_size_bytes'],
-                     rom_size=v['rom_size_bytes'] or 8192, boot_mode=v['boot_mode'])
+                     rom_size=v['rom_size_bytes'] or 8192, boot_mode=v['boot_mode'],
+                     machine=from_snapshot(v['machine_snapshot']))
         finally:
             for name, value in old.items():
                 if value is None: os.environ.pop(name, None)

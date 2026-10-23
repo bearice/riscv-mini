@@ -6,7 +6,12 @@ from migen import Signal
 from migen.fhdl.specials import Memory
 from migen.sim import run_simulation, passive
 from gateware.machines.mega138k_ae350.peripherals.audio import FabricAudio
-from gateware.machines.mega138k_ae350 import address_map as amap
+from gateware.description import resolve_machine
+from gateware.machines.mega138k_ae350.address_map import AddressMap
+from gateware.machines.mega138k_ae350.ports import bind_ports
+_machine = resolve_machine('mega138k_ae350')
+_io = bind_ports(_machine)
+amap = AddressMap(_machine)
 from test_ae350_interconnect import xact
 
 

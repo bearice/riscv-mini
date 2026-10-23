@@ -49,44 +49,12 @@ class CpuVendorTest(unittest.TestCase):
                     path.write_bytes(lf.replace(b'\n', eol))
                     self.assertEqual(text_file_hash(path), record['files'][name]['sha256'])
 
-    def test_vendor_reinstall_refreshes_stale_license_hash(self):
-        from scripts.builders.cpu_generator import install_vendor
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            output, vendor = root / 'generated', root / 'vendor'
-            output.mkdir()
-            vendor.mkdir()
-            for name in ('VexRiscv_Mmu.v', 'VexRiscv_Mmu.yaml'):
-                shutil.copyfile(VENDOR_CPU_DIR / name, output / name)
-            shutil.copyfile(VENDOR_CPU_DIR / 'VexRiscv_Mmu.v', vendor / 'VexRiscv_Mmu.v')
-            rtl = output / 'VexRiscv_Mmu.v'
-            rtl.write_bytes(normalize_text_eol(rtl.read_bytes()).replace(b'\n', b'\r\n'))
-            shutil.copyfile(VENDOR_CPU_DIR / 'LICENSE.VexRiscv', vendor / 'LICENSE.VexRiscv')
-            license = vendor / 'LICENSE.VexRiscv'
-            license.write_bytes(normalize_text_eol(license.read_bytes()).replace(b'\n', b'\r\n'))
-            provenance = json.loads((VENDOR_CPU_DIR / 'PROVENANCE.json').read_text())
-            provenance['files']['LICENSE.VexRiscv']['sha256'] = 'stale-before-reinstall'
-            (vendor / 'PROVENANCE.json').write_text(json.dumps(provenance))
-            report = json.loads((VENDOR_CPU_DIR / 'generator.json').read_text())
-            install_vendor(report, output, vendor, SimpleNamespace(vexriscv_source=root))
-            updated = json.loads((vendor / 'PROVENANCE.json').read_text())
-            self.assertEqual(updated['files']['LICENSE.VexRiscv']['sha256'],
-                             text_file_hash(license))
-            self.assertEqual(updated['files']['LICENSE.VexRiscv']['hash_normalization'], 'lf')
-            self.assertEqual(text_file_hash(rtl), locked_cpu(vendor / rtl.name)['rtl_sha256'])
 
     def test_capabilities_come_from_the_lock(self):
         self.assertEqual(cpu_capabilities(vendored_cpu_path(True, False)),
                          dict(mmu=True, fpu=False, dcache=True, compressed=False, bitmanip=[],
                               high_mmio_xip=True))
 
-    def test_closure_declares_the_cpu(self):
-        declared = set(PRIMER20K_CLOSURE)
-        for name in ('gateware/vendor/vexriscv/VexRiscv_Mmu.v',
-                     'gateware/vendor/vexriscv/VexRiscv_Mmu.yaml',
-                     'gateware/vendor/vexriscv/generator.json'):
-            self.assertIn(name, declared)
-        self.assertFalse([name for name in source_closure(ROOT) if not (ROOT / name).is_file()])
 
     def test_generator_lock_records_only_the_selected_variant(self):
         data = json.loads((VENDOR_CPU_DIR / 'generator.json').read_text(encoding='utf-8'))

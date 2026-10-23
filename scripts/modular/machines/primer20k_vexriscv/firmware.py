@@ -6,10 +6,10 @@ import sys
 import tempfile
 from pathlib import Path
 from gateware.machines.primer20k_vexriscv.features import Features
-from gateware.machines.primer20k_vexriscv.memory_map import c_header
+from gateware.machines.primer20k_vexriscv.address_map import c_header
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
 from scripts.tools.boot_image import pack_image
-from scripts.modular.machines.primer20k_vexriscv.rtl import generate_csr
+from scripts.modular.machines.primer20k_vexriscv.rtl import generate_csr, export_support
 from scripts.tools.versions import read_versions
 from scripts.modular.storage import ROOT, canonical, digest, file_hash, SOURCE_HASH_FORMAT, read, text_file, write, workspace_lock
 from scripts.modular.environment import discover, identity, output, process_environment
@@ -44,17 +44,7 @@ def generated_headers(csr, v, directory):
         generate_csr(csr, staging)
         for path in staging.rglob('*'):
             if path.is_file():text_file(directory/path.relative_to(staging),path.read_text(encoding='utf-8'))
-    constants = ['#pragma once']
-    for key, value in sorted(csr['constants'].items()):
-        if value is None: value = 1
-        literal = str(value) if isinstance(value, (int, float)) else '"' + str(value).replace('"', '\\"') + '"'
-        constants.append('#define ' + key.upper() + ' ' + literal)
-    text_file(directory / 'generated/soc.h', '\n'.join(constants) + '\n')
-    mem = ['#pragma once']
-    for key, value in sorted(csr['memories'].items()):
-        mem += [f'#define {key.upper()}_BASE 0x{value["base"]:08x}u', f'#define {key.upper()}_SIZE 0x{value["size"]:x}u']
-    text_file(directory / 'generated/mem.h', '\n'.join(mem) + '\n')
-    text_file(directory / 'memory_layout.h', c_header())
+    text_file(directory / 'memory_layout.h', c_header(csr['memories']))
     f = Features(**v['features'])
     text_file(directory / 'hardware_features.h', f.header() + f'#define MINI_CPU_ISA "{v["isa"]}"\n'
               + f'#define MINI_SD_PROFILE "{v["sd_profile"]}"\n'
@@ -87,9 +77,9 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
            *['scripts/modular/' + n for n in ('__init__.py', 'arguments.py', 'cli.py', 'compile.py',
                                                    'environment.py', 'executor.py', 'gowin.py', 'replay.py',
                                                    'storage.py', 'targets.py', 'worker.py', 'workspace.py')],
-           'scripts/mini.py', 'scripts/mini_ops/primer20k_vexriscv/release.py', 'scripts/mini_ops/catalog.py', 'scripts/tools/build_records.py', 'scripts/tools/build_recipe.py',
+           'scripts/mini.py', 'scripts/mini_ops/catalog.py', 'scripts/tools/build_records.py',
            'scripts/tools/versions.py', 'scripts/tools/riscv_toolchain.py', 'scripts/primer20k_vexriscv/boot_image.py', 'scripts/tools/boot_image.py',
-           'gateware/machines/primer20k_vexriscv/csr_layout.py', 'gateware/machines/primer20k_vexriscv/memory_map.py', 'gateware/machines/primer20k_vexriscv/config.py', 'gateware/machines/primer20k_vexriscv/flash_xip.py', 'gateware/machines/primer20k_vexriscv/features.py', 'requirements.lock',
+           'gateware/machines/primer20k_vexriscv/csr_layout.py', 'gateware/machines/primer20k_vexriscv/address_map.py', 'gateware/machines/primer20k_vexriscv/config.py', 'gateware/machines/primer20k_vexriscv/flash_xip.py', 'gateware/machines/primer20k_vexriscv/features.py', 'requirements.lock',
            'firmware/common', 'firmware/drivers', 'firmware/hal/include', 'firmware/bsp/primer20k_vexriscv/start.S']
     deps = {'soc-description': soc}
     app_unit = None
@@ -126,8 +116,10 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
             from gateware.machines.primer20k_vexriscv.flash_xip import FLASH_BASE, XIP_OFFSET, XIP_SIZE
             flags += [f'-Wl,--defsym,BOOT_XIP_ORIGIN={FLASH_BASE+XIP_OFFSET}', f'-Wl,--defsym,BOOT_XIP_SIZE={XIP_SIZE}']
     inputs = source_files(store.root, own)
-    config = dict(schema=1, component=component, version=ver, sources=inputs, source_hash_format=SOURCE_HASH_FORMAT, flags=flags,
-                  rebuild_entrypoint=['scripts/mini.py','_worker','rebuild-one'],
+    support = export_support()
+    support_hashes = {name: file_hash(path) for name, path in support.items()}
+    config = dict(schema=1, storage_policy='outputs-only', component=component, version=ver, sources=inputs, source_hash_format=SOURCE_HASH_FORMAT, flags=flags,
+                  litex_export_support=support_hashes,
                   translation_units=names,
                   dependencies=deps, environment=identity(env), libraries=gcc_inputs(env, v),
                   includes=['$GENERATED', 'firmware/drivers', 'firmware/bootloader/primer20k_vexriscv',
@@ -200,10 +192,8 @@ def build_component(store, run, component, soc, boot=None, sdk=None, environment
         if component == 'hal-sdk':
             files.update({'include/' + p.relative_to(include).as_posix(): p for p in include.rglob('*') if p.is_file()})
         files['build.lock.json'] = canonical(config)
-        from scripts.modular.storage import source_bytes
-        files.update({'inputs/source/' + name: source_bytes(store.root / name) for name in inputs})
-        from scripts.tools.versions import COMPONENTS
-        files['inputs/source/VERSIONS.yaml'] = ''.join(n + ': ' + (ver if n==('hal' if component=='hal-sdk' else component) else '0.0.0') + '\n' for n in COMPONENTS).encode()
+        if any(file_hash(path) != support_hashes[name] for name, path in support.items()):
+            raise ValueError('LiteX software export inputs changed during compilation')
         contract = requirements(sm['config']['contract'])
         ref = store.publish(component, key, files, config=dict(build=config, requires=contract,
                             image_format='mini-image-v1', image_abi_tag=abi), dependencies=deps, version=ver)

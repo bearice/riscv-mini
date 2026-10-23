@@ -6,7 +6,6 @@ payload ring, the RAM window validation that depends on this machine's memory
 map, and the CSR names the BIOS and C accessors use.
 """
 from gateware.devices.audio.core import AudioCore
-from gateware.machines.primer20k_vexriscv.memory_map import PAYLOAD_LIMIT, RAM_BASE
 from gateware.machines.primer20k_vexriscv.csr_layout import packed_status
 from migen import Signal, If, Cat, Constant
 from litex.gen import LiteXModule
@@ -14,7 +13,10 @@ from litex.soc.interconnect.csr import CSR, CSRStorage, CSRStatus
 
 
 class Audio(LiteXModule):
-    def __init__(self, pads, bus, half_period=20, fifo_depth=512, clock_enable=1):
+    def __init__(self, pads, bus, half_period=20, fifo_depth=512, clock_enable=1, *, layout):
+        PAYLOAD_LIMIT = layout.PAYLOAD_LIMIT
+        RAM_BASE = layout.RAM_BASE
+
         self._control = CSRStorage(3, name='control')  # run, DMA, mute
         self._clear = CSR(name='clear')  # stop/drain before reconfiguration
         self._sample = CSR(32, name='sample')  # PIO packed L low16 / R high16

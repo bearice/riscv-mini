@@ -44,7 +44,7 @@ class NativeDMAArbiter(LiteXModule):
 
 class NativeSDTransfer(LiteXModule):
     """SD's 32-bit stream client; burst storage belongs to the memory controller."""
-    def __init__(self, port, write, endianness='little', with_csr=True):
+    def __init__(self, port, write, endianness='little', with_csr=True, *, layout):
         from litex.soc.interconnect import stream
         if port.data_width != 32:
             raise ValueError('SD requires a 32-bit buffered memory port')
@@ -62,8 +62,8 @@ class NativeSDTransfer(LiteXModule):
         count = Signal(3)
         lane = Signal(2)
         offset = Signal(11)
-        valid = ((self._base.storage[:4] == 0) & (self._base.storage[27:] == 0)
-            & (self._base.storage[12:27] != 0x7fff)
+        valid = ((self._base.storage[:4] == 0) & (self._base.storage >= layout.RAM_BASE) & (self._base.storage + self._length.storage <= layout.RAM_END)
+            & ((self._base.storage + self._length.storage <= layout.BOOT_RAM_BASE) | (self._base.storage >= layout.BOOT_RAM_BASE + layout.BOOT_RAM_SIZE))
             & (self._length.storage[:2] == 0) & (self._length.storage > 0) & (self._length.storage <= 4096))
         def swap(word):
             return Cat(word[24:32], word[16:24], word[8:16], word[:8]) if endianness == 'little' else word

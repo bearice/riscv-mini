@@ -1,32 +1,32 @@
-"""Generate four independently selected MMU/FPU CPUs with 2 KiB I/D caches.
-
-Requires a VexRiscv source checkout compatible with the installed LiteX CPU
-generator (this trial used b6118e5cc2a33323425df6455697139021d50c72),
-Java 8 and sbt-launch 1.9.7. No installed packages are modified.
-"""
-import hashlib
+"""Generate the single CPU selected by the validated machine IP parameters."""
 import json
 import os
 import shutil
 import subprocess
 import sys
-import platform
 from pathlib import Path
 
 import pythondata_cpu_vexriscv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.modular.storage import normalize_text_eol, text_file_hash, source_file_hash, SOURCE_HASH_FORMAT
+from scripts.modular.storage import text_file_hash, source_file_hash, SOURCE_HASH_FORMAT
+
+
+def _copy_sources(source, destination):
+    """Remove deleted source inputs while retaining sbt's target caches."""
+    source, destination = Path(source), Path(destination)
+    if destination.is_dir():
+        for path in destination.rglob('*'):
+            relative = path.relative_to(destination)
+            if path.is_file() and not any(part in ('.git', 'target') for part in relative.parts):
+                if not (source / relative).is_file():
+                    path.unlink()
+    shutil.copytree(source, destination, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('.git', 'target'))
 
 
 def build(args, run=None):
-    if args.locked_config:
-        lock=json.loads(args.locked_config.read_text(encoding='utf-8'))
-        required=('relaxed_pc_calculation','compressed','pipelined_fetch','arithmetic_matrix')
-        if set(lock.get('flags',{})) != set(required) or any(type(lock['flags'][n]) is not bool for n in required):
-            raise ValueError('CPU lock must explicitly specify all generator flags: '+', '.join(required))
-        for name in required:setattr(args,name,lock['flags'][name])
     base = Path(pythondata_cpu_vexriscv.data_location)
     args.vexriscv_source=args.vexriscv_source or Path(os.environ.get('VEXRISCV_SOURCE',base/'ext/VexRiscv'))
     from scripts.modular.environment import discover
@@ -50,17 +50,14 @@ def build(args, run=None):
     source_lock['generator_build_sbt_sha256']=source_file_hash(base/'build.sbt')
     source_lock['requirements_sha256']=source_file_hash(Path(__file__).resolve().parents[2]/'requirements.lock')
     if '"1.8.' not in source_lock['java_version']:raise ValueError('CPU generation requires Java 8')
-    if args.locked_config and lock.get('source_lock') != source_lock:
-        raise ValueError('CPU source/tool identities differ from locked config')
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     for name in ('src', 'project'):
-        shutil.copytree(base/name, output/name, dirs_exist_ok=True)
+        _copy_sources(base/name, output/name)
     # Keep upstream checkout untouched. TM permission must exist even when
     # OpenSBI emulates time/timeh instead of exposing a hardware time port.
     vex_local=output/'ext/VexRiscv'
-    shutil.copytree(args.vexriscv_source,vex_local,dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns('.git','target'))
+    _copy_sources(args.vexriscv_source, vex_local)
     csr_source=vex_local/'src/main/scala/vexriscv/plugin/CsrPlugin.scala'
     csr_text=csr_source.read_text()
     tm_anchor='if(utimeAccess != CsrAccess.NONE)    rw(csrId, 1 -> TM)'
@@ -108,21 +105,19 @@ def build(args, run=None):
     repositories = output/'repositories'
     repositories.write_text('[repositories]\nlocal\nmaven-central: https://repo.maven.apache.org/maven2/\n')
     pipeline = ' --relaxedPcCalculation true' if args.relaxed_pc_calculation else ''
-    variants = [('all','false','VexRiscv_Base',False,False), ('all','true','VexRiscv_Fpu',False,False),
-                ('linux','false','VexRiscv_Mmu',False,False), ('linux','true','VexRiscv_MmuFpu',False,False)]
-    if args.arithmetic_matrix:
-        variants = [('linux','false',f'VexRiscv_Mmu_s{int(shift)}m{int(mul)}',shift,mul)
-                    for shift,mul in ((False,False),(True,False),(False,True),(True,True))]
-    if getattr(args, 'vendor_dir', None) is not None:
-        # Only the selected production variant is committed as vendor IP.
-        variants = [('linux','false','VexRiscv_Mmu',True,True)]
+    selected = args.selected_parameters
+    variants = [('linux' if selected['mmu'] else 'all', str(selected['fpu']).lower(),
+                 args.module_name, selected['single_cycle_shift'], selected['single_cycle_muldiv'])]
+    cache_i, cache_d = selected['icache_bytes'], selected['dcache_bytes']
     commands = [
-        f'runMain vexriscv.GenCoreDefault --csrPluginConfig {csr} --iCacheSize 2048 '
-        f'--dCacheSize 2048 --singleCycleMulDiv {str(mul).lower()} --singleCycleShift {str(shift).lower()} '
+        f'runMain vexriscv.GenCoreDefault --csrPluginConfig {csr} --iCacheSize {cache_i} '
+        f'--dCacheSize {cache_d} --singleCycleMulDiv {str(mul).lower()} --singleCycleShift {str(shift).lower()} '
         f'--fpu {fpu} --compressedGen {str(args.compressed).lower()}{pipeline} --outputFile {name}'
         for csr, fpu, name, shift, mul in variants
     ]
-    java_tmp = output/'java-tmp'
+    # sbt's Unix socket name must fit sockaddr_un even with a deep workspace.
+    import tempfile
+    java_tmp = Path(tempfile.gettempdir()) / ('mini-jvm-' + digest(str(output))[:12])
     java_tmp.mkdir(exist_ok=True)
     with (output/'generate.log').open('w') as log:
         subprocess.run([str(args.java.resolve()), '-Xmx3G',
@@ -146,8 +141,8 @@ def build(args, run=None):
     report['pipeline'].update(two_cycle_icache=args.pipelined_fetch or not args.compressed,
                               injector_register=args.pipelined_fetch)
     report['source_lock']=source_lock
-    report['resolved_flags']={n:getattr(args,n) for n in ('relaxed_pc_calculation','compressed','pipelined_fetch','arithmetic_matrix')}
-    report['fixed_parameters']=dict(icache_bytes=2048,dcache_bytes=2048,java_heap='3G',
+    report['resolved_flags']={n:getattr(args,n) for n in ('relaxed_pc_calculation','compressed','pipelined_fetch')}
+    report['fixed_parameters']=dict(icache_bytes=cache_i,dcache_bytes=cache_d,java_heap='3G',
                                     csr_permission_patch='time/TM',high_mmio_xip=True)
     for csr, fpu, name, shift, mul in variants:
         path = output/(name+'.v')
@@ -159,74 +154,4 @@ def build(args, run=None):
     (output/'generator.json').write_text(json.dumps(report, indent=2)+'\n')
     (output/'generator.lock.json').write_text(json.dumps(dict(schema=1,flags=report['resolved_flags'],source_lock=source_lock,
                                                             fixed_parameters=report['fixed_parameters']),indent=2)+'\n')
-    if getattr(args, 'vendor_dir', None) is not None:
-        install_vendor(report, output, args.vendor_dir, args, force=getattr(args, 'force', False))
-    print(json.dumps(report, indent=2))
-
-
-VENDOR_CPU = 'VexRiscv_Mmu'
-
-
-def _without_commit_comment(data):
-    """VexRiscv stamps the generating commit into a header comment; ignore it."""
-    return b'\n'.join(line for line in normalize_text_eol(data).split(b'\n') if not line.startswith(b'// Git hash'))
-
-
-def install_vendor(report, output, vendor_dir, args, force=False):
-    """Install the selected variant as committed vendor IP with its full record."""
-    vendor = Path(vendor_dir).resolve()
-    vendor.mkdir(parents=True, exist_ok=True)
-    produced = output/(VENDOR_CPU+'.v')
-    target = vendor/(VENDOR_CPU+'.v')
-    if target.is_file():
-        current, regenerated = target.read_bytes(), produced.read_bytes()
-        if normalize_text_eol(current) != normalize_text_eol(regenerated) and not force:
-            if _without_commit_comment(current) == _without_commit_comment(regenerated):
-                print('CPU RTL matches the committed file apart from the embedded git hash line')
-            else:
-                raise ValueError('Regenerated CPU RTL differs from the committed file %s (committed %s, regenerated %s); '
-                                 'review the parameter change, then rerun with --force to accept it'
-                                 % (target, hashlib.sha256(current).hexdigest(),
-                                    hashlib.sha256(regenerated).hexdigest()))
-    shutil.copyfile(produced, target)
-    yaml = output/(VENDOR_CPU+'.yaml')
-    if yaml.is_file(): shutil.copyfile(yaml, vendor/(VENDOR_CPU+'.yaml'))
-    root = Path(__file__).resolve().parents[2]
-    try: relative = target.relative_to(root).as_posix()
-    except ValueError: relative = target.as_posix()
-    try:
-        source = subprocess.check_output(['git','-C',str(args.vexriscv_source),'rev-parse','HEAD'],
-                                         text=True, stderr=subprocess.DEVNULL).strip()
-    except (OSError, subprocess.CalledProcessError):
-        source = ''
-    record = {'commands': report['commands'], 'high_mmio_xip': report['high_mmio_xip'],
-              'pipeline': report['pipeline'],
-              'cpu_rtls': {VENDOR_CPU: dict(report['cpu_rtls'][VENDOR_CPU], path=relative,
-                                           sha256=text_file_hash(target), hash_normalization='lf')},
-              'vexriscv_source': ('tools/vexriscv (VexRiscv '+source+')') if source else str(args.vexriscv_source),
-              'upstream_generator_sha256': report['upstream_generator_sha256'],
-              'source_lock': report['source_lock'], 'resolved_flags': report['resolved_flags'],
-              'fixed_parameters': report['fixed_parameters']}
-    (vendor/'generator.json').write_text(json.dumps(record, indent=2)+'\n')
-    provenance = vendor/'PROVENANCE.json'
-    data = json.loads(provenance.read_text(encoding='utf-8')) if provenance.is_file() else {}
-    data.setdefault('schema', 1)
-    data.setdefault('vendor', 'Spinal HDL contributors (VexRiscv, MIT license)')
-    data.setdefault('component', "VexRiscv RV32IMA 'linux' CPU RTL: MMU, 2 KiB I-cache / 2 KiB D-cache, "
-                                 'no FPU, single-cycle shift and mul/div')
-    data.setdefault('device', {'part': 'GW2A-18C (Tang Primer 20K Dock)', 'system_clock': '60 MHz'})
-    data['source'] = dict(data.get('source', {}), generator='pythondata_cpu_vexriscv vexriscv.GenCoreDefault',
-                          command=report['commands'][0],
-                          toolchain='Java 8, sbt-launch 1.9.7, mini.py build cpu --generate',
-                          note='Only the selected production variant is committed as '+VENDOR_CPU+'.v. '
-                               'Regenerate with mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv; '
-                               'the tool refuses to overwrite differing bytes unless --force is given.')
-    files = data.setdefault('files', {})
-    for path in (target, vendor/(VENDOR_CPU+'.yaml'), vendor/'LICENSE.VexRiscv'):
-        if path.is_file():
-            files[path.name] = dict(files.get(path.name, {}), sha256=text_file_hash(path),
-                                    hash_normalization='lf',
-                                    bytes=path.stat().st_size)
-    files.setdefault(VENDOR_CPU+'.v', {}).update(module='VexRiscv', protected=False)
-    provenance.write_text(json.dumps(data, indent=2)+'\n', encoding='utf-8')
-    print('Vendor CPU installed: '+relative)
+    return report

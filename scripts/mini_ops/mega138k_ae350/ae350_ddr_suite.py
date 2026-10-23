@@ -50,9 +50,8 @@ def perform(args):
         store = Store()
         manifest = store.get(ref)
         boot = store.get(manifest['dependencies']['bootloader'])
-        if boot['config'].get('image_abi') != amap.image_abi():
-            raise ValueError('Selected hardware uses a different address ABI')
-        payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None))
+        abi = boot['config']['image_abi']
+        payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         if store.get(payload_ref)['config'].get('purpose') != 'AE350-memory-diagnostics':
             raise ValueError('DDR suite requires the diagnostic payload, not a user application')
         params = dict(stress_seconds=args.stress_seconds, seed=args.seed, region_kb=args.region_kb,
@@ -60,7 +59,7 @@ def perform(args):
         payload = application_parameters(payload_root, params)
         from mini_ops.mega138k_ae350 import ae350_image
         import hashlib
-        image = ae350_image.build(payload)
+        image = ae350_image.build(payload, abi)
         (op.path / 'image.bin').write_bytes(image)
         fs = root / 'gateware/impl/pnr/project.fs'
         op.report.update(artifact=ref, fs_sha256=file_hash(fs), rom_build_id=build_id,
@@ -81,7 +80,7 @@ def perform(args):
         session = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
         hardware.program(fs)
         op.record('banner', text=wait_loader(session, build_id, min(args.timeout, 30)))
-        session.upload(image, load=ae350_image.LOAD, abi=ae350_image.abi_tag())
+        session.upload(image, load=ae350_image.LOAD, abi=abi)
         op.record('load', entry=hex(amap.DDR_CODE), bytes=len(payload), stack=hex(amap.PAYLOAD_STACK_TOP))
         op.record('request', stress_seconds=args.stress_seconds, region_kb=args.region_kb,
                   seed=args.seed, flags=args.flags, traversal_mb=args.traversal_mb)

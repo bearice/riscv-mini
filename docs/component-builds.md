@@ -31,25 +31,25 @@ python scripts/mini.py build gateware --hardware current --synthesize
 python scripts/mini.py build system --hardware current --refresh-hardware --synthesize
 ```
 
-`cpu` 校验并复用所选的固定 RTL/生成元数据；重新生成 CPU 使用 `mini.py build cpu --generate`，其输出包括完整 generator.lock.json，重放时传 `--locked-config`。Java、sbt 和上游源码自动发现，参数可覆盖；lock 模式要求所有 generator flags 和源码/工具身份显式匹配。旧 CPU 缺完整生成源/工具记录时，只能校验固定产物，不宣称其生成闭包完整。
+`cpu` 根据机器 JSON 自动生成或复用 IP，生成身份包括参数、生成器/SDK 源码和工具内容；不再有独立 CPU 特性覆盖参数。
 
 `soc-description` 从当前硬件源码生成 CSR、契约和 RTL；`gateware` 还独立构建 bootloader 并生成最终 RTL，只有 `--synthesize` 才运行 Gowin。ROM 内容是位流依赖，BIOS 内容不是。未综合的候选不能通过板端入口的 PnR 检查。
 
 构建只有一个公开入口：`mini.py build <target>`，Windows 包装器是 `mini.ps1`。旧独立命令和阶段包装器已删除，不提供旧参数转发。所有目标由同一个 argparse 树和 target registry 注册，内部后端统一为 `build(request, run)`；准备、执行和打包由调度层完成，不能再用 `--prepare-only/--record/--pack-only` 分散调用。
 
 ```text
-python scripts/mini.py build system --profile minimal
-python scripts/mini.py build system --hardware current --l2-size 16384 --synthesize
-python scripts/mini.py build system --profile minimal --feature video=on --source firmware/examples/primer20k_vexriscv/monitor.c
-python scripts/mini.py build cpu --generate --pipelined-fetch --arithmetic-matrix --output-dir build/work/cpu-generator
+python scripts/mini.py build system
+python scripts/mini.py build system --hardware current --synthesize
+python scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/monitor.c
+python scripts/mini.py build cpu --machine primer20k_vexriscv
 python scripts/mini.py build payload --soft-float
 python scripts/mini.py build linux
-python scripts/mini.py build uboot --hardware current --feature video=off
+python scripts/mini.py build uboot --hardware current
 python scripts/mini.py build opensbi --hardware current --payload-path <u-boot.bin>
 python scripts/mini.py build busybox
 ```
 
-硬件覆盖参数只属于 system、soc-description 和 gateware；固件目标固定所选硬件。`--profile minimal` 不依赖现有 CPU 产物；full profile 需要通过 `--cpu-verilog` 明确选择有完整元数据的 CPU。没有 `--profile` 时，从 `--hardware` 选择完整配置，覆盖项明确记录。功能统一写成 `--feature NAME=on|off`。
+硬件配置的唯一来源是所选机器的 `board.json` / `machine.json`，格式与消费者见 [平台构建配置](platform-descriptions.md)。直接编辑 JSON 后执行 build；CLI 不再提供硬件覆盖参数，plan 不修改配置。固件目标消费选定硬件的导出。
 
 目标包括 system、bios、bootloader、hal-sdk、cpu、soc-description、gateware、cpu-gcb、cpu-qualification、matrix、linux、busybox、uboot、opensbi、payload、doom、gwbasic、nyancat。每个目标都使用 `plan <target>` / `build <target>`、`--hardware`、`--output-dir` 和 `--purpose`。未指定输出目录时，核心组件进入 store，上游及应用后端使用受管理的 work；run 统一保存请求、计划/结果和日志。上游完整构建仍调用各项目的 Make/Kbuild/sbt，当前并不因此宣称所有上游产物已有核心组件同等的不可变 store/replay 能力。
 
@@ -61,7 +61,7 @@ python scripts/mini.py build busybox
 
 | 位置 | 内容 |
 | --- | --- |
-| `build/store/<component>/<digest>` | 不可变模块产物、完整输入/flags lock、源码快照、manifest |
+| `build/store/<component>/<digest>` | 不可变交付产物、增量所需哈希/参数/依赖、manifest（普通构建不保存源码） |
 | `build/store/system/<digest>/bundle.lock.json` | 组件引用和完整配置，不复制依赖文件 |
 | `build/work/<machine>/<target>/<workspace>` | 稳定工作区；默认 workspace 为 default，保留 Ninja、对象、depfile、厂商工具缓存 |
 | `build/work/replay/<run-id>` | 明确要求冷编译的独立复现工作区 |
@@ -72,9 +72,9 @@ python scripts/mini.py build busybox
 
 完成产物按内容清单计算 SHA256，文件或 manifest 被修改后复用/导出/恢复均拒绝。同 key 生成不同产物会保留冲突并失败，不覆盖旧结果。输入源码在构建期间变化也会拒绝发布。
 
-所有 machine 的构建输入哈希统一使用 `sha256-text-eol-lf-v1`：公共层按内容识别 UTF-8（可带 BOM）及带 BOM 的 UTF-16/32 文本，将 CRLF/CR 转为 LF；不改变其它空白、编码、BOM 或末尾换行。规则不依赖扩展名。包含二进制控制字符或无法按上述编码解码的输入保留原字节。源码快照同步归一化，使纯 EOL 变化对应相同的输入 key 和快照。编译器/工具、下载压缩包、二进制产物及 store/导出包完整性清单仍使用原始字节 SHA256；已保存的历史锁与归档不改写。
+所有 machine 的构建输入哈希统一使用 `sha256-text-eol-lf-v1`：公共层按内容识别 UTF-8（可带 BOM）及带 BOM 的 UTF-16/32 文本，将 CRLF/CR 转为 LF；不改变其它空白、编码、BOM 或末尾换行。规则不依赖扩展名。包含二进制控制字符或无法按上述编码解码的输入保留原字节。普通构建只计算这些哈希，不复制源码快照。编译器/工具、下载压缩包、二进制产物及 store/导出包完整性清单仍使用原始字节 SHA256；已保存的历史锁与归档不改写。
 
-硬件出厂物（厂商加密 IP 与代码生成的 CPU 核）不放在 `build/` 里当“输入”，而是入库到 `gateware/vendor/<vendor>/` 并附参数与来源记录：`generator.json`/`PROVENANCE.json` 记录生成命令、固定参数、生成器与上游文件哈希、工具链身份，同一目录保存许可证。声明式闭包必须列出这些文件，构建前校验哈希；文件缺失或被改动即报错，并按记录重新生成入库（`mini.py build cpu --generate --vendor-dir gateware/vendor/vexriscv`）。参数调整后的新出厂物随代码提交，历史产物只通过 `builds reproduce` 复现。
+IP 生成参数保存在机器 JSON；生成的 CPU/厂商 IP 通过不可变 store 依赖进入硬件构建。工作区保存生成缓存，SDK 模板、源码和工具身份参与失效判断。历史产物继续通过其保存的 checkout 和 recipe 重放。
 
 **铁律：同一 machine/target 的重复构建必须使用相同 workspace。** 修改源码、调整参数、时序收敛、失败重试和复验都沿用原 `--workspace`；未指定时持续使用 `default`。严禁按尝试、阶段、时间戳、用途或参数组合另起 workspace，也不得为并行重试另开工作区。保留原工作区及编译器、Ninja、Gowin 缓存，用 `--purpose` 与自动 run 收据区分各次尝试。
 

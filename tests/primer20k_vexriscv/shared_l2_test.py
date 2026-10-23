@@ -12,12 +12,15 @@ from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
 from gateware.machines.primer20k_vexriscv.memory.shared_l2 import SharedL2
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 parser=argparse.ArgumentParser();parser.add_argument('--writeback',action='store_true');parser.add_argument('--size',type=int,choices=(256,4096,8192,16384),default=256);args=parser.parse_args()
 WAIT=max(4000,args.size*2)
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback)
+dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback, layout=_layout)
 ram={};counts={'reads':0,'writes':0};events=[]
 def initial(a):return sum(((a*17+i*11)&255)<<(i*8) for i in range(16))
 def value(a):return ram.get(a,initial(a))
@@ -170,7 +173,7 @@ run_simulation(dut,[test(),memory()])
 
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback)
+dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback, layout=_layout)
 completed=[0,0,0]
 def contend(client):
     for n in range(20):
@@ -186,7 +189,7 @@ print('Shared arbitration PASS CPU/video/DMA=',completed)
 # Clean first: preserving dirty lines across a whole-system reset is not promised.
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=args.size,writeback=args.writeback))
+dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=args.size,writeback=args.writeback, layout=_layout))
 def reset_check():
     for _ in range(args.size//16+30):yield
     yield from cpu(0,0x87654321)
@@ -202,7 +205,7 @@ print('Shared reset PASS')
 # reference image, mixing CPU writes and native DMA writes/readers.
 dut=Module();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
 port=LiteDRAMNativePort('both',23,128)
-dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback)
+dut.submodules.cache=cache=SharedL2(wb,port,size=args.size,writeback=args.writeback, layout=_layout)
 def mixed_check():
     rng=random.Random(0x20);expected={}
     for _ in range(args.size//16+30):yield

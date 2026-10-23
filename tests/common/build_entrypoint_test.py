@@ -21,7 +21,7 @@ class BuildEntrypointTests(unittest.TestCase):
             for target in (*CORE,*BACKENDS):
                 argv=[command,target]
                 if target=='cpu-gcb':argv+=['--base-generator','base','--plugins','plugins','--java','java','--sbt-launch','sbt']
-                if target=='cpu-qualification':argv+=['--cpu-verilog','CPU.v']
+                if target=='cpu-qualification':argv+=['--rom','boot.bin']
                 args=parser().parse_args(argv)
                 self.assertEqual((args.command,args.target),(command,target))
                 self.assertEqual(args.hardware,'current')
@@ -45,13 +45,6 @@ class BuildEntrypointTests(unittest.TestCase):
                 build=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='build')
                 self.assertEqual(build.args.args[-1].arg,'run')
 
-    def test_old_build_forms_and_stage_switches_rejected(self):
-        commands=(['build','--minimal'],['build','--from','current'],['build','system','--with-audio'],
-                  ['build','linux','--record'],['build','uboot','--prepare-only'],
-                  ['build','opensbi','--pack-only'],['export','current'],['release','--build','current'])
-        for argv in commands:
-            with self.subTest(argv=argv),contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
-                parser().parse_args(argv)
 
     def test_backend_plan_cannot_download_or_execute(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'build') as folder:
@@ -83,11 +76,6 @@ class BuildEntrypointTests(unittest.TestCase):
             self.assertEqual(backend.build.call_args.kwargs['run'],run)
             self.assertTrue((request.output_dir/'build.lock.json').is_file())
 
-    def test_generator_options_cannot_be_silently_ignored(self):
-        with tempfile.TemporaryDirectory(dir=ROOT/'build') as folder:
-            store=Store(Path(folder));run=Run('build','cpu',root=store.root)
-            args=parser().parse_args(['build','cpu','--compressed'])
-            with self.assertRaisesRegex(ValueError,'require --generate'):execute(store,run,args)
 
     def test_one_upstream_command_owns_prepare_execute_and_record(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'build') as folder:

@@ -22,7 +22,7 @@ MACHINES = {
     }, PRIMER20K_CLOSURE),
     'mega138k_ae350': ({
         'gateware.machines.mega138k_ae350.soc',
-        'gateware.machines.mega138k_ae350.platform',
+        'gateware.machines.mega138k_ae350.fabric',
     }, AE350_CLOSURE),
 }
 

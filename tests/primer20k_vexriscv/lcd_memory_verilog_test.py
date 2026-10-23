@@ -11,6 +11,9 @@ from migen.fhdl import verilog
 from litedram.common import LiteDRAMNativePort
 from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer
 from gateware.machines.primer20k_vexriscv.peripherals.video import RGBLCD
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 TB = r"""
 module tb;
@@ -87,7 +90,7 @@ def main():
     native=LiteDRAMNativePort('read',23,128)
     dut=Module()
     dut.submodules.buffer=PortBuffer(port,native)
-    dut.submodules.video=video=RGBLCD(port,None)
+    dut.submodules.video=video=RGBLCD(port,None, layout=_layout)
     ports={'enable':video._enable.storage,'select_slot':video._select.storage,
         'base0':video._base0.storage,'base1':video._base1.storage,
         'wrap_start':video._wrap_start.storage,'wrap_end':video._wrap_end.storage,

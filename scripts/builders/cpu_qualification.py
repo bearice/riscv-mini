@@ -18,45 +18,41 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from gateware.machines.primer20k_vexriscv.features import Features
 from gateware.machines.primer20k_vexriscv.config import SD_PROFILES, storage_profile, cpu_configuration, pll_count
-from gateware.machines.primer20k_vexriscv.soc import MiniSoC
-from gateware.machines.primer20k_vexriscv.rtl import split_verilog
-from litex.soc.integration.builder import Builder
 from scripts.modular.machines.primer20k_vexriscv.rtl import pnr_report
 
 
 def build(args, run=None):
-    args.audio_clock = "dds" if args.audio_clock == "sys" else args.audio_clock
+    from gateware.description import from_snapshot
     from scripts.modular.environment import discover
-    vendor=discover(['gowin'])['bindings']['gowin'][0]
-    os.environ['PATH']=str(Path(vendor).parent)+os.pathsep+os.environ.get('PATH','')
+    machine = from_snapshot(args.resolved_machine_snapshot)
+    settings = machine.rtl
+    vendor = discover(['gowin'])['bindings']['gowin'][0]
+    os.environ['PATH'] = str(Path(vendor).parent) + os.pathsep + os.environ.get('PATH', '')
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    cpu = args.cpu_verilog.resolve()
+    cpu = ROOT / settings.cpu_verilog
     rom = args.rom.read_bytes()
     rom += bytes((-len(rom)) % 4)
     data = [int.from_bytes(rom[i:i+4], 'little') for i in range(0, len(rom), 4)]
-    overrides={}
-    for item in args.feature:
-        name,_,value=item.partition('=');name=name.replace('-','_')
-        if name not in Features.names() or value not in ('on','off'):raise ValueError('Expected NAME=on|off: '+item)
-        overrides[name]=value=='on'
-    features = Features.resolve(args.profile, overrides)
-    args.sd_profile,features=storage_profile(args.sd_profile,None,features,overrides)
-    args.sd_backend='native' if args.sd_profile in ('lite','full') else args.sd_profile
-    features,args.cpu_variant,dcache=cpu_configuration(features,overrides,cpu,args.cpu_variant)
-    expected_plls=pll_count(features,args.usb_backend,args.audio_clock)
+    features = Features(**settings.features)
+    args.sd_profile = settings.sd_profile
+    args.sd_backend = 'native' if args.sd_profile in ('lite', 'full') else args.sd_profile
+    args.cpu_variant = settings.cpu_variant
+    args.usb_backend, args.audio_clock = settings.usb_backend, settings.audio_clock
+    args.place_option, args.route_option = settings.place_option, settings.route_option
+    args.l2_size, args.rom_size, args.boot_mode = settings.l2_size_bytes, machine.boot.rom_size_bytes, machine.boot.mode
+    from gateware.machines.primer20k_vexriscv.config import cpu_capabilities
+    dcache = cpu_capabilities(cpu)['dcache']
+    expected_plls = pll_count(features, args.usb_backend, args.audio_clock)
     report = {
         'cpu_rtl': str(cpu), 'cpu_sha256': hashlib.sha256(cpu.read_bytes()).hexdigest(),
         'sd_backend':args.sd_backend, 'cpu_variant_adapter': args.cpu_variant, 'usb_backend':args.usb_backend, 'features': features.as_dict(),
         'sd_profile':args.sd_profile,'audio_clock':args.audio_clock,'expected_plls':expected_plls,
         'cpu_capabilities':{'mmu':features.mmu,'fpu':features.fpu,'dcache':dcache},
-        'synthesis_retiming_requested':args.retiming,
-        'synthesis_pipelining_requested':args.pipelining,
-        'pnr_retiming_resource':args.retiming_resource,
         'pnr_place_option':args.place_option,
         'pnr_route_option':args.route_option,
         'pipeline_configuration':json.loads((cpu.parent/'generator.json').read_text()).get('pipeline'),
-        'sys_hz': 60000000, 'ddr_hz': 120000000,
+        'sys_hz': machine.clocks.sys, 'ddr_hz': machine.clocks.sys * 2,
         'l2_size_bytes':args.l2_size,'rom_size_bytes':args.rom_size,'boot_mode':args.boot_mode,
         'rom_source': str(args.rom.resolve()), 'rom_sha256': hashlib.sha256(rom).hexdigest(),
         'software_adapted': False, 'board_test': 'not performed',
@@ -67,19 +63,8 @@ def build(args, run=None):
     local = json.loads((ROOT/'.tools.local.json').read_text())
     os.environ['PATH'] = str(Path(local['gowin']).parent)+os.pathsep+os.environ['PATH']
     try:
-        soc = MiniSoC(rom_data=data, features=features,
-                      cpu_variant=args.cpu_variant, cpu_verilog=cpu,usb_backend=args.usb_backend,sd_backend=args.sd_backend,sd_profile=args.sd_profile,audio_clock=args.audio_clock,
-                      l2_size=args.l2_size,rom_size=args.rom_size,boot_mode=args.boot_mode)
-        if args.retiming:soc.platform.toolchain.options['retiming']='1'
-        if args.pipelining:soc.platform.toolchain.options['pipe']='1'
-        soc.platform.toolchain.options['retiming_resource']=args.retiming_resource
-        soc.platform.toolchain.options['place_option']=str(args.place_option)
-        soc.platform.toolchain.options['route_option']=str(args.route_option)
-        split_verilog(soc.platform)
-        builder = Builder(soc, output_dir=str(output), compile_software=False,
-                          compile_gateware=True, csr_json=str(output/'csr.json'),
-                          csr_csv=str(output/'csr.csv'), hierarchical=True)
-        builder.build(run=False, build_name='riscv_mini')
+        from scripts.modular.machines.primer20k_vexriscv.rtl import generate
+        generate(output, binary=args.rom, machine=machine)
         if args.synthesis_only:
             run_tcl=output/'gateware/run.tcl'
             script=run_tcl.read_text()

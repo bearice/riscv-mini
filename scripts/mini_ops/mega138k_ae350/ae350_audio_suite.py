@@ -26,8 +26,8 @@ def perform(args):
         root,ref,build_id=candidate(args.build)
         store=Store();manifest=store.get(ref)
         boot=store.get(manifest['dependencies']['bootloader'])
-        if boot['config'].get('image_abi')!=amap.image_abi(): raise ValueError('hardware address ABI differs')
-        pref,proot=resolve_payload(store,args.payload);payload=payload_file(proot).read_bytes()
+        abi=boot['config']['image_abi']
+        pref,proot=resolve_payload(store,args.payload,expected_abi=abi);payload=payload_file(proot).read_bytes()
         op.report.update(artifact=ref,fs_sha256=file_hash(root/'gateware/impl/pnr/project.fs'),
                          rom_build_id=build_id,payload_artifact=pref,payload_sha256=file_hash(payload_file(proot)),
                          flash_written=False,soak_seconds=args.soak_seconds,
@@ -42,8 +42,8 @@ def perform(args):
         s=BootSession(hardware.open_serial(),hardware.open_log('uart.log'))
         hardware.program(root/'gateware/impl/pnr/project.fs')
         op.record('banner',text=wait_loader(s,build_id,30))
-        image=ae350_image.build(payload);(op.path/'image.bin').write_bytes(image)
-        s.upload(image,load=ae350_image.LOAD,abi=ae350_image.abi_tag())
+        image=ae350_image.build(payload, abi);(op.path/'image.bin').write_bytes(image)
+        s.upload(image,load=ae350_image.LOAD,abi=abi)
         if video_device:
             from mini_ops.mega138k_ae350.ae350_video_suite import capture
             ffmpeg=shutil.which('ffmpeg')

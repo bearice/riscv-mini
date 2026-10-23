@@ -6,9 +6,12 @@ from migen import Module, ClockDomain
 from migen.fhdl import verilog
 from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort
 from gateware.machines.primer20k_vexriscv.peripherals.video import RGBLCD
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 out=ROOT/'build/video-address-rtl';out.mkdir(parents=True,exist_ok=True)
 dut=Module();dut.clock_domains.cd_sys=ClockDomain('sys');dut.clock_domains.cd_video=ClockDomain('video')
-port=MemoryPort('read',data_width=16);dut.submodules.lcd=lcd=RGBLCD(port,None)
+port=MemoryPort('read',data_width=16);dut.submodules.lcd=lcd=RGBLCD(port,None, layout=_layout)
 ports={'sys_clk':dut.cd_sys.clk,'sys_rst':dut.cd_sys.rst,
     'video_clk':dut.cd_video.clk,'video_rst':dut.cd_video.rst,
     'base0':lcd._base0.storage,'base1':lcd._base1.storage,'enable':lcd._enable.storage,

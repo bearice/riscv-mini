@@ -1,258 +1,669 @@
 {
-  "schema": 1,
+  "$schema": "../../schemas/board.schema.json",
+  "schema_version": 2,
   "id": "mega138k_pro",
-  "name": "Tang Mega 138K Pro",
-  "reference_device": "GW5AST-138B",
-  "reference_part": "GW5AST-LV138FPG676AC1/I0",
-  "physical_identity": {
-    "part": null,
-    "core_revision": null,
-    "baseboard_revision": null,
-    "ddr_marking": "2 x SK hynix H5TQ4G63EFR; second line RDC 152V",
-    "ddr_identification": "user-photo-2026-10-17",
-    "status": "partially-confirmed"
+  "fpga": {
+    "device": "GW5AST-138B",
+    "part": "GW5AST-LV138FPG676AC1/I0"
   },
   "input_clock_hz": 50000000,
   "resources": {
     "clock": {
-      "pins": [
-        "P16"
-      ],
-      "io_standard": "LVCMOS33"
+      "kind": "clock",
+      "signals": {
+        "clk": {
+          "pins": [
+            "P16"
+          ],
+          "io_standard": "LVCMOS33"
+        }
+      }
     },
     "core_reset": {
-      "pins": [
-        "U4"
-      ],
-      "io_standard": "LVCMOS15",
-      "active_low": false
+      "kind": "reset",
+      "signals": {
+        "reset": {
+          "pins": [
+            "U4"
+          ],
+          "io_standard": "LVCMOS15",
+          "active_low": false
+        }
+      }
     },
     "debug_uart": {
-      "rx": "N16",
-      "tx": "P15",
-      "io_standard": "LVCMOS33"
+      "kind": "uart",
+      "signals": {
+        "rx": {
+          "pins": [
+            "N16"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "tx": {
+          "pins": [
+            "P15"
+          ],
+          "io_standard": "LVCMOS33"
+        }
+      }
     },
     "cpu_jtag": {
-      "connector": "J23 SDRAM CONN.",
-      "io_standard": "LVCMOS33",
-      "tck": {
-        "pin": "V16",
-        "contact": 2
-      },
-      "tdi": {
-        "pin": "V17",
-        "contact": 4
-      },
-      "tdo": {
-        "pin": "Y21",
-        "contact": 6
-      },
-      "tms": {
-        "pin": "U17",
-        "contact": 8
-      },
-      "trst": {
-        "mode": "tied-high-internal"
-      },
-      "gnd_contact": 12,
-      "forbidden_vref_contact": 11,
-      "exclusive_with": [
-        "J23 SDRAM module"
-      ]
+      "kind": "jtag",
+      "signals": {
+        "tck": {
+          "pins": [
+            "V16"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "down"
+        },
+        "tdi": {
+          "pins": [
+            "V17"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up"
+        },
+        "tdo": {
+          "pins": [
+            "Y21"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "tms": {
+          "pins": [
+            "U17"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up"
+        }
+      }
     },
-    "camera": {
-      "status": "reserved-do-not-allocate",
-      "mipi0_lanes": [
-        "V1",
-        "W1",
-        "Y2",
-        "AA2",
-        "Y3",
-        "AA3",
-        "V3",
-        "W3",
-        "V4",
-        "W4"
-      ],
-      "mipi1_lanes": [
-        "AB1",
-        "AC1",
-        "AD1",
-        "AE1",
-        "AE2",
-        "AF2",
-        "AE3",
-        "AF3",
-        "AE5",
-        "AF5"
-      ],
-      "dock_control": [
-        "M14",
-        "L14",
-        "E23",
-        "F23"
-      ],
-      "dvp": [
-        "E21",
-        "A22",
-        "E16",
-        "G17",
-        "D16",
-        "F17",
-        "C18",
-        "D20",
-        "B17",
-        "C17",
-        "D21",
-        "E20",
-        "D18",
-        "B22"
-      ],
-      "shared_i2c_control": [
-        "K25",
-        "K26",
-        "N19",
-        "P19",
-        "P26"
-      ],
-      "routing_note": "Reserve actual Dock camera connections; core MIPI_EXIO aliases routed to J23 SDRAM are not camera connector pins",
-      "evidence": "Dock schematic sheets 5, 11, 12, 16"
+    "fan": {
+      "kind": "fan",
+      "signals": {
+        "pwm": {
+          "pins": [
+            "T17"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "tach": {
+          "pins": [
+            "T18"
+          ],
+          "io_standard": "LVCMOS33"
+        }
+      }
     },
     "audio": {
-      "bck": "E22",
-      "ws": "F24",
-      "data": "G24",
-      "pa_en": "H17",
-      "io_standard": "LVCMOS33",
-      "bank_vccio": 3.3
+      "kind": "audio",
+      "signals": {
+        "bck": {
+          "pins": [
+            "E22"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        },
+        "ws": {
+          "pins": [
+            "F24"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        },
+        "data": {
+          "pins": [
+            "G24"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        },
+        "pa_en": {
+          "pins": [
+            "H17"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        }
+      }
     },
     "microphone": {
-      "connector": "J28",
-      "active_owner": "microphone",
-      "data": "N18",
-      "bck": "N26",
-      "lr": "R16",
-      "ws": "R17",
-      "io_standard": "LVCMOS33",
-      "bank_vccio": 3.3,
-      "wiring_evidence": "user-confirmed 2026-10-22: DA CK LR WS",
-      "data_lines": 4,
-      "shared_with": [
-        "PMOD0",
-        "SSPI"
-      ]
-    },
-    "video": {
-      "output": "hdmi",
-      "lcd_migration": "deferred",
-      "active_port": "0",
-      "io_standard": "LVCMOS33D",
-      "bank_vccio": 3.3,
-      "drive": 8,
-      "ports": {
-        "0": {
-          "connector": "HDMI TX (DVI_TX in dock schematic)",
-          "clock_pair": ["Y22", "Y23"],
-          "data_pairs": [["AB24", "AC24"], ["V24", "W24"], ["AA22", "AA23"]]
+      "kind": "microphone",
+      "signals": {
+        "data": {
+          "pins": [
+            "N18"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "down"
         },
-        "1": {
-          "connector": "HDMI RX (DVI_RX in dock schematic)",
-          "clock_pair": ["K20", "J20"],
-          "data_pairs": [["D19", "C19"], ["M15", "L15"], ["J25", "J26"]]
+        "bck": {
+          "pins": [
+            "N26"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        },
+        "lr": {
+          "pins": [
+            "R16"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        },
+        "ws": {
+          "pins": [
+            "R17"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
+        }
+      }
+    },
+    "video_0": {
+      "kind": "hdmi",
+      "signals": {
+        "clk": {
+          "pins": [
+            "Y22",
+            "Y23"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "data_0": {
+          "pins": [
+            "AB24",
+            "AC24"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "data_1": {
+          "pins": [
+            "V24",
+            "W24"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "data_2": {
+          "pins": [
+            "AA22",
+            "AA23"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        }
+      }
+    },
+    "video_1": {
+      "kind": "hdmi",
+      "signals": {
+        "clk": {
+          "pins": [
+            "K20",
+            "J20"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "data_0": {
+          "pins": [
+            "D19",
+            "C19"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "data_1": {
+          "pins": [
+            "M15",
+            "L15"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "data_2": {
+          "pins": [
+            "J25",
+            "J26"
+          ],
+          "io_standard": "LVCMOS33D",
+          "bank_vccio": 3.3,
+          "drive_ma": 8,
+          "pull": "none"
+        }
+      }
+    },
+    "led_0": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "J14"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "led_1": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "R26"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "led_2": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "L20"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "led_3": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "M25"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "led_4": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "N21"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "led_5": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "N23"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "button_0": {
+      "kind": "button",
+      "signals": {
+        "pad": {
+          "pins": [
+            "K16"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true,
+          "pull": "up"
+        }
+      }
+    },
+    "button_1": {
+      "kind": "button",
+      "signals": {
+        "pad": {
+          "pins": [
+            "F15"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true,
+          "pull": "up"
+        }
+      }
+    },
+    "button_2": {
+      "kind": "button",
+      "signals": {
+        "pad": {
+          "pins": [
+            "G15"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true,
+          "pull": "up"
+        }
+      }
+    },
+    "button_3": {
+      "kind": "button",
+      "signals": {
+        "pad": {
+          "pins": [
+            "G16"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true,
+          "pull": "up"
+        }
+      }
+    },
+    "ws2812": {
+      "kind": "ws2812",
+      "signals": {
+        "data": {
+          "pins": [
+            "H16"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3
+        }
+      }
+    },
+    "ddr3": {
+      "kind": "ddr3",
+      "signals": {
+        "addr": {
+          "pins": [
+            "N1",
+            "R1",
+            "R2",
+            "N2",
+            "P1",
+            "T2",
+            "N4",
+            "U1",
+            "T4",
+            "T3",
+            "M1",
+            "P4",
+            "N3",
+            "U2",
+            "U5"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none",
+          "drive_overrides": {
+            "14": 12
+          }
+        },
+        "ba": {
+          "pins": [
+            "M4",
+            "L5",
+            "K3"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "cs_n": {
+          "pins": [
+            "L4"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "ras_n": {
+          "pins": [
+            "H2"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "cas_n": {
+          "pins": [
+            "H1"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "we_n": {
+          "pins": [
+            "J3"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "cke": {
+          "pins": [
+            "L3"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "odt": {
+          "pins": [
+            "J1"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "reset_n": {
+          "pins": [
+            "N8"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "dm": {
+          "pins": [
+            "F4",
+            "H9",
+            "E3",
+            "A3"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "dq": {
+          "pins": [
+            "G4",
+            "J6",
+            "L8",
+            "G5",
+            "K7",
+            "J5",
+            "K8",
+            "K6",
+            "E6",
+            "H8",
+            "H6",
+            "G8",
+            "D6",
+            "F8",
+            "G6",
+            "F7",
+            "C4",
+            "F3",
+            "B4",
+            "E5",
+            "D3",
+            "D5",
+            "A4",
+            "D4",
+            "E1",
+            "A2",
+            "G2",
+            "C2",
+            "F2",
+            "E2",
+            "G1",
+            "D1"
+          ],
+          "io_standard": "SSTL15",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "ck": {
+          "pins": [
+            "M2",
+            "L2"
+          ],
+          "io_standard": "SSTL15D",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "dqs_0": {
+          "pins": [
+            "J4",
+            "H4"
+          ],
+          "io_standard": "SSTL15D",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "dqs_1": {
+          "pins": [
+            "H7",
+            "G7"
+          ],
+          "io_standard": "SSTL15D",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "dqs_2": {
+          "pins": [
+            "B5",
+            "A5"
+          ],
+          "io_standard": "SSTL15D",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "dqs_3": {
+          "pins": [
+            "C1",
+            "B1"
+          ],
+          "io_standard": "SSTL15D",
+          "bank_vccio": 1.5,
+          "drive_ma": 8,
+          "pull": "none"
         }
       }
     }
   },
-  "ddr_candidates": [
-    {
-      "part": "H5TQ4G63EFR",
-      "chips": 2,
-      "data_width": 32,
-      "row_bits": 15,
-      "bank_bits": 3,
-      "column_bits": 10,
-      "size_bytes": 1073741824
-    },
-    {
-      "part": "Micron-custom-reference",
-      "chips": 2,
-      "data_width": 32,
-      "row_bits": 14,
-      "bank_bits": 3,
-      "column_bits": 10,
-      "size_bytes": 536870912
-    }
-  ],
-  "conflicts": [
-    {
-      "resource": "MIC-ARRAY",
-      "owners": [
-        "microphone",
-        "PMOD0",
-        "SSPI"
-      ],
-      "resolution": "At most one active owner"
-    },
-    {
-      "resource": "part",
-      "board_reference": "Confirm silicon marking/speed grade",
-      "resolution": "Build target follows board.json; physical silicon marking is not confirmed"
-    }
-  ],
-  "evidence": [
-    "docs/images/mega138k-pro-ddr-20261017.png",
-    "TangPrimer-138K/docs/02_Schematic",
-    "docs/ae350-migration-stages.md"
-  ],
-  "user_io": {
-    "status": "published-digital-binding; physical observation is a separate gate",
-    "leds": [
-      {"index": 0, "name": "USR_LED0", "pin": "J14", "gpio_bit": 0, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
-      {"index": 1, "name": "USR_LED1", "pin": "R26", "gpio_bit": 1, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
-      {"index": 2, "name": "USR_LED2", "pin": "L20", "gpio_bit": 2, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
-      {"index": 3, "name": "USR_LED3", "pin": "M25", "gpio_bit": 3, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
-      {"index": 4, "name": "USR_LED4", "pin": "N21", "gpio_bit": 4, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"},
-      {"index": 5, "name": "USR_LED5", "pin": "N23", "gpio_bit": 5, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "reset": "off"}
-    ],
-    "buttons": [
-      {"index": 0, "name": "USR_KEY0", "pin": "K16", "gpio_bit": 8, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5},
-      {"index": 1, "name": "USR_KEY1", "pin": "F15", "gpio_bit": 9, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5},
-      {"index": 2, "name": "USR_KEY2", "pin": "G15", "gpio_bit": 10, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5},
-      {"index": 3, "name": "USR_KEY3", "pin": "G16", "gpio_bit": 11, "io_standard": "LVCMOS33", "bank_vccio": 3.3, "active_low": true, "debounce_ms": 5}
-    ],
-    "switches": [],
-    "ws2812": {
-      "present": true,
-      "wired": true,
-      "device": "WS2812B-2020",
-      "pin": "H16",
-      "io_standard": "LVCMOS33",
-      "bank_vccio": 3.3,
-      "supply": "5V",
-      "shares": "aRGB strip connector",
-      "physical_display": "unverified",
-      "note": "Dock schematic places WS2812B-2020 on the peripheral sheet and the published pin is H16. The FPGA pad is 3.3 V; the LED supply in the schematic is 5 V. Waveform acceptance is separate from looking at the LED."
-    },
-    "gpio_inject_bit": 16,
-    "protected_pins": {
-      "H10": "FPGA JTAG TDI",
-      "H11": "FPGA JTAG TMS",
-      "H12": "FPGA JTAG TCK",
-      "J10": "FPGA JTAG TDO",
-      "W10": "configuration DONE",
-      "V11": "configuration READY",
-      "T17": "fan PWM, already driven",
-      "T18": "fan tachometer input"
-    },
-    "not_published": [
-      "U4 is the core reset and is also labeled USR_KEY on the SOM sheet; it is not a button",
-      "N22 is a SOM LED net and is not one of the six dock user LEDs",
-      "core T7/T8 button nets are not the four dock user buttons"
-    ],
-    "evidence": [
-      "Dock 4071f peripheral sheet: USR_LED[0..5], USR_KEY[0..3], WS2812B-2020",
-      "LiteX sipeed_tang_mega_138k_pro led_n and TangMega138KProDock btn_n/led_ws2812",
-      "J3 connector map: button 0..3 = K16 F15 G15 G16, matching the dock CST KEY pins"
-    ]
-  }
+  "reserved_pins": [
+    "A22",
+    "AA2",
+    "AA3",
+    "AB1",
+    "AC1",
+    "AD1",
+    "AE1",
+    "AE2",
+    "AE3",
+    "AE5",
+    "AF2",
+    "AF3",
+    "AF5",
+    "B17",
+    "B22",
+    "C17",
+    "C18",
+    "D16",
+    "D18",
+    "D20",
+    "D21",
+    "E16",
+    "E20",
+    "E21",
+    "E23",
+    "F17",
+    "F23",
+    "G17",
+    "H10",
+    "H11",
+    "H12",
+    "J10",
+    "K25",
+    "K26",
+    "L14",
+    "M14",
+    "N19",
+    "P19",
+    "P26",
+    "V1",
+    "V11",
+    "V3",
+    "V4",
+    "W1",
+    "W10",
+    "W3",
+    "W4",
+    "Y2",
+    "Y3"
+  ]
 }

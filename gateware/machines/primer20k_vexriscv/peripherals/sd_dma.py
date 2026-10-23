@@ -4,14 +4,16 @@ No loop mode, 64-bit addressing or unbounded length counters. Disable drains
 an outstanding bus request before returning idle. Stream byte order matches
 LiteX little-endian DMA used by the existing SD byte converters.
 """
-from gateware.machines.primer20k_vexriscv.memory_map import RAM_BASE, RAM_END
 from migen import Signal, If, FSM, NextState, NextValue
 from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 
 class SDTransfer(LiteXModule):
-    def __init__(self, bus, write, endianness='little', with_csr=True):
+    def __init__(self, bus, write, endianness='little', with_csr=True, *, layout):
+        RAM_BASE = layout.RAM_BASE
+        RAM_END = layout.RAM_END
+
         self._base=CSRStorage(32, name='base')
         self._length=CSRStorage(13, name='length')
         self._enable=CSRStorage(name='enable')
@@ -54,9 +56,9 @@ class SDTransfer(LiteXModule):
         fsm.act('DONE',NextValue(self._done.status,1),If(~enable,NextState('IDLE')))
 
 class SDReader(SDTransfer):
-    def __init__(self,bus,endianness='little',with_csr=True):
-        super().__init__(bus,False,endianness,with_csr)
+    def __init__(self,bus,endianness='little',with_csr=True, *, layout):
+        super().__init__(bus,False,endianness,with_csr,layout=layout)
 
 class SDWriter(SDTransfer):
-    def __init__(self,bus,endianness='little',with_csr=True):
-        super().__init__(bus,True,endianness,with_csr)
+    def __init__(self,bus,endianness='little',with_csr=True, *, layout):
+        super().__init__(bus,True,endianness,with_csr,layout=layout)

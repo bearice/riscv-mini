@@ -12,12 +12,15 @@ class FabricPLL(LiteXModule):
     matching duty cycle; minimum high AND low pulses are still checked by STA.
     This local primitive adapter exposes the static trim absent from GW5APLL.
     """
-    def __init__(self, platform, clkin, outputs):
+    def __init__(self, platform, clkin, outputs, input_hz):
         self.reset = Signal()
         self.locked = Signal()
         self.clocks = []
         self.extra_constraints = []
-        params = dict(p_FCLKIN='50.0', p_IDIV_SEL=1, p_FBDIV_SEL=1, p_MDIV_SEL=16,
+        multiply = round(800e6 / input_hz)
+        if not 1 <= multiply <= 128 or input_hz * multiply != 800e6:
+            raise ValueError('fabric PLL input must produce its 800MHz VCO with an integer multiplier')
+        params = dict(p_FCLKIN=str(input_hz / 1e6), p_IDIV_SEL=1, p_FBDIV_SEL=1, p_MDIV_SEL=multiply,
                       p_CLKFB_SEL='INTERNAL', p_CLK4_IN_SEL=Constant(0, 2),
                       p_RESET_I_EN='FALSE', p_RESET_O_EN='FALSE', p_SSC_EN='FALSE',
                       i_CLKIN=clkin, i_CLKFB=0, i_RESET=self.reset,
@@ -50,16 +53,16 @@ class FabricPLL(LiteXModule):
                 duty = 50 + 0.05 / (1e9 / frequency) * 100
                 self.extra_constraints.append(
                     'create_generated_clock -name mem_clk -source [get_ports {clk50}] '
-                    '-divide_by %d -multiply_by 16 -duty_cycle %g [get_pins {ae350_pll/CLKOUT2}]'
-                    % (divide, duty))
+                    '-divide_by %d -multiply_by %d -duty_cycle %g [get_pins {ae350_pll/CLKOUT2}]'
+                    % (divide, multiply, duty))
             else:
                 platform.add_generated_clock_constraint(cd.clk, clkin, divide_by=divide,
-                    multiply_by=16, pin='ae350_pll/CLKOUT%d' % index)
+                    multiply_by=multiply, pin='ae350_pll/CLKOUT%d' % index)
         self.specials += Instance('PLL', name='ae350_pll', **params)
 
 
 class ClockReset(LiteXModule):
-    def __init__(self, platform, fabric_hz=100e6, data_hz=None):
+    def __init__(self, platform, fabric_hz=100e6, data_hz=None, input_hz=50e6, cpu_hz=800e6, pixel_hz=25.175e6, reset_active_low=False):
         self.cd_sys = ClockDomain('sys')
         self.cd_cpu = ClockDomain('cpu')
         self.cd_input = ClockDomain('input')
@@ -67,17 +70,18 @@ class ClockReset(LiteXModule):
         self.cd_hdmi_5x = ClockDomain('hdmi_5x')
         self.cd_hdmi_reset = ClockDomain('hdmi_reset', reset_less=True)
         clk = platform.request('clk50')
-        platform.add_period_constraint(clk, 20)
-        reset_key = platform.request('reset_key')
+        platform.add_period_constraint(clk, 1e9 / input_hz)
+        reset_pad = platform.request('reset_key')
+        reset_key = ~reset_pad if reset_active_low else reset_pad
         self.comb += self.cd_input.clk.eq(clk)
         count = Signal(16, reset=65535)
         self.sync.input += If(reset_key, count.eq(65535)).Elif(count != 0, count.eq(count - 1))
-        outputs = [(self.cd_sys, fabric_hz), (self.cd_cpu, 800e6)]
+        outputs = [(self.cd_sys, fabric_hz), (self.cd_cpu, cpu_hz)]
         if data_hz is not None:
             self.cd_mem = ClockDomain('mem')
             outputs.append((self.cd_mem, data_hz))
         # CORE_CLK stays on CLKOUT1, the dedicated PLL_R[0] path.
-        self.pll = pll = FabricPLL(platform, clk, outputs)
+        self.pll = pll = FabricPLL(platform, clk, outputs, input_hz)
         self.comb += pll.reset.eq(reset_key | (count != 0))
         platform.toolchain.additional_cst_commands.append('INS_LOC "ae350_pll" PLL_R[0];')
         # Keep the fabric/BSRAM clock on the dedicated global clock network.
@@ -95,10 +99,10 @@ class ClockReset(LiteXModule):
         # recovery/removal analysis includes the reset net's propagation delay.
         # Keep fabric reset synchronizers off the fast I/O clock network.
         self.hdmi_pll = hdmi_pll = GW5APLL(platform.devicename, platform.device, name='ae350_hdmi_pll')
-        hdmi_pll.register_clkin(clk, 50e6)
-        hdmi_pll.create_clkout(self.cd_hdmi_pix, 25.175e6, margin=1e-2)
-        hdmi_pll.create_clkout(self.cd_hdmi_5x, 125.875e6, margin=1e-2, with_reset=False)
-        hdmi_pll.create_clkout(self.cd_hdmi_reset, 25.175e6, phase=72, margin=1e-2, with_reset=False)
+        hdmi_pll.register_clkin(clk, input_hz)
+        hdmi_pll.create_clkout(self.cd_hdmi_pix, pixel_hz, margin=1e-2)
+        hdmi_pll.create_clkout(self.cd_hdmi_5x, pixel_hz * 5, margin=1e-2, with_reset=False)
+        hdmi_pll.create_clkout(self.cd_hdmi_reset, pixel_hz, phase=72, margin=1e-2, with_reset=False)
         self.comb += hdmi_pll.reset.eq(reset_key | (count != 0))
         # The backend generated-clock helper has no phase argument. Emit all
         # HDMI clocks together with their actual PLL ratios and phase instead.
@@ -112,7 +116,7 @@ class ClockReset(LiteXModule):
         ]
         self.rtc = Signal()
         phase = Signal(32)
-        self.sync.input += phase.eq(phase + round(32768 * 2**32 / 50000000))
+        self.sync.input += phase.eq(phase + round(32768 * 2**32 / input_hz))
         # Give RTC a real clock source net. A combinational alias to phase[31]
         # is removed by Gowin synthesis and leaves an invalid SDC clock object.
         self.specials += Instance('DFF', name='rtc_buffer', i_CLK=clk, i_D=phase[31], o_Q=self.rtc)

@@ -1,6 +1,6 @@
 # 板级参考
 
-Tang Primer 20K 核心板 + Dock 3713 的器件、引脚与电气事实。构建脚本里的机器可读版本是 `gateware/boards/primer20k_dock3713/board.json`；本页记录 board.json 表达不了的约束与出处。
+Tang Primer 20K 核心板 + Dock 3713 的器件、引脚与电气事实。构建使用的引脚与电气配置是 `gateware/boards/primer20k_dock3713/board.json`，系统构建选项是对应的 `machine.json`；两台平台共用的严格格式和读取接口见 [平台构建配置](platform-descriptions.md)。本页保存约束与出处。
 
 ## 器件与容量
 

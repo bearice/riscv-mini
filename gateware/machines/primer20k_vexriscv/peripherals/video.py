@@ -6,7 +6,6 @@ buffered-port frame DMA with this machine's RAM window validation, the CSR
 bank, and the registered pin output layer.
 """
 from gateware.devices.video.core import FRAME_BYTES, BacklightPWM, PalettePixels, LCDScan
-from gateware.machines.primer20k_vexriscv.memory_map import RAM_BASE, RAM_SIZE
 from gateware.machines.primer20k_vexriscv.csr_layout import packed_status
 from migen import Signal, Memory, If, Mux, ClockSignal, ClockDomainsRenamer
 from migen.genlib.cdc import MultiReg, PulseSynchronizer
@@ -17,7 +16,10 @@ from litex.build.io import DDROutput, SDROutput
 
 
 class RGBLCD(LiteXModule):
-    def __init__(self, port, pads, video_clk_freq=9_000_000):
+    def __init__(self, port, pads, video_clk_freq=9_000_000, *, layout):
+        RAM_BASE = layout.RAM_BASE
+        RAM_SIZE = layout.RAM_SIZE
+
         if port.data_width != 16: raise ValueError('LCD requires a 16-bit buffered memory port')
         shift=4
         words=FRAME_BYTES//16

@@ -53,8 +53,8 @@ def plan(root, active_run=None):
             roots.update(references(value))
             run_ids.update(RUN_ID.findall(json.dumps(value)))
         return value
-    # Immutable archive/release manifests and pinned refs are roots. Preserve
-    # original-platform candidates; AE350 provisional candidates are collectible.
+    # Immutable archive/release manifests and pinned refs are roots.
+    # Provisional candidates are disposable on every machine.
     for directory in ('archives', 'releases'):
         for path in (build / directory).rglob('*.json'):
             note(path)
@@ -63,7 +63,7 @@ def plan(root, active_run=None):
     for path in (build / 'work').glob('*/*/*/workspace.json'):
         note(path)
     for path in (build / 'refs').rglob('*.json'):
-        if 'candidates' not in path.parts or path.parent == build / 'refs/candidates':
+        if 'candidates' not in path.parts:
             value = note(path)
             if isinstance(value, dict) and value.get('path'):
                 protected_paths.add(Path(value['path']).resolve())
@@ -80,6 +80,8 @@ def plan(root, active_run=None):
     for path in documents:
         if path.is_file() and path.suffix in ('.md', '.json'):
             run_ids.update(RUN_ID.findall(path.read_text(encoding='utf-8')))
+    for run_id in list(run_ids):
+        note(build / 'runs' / run_id / 'result.json')
     keep = set()
     def visit(ref):
         if ref in keep:

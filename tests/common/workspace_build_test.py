@@ -110,11 +110,10 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(archive.read_bytes(), b'keep')
 
     def artifact(self):
-        board = dict(reference_part='GW5AST-test', reference_device='GW5AST-138B')
-        config = dict(machine='mega138k_ae350', synthesize=True, tools={'gowin': 'test'},
+        board = dict(fpga=dict(part='GW5AST-test', device='GW5AST-138B'))
+        config = dict(machine='mega138k_ae350', fpga=board['fpga'], synthesize=True, tools={'gowin': 'test'},
                       ddr_profile={}, core_hz=800, bus_hz=80, data_memory_clock_hz=100, input_key='inputs')
         ref = self.store.publish('gateware', digest(config), {
-            'inputs/source/gateware/boards/mega138k_pro/board.json': canonical(board),
             'gateware/impl/pnr/project.p': b'place', 'gateware/impl/pnr/project.pr': b'route',
             'gateware/impl/pnr/project_tr_content.html':
                 b'Numbers of Setup Violated Endpoints 0 Numbers of Hold Violated Endpoints 0',

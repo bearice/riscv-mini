@@ -13,11 +13,14 @@ sys.path.insert(0, str(ROOT / 'tests' / 'mega138k_ae350'))
 from migen import Signal
 from migen.sim import run_simulation
 
-from gateware.boards.mega138k_pro import io_map
+from gateware.description import resolve_machine
+from gateware.io import IOBindings
+io_map = IOBindings(resolve_machine('mega138k_ae350'))
 from gateware.devices.gpio.core import ButtonEvents
 from gateware.devices.ws2812.core import WS2812Core, timing
-from gateware.machines.mega138k_ae350 import address_map as amap
-from gateware.machines.mega138k_ae350.platform import Ae350Platform
+from gateware.machines.mega138k_ae350.address_map import AddressMap
+amap = AddressMap(io_map.machine)
+from gateware.machines.mega138k_ae350.fabric import AE350Fabric
 from gateware.machines.mega138k_ae350.peripherals.board_io import FabricBoard
 from test_ae350_platform import Cpu, apb
 
@@ -151,7 +154,7 @@ def _read(dut, offset):
 
 def combinations(failures):
     """Button, diagnostic and WS2812 completion share one IRQ line."""
-    dut = FabricBoard(clock_hz=8_000_000, debounce_cycles=4)
+    dut = FabricBoard(io_map, clock_hz=8_000_000, debounce_cycles=4)
 
     def tb():
         yield from _commit(dut, False, 0x18, 1)
@@ -250,7 +253,7 @@ def waveform(failures):
 
 
 def binding(failures):
-    dut = FabricBoard(debounce_cycles=4)
+    dut = FabricBoard(io_map, clock_hz=amap.FABRIC_HZ, debounce_cycles=4)
 
     def tb():
         yield dut.button_async.eq(1)
@@ -268,7 +271,7 @@ def binding(failures):
 
 def pages(failures):
     cpu = Cpu()
-    dut = Ae350Platform(cpu, {0: Signal(32, reset=1), 4: Signal(32)})
+    dut = AE350Fabric(cpu, {0: Signal(32, reset=1), 4: Signal(32)}, io=io_map, layout=amap)
 
     def tb():
         check(failures, 'reset outputs are off', (yield dut.board.leds) == 0 and (yield dut.board.ws_pad) == 0)

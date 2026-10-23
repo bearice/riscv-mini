@@ -110,7 +110,7 @@ class PortBuffer(LiteXModule):
 
 class SharedMemoryController(LiteXModule):
     """Own narrow port buffers, arbitration and the common writeback cache."""
-    def __init__(self, cpu, backend, size=4096, enabled=1, video=True, sd=True, eth=False):
+    def __init__(self, cpu, backend, size=4096, enabled=1, video=True, sd=True, eth=False, *, layout):
         from gateware.machines.primer20k_vexriscv.memory.native_dma import NativeDMAArbiter
         video_native = LiteDRAMNativePort('read', backend.address_width, 128)
         dma_native = LiteDRAMNativePort('both', backend.address_width, 128)
@@ -147,7 +147,7 @@ class SharedMemoryController(LiteXModule):
                           dma_native.rdata.ready.eq(1), maintenance_ready.eq(1)]
         self.l2 = SharedL2(cpu, backend, size=size, writeback=True, enabled=enabled,
                            video=video_native, dma=dma_native, boot_ram=True,
-                           maintenance_ready=maintenance_ready)
+                           maintenance_ready=maintenance_ready, layout=layout)
         self.comb += maintenance_pending.eq(self.l2.maintenance_pending)
         # SoC exposes the existing l2 CSR bank through its public alias.
         self.autocsr_exclude = {'l2'}

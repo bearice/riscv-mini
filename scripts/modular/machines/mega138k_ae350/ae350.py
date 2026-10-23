@@ -12,10 +12,15 @@ from scripts.modular.environment import discover, identity, python_packages, out
 from scripts.modular.compile import BASE_FLAGS, ROLES, ninja_build
 
 AE350_CLOSURE = (
+    'gateware/description.py',
+    'gateware/io.py',
+    'gateware/gowin_platform.py',
+    'gateware/schemas/board.schema.json',
+    'gateware/schemas/machine.schema.json',
+    'requirements.lock',
     'gateware/__init__.py',
     'gateware/boards/__init__.py',
     'gateware/boards/mega138k_pro/board.json',
-    'gateware/boards/mega138k_pro/io_map.py',
     'gateware/devices/__init__.py',
     'gateware/devices/gpio/__init__.py',
     'gateware/devices/gpio/core.py',
@@ -40,29 +45,9 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/peripherals/board_sense.py',
     'gateware/machines/mega138k_ae350/peripherals/audio.py',
     'gateware/machines/mega138k_ae350/peripherals/video.py',
-    'gateware/machines/mega138k_ae350/platform.py',
+    'gateware/machines/mega138k_ae350/fabric.py',
     'gateware/machines/mega138k_ae350/soc.py',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/DDR3_TOP.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/DDR3_define.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/ddr3_1_4code_hs.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/ddr3_name.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/fifo_top_128to32.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/fifo_top_32to128.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_dtcm.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_dtcm_config.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_itcm.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/gw_itcm_config.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/gwmc_local_param.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/gwmc_param.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_config.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_ddr3.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_flash.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_soc.v',
-    'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_top.v',
-    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/ddr3_memory_interface.ipc',
-    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/ddr3_memory_interface.v',
-    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.ipc',
-    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.v',
+    'gateware/machines/mega138k_ae350/ports.py',
 )
 
 AE350_SCRIPTS = (
@@ -102,10 +87,13 @@ def source_closure(root):
 def _inputs(store, hardware=False, profile='ddr'):
     names = list(source_closure(store.root))
     files = {'inputs/source/' + name: store.root / name for name in names}
-    missing = [name for name in AE350_CLOSURE if not (store.root / name).is_file()]
+    # Software projects derive hardware parameters from their selected CPU
+    # description, so current editable JSON is not a software build input.
+    closure = [name for name in AE350_CLOSURE if hardware or not name.endswith('.json')]
+    missing = [name for name in closure if not (store.root / name).is_file()]
     if missing:
         raise ValueError('Missing declared AE350 input: ' + ', '.join(missing))
-    files.update({'inputs/source/' + name: store.root / name for name in AE350_CLOSURE})
+    files.update({'inputs/source/' + name: store.root / name for name in closure})
     trees = [BOOTLOADER]
     for tree in trees:
         for path in sorted((store.root / tree).iterdir()):
@@ -121,17 +109,26 @@ def _inputs(store, hardware=False, profile='ddr'):
     return files
 
 
+def machine_for_cpu(store, cpu):
+    from gateware.description import from_data
+    manifest = store.get(cpu)
+    description = store.get(manifest['dependencies']['machine-description'])['config']
+    return from_data(description['board'], description['machine'], description.get('ip_artifacts', {}))
+
+
 def firmware(store, run, cpu, plan=False, profile='ddr'):
     if profile not in PROFILES:
         raise ValueError('Unknown AE350 profile: ' + profile)
     files = _inputs(store, profile=profile)
     hashes = {name: source_file_hash(path) for name, path in files.items()}
     env = discover(ROLES, store.root)
-    flags = [*BASE_FLAGS, '-march=rv32ima_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
+    machine_config = machine_for_cpu(store, cpu)
+    flags = [*BASE_FLAGS, '-march=rv32ima_zicsr_zifencei', '-mabi=' + machine_config.cpu.abi, '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none']
-    from gateware.machines.mega138k_ae350 import address_map as ae350_map
+    from gateware.machines.mega138k_ae350.address_map import AddressMap
+    ae350_map = AddressMap(machine_config)
     ae350_map.require()
-    config = dict(schema=1, machine='mega138k_ae350', profile='AE350-ROM-bootloader',
+    config = dict(schema=1, storage_policy='outputs-only', fpga=dict(device=machine_config.board.fpga.device, part=machine_config.board.fpga.part), machine='mega138k_ae350', profile='AE350-ROM-bootloader',
                   purpose='AE350-ROM-bootloader',
                   source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, flags=flags, tools=identity(env),
                   rom_base=ae350_map.ROM_BASE, rom_bytes=ae350_map.ROM_SIZE,
@@ -157,7 +154,6 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         run.step('bootloader', 'BUILD', reason='AE350 platform ROM bootloader inputs'); return None
     with working(store, run, 'mega138k_ae350', 'bootloader', key) as workspace:
         work = workspace.path
-        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         ae350_map.require()
         gen = work / 'generated'
         gen.mkdir(parents=True, exist_ok=True)
@@ -169,13 +165,12 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         ninja_build(work, [bsp / name for name in ('start.S', 'main.c')], flags, env, 'boot',
                     linker=bsp / 'link.ld', run=run, root=store.root, identity_header=gen / 'identity.h')
         attributes = output([*env['bindings']['target.readelf'], '-h', '-A', str(work / 'boot.elf')])
-        from gateware.machines.mega138k_ae350 import address_map as ae350_map
         rom_limit = ae350_map.ROM_CODE_BYTES
         if '0x80000000' not in attributes or (work / 'boot.bin').stat().st_size > rom_limit:
             raise ValueError('Invalid AE350 ROM image entry or size (limit %d bytes)' % rom_limit)
-        snapshot = {name: source_bytes(path) for name, path in files.items()}
+        snapshot = {}
         import hashlib
-        if any(hashlib.sha256(data).hexdigest() != hashes[name] for name, data in snapshot.items()):
+        if any(source_file_hash(path) != hashes[name] for name, path in files.items()):
             raise ValueError('AE350 firmware inputs changed during build')
         snapshot.update({'outputs/boot.' + suffix: work / ('boot.' + suffix) for suffix in ('elf', 'bin', 'map')})
         snapshot['outputs/elf-attributes.txt'] = attributes.encode()
@@ -225,12 +220,12 @@ def incremental_seed(store, previous, config, board, mode):
         compatible = (ref['component'] == 'gateware' and old.get('synthesize') and
                       all(old.get(k) == config[k] for k in ('tools', 'ddr_profile', 'core_hz', 'bus_hz', 'data_memory_clock_hz')))
         if compatible:
-            board_input = store.path(ref) / 'inputs/source/gateware/boards/mega138k_pro/board.json'
-            if not board_input.is_file():
-                compatible = False
-            else:
-                old_board = read(board_input)
-                compatible = all(old_board[k] == board[k] for k in ('reference_device', 'reference_part'))
+            old_fpga = old.get('fpga')
+            if old_fpga is None and 'cpu' in manifest['dependencies']:
+                cpu = store.get(manifest['dependencies']['cpu'])
+                description = store.get(cpu['dependencies']['machine-description'])
+                old_fpga = description['config']['board']['fpga']
+            compatible = old_fpga == board['fpga']
         member = 'gateware/impl/pnr/project.' + ('p' if mode == 'place' else 'pr')
         if compatible and member in manifest['files']:
             timing_report(store.path(ref))
@@ -260,21 +255,26 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
     if profile not in PROFILES:
         raise ValueError('Unknown AE350 profile: ' + profile)
     files = _inputs(store, hardware=True, profile=profile)
-    options=dict(place_option=2 if place_option is None else place_option,
-                 route_option=2 if route_option is None else route_option)
+    machine_config = machine_for_cpu(store, cpu)
+    options = dict(machine_config.rtl.implementation_options())
+    if ((place_option is not None and place_option != options['place_option']) or
+            (route_option is not None and route_option != options['route_option'])):
+        raise ValueError('Persist implementation overrides to machine.json before building')
     if options['place_option'] not in range(5) or options['route_option'] not in range(3):
         raise ValueError('invalid AE350 implementation options')
     hashes = {name: source_file_hash(path) for name, path in files.items()}
-    from gateware.machines.mega138k_ae350 import address_map as ae350_map
-    from scripts.modular.machines.mega138k_ae350.ddr_inputs import DDR_PROFILE
-    config = dict(schema=1, machine='mega138k_ae350', profile='AE350-DDR3-' + DDR_PROFILE['name'],
+    from gateware.machines.mega138k_ae350.address_map import AddressMap
+    ae350_map = AddressMap(machine_config)
+    from scripts.modular.machines.mega138k_ae350.ddr_inputs import profile_for
+    ddr_profile = profile_for(machine_config)
+    config = dict(schema=1, storage_policy='outputs-only', fpga=dict(device=machine_config.board.fpga.device, part=machine_config.board.fpga.part), machine='mega138k_ae350', profile='AE350-DDR3-' + ddr_profile['name'],
                   source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, cpu_integration='AE350-vendor-ITCM-wrapper',
                   instruction_memory='vendor-ITCM-bootstrap+hard-ILM', data_memory='hard-DLM+DDR3-IP',
                   fabric_bus='native-AHB-burst+async-FIFO', data_memory_clock_hz=ae350_map.DATA_HZ,
                   tools=identity(discover(['python', 'gowin'], store.root)), packages=python_packages(),
-                  core_hz=800000000, bus_hz=ae350_map.FABRIC_HZ, ddr_profile=DDR_PROFILE,
+                  core_hz=machine_config.clocks.cpu, bus_hz=ae350_map.FABRIC_HZ, ddr_profile=ddr_profile,
                   rom_bytes=ae350_map.ROM_SIZE, fabric_sram_bytes=0,
-                  ddr_ck_mhz=400,
+                  ddr_ck_mhz=machine_config.ip['ddr3'].parameters['Memory_Clock'],
                   synthesize=synthesize,
                   implementation_options=options,
                   qualification='PnR-not-board-tested' if synthesize else 'generated-not-synthesized-not-board-tested')
@@ -308,25 +308,31 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
         for path in gate.glob('*'):
             if path.is_file():
                 remove_file(path)
-        from scripts.modular.machines.mega138k_ae350.ddr_inputs import DDR_PROFILE
         init = work / 'itcm-init'
         init.mkdir(parents=True, exist_ok=True)
-        image = raw.ljust(32768, b'\0')
+        image = raw.ljust(ae350_map.ROM_SIZE, b'\0')
         for lane in range(4):
             (init / ('itcm%d' % lane)).write_text(
                 ''.join('%02x\n' % byte for byte in image[lane::4]), encoding='ascii')
         ip_out = work / 'ae350-ip'
         ip_out.mkdir(parents=True, exist_ok=True)
-        vendor = store.root / 'gateware/vendor/gowin_gw5ast/ae350_soc'
+        vendor = store.root / machine_config.artifacts['cpu']['directory']
         # Vendor wrapper/netlist selects memories through these generated
         # includes, as in the reference project. Keep all includes beside
         # the encrypted sources so no stale installation config can win.
-        for name in ('riscv_ae350_top.v', 'riscv_ae350_soc.v', 'gw_itcm.v', 'gw_dtcm.v',
-                     'riscv_ae350_config.v', 'gw_dtcm_config.v'):
-            (ip_out / name).write_bytes(source_bytes(vendor / name))
-        (ip_out / 'gw_itcm_config.v').write_text(
-            '`define ITCM_SIZE 13\n`define ITCM_INIT_PATH "%s"\n' % init.as_posix(), encoding='utf-8')
-        soc = DDRSoC(board,soc_sources_dir=ip_out,implementation_options=options)
+        for path in vendor.rglob('*'):
+            if path.is_file():
+                destination = ip_out / path.relative_to(vendor)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(source_bytes(path))
+        itcm_config = ip_out / 'gw_itcm_config.v'
+        content = itcm_config.read_text(encoding='utf-8')
+        content, count = re.subn(r'(`define\s+ITCM_INIT_PATH\s+)"[^"]*"',
+                                 lambda match: match[1] + '"' + init.as_posix() + '"', content)
+        if count != 1:
+            raise ValueError('Generated AE350 IP must expose one ITCM_INIT_PATH')
+        itcm_config.write_text(content, encoding='utf-8')
+        soc = DDRSoC(machine_config,soc_sources_dir=ip_out,implementation_options=options)
         if seed:
             baseline = work / ('baseline.' + ('p' if seed['mode'] == 'place' else 'pr'))
             baseline.write_bytes((store.path(seed['artifact']) / seed['member']).read_bytes())
@@ -337,21 +343,27 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
         run.result['incremental_pnr'] = seed or dict(mode='full')
         run.save()
         soc.platform.build(soc, build_dir=str(work / 'gateware'), run=False, build_name='mini_ae350_ddr')
-        from gateware.machines.mega138k_ae350 import address_map as ae350_map
+        ae350_map = soc.address_map
         ae350_map.require()
+        video_pll = soc.crg.hdmi_pll.compute_config()
+        video_actual = {name: video_pll['vco'] / video_pll['odiv%d' % index]
+                        for index, name in ((0, 'pixel_hz'), (1, 'serializer_hz'))}
         write(work / 'memory-map.json', dict(
+            clocks=dict(requested=dict(pixel_hz=machine_config.clocks.video,
+                                       serializer_hz=machine_config.clocks.video * 5),
+                        actual=video_actual),
             memories=dict(rom=dict(base=ae350_map.ROM_BASE, size=ae350_map.ROM_SIZE,
                                    implementation='vendor-ITCM'),
                           ilm=dict(base=ae350_map.ILM_BASE, size=ae350_map.ILM_SIZE),
                           dlm=dict(base=ae350_map.DLM_BASE, size=ae350_map.DLM_SIZE,
                                    results=ae350_map.RESULTS_BASE,
                                    stack_top=ae350_map.ROM_STACK_TOP),
-                          ddr=dict(base=ae350_map.DDR_BASE, size=DDR_PROFILE['window_bytes'],
-                                   dram_geometry=DDR_PROFILE['geometry'],
+                          ddr=dict(base=ae350_map.DDR_BASE, size=ddr_profile['window_bytes'],
+                                   dram_geometry=ddr_profile['geometry'],
                                    offsets=dict(ram_offset=0, reserved_top_bytes=0),
                                    cache_line_bytes=32)),
             windows=[dict(name=n, base=b, size=sz, status=st) for n, b, sz, st in ae350_map.WINDOWS],
-            ddr_profile=DDR_PROFILE))
+            ddr_profile=ddr_profile))
         if synthesize:
             env = discover(['gowin'], store.root)
             from scripts.modular.gowin import run_with_license_retry
@@ -388,10 +400,9 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
             generated.update({'logs/' + p.name: p for p in run.path.glob('gowin-attempt-*.log')})
         generated['memory-map.json'] = work / 'memory-map.json'
         import hashlib
-        snapshot = {name: source_bytes(path) for name, path in files.items()}
-        if any(hashlib.sha256(data).hexdigest() != hashes[name] for name, data in snapshot.items()):
+        snapshot = {}
+        if any(source_file_hash(path) != hashes[name] for name, path in files.items()):
             raise ValueError('AE350 RTL inputs changed during generation')
-        generated.update(snapshot)
         generated['build.lock.json'] = canonical(config)
         found = store.publish(component, key, generated, config=config, dependencies=deps)
         record_implementation(store, component, input_key, found)
@@ -406,8 +417,10 @@ def payload(store, run, cpu, args, profile, plan=False):
     changing the diagnostics rebuilds only this artifact and the image.
     """
     if profile != 'ddr':
-        raise ValueError('AE350 payloads require --ae350-profile ddr')
-    from gateware.machines.mega138k_ae350 import address_map as ae350_map
+        raise ValueError('AE350 payloads require the DDR machine adapter')
+    from gateware.machines.mega138k_ae350.address_map import AddressMap
+    machine_config = machine_for_cpu(store, cpu)
+    ae350_map = AddressMap(machine_config)
     ae350_map.require()
     files = {name: path for name, path in _inputs(store, profile='ddr').items()
              if name.startswith('inputs/source/scripts/')}
@@ -465,9 +478,6 @@ def payload(store, run, cpu, args, profile, plan=False):
     if not any(unit.startswith('application/') for unit in units):
         raise ValueError('No application translation units were selected')
     files['inputs/source/gateware/machines/mega138k_ae350/address_map.py'] = store.root / 'gateware/machines/mega138k_ae350/address_map.py'
-    files['inputs/source/gateware/boards/mega138k_pro/io_map.py'] = store.root / 'gateware/boards/mega138k_pro/io_map.py'
-    files['inputs/source/gateware/boards/mega138k_pro/board.json'] = (
-        store.root / 'gateware/boards/mega138k_pro/board.json')
     hashes = {name: source_file_hash(path) for name, path in files.items()}
     env = discover(ROLES, store.root)
     optimize = getattr(args, 'optimize', '-Os')
@@ -481,7 +491,7 @@ def payload(store, run, cpu, args, profile, plan=False):
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none',
              '-DVT_COLS=80', '-DVT_ROWS=30',
              *['-D' + value for value in getattr(args, 'define', [])], *extra_flags]
-    config = dict(schema=1, machine='mega138k_ae350', purpose='AE350-memory-diagnostics' if diagnostic else 'AE350-application',
+    config = dict(schema=1, storage_policy='outputs-only', fpga=dict(device=machine_config.board.fpga.device, part=machine_config.board.fpga.part), machine='mega138k_ae350', purpose='AE350-memory-diagnostics' if diagnostic else 'AE350-application',
                   binary='outputs/payload.bin', translation_units=units, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, tools=identity(env), flags=flags,
                   entry=ae350_map.DDR_CODE, max_bytes=ae350_map.DDR_CODE_MAX,
                   stack_top=ae350_map.PAYLOAD_STACK_TOP, image_abi=ae350_map.image_abi(),
@@ -531,9 +541,9 @@ def payload(store, run, cpu, args, profile, plan=False):
         size = (work / 'payload.bin').stat().st_size
         if '0x%x' % ae350_map.DDR_CODE not in attrs or size > ae350_map.DDR_CODE_MAX:
             raise ValueError('Invalid AE350 payload entry or size')
-        snapshot = {name: source_bytes(path) for name, path in files.items()}
+        snapshot = {}
         import hashlib
-        if any(hashlib.sha256(data).hexdigest() != hashes[name] for name, data in snapshot.items()):
+        if any(source_file_hash(path) != hashes[name] for name, path in files.items()):
             raise ValueError('AE350 payload inputs changed during build')
         snapshot.update({'outputs/payload.' + suffix: work / ('payload.' + suffix) for suffix in ('elf', 'bin', 'map')})
         if diagnostic:
@@ -554,7 +564,7 @@ def payload(store, run, cpu, args, profile, plan=False):
 
 
 def build(store, run, args, cpu, board, plan):
-    profile = getattr(args, 'ae350_profile', None) or 'ddr'
+    profile = 'ddr'
     if args.target == 'payload':
         artifact = payload(store, run, cpu, args, profile, plan)
         run.finish(plan=plan, artifact=artifact, hardware_qualified=False,
@@ -565,8 +575,7 @@ def build(store, run, args, cpu, board, plan):
     artifact = boot
     if args.target != 'bootloader' and boot:
         artifact = rtl(store, run, cpu, boot, board, args.target, plan, getattr(args, 'synthesize', False), profile,
-                       getattr(args, 'pnr_mode', 'full'),
-                       getattr(args,'place_option',None),getattr(args,'route_option',None))
+                       getattr(args, 'pnr_mode', 'full'))
     elif args.target != 'bootloader':
         run.step(args.target, 'BUILD', reason='requires the platform bootloader output')
     if not plan and artifact:

@@ -33,7 +33,10 @@ def create_recipe(output, source, arguments, cpu=None, root=ROOT, entrypoint=Non
         folder = recipe/'inputs/cpu'; folder.mkdir(parents=True)
         for p in (cpu, cpu.with_suffix('.yaml'), cpu.parent/'generator.json'):
             if p.is_file():shutil.copy2(p, folder/p.name)
-        arguments[arguments.index('--cpu-verilog')+1] = '$RECIPE/inputs/cpu/'+cpu.name
+        # Historical recipes may explicitly select RTL; current recipes select
+        # it through their captured machine JSON and generation dependencies.
+        if '--cpu-verilog' in arguments:
+            arguments[arguments.index('--cpu-verilog')+1] = '$RECIPE/inputs/cpu/'+cpu.name
     prefix = str(root).replace('\\', '/')+'/'
     arguments = [a.replace('\\', '/').replace(prefix, '$ROOT/') for a in arguments]
     files = {str(p.relative_to(recipe)).replace('\\', '/'):hashlib.sha256(p.read_bytes()).hexdigest()

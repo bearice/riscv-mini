@@ -1,0 +1,1334 @@
+{
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "const": "../../schemas/machine.schema.json"
+    },
+    "schema_version": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "board": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "cpu": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "soft",
+            "hard"
+          ]
+        },
+        "implementation": {
+          "enum": [
+            "vexriscv",
+            "ae350"
+          ]
+        },
+        "abi": {
+          "const": "ilp32"
+        }
+      },
+      "required": [
+        "kind",
+        "implementation",
+        "abi"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "soft"
+            },
+            "implementation": {
+              "const": "vexriscv"
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "hard"
+            },
+            "implementation": {
+              "const": "ae350"
+            }
+          }
+        }
+      ]
+    },
+    "clocks": {
+      "type": "object",
+      "properties": {
+        "sys": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpu": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "data_memory_bus": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "video": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "sys",
+        "video"
+      ],
+      "additionalProperties": false
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "controller": {
+          "enum": [
+            "gowin_ddr3_400",
+            "gw2_ddr3_dll_off"
+          ]
+        },
+        "base": {
+          "const": 0
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "resource",
+        "controller",
+        "base",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "boot": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "rom",
+            "xip"
+          ]
+        },
+        "rom_size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "mode",
+        "rom_size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "devices": {
+      "type": "object",
+      "properties": {
+        "video": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "audio": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "microphones": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "ws2812": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "sd": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "fan": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "cpu_jtag": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "flash": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "ethernet": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "ethernet_clock": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "usb": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "spi_lcd": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "phy_reset": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "required": [
+        "video",
+        "audio",
+        "microphones",
+        "ws2812"
+      ],
+      "additionalProperties": false
+    },
+    "gpio": {
+      "type": "object",
+      "properties": {
+        "leds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "buttons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "switches": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "button_bit_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31
+        },
+        "inject_bit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 31
+        },
+        "debounce_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "leds",
+        "buttons",
+        "switches",
+        "debounce_ms"
+      ],
+      "additionalProperties": false
+    },
+    "rtl": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/rtl_soft"
+        },
+        {
+          "$ref": "#/$defs/rtl_hard"
+        }
+      ]
+    },
+    "ip": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ip_vexriscv"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_ae350"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_ddr3"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_pll"
+            }
+          ]
+        },
+        "ddr3": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ip_vexriscv"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_ae350"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_ddr3"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_pll"
+            }
+          ]
+        },
+        "ddr_pll": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ip_vexriscv"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_ae350"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_ddr3"
+            },
+            {
+              "$ref": "#/$defs/ip_gowin_pll"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cpu"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "$schema",
+    "schema_version",
+    "id",
+    "board",
+    "cpu",
+    "clocks",
+    "memory",
+    "boot",
+    "devices",
+    "gpio",
+    "rtl",
+    "ip"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "cpu": {
+            "properties": {
+              "kind": {
+                "const": "soft"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clocks": {
+            "properties": {
+              "sys": {
+                "const": 60000000
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "data_memory_bus"
+                  ]
+                },
+                {
+                  "required": [
+                    "cpu"
+                  ]
+                }
+              ]
+            }
+          },
+          "memory": {
+            "properties": {
+              "controller": {
+                "const": "gw2_ddr3_dll_off"
+              },
+              "size_bytes": {
+                "maximum": 134217728,
+                "minimum": 33554432
+              }
+            }
+          },
+          "gpio": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "led_bit_offset"
+                  ]
+                },
+                {
+                  "required": [
+                    "button_bit_offset"
+                  ]
+                },
+                {
+                  "required": [
+                    "inject_bit"
+                  ]
+                }
+              ]
+            },
+            "properties": {
+              "leds": {
+                "minItems": 6,
+                "maxItems": 6
+              },
+              "buttons": {
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "switches": {
+                "minItems": 4,
+                "maxItems": 4
+              }
+            }
+          },
+          "boot": {
+            "properties": {
+              "rom_size_bytes": {
+                "enum": [
+                  4096,
+                  8192
+                ]
+              }
+            }
+          },
+          "rtl": {
+            "$ref": "#/$defs/rtl_soft"
+          },
+          "devices": {
+            "type": "object",
+            "properties": {
+              "video": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "audio": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "microphones": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "ws2812": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "sd": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "flash": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "ethernet": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "ethernet_clock": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "usb": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "spi_lcd": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "phy_reset": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "video",
+              "audio",
+              "microphones",
+              "ws2812",
+              "sd",
+              "flash",
+              "ethernet",
+              "ethernet_clock",
+              "usb",
+              "spi_lcd",
+              "phy_reset"
+            ],
+            "additionalProperties": false
+          },
+          "ip": {
+            "required": [
+              "cpu"
+            ],
+            "maxProperties": 1,
+            "properties": {
+              "cpu": {
+                "properties": {
+                  "generator": {
+                    "const": "vexriscv"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "clocks": {
+            "required": [
+              "data_memory_bus",
+              "cpu"
+            ],
+            "properties": {
+              "cpu": {
+                "maximum": 800000000
+              },
+              "sys": {
+                "exclusiveMaximum": 200000000
+              },
+              "data_memory_bus": {
+                "exclusiveMaximum": 200000000
+              }
+            }
+          },
+          "memory": {
+            "properties": {
+              "controller": {
+                "const": "gowin_ddr3_400"
+              },
+              "size_bytes": {
+                "maximum": 1073741824,
+                "minimum": 1048576
+              }
+            }
+          },
+          "gpio": {
+            "required": [
+              "button_bit_offset",
+              "inject_bit"
+            ],
+            "properties": {
+              "inject_bit": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31
+              },
+              "leds": {
+                "minItems": 6,
+                "maxItems": 6
+              },
+              "buttons": {
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "switches": {
+                "maxItems": 0
+              }
+            }
+          },
+          "boot": {
+            "properties": {
+              "mode": {
+                "const": "rom"
+              },
+              "rom_size_bytes": {
+                "const": 32768
+              }
+            }
+          },
+          "rtl": {
+            "$ref": "#/$defs/rtl_hard"
+          },
+          "devices": {
+            "type": "object",
+            "properties": {
+              "video": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "audio": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "microphones": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "ws2812": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "fan": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "cpu_jtag": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "video",
+              "audio",
+              "microphones",
+              "ws2812",
+              "fan",
+              "cpu_jtag"
+            ],
+            "additionalProperties": false
+          },
+          "ip": {
+            "required": [
+              "cpu",
+              "ddr3",
+              "ddr_pll"
+            ],
+            "maxProperties": 3,
+            "properties": {
+              "cpu": {
+                "properties": {
+                  "generator": {
+                    "const": "gowin_ae350"
+                  }
+                }
+              },
+              "ddr3": {
+                "properties": {
+                  "generator": {
+                    "const": "gowin_ddr3"
+                  }
+                }
+              },
+              "ddr_pll": {
+                "properties": {
+                  "generator": {
+                    "const": "gowin_pll"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "ip_vexriscv": {
+      "type": "object",
+      "properties": {
+        "generator": {
+          "const": "vexriscv"
+        },
+        "module": {
+          "const": "VexRiscv"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "mmu": {
+              "type": "boolean"
+            },
+            "fpu": {
+              "type": "boolean"
+            },
+            "compressed": {
+              "type": "boolean"
+            },
+            "icache_bytes": {
+              "enum": [
+                512,
+                1024,
+                2048,
+                4096,
+                8192
+              ]
+            },
+            "dcache_bytes": {
+              "enum": [
+                512,
+                1024,
+                2048,
+                4096,
+                8192
+              ]
+            },
+            "single_cycle_shift": {
+              "type": "boolean"
+            },
+            "single_cycle_muldiv": {
+              "type": "boolean"
+            },
+            "relaxed_pc_calculation": {
+              "type": "boolean"
+            },
+            "pipelined_fetch": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "mmu",
+            "fpu",
+            "compressed",
+            "icache_bytes",
+            "dcache_bytes",
+            "single_cycle_shift",
+            "single_cycle_muldiv",
+            "relaxed_pc_calculation",
+            "pipelined_fetch"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "generator",
+        "module",
+        "parameters"
+      ],
+      "additionalProperties": false
+    },
+    "ip_gowin_ae350": {
+      "type": "object",
+      "properties": {
+        "generator": {
+          "const": "gowin_ae350"
+        },
+        "module": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "LOCAL_MEMORY_ACCESS_MODE": {
+              "type": "boolean"
+            },
+            "ENABLE_CUSTOMIZED_DATA": {
+              "type": "boolean"
+            },
+            "ENABLE_DTCM": {
+              "type": "boolean"
+            },
+            "ENABLE_DDR3": {
+              "type": "boolean"
+            },
+            "ENABLE_CUSTOMIZED_INSTRUCTION": {
+              "type": "boolean"
+            },
+            "ENABLE_ITCM": {
+              "type": "boolean"
+            },
+            "ENABLE_SPI_FLASH": {
+              "type": "boolean"
+            },
+            "ENABLE_EXTENDED_APB_SLAVE": {
+              "type": "boolean"
+            },
+            "ENABLE_SMU": {
+              "type": "boolean"
+            },
+            "ENABLE_RTC": {
+              "type": "boolean"
+            },
+            "ENABLE_WDT": {
+              "type": "boolean"
+            },
+            "ENABLE_GPIO": {
+              "type": "boolean"
+            },
+            "ENABLE_UART2": {
+              "type": "boolean"
+            },
+            "ENABLE_UART1": {
+              "type": "boolean"
+            },
+            "ENABLE_SPI": {
+              "type": "boolean"
+            },
+            "ENABLE_PIT": {
+              "type": "boolean"
+            },
+            "ENABLE_I2C": {
+              "type": "boolean"
+            },
+            "ENABLE_DMAC": {
+              "type": "boolean"
+            },
+            "ENABLE_EXTENDED_AHB_SLAVE": {
+              "type": "boolean"
+            },
+            "ENABLE_EXTENDED_AHB_MASTER": {
+              "type": "boolean"
+            },
+            "ENABLE_PLIC": {
+              "type": "boolean"
+            },
+            "ENABLE_GPIO_IO_PORTS": {
+              "type": "boolean"
+            },
+            "ENABLE_SPI2_IO_PORTS": {
+              "type": "boolean"
+            },
+            "ENABLE_I2C_IO_PORTS": {
+              "type": "boolean"
+            },
+            "PWM_CHANNEL_3": {
+              "type": "boolean"
+            },
+            "PWM_CHANNEL_2": {
+              "type": "boolean"
+            },
+            "PWM_CHANNEL_1": {
+              "type": "boolean"
+            },
+            "PWM_CHANNEL_0": {
+              "type": "boolean"
+            },
+            "ItcmSize": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ItcmInstructionMemory": {
+              "type": "boolean"
+            },
+            "LANG": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "LOCAL_MEMORY_ACCESS_MODE",
+            "ENABLE_CUSTOMIZED_DATA",
+            "ENABLE_DTCM",
+            "ENABLE_DDR3",
+            "ENABLE_CUSTOMIZED_INSTRUCTION",
+            "ENABLE_ITCM",
+            "ENABLE_SPI_FLASH",
+            "ENABLE_EXTENDED_APB_SLAVE",
+            "ENABLE_SMU",
+            "ENABLE_RTC",
+            "ENABLE_WDT",
+            "ENABLE_GPIO",
+            "ENABLE_UART2",
+            "ENABLE_UART1",
+            "ENABLE_SPI",
+            "ENABLE_PIT",
+            "ENABLE_I2C",
+            "ENABLE_DMAC",
+            "ENABLE_EXTENDED_AHB_SLAVE",
+            "ENABLE_EXTENDED_AHB_MASTER",
+            "ENABLE_PLIC",
+            "ENABLE_GPIO_IO_PORTS",
+            "ENABLE_SPI2_IO_PORTS",
+            "ENABLE_I2C_IO_PORTS",
+            "PWM_CHANNEL_3",
+            "PWM_CHANNEL_2",
+            "PWM_CHANNEL_1",
+            "PWM_CHANNEL_0",
+            "ItcmSize",
+            "ItcmInstructionMemory",
+            "LANG"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "generator",
+        "module",
+        "parameters"
+      ],
+      "additionalProperties": false
+    },
+    "ip_gowin_ddr3": {
+      "type": "object",
+      "properties": {
+        "generator": {
+          "const": "gowin_ddr3"
+        },
+        "module": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "User_Interface": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "Memory_Type": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "Memory_Clock": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "CLK_Ratio": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "Dq_Width": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Dram_Width": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Ecc": {
+              "type": "boolean"
+            },
+            "Rank_Address": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Bank_Address": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Row_Address": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Column_Address": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Burst_Mode": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Burst_Type": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "CAS_Latency": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "CW_Latency": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Additive_Latency": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Wrire_Recovery": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Rtt_Nom": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "Rtt_Wr": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "Addr_Cmd_Mode": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "OUTPUT_DRV": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_:.+-]+$"
+            },
+            "User_Refresh": {
+              "type": "boolean"
+            },
+            "Debug_Parameter_Enable": {
+              "type": "boolean"
+            },
+            "Debug_Port_Enable": {
+              "type": "boolean"
+            },
+            "tRTP_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tRP_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tWTR_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tRC_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tRAS_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tRCD_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tFAW_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tRRD_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tCKE_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tREFI_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tRFC_Period": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tDLLK": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "User_Interface",
+            "Memory_Type",
+            "Memory_Clock",
+            "CLK_Ratio",
+            "Dq_Width",
+            "Dram_Width",
+            "Ecc",
+            "Rank_Address",
+            "Bank_Address",
+            "Row_Address",
+            "Column_Address",
+            "Burst_Mode",
+            "Burst_Type",
+            "CAS_Latency",
+            "CW_Latency",
+            "Additive_Latency",
+            "Wrire_Recovery",
+            "Rtt_Nom",
+            "Rtt_Wr",
+            "Addr_Cmd_Mode",
+            "OUTPUT_DRV",
+            "User_Refresh",
+            "Debug_Parameter_Enable",
+            "Debug_Port_Enable",
+            "tRTP_Period",
+            "tRP_Period",
+            "tWTR_Period",
+            "tRC_Period",
+            "tRAS_Period",
+            "tRCD_Period",
+            "tFAW_Period",
+            "tRRD_Period",
+            "tCKE_Period",
+            "tREFI_Period",
+            "tRFC_Period",
+            "tDLLK"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "generator",
+        "module",
+        "parameters"
+      ],
+      "additionalProperties": false
+    },
+    "ip_gowin_pll": {
+      "type": "object",
+      "properties": {
+        "generator": {
+          "const": "gowin_pll"
+        },
+        "module": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "General_Mode": {
+              "type": "boolean"
+            },
+            "CLKIN_FREQ": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "PLL_Reset": {
+              "type": "boolean"
+            },
+            "LOCK_EN": {
+              "type": "boolean"
+            },
+            "Clock_Enable_Ports": {
+              "type": "boolean"
+            },
+            "CLKOUT0_FREQ": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "CLKOUT0_TOLERANCE": {
+              "type": "string",
+              "pattern": "^[0-9]+([.][0-9]+)?$"
+            },
+            "CLKOUT2_EN": {
+              "type": "boolean"
+            },
+            "CLKOUT2_FREQ": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "CLKOUT2_TOLERANCE": {
+              "type": "string",
+              "pattern": "^[0-9]+([.][0-9]+)?$"
+            }
+          },
+          "required": [
+            "General_Mode",
+            "CLKIN_FREQ",
+            "PLL_Reset",
+            "LOCK_EN",
+            "Clock_Enable_Ports",
+            "CLKOUT0_FREQ",
+            "CLKOUT0_TOLERANCE",
+            "CLKOUT2_EN",
+            "CLKOUT2_FREQ",
+            "CLKOUT2_TOLERANCE"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "generator",
+        "module",
+        "parameters"
+      ],
+      "additionalProperties": false
+    },
+    "rtl_soft": {
+      "type": "object",
+      "properties": {
+        "features": {
+          "type": "object",
+          "properties": {
+            "flash": {
+              "type": "boolean"
+            },
+            "spi_lcd": {
+              "type": "boolean"
+            },
+            "sd": {
+              "type": "boolean"
+            },
+            "filesystem": {
+              "type": "boolean"
+            },
+            "video": {
+              "type": "boolean"
+            },
+            "board_io": {
+              "type": "boolean"
+            },
+            "ws2812": {
+              "type": "boolean"
+            },
+            "audio": {
+              "type": "boolean"
+            },
+            "mic": {
+              "type": "boolean"
+            },
+            "mic_stereo": {
+              "type": "boolean"
+            },
+            "eth": {
+              "type": "boolean"
+            },
+            "eth_dma": {
+              "type": "boolean"
+            },
+            "usb": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "flash",
+            "spi_lcd",
+            "sd",
+            "filesystem",
+            "video",
+            "board_io",
+            "ws2812",
+            "audio",
+            "mic",
+            "mic_stereo",
+            "eth",
+            "eth_dma",
+            "usb"
+          ],
+          "additionalProperties": false
+        },
+        "sd_profile": {
+          "enum": [
+            "none",
+            "spi",
+            "lite",
+            "full"
+          ]
+        },
+        "usb_backend": {
+          "enum": [
+            "ultra",
+            "ohci"
+          ]
+        },
+        "audio_clock": {
+          "enum": [
+            "dds",
+            "legacy"
+          ]
+        },
+        "l2_size_bytes": {
+          "enum": [
+            4096,
+            8192,
+            16384
+          ]
+        },
+        "rtl_hierarchy": {
+          "enum": [
+            "flat",
+            "blocks",
+            "deep"
+          ]
+        },
+        "place_option": {
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "route_option": {
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        }
+      },
+      "required": [
+        "features",
+        "sd_profile",
+        "usb_backend",
+        "audio_clock",
+        "l2_size_bytes",
+        "rtl_hierarchy",
+        "place_option",
+        "route_option"
+      ],
+      "additionalProperties": false
+    },
+    "rtl_hard": {
+      "type": "object",
+      "properties": {
+        "place_option": {
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "route_option": {
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        }
+      },
+      "required": [
+        "place_option",
+        "route_option"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

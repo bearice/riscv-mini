@@ -3,7 +3,7 @@ from migen import Signal, Constant, Cat, Mux, FSM, If, NextValue, NextState
 from litex.gen import LiteXModule
 from litex.soc.interconnect import wishbone
 from litex.soc.interconnect.csr import CSRStatus, CSRStorage
-from gateware.machines.primer20k_vexriscv.memory_map import XIP_BASE, XIP_WINDOW_SIZE
+from gateware.machines.primer20k_vexriscv.address_map import XIP_BASE, XIP_WINDOW_SIZE
 
 FLASH_BASE = XIP_BASE
 FLASH_SIZE = XIP_WINDOW_SIZE

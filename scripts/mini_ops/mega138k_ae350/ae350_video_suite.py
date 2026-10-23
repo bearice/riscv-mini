@@ -249,15 +249,14 @@ def perform(args):
             from mini_ops.mega138k_ae350.ae350_payload import resolve_payload, payload_file
             from mini_ops.mega138k_ae350 import ae350_image
             store = Store()
-            payload_ref, payload_root = resolve_payload(store, payload)
             boot = store.get(store.get(ref)['dependencies']['bootloader'])
             from gateware.machines.mega138k_ae350 import address_map as amap
-            if boot['config']['image_abi'] != amap.image_abi():
-                raise ValueError('payload upload requires the current source address ABI')
+            abi = boot['config']['image_abi']
+            payload_ref, payload_root = resolve_payload(store, payload, expected_abi=abi)
             if store.get(payload_ref)['config']['image_abi'] != boot['config']['image_abi']:
                 raise ValueError('payload ABI differs from the selected gateware bootloader')
             payload_data = payload_file(payload_root).read_bytes()
-            image = ae350_image.build(payload_data)
+            image = ae350_image.build(payload_data, abi)
             op.report.update(payload_artifact=payload_ref, payload_sha256=file_hash(payload_file(payload_root)))
         expected_source = root / 'inputs/source/gateware/devices/video/hdmi/svo_tcard.v'
         if not expected_source.is_file():
@@ -296,7 +295,7 @@ def perform(args):
         hardware.program(fs)
         op.record('banner', text=wait_loader(session, build_id, 30))
         if image is not None:
-            session.upload(image, load=ae350_image.LOAD, abi=ae350_image.abi_tag())
+            session.upload(image, load=ae350_image.LOAD, abi=abi)
         capture(op, args.capture_device, args.soak_seconds, ffmpeg, console=console,
                 input_format=getattr(args, 'capture_format', 'yuyv422'),
                 fps=getattr(args, 'capture_fps', 30))

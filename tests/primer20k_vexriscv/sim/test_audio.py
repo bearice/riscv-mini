@@ -9,13 +9,16 @@ from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from gateware.machines.primer20k_vexriscv.peripherals.audio import Audio
 from gateware.machines.primer20k_vexriscv.peripherals.audio_clock import AudioDDS
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 
 def fixture(depth=8, half=2, enable_period=1,rate_sys=False):
     pads=SimpleNamespace(**{n:Signal() for n in ('bck','ws','din','pa_en')})
     bus=wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
     enable=Signal(reset=1) if enable_period==1 else Signal()
-    dut=Audio(pads,bus,half_period=half,fifo_depth=depth,clock_enable=enable)
+    dut=Audio(pads,bus,half_period=half,fifo_depth=depth,clock_enable=enable, layout=_layout)
     if rate_sys:
         dut.submodules.reference=reference=AudioDDS(60000000)
         dut.comb += enable.eq(reference.dac_tick)

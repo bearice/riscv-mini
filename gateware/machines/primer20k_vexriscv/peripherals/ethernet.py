@@ -1,5 +1,5 @@
 """RMII pads omit F10: the shared PHY reset GPIO is its sole owner."""
-from gateware.machines.primer20k_vexriscv.memory_map import ETHMAC_BASE
+from gateware.machines.primer20k_vexriscv.address_map import ETHMAC_BASE
 from migen import ClockDomain, ClockDomainsRenamer, ResetInserter
 from migen.fhdl.structure import _Assign
 from migen.genlib.cdc import GrayCounter, MultiReg
@@ -49,11 +49,6 @@ class EthernetClock(LiteXModule):
 
 def add_ethernet(soc):
     platform=soc.platform
-    platform.add_extension([('rmii',0,
-        Subsignal('rx_data',Pins('F15 C9')),Subsignal('crs_dv',Pins('M6')),
-        Subsignal('rx_er',Pins('L8')),Subsignal('tx_data',Pins('D16 E14')),
-        Subsignal('tx_en',Pins('E16')),Subsignal('mdc',Pins('F14')),
-        Subsignal('mdio',Pins('F16')),IOStandard('LVCMOS33'))])
     clocks=platform.request('eth_clocks')
     soc.ethphy=DockRMII(clocks,platform.request('rmii'))
     soc.eth_clock=EthernetClock(clocks.ref_clk,soc.crg.cd_sys.rst)
@@ -69,7 +64,7 @@ def add_ethernet(soc):
     if soc.features.eth_dma:
         from gateware.machines.primer20k_vexriscv.peripherals.ethernet_ring import EthernetRingDMA, attach_ring_to_mac
         bus=wishbone.Interface(data_width=32,address_width=32,addressing='word')
-        soc.eth_dma=EthernetRingDMA(bus,soc.memory.eth_read,soc.memory.eth_write)
+        soc.eth_dma=EthernetRingDMA(bus,soc.memory.eth_read,soc.memory.eth_write,layout=soc.address_map)
         attach_ring_to_mac(soc.eth_dma,soc.ethmac)
         soc.irq.add('eth_dma',use_loc_if_exists=True)
         soc.add_constant('CONFIG_ETH_RING_DMA',1)

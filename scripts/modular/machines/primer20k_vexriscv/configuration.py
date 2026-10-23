@@ -9,96 +9,77 @@ from scripts.modular.machines.primer20k_vexriscv.cpu import locked_cpu
 from scripts.modular.machines.primer20k_vexriscv.contracts import hardware
 
 
-from scripts.modular.arguments import HARDWARE_OPTIONS
-
-
-def changed(args):
-    return bool(getattr(args,'feature',[]) or any(getattr(args, key,None) is not None for key in HARDWARE_OPTIONS))
-
-
 def configuration_arguments(v, app, cpu, purpose, synthesize=False):
-    """The sole argv serializer, used by releases and matrix builds too."""
-    args = ['build', 'system', '--profile', v['profile'], '--source', str(Path(app).resolve()), '--purpose',purpose,
-            '--cpu-variant', v['cpu_variant'], '--boot-mode', v['boot_mode'],
-            '--rom-size', str(v['rom_size_bytes'] or 8192), '--l2-size', str(v['l2_size_bytes']),
-            '--sd-profile', v['sd_profile'], '--usb-backend', v['usb_backend'],
-            '--audio-clock', v['audio_clock'], '--place-option', str(v['place_option']),
-            '--route-option', str(v['route_option']), '--rtl-hierarchy', v.get('rtl_hierarchy', 'blocks')]
-    if cpu: args += ['--cpu-verilog', str(Path(cpu).resolve())]
-    for name, enabled in sorted(v['features'].items()):
-        args += ['--feature', name + '=' + ('on' if enabled else 'off')]
+    """Reproduction captures source JSON, never a second list of RTL overrides."""
+    from gateware.description import load_machine
+    snapshot = v.get('machine_snapshot')
+    if snapshot is None:
+        raise ValueError('Legacy configuration has no source JSON snapshot; reproduce using its preserved checkout')
+    board, machine = load_machine('primer20k_vexriscv')
+    if snapshot['board'] != board or snapshot['machine'] != machine:
+        raise ValueError('Selected hardware differs from source JSON; restore its recorded JSON before rebuilding')
+    args = ['build', 'system', '--machine', machine['id'], '--source', str(Path(app).resolve()), '--purpose', purpose]
     if synthesize: args.append('--synthesize')
     return args
 
 
 def resolve(store, run, args, base=None, plan=False):
-    """Return resolved options and exact CPU; no mutable defaults after this point."""
-    overrides = {}
-    for flag in args.feature:
-        name, separator, value = flag.partition('='); name = name.replace('-', '_')
-        if not separator or name not in Features.names() or value not in ('on', 'off'):
-            raise ValueError('Expected --feature NAME=on|off: ' + flag)
-        if name in overrides: raise ValueError('Duplicate feature override: ' + name)
-        overrides[name] = value == 'on'
-    previous = store.get(base['soc-description'])['config']['validation'] if base and not args.profile else {}
-    profile = args.profile or previous.get('profile', 'minimal')
-    features = Features(**previous['features']) if previous else Features.resolve(profile, {})
-    features = Features.resolve(profile, {**features.as_dict(), **overrides})
-    default_sd=previous.get('sd_profile') or ('lite' if features.sd else 'none')
-    if default_sd=='none' and features.sd:default_sd='lite'
-    sd, features = storage_profile(args.sd_profile or default_sd, None, features, overrides)
-    cpu_path = args.cpu_verilog
-    cpu_ref = base['cpu'] if previous else None
-    if cpu_path is None and (features.mmu or features.fpu):
-        cpu_path = vendored_cpu_path(features.mmu, features.fpu)
-        if cpu_path is None and not previous:
-            raise ValueError('No committed CPU RTL for MMU=%d/FPU=%d; run '
-                             'mini.py build cpu --generate and pass --cpu-verilog'
-                             % (bool(features.mmu), bool(features.fpu)))
+    """Resolve the selected JSON snapshot into the actual RTL build parameters."""
+    from gateware.description import resolve_machine, from_snapshot
+    saved = getattr(args, 'resolved_machine_snapshot', None)
+    machine = from_snapshot(saved) if saved is not None else resolve_machine('primer20k_vexriscv', store.root)
+    settings = machine.rtl
+    features = Features(**settings.features)
+    sd = settings.sd_profile
+    variant = settings.cpu_variant
+    if not settings.cpu_verilog:
+        raise ValueError('CPU IP has not been resolved from machine.json')
+    cpu_path = (store.root / settings.cpu_verilog).resolve()
     if cpu_path:
-        cpu_path = cpu_path.resolve(); lock = locked_cpu(cpu_path)
-        features, variant, _ = cpu_configuration(features, overrides, cpu_path, args.cpu_variant)
+        lock = locked_cpu(cpu_path)
+        lock['ip_identity'] = machine.artifacts['cpu']['identity']
         capabilities = cpu_capabilities(cpu_path)
-        files = {'outputs/' + cpu_path.name: source_bytes(cpu_path), 'inputs/generator.json': source_bytes(cpu_path.parent / 'generator.json'),
+        checked, expected, _ = cpu_configuration(features, features.as_dict(), cpu_path, variant)
+        if expected != variant or checked != features:
+            raise ValueError('machine.json CPU variant/features disagree with selected RTL')
+        files = {'outputs/' + cpu_path.name: source_bytes(cpu_path),
+                 'inputs/generator.json': source_bytes(cpu_path.parent / 'generator.json'),
                  'cpu.lock.json': canonical(lock)}
-        if cpu_path.with_suffix('.yaml').is_file(): files['outputs/' + cpu_path.with_suffix('.yaml').name] = source_bytes(cpu_path.with_suffix('.yaml'))
-        cpu_ref=store.lookup('cpu',digest(lock))
-        if not plan and not cpu_ref: cpu_ref = store.publish('cpu', digest(lock), files, config=lock)
-    elif previous:
-        capabilities = previous['cpu_capabilities']; variant = args.cpu_variant or previous['cpu_variant']
-        if any(getattr(features, name) != bool(capabilities[name]) for name in ('mmu', 'fpu')):
-            raise ValueError('Changing CPU capabilities requires --cpu-verilog with complete metadata')
-        if variant != previous['cpu_variant']: raise ValueError('Changing CPU adapter requires --cpu-verilog')
+        if cpu_path.with_suffix('.yaml').is_file():
+            files['outputs/' + cpu_path.with_suffix('.yaml').name] = source_bytes(cpu_path.with_suffix('.yaml'))
+        cpu_ref = store.lookup('cpu', digest(lock))
+        if not plan and not cpu_ref:
+            cpu_ref = store.publish('cpu', digest(lock), files, config=lock,
+                dependencies={'ip': dict(machine.artifacts['cpu']['artifact'])})
     else:
-        features, variant, _ = cpu_configuration(features, overrides, None, args.cpu_variant)
+        cpu_configuration(features, features.as_dict(), None, variant)
         capabilities = dict(mmu=False, fpu=False, dcache=False, compressed=False, bitmanip=[])
         from scripts.modular.environment import python_packages
         lock = dict(builtin_variant=variant, capabilities=capabilities, packages=python_packages())
-        cpu_ref=store.lookup('cpu',digest(lock))
-        if not plan and not cpu_ref: cpu_ref = store.publish('cpu', digest(lock), {'cpu.lock.json': canonical(lock)}, config=lock)
-    def value(name, field, default):
-        selected = getattr(args, name)
-        return selected if selected is not None else previous.get(field, default)
-    mode = value('boot_mode', 'boot_mode', 'rom')
-    if mode == 'xip' and not features.flash: raise ValueError('XIP requires Flash')
-    hierarchy = value('rtl_hierarchy', 'rtl_hierarchy', 'blocks')
-    v = dict(previous, profile=profile, features=features.as_dict(), cpu_variant=variant,
-        cpu_capabilities=capabilities, isa=cpu_isa(features, capabilities), abi='ilp32',
-        boot_mode=mode, rom_size_bytes=value('rom_size', 'rom_size_bytes', 8192) or 8192,
-        sram_size_bytes=0, l2_size_bytes=value('l2_size', 'l2_size_bytes', 4096),
+        cpu_ref = store.lookup('cpu', digest(lock))
+        if not plan and not cpu_ref:
+            cpu_ref = store.publish('cpu', digest(lock), {'cpu.lock.json': canonical(lock)}, config=lock)
+    mode = machine.boot.mode
+    hierarchy = settings.rtl_hierarchy
+    profile = 'full' if features == Features.resolve('full') else 'minimal'
+    v = dict(profile=profile, features=features.as_dict(), cpu_variant=variant,
+        cpu_capabilities=capabilities, isa=cpu_isa(features, capabilities), abi=machine.cpu.abi,
+        boot_mode=mode, rom_size_bytes=machine.boot.rom_size_bytes,
+        sram_size_bytes=0, l2_size_bytes=settings.l2_size_bytes,
         boot_ram_address=0x007ff000, boot_ram_size_bytes=4096, boot_ram_backend='pinned-l2',
         memory_system='shared-writeback', l2_policy='write-back', memory_burst_bytes=16,
         memory_port_widths=dict(wishbone=32, video=16, sd=32, **({'eth':32} if features.eth_dma else {})),
         sd_profile=sd, sd_backend='native' if sd in ('lite', 'full') else 'spi' if sd=='spi' else 'none',
-        usb_backend=value('usb_backend', 'usb_backend', 'ultra'),
-        audio_clock=value('audio_clock', 'audio_clock', 'dds'), clock_hz=60000000, ddr_clock_hz=120000000,
+        usb_backend=settings.usb_backend, audio_clock=settings.audio_clock,
+        clock_hz=machine.clocks.sys, ddr_clock_hz=machine.clocks.sys * 2,
         verilog_mode='flat' if hierarchy=='flat' else 'hierarchical', rtl_hierarchy=hierarchy,
         netlist_hierarchy=None if hierarchy=='flat' else 0,
-        place_option=value('place_option', 'place_option', 2), route_option=value('route_option', 'route_option', 2))
+        place_option=settings.place_option, route_option=settings.route_option)
     v['rom_size_bytes'] = v['rom_size_bytes'] if mode=='rom' else 0
     v['expected_plls'] = pll_count(features, v['usb_backend'], v['audio_clock'])
     v['dma_backend'] = 'native' if features.sd and sd=='lite' else 'wishbone'
     v['native_dma_clients'] = (['sd'] if features.sd and sd=='lite' else []) + (['eth'] if features.eth_dma else [])
     v['ethernet_dma_backend'] = 'native-descriptor-ring' if features.eth_dma else 'pio'
+    v['machine_snapshot'] = __import__('json').loads(machine.snapshot)
     run.result['configuration'] = v; run.save()
     return v, cpu_ref

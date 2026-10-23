@@ -54,7 +54,7 @@ SD lite 与 LCD 分别使用 32-bit / 16-bit 客户端接口，由 [共享内存
 
 ## 功能开关与 profile
 
-`scripts/mini.py build system` 默认启用全部功能；`--profile minimal` 或 `--without-NAME` 裁剪外设，关闭项同时从硬件与应用驱动移除。
+`scripts/mini.py build system` 消费机器 JSON；功能裁剪在 `rtl.features` 中配置，关闭项同时影响硬件实例和应用驱动。
 
 - `--feature mmu=on` / `--feature fpu=on`：独立开关，默认 full 开启两者；minimal 默认关闭。
 - `--sd-profile`：`none` / `spi` / `lite` / `full` 四种 profile，默认 lite 原生四位 SDR + 32-bit DMA 端口和内存侧 burst buffer，SPI 为回退（共用同一组 SD 引脚，需重新下载匹配的配置与应用）。
@@ -76,7 +76,7 @@ cd C:\Users\bearice\Workspace\TangPrimer-20K\riscv-mini
 
 `mini.py build system` 不加 `--synthesize` 时只生成 RTL/CSR 并编译软件，两种方式都不自动下载板卡。工作目录统一为 `build/work/<machine>/<target>/<workspace>`，成功产物进入 `build/store/<component>/<digest>`，构建收据和日志进入 `build/runs/<run-id>`。日常构建不传 `--output-dir`；实验用 `--workspace`，用途用 `--purpose`。编译器临时目录位于组件工作目录的 `tmp/`。完整目录约定见[组件构建](component-builds.md#目录所有权)。
 
-`bootstrap.ps1` 的 smoke 构建使用 `--profile minimal --purpose bootstrap-smoke`，沿用受管理的 work/store/runs 目录，只依赖 `pythondata-cpu-vexriscv` 自带的 lite CPU RTL，全新 checkout 无需先生成 CPU RTL。full 配置使用已入库的生产 CPU；调整 CPU 参数时再通过 `mini.py build cpu --generate` 生成。
+`scripts/bootstrap.ps1` 的 smoke 构建使用仓库中的机器 JSON，自动生成 CPU IP；Java/sbt/上游源码通过环境发现。修改 CPU 参数后执行 `mini.py build cpu` 或硬件目标即可，参数不再通过 CLI 覆盖。
 
 全新 checkout 在 Windows 上的环境前提：`git config --global core.longpaths true`（否则 `uv pip sync` 克隆 `pythondata-cpu-vexriscv` 的嵌套子模块会因路径过长失败：`Filename too long` → `fatal: fetch-pack: invalid index-pack output`）；全局 uv 缓存不可用时把 `UV_CACHE_DIR` 指到短路径，例如 `$env:UV_CACHE_DIR='C:\uv-cache-mini'`。
 

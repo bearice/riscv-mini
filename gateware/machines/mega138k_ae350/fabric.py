@@ -160,15 +160,16 @@ class LoopbackFifo(LiteXModule):
         ]
 
 
-class Ae350Platform(LiteXModule):
+class AE350Fabric(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics, video=None):
+    def __init__(self, cpu, diagnostics, io, layout, video=None):
+        amap = layout
         self.video = video
         fifo_bus = AHBInterface(data_width=32, address_width=32)
         err_bus = AHBInterface(data_width=32, address_width=32)
         self.fifo = LoopbackFifo(fifo_bus)
-        self.audio = FabricAudio()
+        self.audio = FabricAudio(clock_hz=io.machine.clocks.sys)
         self.err = ErrorSlave(err_bus)
         # HSEL is the macro's decode of the 128MiB extended-AHB window.
         self.ic = MemInterconnect(cpu.ahb_exts, [
@@ -195,8 +196,8 @@ class Ae350Platform(LiteXModule):
             caught = Signal()
             self.specials += AckCatch(cpu.dma_ack[bit], caught)
             self.comb += signal.eq(caught | cpu.dma_ack[bit])
-        self.board = FabricBoard()
-        self.sense = BoardSense()
+        self.board = FabricBoard(io, clock_hz=io.machine.clocks.sys)
+        self.sense = BoardSense(clock_hz=io.machine.clocks.sys)
         wait = Signal()
         access_q = Signal()
         addr_q = Signal(32)

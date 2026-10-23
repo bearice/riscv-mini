@@ -1,5 +1,5 @@
 """USB3317 initialization and selectable serial full-speed Host backends."""
-from gateware.machines.primer20k_vexriscv.memory_map import USB_BASE
+from gateware.machines.primer20k_vexriscv.address_map import USB_BASE
 from pathlib import Path
 from migen import *
 from migen.fhdl.specials import Tristate
@@ -129,9 +129,6 @@ class USBHost(LiteXModule):
         soc.platform.add_source(str(target))
 
 def add_usb(soc,backend='ultra',compact_serial_outputs=False):
-    soc.platform.add_extension([('usb_ulpi',0,Subsignal('data',Pins('G11 H12 J12 H13 T14 R13 P13 R12')),
-        Subsignal('clk',Pins('T15')),Subsignal('stp',Pins('K11')),Subsignal('dir',Pins('K12')),
-        Subsignal('nxt',Pins('K13')),IOStandard('LVCMOS33'))])
     pads=soc.platform.request('usb_ulpi')
     if backend=='ultra':
         from gateware.machines.primer20k_vexriscv.peripherals.usb_ultra import USBHostUltra

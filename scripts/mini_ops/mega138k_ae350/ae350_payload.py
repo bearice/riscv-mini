@@ -1,7 +1,7 @@
 """Resolve the AE350 diagnostic payload artifact.
 
 The payload is built on its own (`mini.py build payload --machine
-mega138k_ae350 --ae350-profile ddr`) so changing it never rebuilds the ROM or the
+mega138k_ae350`) so changing it never rebuilds the ROM or the
 gateware. Operations require an explicit selection and verify the complete
 artifact closure, machine and address ABI before touching hardware.
 """
@@ -42,7 +42,7 @@ def application_parameters(root, values):
     return bytes(data)
 
 
-def resolve_payload(store, selection=None):
+def resolve_payload(store, selection=None, *, expected_abi):
     if selection:
         path = Path(selection)
         if path.is_dir():
@@ -55,8 +55,8 @@ def resolve_payload(store, selection=None):
     manifest = store.get(ref, recursive=True)
     from gateware.machines.mega138k_ae350 import address_map as ae350_map
     config = manifest['config']
-    if config.get('machine') != 'mega138k_ae350' or config.get('image_abi') != ae350_map.image_abi():
-        raise ValueError('Payload machine/address ABI differs from this host contract')
+    if config.get('machine') != 'mega138k_ae350' or config.get('image_abi') != expected_abi:
+        raise ValueError('Payload machine/address ABI differs from the selected hardware')
     if config.get('entry') != ae350_map.DDR_CODE:
         raise ValueError('Payload entry differs from the ROM loader contract')
     return ref, store.path(ref)

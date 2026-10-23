@@ -8,6 +8,9 @@ from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
 from gateware.machines.primer20k_vexriscv.memory.native_dma import NativeSDTransfer, NativeDMAArbiter
 from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 def backend(port, memory, counts):
     @passive
@@ -36,7 +39,7 @@ def backend(port, memory, counts):
 
 def sd(write,length,abort=False):
     p=LiteDRAMNativePort('both',23,128);client=MemoryPort('write' if write else 'read')
-    dut=Module();dut.submodules.transfer=transfer=NativeSDTransfer(client,write)
+    dut=Module();dut.submodules.transfer=transfer=NativeSDTransfer(client,write, layout=_layout)
     dut.submodules.buffer=PortBuffer(client,p)
     data=bytes((i*37+11)&255 for i in range(length));memory={0x1000+i:v for i,v in enumerate(data)} if not write else {}
     counts=[]

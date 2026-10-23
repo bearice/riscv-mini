@@ -4,7 +4,6 @@ Streaming reads do not allocate, but hit dirty CPU lines. All accepted writes
 complete in cache or DDR before acknowledging their producer. One transaction
 owns the synchronous RAM and DDR port through completion, including cancellation.
 """
-from gateware.machines.primer20k_vexriscv.memory_map import BIOS_BASE, BOOT_RAM_BASE, RAM_BASE, RAM_END
 from migen import Signal, Memory, Cat, Constant, Replicate, Mux, If, Case, FSM, NextState, NextValue
 from litex.gen import LiteXModule
 from litex.soc.interconnect.csr import CSR, CSRStorage, CSRStatus
@@ -12,7 +11,12 @@ from litedram.common import LiteDRAMNativePort
 
 
 class SharedL2(LiteXModule):
-    def __init__(self, master, backend, size=4096, writeback=True, enabled=1, video=None, dma=None, boot_ram=False, maintenance_ready=1):
+    def __init__(self, master, backend, size=4096, writeback=True, enabled=1, video=None, dma=None, boot_ram=False, maintenance_ready=1, *, layout):
+        BIOS_BASE = layout.BIOS_BASE
+        BOOT_RAM_BASE = layout.BOOT_RAM_BASE
+        RAM_BASE = layout.RAM_BASE
+        RAM_END = layout.RAM_END
+
         if isinstance(enabled,int):enabled=Constant(enabled,1)
         if size < 256 or size & (size-1):raise ValueError('Invalid shared L2 size')
         if boot_ram and (size < 4096 or not writeback):raise ValueError('Boot RAM requires >=4 KiB writeback L2')

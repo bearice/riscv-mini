@@ -16,6 +16,9 @@ from migen.fhdl import verilog
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
 from gateware.machines.primer20k_vexriscv.memory.shared_l2 import SharedL2
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 from migen import Signal
 
 TB = r'''
@@ -116,7 +119,7 @@ def main():
         native = LiteDRAMNativePort('both', 23, 128)
         ready=Signal(reset=0 if boot else 1)
         dut = SharedL2(wb, native, size=4096 if boot else 256, writeback=writeback,
-                       enabled=ready if boot else 1,boot_ram=boot)
+                       enabled=ready if boot else 1,boot_ram=boot, layout=_layout)
         ports = {}
         if boot:ports['ddr_ready']=ready
         for field in ('adr', 'dat_w', 'sel', 'cyc', 'stb', 'we', 'ack', 'dat_r'):

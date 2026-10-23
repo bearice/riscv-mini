@@ -90,23 +90,6 @@ def package(run, destination, source):
     return v
 
 
-def add_arguments(parser):
-    parser.add_argument('--hardware',dest='build', help='Explicit catalog template (configuration/input CPU RTL), e.g. current')
-    parser.add_argument('--version',help='System bundle version to release; must be pinned in RELEASES.yaml and tagged system/v<version>')
-    parser.add_argument('--snapshot',action='store_true',help='Archive a code commit without creating a new code release; retain version plus Git hash')
-    parser.add_argument('--source',dest='app',type=Path,help='Explicit application for legacy templates without application_source')
-    parser.add_argument('--feature',action='append',default=[],metavar='NAME=on|off',
-                   help='Override a template feature for this release (repeatable), e.g. --feature audio=on')
-    parser.add_argument('--boot-mode',choices=('rom','xip'),help='Override the template boot mode (rom boots from SRAM/ROM, xip runs resident in Flash)')
-    parser.add_argument('--place-option',type=int,choices=range(0,4),help='Override the template placer option (0-3)')
-    parser.add_argument('--route-option',type=int,choices=range(0,4),help='Override the template router option (0-3)')
-    parser.add_argument('--board-check',action='store_true',help='Program the board, run firmware checks and 60 s soak')
-    parser.add_argument('--baseline',help='Explicit baseline ID/reference; enables final all/cache measurements')
-    parser.add_argument('--baseline-results',type=Path,action='append',default=[])
-    parser.add_argument('--allow-legacy-results',action='store_true')
-
-
-
 def perform(a, parser):
     p=parser
     if not a.build:p.error('--hardware required')
@@ -131,17 +114,7 @@ def perform(a, parser):
         except subprocess.CalledProcessError:p.error('Create the local release tag '+tag+' after committing code first')
         if tag_commit!=git('rev-parse','HEAD').decode().strip():p.error('Release tag must point to the clean checkout being built')
     template=get_record(a.build);v=artifact_identity(template['path'])
-    for item in a.feature:
-        name,_,value=item.partition('=')
-        name=name.replace('-','_')
-        if name not in v['features']:p.error(f'Unknown feature: {name}')
-        if value not in ('on','off'):p.error(f'Feature value must be on or off: {item}')
-        v['features'][name]=value=='on'
-    if a.boot_mode:v['boot_mode']=a.boot_mode
     source=source_identity();source.update(kind='captured',created_at=now(),version=version,components=components,external=external)
-    if a.boot_mode=='xip':v['boot_mode']=a.boot_mode;v['rom_size_bytes']=0
-    if a.place_option is not None:v['place_option']=a.place_option
-    if a.route_option is not None:v['route_option']=a.route_option
     config=configuration_name(v['profile'],v['isa'],v['rom_size_bytes'],v['l2_size_bytes'])
     final=(ROOT/'build/archives'/f"{tag}-{source['commit'][:12]}" if a.snapshot else ROOT/'build/releases'/tag)/config
     receipt=dict(version=version,tag=None if a.snapshot else tag,release_kind='commit-snapshot' if a.snapshot else 'code-release')
@@ -151,9 +124,6 @@ def perform(a, parser):
     inputs=final/'inputs/cpu';inputs.mkdir(parents=True)
     cpu_source=v.get('cpu_verilog')
     cpu=Path(cpu_source) if cpu_source else None
-    if cpu is not None:
-        for f in (cpu,cpu.with_suffix('.yaml'),cpu.parent/'generator.json'):
-            if f.is_file():shutil.copy2(f,inputs/f.name)
     app=a.app or Path(v.get('application_source',''))
     if not app.is_file():p.error('Select --app explicitly for this template')
     run=ROOT/'build/runs'/f"{tag}-{source['commit'][:12]}-{config}-final-build"
@@ -171,6 +141,13 @@ def perform(a, parser):
         info=json.loads((run/'build-info.json').read_text(encoding='utf-8'));source=info['source']
         source['version']=version
         source['components']=components;source['external']=external
+        built_validation = json.loads((run/'validation.json').read_text(encoding='utf-8'))
+        cpu = Path(built_validation['cpu_verilog']) if built_validation.get('cpu_verilog') else None
+        if cpu is not None:
+            for item in (cpu, cpu.with_suffix('.yaml'), cpu.parent/'generator.json'):
+                if item.is_file(): shutil.copy2(item, inputs/item.name)
+        from scripts.tools.build_recipe import create_recipe
+        source['recipe'] = str(create_recipe(run, source, args, inputs/cpu.name if cpu is not None else None, root=ROOT, entrypoint='scripts/mini.py'))
         # The package claims the bundle's versions; the build must have produced exactly them.
         built=json.loads((run/'validation.json').read_text(encoding='utf-8')).get('component_versions')
         if components and built!=components:raise ValueError('Built component versions differ from the released bundle: built '+str(built)+' != bundle '+str(components))

@@ -24,12 +24,11 @@ def perform(args):
         store = Store()
         manifest = store.get(ref)
         boot = store.get(manifest['dependencies']['bootloader'])
-        if boot['config'].get('image_abi') != amap.image_abi():
-            raise ValueError('Selected hardware uses a different address ABI')
-        payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None))
+        abi = boot['config']['image_abi']
+        payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         payload = payload_file(payload_root).read_bytes()
         from mini_ops.mega138k_ae350 import ae350_image
-        image = ae350_image.build(payload)
+        image = ae350_image.build(payload, abi)
         (op.path / 'image.bin').write_bytes(image)
         fs = root / 'gateware/impl/pnr/project.fs'
         op.report.update(artifact=ref, fs_sha256=file_hash(fs), rom_build_id=build_id,
@@ -48,7 +47,7 @@ def perform(args):
         session = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
         hardware.program(fs)
         op.record('banner', text=wait_loader(session, build_id, min(args.timeout, 30)))
-        session.upload(image, load=ae350_image.LOAD, abi=ae350_image.abi_tag())
+        session.upload(image, load=ae350_image.LOAD, abi=abi)
         cpu = hardware.open_cpu()
         started = time.monotonic()
         deadline = started + args.timeout

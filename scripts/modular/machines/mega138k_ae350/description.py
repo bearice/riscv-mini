@@ -46,38 +46,15 @@ def check_system(store, ref, machine=None):
         raise ValueError('Machine mismatch: expected ' + expected + ', got ' + actual)
 
 
-def resolve(store):
+def resolve(store, snapshot=None):
     """Resolve P0 from repository-owned board and machine contracts only.
 
     Vendor example projects are design references. They are never opened,
     inventoried, or copied into the machine-description artifact.
     """
-    board_path = store.root / 'gateware/boards/mega138k_pro/board.json'
-    machine_path = store.root / 'gateware/machines/mega138k_ae350/machine.json'
-    board, machine = read(board_path), read(machine_path)
-    camera = board['resources']['camera']
-    reserved = {pin for values in camera.values() if isinstance(values, list) for pin in values}
-    jtag = board['resources']['cpu_jtag']
-    assigned = {jtag[name]['pin'] for name in ('tck', 'tdi', 'tdo', 'tms')}
-    overlap = assigned & reserved
-    if overlap:
-        raise ValueError('CPU JTAG occupies reserved camera pins: ' + ', '.join(sorted(overlap)))
-    if len(assigned) != 4 or jtag['trst'] != {'mode': 'tied-high-internal'}:
-        raise ValueError('CPU JTAG requires four distinct pins and internal inactive TRSTn')
-    if board['schema'] != 1 or machine['schema'] != 1 or machine['id'] != AE350 or machine['board'] != board['id']:
-        raise ValueError('Unsupported Board/Machine description')
-    if machine['cpu']['kind'] != 'hard' or machine['memory']['shared_l2']:
-        raise ValueError('AE350 requires hard CPU and no legacy shared L2')
-    clocks = machine['clocks']
-    if clocks['ahb']['reference_hz'] != clocks['apb']['reference_hz']:
-        raise ValueError('AE350 AHB/APB must be synchronous 1:1')
-    for name in ('ahb', 'apb', 'data_memory_bus'):
-        if not 0 < clocks[name]['reference_hz'] < 200000000:
-            raise ValueError('AE350 bus frequency must be below 200MHz: ' + name)
-    for name, ceiling in (('core', 800000000), ('ddr_ck', 400000000)):
-        if not 0 < clocks[name]['target_hz'] <= ceiling:
-            raise ValueError('AE350 clock exceeds specification: ' + name)
-    files = {'inputs/board.json': board_path, 'inputs/machine.json': machine_path}
+    from gateware.description import load_machine, source_inputs
+    board, machine = load_machine(AE350, store.root)
+    files = {'inputs/source/' + name: store.root / name for name in source_inputs(AE350, store.root)}
     # Lock the resolver itself; dependency selection changes invalidate descriptions.
     for name, path in (('description.py', store.root / 'scripts/modular/machines/mega138k_ae350/description.py'),
                        ('storage.py', store.root / 'scripts/modular/storage.py'),
@@ -85,30 +62,22 @@ def resolve(store):
         files['inputs/build/' + name] = path
     hashes = {name: source_file_hash(path) for name, path in sorted(files.items())}
     env = discover(['python', 'gowin'], store.root)
-    lock = dict(schema=1, machine=machine, board=board, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes,
+    if snapshot is not None and (snapshot['board'] != board or snapshot['machine'] != machine):
+        raise ValueError('Source configuration differs from resolved IP snapshot')
+    lock = dict(schema=1, storage_policy='outputs-only', machine=machine, board=board, ip_artifacts=(snapshot or {}).get('artifacts', {}), source_hash_format=SOURCE_HASH_FORMAT, sources=hashes,
                 tools=identity(env),
-                device=dict(name=board['reference_device'], part=board['reference_part'], source='board.json'),
+                device=dict(name=board['fpga']['device'], part=board['fpga']['part'], source='board.json'),
                 evidence=dict(host_description=True, physical_board=False,
                               rtl_generated=False, synthesized=False, board_tested=False),
                 closure=dict(scope='repository-owned-board-machine-and-build-inputs'),
-                blockers=machine['pending'])
+                blockers=[])
     return lock, files
 
 
 def execute(store, run, args, dry):
-    """Build only the real P0 artifact; defer unimplemented machine backends."""
-    unsupported = [key for key in ('output_dir', 'locked', 'profile', 'cpu_verilog', 'cpu_variant', 'sd_profile',
-                   'usb_backend', 'audio_clock', 'boot_mode', 'rom_size', 'l2_size',
-                   'rtl_hierarchy', 'vexriscv_source', 'java', 'sbt_launch',
-                   'locked_config') if getattr(args, key, None) is not None]
-    unsupported += [key for key in ('generate', 'refresh_hardware', 'relaxed_pc_calculation', 'compressed',
-                                  'pipelined_fetch', 'arithmetic_matrix') if getattr(args, key, False)]
-    if getattr(args, 'feature', []):
-        unsupported.append('feature')
-    if unsupported:
-        raise ValueError('AE350 does not yet support these overrides: ' + ', '.join(unsupported))
-    if any(getattr(args,key,None) is not None for key in ('place_option','route_option')) and args.target not in ('gateware','soc-description'):
-        raise ValueError('AE350 placement/routing options require a hardware generation target')
+    """Resolve one source snapshot and dispatch the native AE350 adapters."""
+    if getattr(args, 'locked', None):
+        raise ValueError('AE350 locked system replay requires a completed system backend')
     if getattr(args, 'synthesize', False) and args.target != 'gateware':
         raise ValueError('AE350 --synthesize requires the gateware target')
     if getattr(args, 'source', None) is not None and args.target != 'payload':
@@ -120,7 +89,8 @@ def execute(store, run, args, dry):
     # A P0 description starts from explicit source inputs, never from 20K current.
     if args.hardware != 'current':
         raise ValueError('AE350 P0 describes source inputs; --hardware selection is pending P1')
-    lock, files = resolve(store)
+    resolved_snapshot = getattr(args, 'resolved_machine_snapshot', None)
+    lock, files = resolve(store, resolved_snapshot)
     key = digest(lock)
     run.result.update(machine=AE350, configuration=lock['machine'], blockers=lock['blockers'],
                       board_identity_confirmed=False, resolved_input_key=key)
@@ -129,15 +99,16 @@ def execute(store, run, args, dry):
     run.step('machine-description', 'REUSE' if found else 'BUILD', found,
              reason='exact repository-owned Board/Machine/tool input closure')
     if not dry and not found:
-        snapshot = {name: source_bytes(path) for name, path in files.items()}
-        if any(hashlib.sha256(data).hexdigest() != lock['sources'][name] for name, data in snapshot.items()):
+        snapshot = {}
+        if any(source_file_hash(path) != lock['sources'][name] for name, path in files.items()):
             raise ValueError('Machine inputs changed during capture')
-        current_lock, _ = resolve(store)
+        current_lock, _ = resolve(store, resolved_snapshot)
         if current_lock != lock:
             raise ValueError('Machine input inventory changed during capture')
         snapshot['machine.lock.json'] = canonical(lock)
-        found = store.publish('machine-description', key, snapshot, config=lock)
-    cpu_config = dict(kind='hard', machine=AE350, part=lock['board']['reference_part'],
+        found = store.publish('machine-description', key, snapshot, config=lock,
+            dependencies={'ip-' + name: value['artifact'] for name,value in lock['ip_artifacts'].items()})
+    cpu_config = dict(kind='hard', machine=AE350, part=lock['board']['fpga']['part'],
                       cpu=lock['machine']['cpu'], input_key=key, qualification='description-only')
     cpu_key = digest(cpu_config)
     cpu = store.lookup('cpu', cpu_key) if found else None

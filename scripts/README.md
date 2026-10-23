@@ -22,7 +22,7 @@ Linux/NixOS 仓库根目录先运行 `nix develop`，再使用 `python scripts/m
 | 检查开发环境 | `./mini.ps1 doctor` | 主机依赖和工具检查，不接触板子 |
 | 找当前版本或候选 | `./mini.ps1 builds list` / `builds show current` | 查询 catalog 和校验产物身份 |
 | 按现役配置重建源码 | `./mini.ps1 build system --hardware current` | 复用配置、CPU RTL 和应用路径；按组件闭包复用，记录 run，不编程板子 |
-| 从零构建最小系统 | `./mini.ps1 build system --profile minimal` | 无需已有 full CPU RTL；增加 `--synthesize` 才做 PnR |
+| 从零构建最小系统 | `./mini.ps1 build system --machine primer20k_vexriscv` | 先在机器 JSON 选择最小配置，自动生成 CPU IP；增加 `--synthesize` 才做 PnR |
 | 看板子目前有没有输出 | `./mini.ps1 board status` | 被动观察 UART，列出串口；静默显示 unknown，不推断为卡死 |
 | 恢复到启动菜单 | `./mini.ps1 board recover --build current` | 下载选定 gateware 到 SRAM，验证 DDR 启动并查询镜像头 |
 | 修复损坏的 XIP 启动区 | `./mini.ps1 board repair-xip --build current` | 外部下载器单独写目标 XIP，再 SRAM 重载、独立读回确认；会写 Flash，应用可仍不匹配 |
@@ -91,7 +91,7 @@ boot/cold 专项验收要求完整外设配置，最小系统使用 firmware 验
 | 任务 | 实现或专项工具 | 使用条件 / 文档 |
 | --- | --- | --- |
 | 环境初始化 | `bootstrap.ps1`、`tools/configure_tools.py`、`env.ps1`、`tools/doctor.py` | [开发环境](../README.md)；`tools/keep_awake.ps1` 仅为长任务保持主机唤醒 |
-| FPGA 配置与 CPU 生成 | `mini.py build system`、`mini.py build matrix`、`mini.py build cpu --generate`、`mini.py build cpu-gcb`、`mini.py build cpu-qualification`、`test_cpu_fence.py` | [构建 skill](../.agents/skills/riscv-mini-build/SKILL.md)；参数扫描和 ISA 改动用这些专项工具 |
+| FPGA 配置与 CPU 生成 | `mini.py build system`、`mini.py build matrix`、`mini.py build cpu`、`mini.py build cpu-gcb`、`mini.py build cpu-qualification`、`test_cpu_fence.py` | [构建 skill](../.agents/skills/riscv-mini-build/SKILL.md)；参数扫描和 ISA 改动用这些专项工具 |
 | 构建身份、复现和清理 | `mini.py builds`、`build_records.py`、`build_recipe.py` | [产物组织](../docs/build-artifacts.md)；records/recipe 为内部模块；clean 默认仅列计划，保护固定版本和发布包 |
 | 启动镜像与串口协议 | `boot_upload.py`、`boot_image.py`、`boot_size.py` | [bootloader](../docs/bootloader.md)；旧 install 仅适用于 ROM，XIP 更新用正式入口 |
 | 基础板测 | `firmware_verify.py`、`boot_verify.py`、`boot_repeat_verify.py`、`cold_boot.py` | [测试 skill](../.agents/skills/riscv-mini-test/SKILL.md)；分别为功能、协议、重复启动、外部冷启动 |

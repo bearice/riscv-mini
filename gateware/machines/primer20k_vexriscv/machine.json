@@ -1,0 +1,105 @@
+{
+  "$schema": "../../schemas/machine.schema.json",
+  "schema_version": 2,
+  "id": "primer20k_vexriscv",
+  "board": "primer20k_dock3713",
+  "cpu": {
+    "kind": "soft",
+    "implementation": "vexriscv",
+    "abi": "ilp32"
+  },
+  "clocks": {
+    "sys": 60000000,
+    "video": 9000000
+  },
+  "memory": {
+    "resource": "ddr3",
+    "controller": "gw2_ddr3_dll_off",
+    "base": 0,
+    "size_bytes": 134217728
+  },
+  "boot": {
+    "mode": "rom",
+    "rom_size_bytes": 8192
+  },
+  "devices": {
+    "video": "video",
+    "audio": "audio",
+    "microphones": [
+      "microphone_0",
+      "microphone_1"
+    ],
+    "ws2812": "ws2812",
+    "sd": "sd",
+    "flash": "flash",
+    "ethernet": "ethernet",
+    "ethernet_clock": "ethernet_clock",
+    "usb": "usb",
+    "spi_lcd": "spi_lcd",
+    "phy_reset": "phy_reset"
+  },
+  "gpio": {
+    "leds": [
+      "led_0",
+      "led_1",
+      "led_2",
+      "led_3",
+      "led_4",
+      "led_5"
+    ],
+    "buttons": [
+      "button_0",
+      "button_1",
+      "button_2",
+      "button_3"
+    ],
+    "switches": [
+      "switch_0",
+      "switch_1",
+      "switch_2",
+      "switch_3"
+    ],
+    "debounce_ms": 5
+  },
+  "rtl": {
+    "place_option": 2,
+    "route_option": 2,
+    "features": {
+      "flash": true,
+      "spi_lcd": false,
+      "sd": false,
+      "filesystem": false,
+      "video": false,
+      "board_io": false,
+      "ws2812": false,
+      "audio": false,
+      "mic": false,
+      "mic_stereo": false,
+      "eth": false,
+      "eth_dma": false,
+      "usb": false
+    },
+    "sd_profile": "none",
+    "usb_backend": "ultra",
+    "audio_clock": "dds",
+    "l2_size_bytes": 4096,
+    "rtl_hierarchy": "blocks"
+  },
+  "ip": {
+    "cpu": {
+      "generator": "vexriscv",
+      "module": "VexRiscv",
+      "parameters": {
+        "mmu": false,
+        "fpu": false,
+        "compressed": false,
+        "icache_bytes": 2048,
+        "dcache_bytes": 2048,
+        "single_cycle_shift": true,
+        "single_cycle_muldiv": true,
+        "relaxed_pc_calculation": false,
+        "pipelined_fetch": true
+      }
+    }
+  }
+}

@@ -9,15 +9,14 @@ register view.
 from migen import Signal, If, Cat, Mux, Case
 from litex.gen import LiteXModule
 
-from gateware.boards.mega138k_pro import io_map
 from gateware.devices.gpio.core import ButtonEvents
 from gateware.devices.ws2812.core import WS2812Core
 from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 class FabricBoard(LiteXModule):
-    def __init__(self, clock_hz=amap.FABRIC_HZ, debounce_cycles=None):
-        io_map.require()
+    def __init__(self, io, clock_hz, debounce_cycles=None):
+        io_map = io
         self.leds = Signal(len(io_map.leds()))
         self.gpio_pin = Signal(32)
         self.button_async = Signal(len(io_map.buttons()))

@@ -43,6 +43,9 @@ def bridge_double_cpu(path):
 
 
 def build(a, run=None):
+    from gateware.description import resolve_machine
+    machine = resolve_machine('primer20k_vexriscv')
+    a.pipelined_fetch = machine.ip['cpu'].parameters['pipelined_fetch']
     from scripts.modular.environment import discover
     if a.java is None:a.java=Path(discover(['java'])['bindings']['java'][0])
     if a.sbt_launch is None:a.sbt_launch=Path(discover(['sbt-launch'])['bindings']['sbt-launch'][0])

@@ -47,11 +47,10 @@ def perform_upload(args, selected=None):
         root, ref, build_id = selected if selected is not None else candidate(args.build)
         store = Store()
         boot_ref = store.get(ref)['dependencies']['bootloader']
-        if store.get(boot_ref)['config'].get('image_abi') != amap.image_abi():
-            raise ValueError('Selected hardware uses a different address ABI')
-        payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None))
+        abi = store.get(boot_ref)['config']['image_abi']
+        payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         payload = payload_file(payload_root).read_bytes()
-        image = ae350_image.build(payload)
+        image = ae350_image.build(payload, abi)
         (op.path / 'image.bin').write_bytes(image)
         op.report.update(artifact=ref, rom_build_id=build_id, payload_artifact=payload_ref,
                          requested_operation=getattr(args, 'operation', 'run'),
@@ -59,7 +58,7 @@ def perform_upload(args, selected=None):
                          payload_sha256=file_hash(payload_file(payload_root)),
                          payload_bytes=len(payload), image_bytes=len(image),
                          image_sha256=file_hash(op.path / 'image.bin'),
-                         abi=hex(ae350_image.abi_tag()), flash_written=False)
+                         abi=hex(abi), flash_written=False)
         if args.dry_run:
             op.report.update(passed=True, dry_run=True)
             op.save()
@@ -88,7 +87,7 @@ def perform_upload(args, selected=None):
             for round_index in range(args.repeat):
                 if round_index or args.self_test:
                     restart(); time.sleep(0.05); wait_banner()   # re-entry only
-                result = session.upload(image, load=ae350_image.LOAD, abi=ae350_image.abi_tag())
+                result = session.upload(image, load=ae350_image.LOAD, abi=abi)
                 uploads.append(result.decode('ascii', 'replace')[-40:])
             op.record('upload', phase='uploaded-and-handoff', rounds=uploads,
                       payload_bytes=len(payload), image_bytes=len(image), repeat=args.repeat)

@@ -296,19 +296,12 @@ class MiniOperationsTests(unittest.TestCase):
         build=self.build()
         (self.path/'firmware/app.img').write_bytes(pack_image(b'replacement',42))
         with self.assertRaisesRegex(ValueError,'changed during preflight'):build.update_plan()
-    def test_minimal_build_has_explicit_target_and_profile(self):
-        args=parser().parse_args(['build','system','--profile','minimal'])
-        self.assertEqual(args.target,'system');self.assertEqual(args.profile,'minimal')
+    def test_build_selects_machine(self):
+        args = parser().parse_args(['build', 'system', '--machine', 'primer20k_vexriscv'])
+        self.assertEqual(args.target, 'system')
+        self.assertEqual(args.machine, 'primer20k_vexriscv')
 
-    def test_hardware_flags_use_the_same_parser(self):
-        args=parser().parse_args(['build','system','--hardware',str(self.path),
-                                 '--l2-size','16384','--boot-mode','rom','--feature','audio=on'])
-        self.assertEqual(args.l2_size,16384);self.assertEqual(args.boot_mode,'rom')
-        self.assertEqual(args.feature,['audio=on'])
 
-    def test_old_ambiguous_build_spelling_is_rejected(self):
-        for command in (['build','--minimal'],['build','--from','current'],['build']):
-            with self.assertRaises(SystemExit):parser().parse_args(command)
 
     def test_builds_are_registered_in_the_root_help(self):
         args=parser().parse_args(['build','bios','--hardware','current'])

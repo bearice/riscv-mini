@@ -186,6 +186,11 @@ class Store:
 
     def publish(self, component, key, files, config=None, dependencies=None, version=None):
         component_name(component)
+        policy = (config or {}).get('storage_policy') or (config or {}).get('build', {}).get('storage_policy')
+        if policy == 'outputs-only' and any(name.startswith(
+                ('inputs/source/', 'inputs/python/', 'inputs/litex/', 'inputs/payload/', 'inputs/build/'))
+                for name in files):
+            raise ValueError('Ordinary build attempted to archive source files')
         dependencies = dependencies or {}
         for dep in dependencies.values():
             self.get(dep)

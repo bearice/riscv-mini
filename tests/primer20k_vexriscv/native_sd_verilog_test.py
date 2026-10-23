@@ -11,6 +11,9 @@ from migen.fhdl import verilog
 from litedram.common import LiteDRAMNativePort
 from gateware.machines.primer20k_vexriscv.memory.native_dma import NativeSDTransfer
 from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort, PortBuffer
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 TB = r'''
 module tb;
@@ -49,7 +52,7 @@ def main():
     args=parser.parse_args();compiler=Path(args.iverilog).resolve()
     runner=compiler.with_name('vvp.exe' if compiler.suffix=='.exe' else 'vvp')
     port=LiteDRAMNativePort('both',23,128);client=MemoryPort('write')
-    dut=Module();dut.submodules.transfer=transfer=NativeSDTransfer(client,True)
+    dut=Module();dut.submodules.transfer=transfer=NativeSDTransfer(client,True, layout=_layout)
     dut.submodules.buffer=PortBuffer(client,port)
     ports={'base':transfer._base.storage,'length':transfer._length.storage,'enable':transfer._enable.storage,
            'done':transfer._done.status,'error':transfer._error.status,'valid':transfer.sink.valid,

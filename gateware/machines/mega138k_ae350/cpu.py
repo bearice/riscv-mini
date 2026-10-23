@@ -98,8 +98,9 @@ class AE350ROM(LiteXModule):
 
 
 class NativeAE350(LiteXModule):
-    def __init__(self, wrapper=False, data_domain='sys', vendor_itcm=False):
+    def __init__(self, wrapper=False, data_domain='sys', vendor_itcm=False, module=None):
         self.wrapper = wrapper
+        self.module = module or ('RiscV_AE350_SOC_Top' if wrapper else 'AE350_SOC')
         self.reset = Signal()
         self.ahb_rom = ahb_rom = AHBInterface(data_width=32, address_width=32)
         self.ahb_ram = ahb_ram = AHBInterface(data_width=64, address_width=32)
@@ -394,5 +395,4 @@ class NativeAE350(LiteXModule):
                                    i_TDI_IN=pads.tdi, o_TDO_OUT=pads.tdo)
 
     def do_finalize(self):
-        name = 'RiscV_AE350_SOC_Top' if self.wrapper else 'AE350_SOC'
-        self.specials += Instance(name, **self.cpu_params)
+        self.specials += Instance(self.module, **self.cpu_params)

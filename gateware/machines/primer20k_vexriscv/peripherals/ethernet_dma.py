@@ -1,5 +1,5 @@
 """Packet DMA with native DDR ports and Wishbone packet SRAM."""
-from gateware.machines.primer20k_vexriscv.memory_map import RAM_BASE, RAM_END, BOOT_RAM_BASE, BOOT_RAM_SIZE, ETHMAC_BASE
+from gateware.machines.primer20k_vexriscv.address_map import ETHMAC_BASE
 from migen import Signal, If, FSM, NextState, NextValue, Mux, Record
 from litex.gen import LiteXModule
 from litex.soc.interconnect.csr import CSRStorage, CSRStatus
@@ -7,7 +7,12 @@ from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 
 class EthernetDMA(LiteXModule):
     """DDR uses SD's buffered MemoryPort contract; software owns packet slots."""
-    def __init__(self, bus, reader, writer, with_csr=True):
+    def __init__(self, bus, reader, writer, with_csr=True, *, layout):
+        RAM_BASE = layout.RAM_BASE
+        RAM_END = layout.RAM_END
+        BOOT_RAM_BASE = layout.BOOT_RAM_BASE
+        BOOT_RAM_SIZE = layout.BOOT_RAM_SIZE
+
         self.transfer = transfer = Record([('enable', 1), ('receive', 1),
             ('memory', 32), ('slot', 32), ('length', 12),
             ('busy', 1), ('done', 1), ('error', 1)])

@@ -7,6 +7,9 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).res
 from scripts.modular.storage import ROOT
 
 def perform(argv):
+    if argv[:1] == ['vendor-ip']:
+        from scripts.modular.ip.manager import generate
+        return generate(Path(argv[1]))
     if argv[:1] == ['action']:
         from scripts.modular.storage import read
         from scripts.modular.environment import process_environment

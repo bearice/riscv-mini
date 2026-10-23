@@ -10,12 +10,16 @@ from litex.gen import LiteXModule
 from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 from litex.soc.interconnect.csr_eventmanager import EventManager, EventSourceLevel, EventSourcePulse
 from gateware.machines.primer20k_vexriscv.memory.ports import MemoryPort
-from gateware.machines.primer20k_vexriscv.memory_map import RAM_END, BOOT_RAM_BASE, BOOT_RAM_SIZE, ETHMAC_BASE
+from gateware.machines.primer20k_vexriscv.address_map import ETHMAC_BASE
 from gateware.machines.primer20k_vexriscv.peripherals.ethernet_dma import EthernetDMA
 
 
 class EthernetRingDMA(LiteXModule):
-    def __init__(self, bus, reader, writer):
+    def __init__(self, bus, reader, writer, *, layout):
+        RAM_END = layout.RAM_END
+        BOOT_RAM_BASE = layout.BOOT_RAM_BASE
+        BOOT_RAM_SIZE = layout.BOOT_RAM_SIZE
+
         self._control = CSRStorage(name='control')
         self._rx_base = CSRStorage(32, name='rx_base')
         self._tx_base = CSRStorage(32, name='tx_base')
@@ -61,7 +65,7 @@ class EthernetRingDMA(LiteXModule):
 
         cr, cw = MemoryPort('read', reader.address_width), MemoryPort('write', writer.address_width)
         dr, dw = MemoryPort('read', reader.address_width), MemoryPort('write', writer.address_width)
-        self.copy = EthernetDMA(bus, cr, cw, with_csr=False)
+        self.copy = EthernetDMA(bus, cr, cw, with_csr=False, layout=layout)
         copy = self.copy.transfer
         receive, turn = Signal(), Signal()
         descriptor = Signal(reader.address_width)

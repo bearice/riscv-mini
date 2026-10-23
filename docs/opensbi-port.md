@@ -66,7 +66,7 @@ FW_PAYLOAD 内部提供 DTB 与下一阶段地址。OSB1 不支持返回 BIOS；
 构建路径可以自行选择，下例使用独立候选目录以保留 Flash 中的已验收版本：
 
 ```powershell
-& $MiniPython scripts/mini.py build system --cpu-verilog build/opensbi/cpu/VexRiscv_Mmu.v --output-dir build/opensbi/soc-time --synthesize
+& $MiniPython scripts/mini.py build system --output-dir build/opensbi/soc-time --synthesize
 ./mini.ps1 build opensbi -SocDir build/opensbi/soc-time
 & $MiniPython scripts/primer20k_vexriscv/boot_upload.py --output-dir build/opensbi/soc-time --program --mode uart
 & $MiniPython scripts/primer20k_vexriscv/opensbi_verify.py --host-ip 169.254.25.153 --reset-bios build/opensbi/soc-time/firmware/app.img

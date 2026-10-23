@@ -16,7 +16,10 @@ class NativeSD(LiteXModule):
         if profile not in ('lite','full'):raise ValueError('Native SD profile must be lite/full')
         pads=soc.platform.request('sdcard')
         card_detect=Signal()
-        self.specials += MultiReg(pads.cd,card_detect)
+        config = soc.io.machine
+        board = config.board
+        active_low = board.resources[config.devices.sd].signals['detect'].active_low
+        self.specials += MultiReg(pads.cd if active_low else ~pads.cd,card_detect)
         synchronized_pads=SimpleNamespace(clk=pads.clk,cmd=pads.cmd,data=pads.data,cd=card_detect)
         self.phy=SDPHY(synchronized_pads,soc.platform.device,soc.sys_clk_freq,cmd_timeout=.25,data_timeout=.5)
         # Keep each read descriptor stable for the complete PHY block, and
@@ -29,8 +32,8 @@ class NativeSD(LiteXModule):
         self.comb += self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE'))
         reader=native_ports[0] if native_ports else wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='r')
         writer=native_ports[1] if native_ports else wishbone.Interface(data_width=32,address_width=32,addressing='word',mode='w')
-        self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness,bounded=profile=='lite')
-        self.mem2block=SDMem2BlockDMA(reader,soc.cpu.endianness,bounded=profile=='lite')
+        self.block2mem=SDBlock2MemDMA(writer,soc.cpu.endianness,bounded=profile=='lite',layout=soc.address_map)
+        self.mem2block=SDMem2BlockDMA(reader,soc.cpu.endianness,bounded=profile=='lite',layout=soc.address_map)
         self.comb += [self.core.source.connect(self.block2mem.sink),self.mem2block.source.connect(self.core.sink)]
         if not native_ports:
             soc.bus.add_master(name='sdcard_block2mem',master=writer)

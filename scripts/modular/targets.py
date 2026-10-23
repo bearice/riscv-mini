@@ -28,28 +28,17 @@ def add_targets(parser):
         if name == 'gateware':
             target.add_argument('--pnr-mode', choices=('auto', 'full', 'place', 'pnr'), default='full',
                                 help='AE350: full (default), or explicitly reuse successful placement/routing state')
-        if name in CORE or name == 'payload':
-            target.add_argument('--ae350-profile', choices=('ddr',), default='ddr',
-                                help='AE350 DDR memory platform')
         if name == 'machine-description':
             continue
         if name in CORE:
             target.add_argument('--locked', type=Path)
-            if name in ('system', 'gateware', 'soc-description'):
-                arguments.add_arguments(target)
-                target.add_argument('--refresh-hardware', action='store_true')
-            else:
-                target.set_defaults(feature=[], refresh_hardware=False, **{key:None for key in arguments.HARDWARE_OPTIONS})
+            target.set_defaults(refresh_hardware=False)
             if name in ('system', 'gateware'):
                 target.add_argument('--synthesize', action='store_true', help='Run Gowin PnR for changed hardware')
             else: target.set_defaults(synthesize=False)
             if name in ('system', 'bios'):
                 target.add_argument('--source', type=Path, help='Application source; default resident BIOS')
             else: target.set_defaults(source=None)
-            if name == 'cpu':
-                target.add_argument('--generate', action='store_true', help='Generate CPU RTL; otherwise verify/reuse selected CPU')
-                # CPU source is the generator source tree, not application source.
-                arguments.cpu_generator(target)
         else:
             getattr(arguments, BACKENDS[name])(target)
 
@@ -65,20 +54,24 @@ def execute(store, run, args):
         raise ValueError('--pnr-mode requires --machine ' + machines.AE350)
     if getattr(args, 'pnr_mode', 'full') not in ('auto', 'full') and not args.synthesize:
         raise ValueError('--pnr-mode requires --synthesize')
+    if not getattr(args, 'locked', None) and (args.target in ('system','cpu','soc-description','gateware','cpu-qualification') or
+            machine == machines.AE350 and args.target == 'bootloader'):
+        from scripts.modular.ip.manager import ensure
+        snapshot = ensure(store, run, machine, plan=dry)
+        if dry:
+            run.step(args.target, 'BUILD', reason='requires resolved vendor IP artifacts')
+            run.finish(plan=True)
+            return None
+        args.resolved_machine_snapshot = snapshot
     if machine != machines.PRIMARY:
         return machines.execute(store, run, args, dry)
     if args.target == 'machine-description':
         raise ValueError('P0 machine-description requires --machine ' + machines.AE350
                          + '; 20K uses its existing soc-description')
-    if args.target=='cpu' and not args.generate:
-        generator_options=('vexriscv_source','java','sbt_launch','locked_config','relaxed_pc_calculation',
-                           'compressed','pipelined_fetch','arithmetic_matrix')
-        if any(getattr(args,key,None) for key in generator_options):
-            raise ValueError('CPU generator options require --generate')
     backend_parts = machines.part(machine, 'configuration')
-    if getattr(args,'locked',None) and (backend_parts.changed(args) or args.source or args.synthesize or args.refresh_hardware):
+    if getattr(args,'locked',None) and (args.source or args.synthesize or args.refresh_hardware):
         raise ValueError('--locked cannot be combined with source/configuration overrides')
-    if args.target in BACKENDS or (args.target=='cpu' and args.generate):
+    if args.target in BACKENDS:
         return backend(store, run, args, dry)
     system = machines.part(machine, 'system')
     import_legacy, bundle, git_commit, build_firmware_system = (
@@ -87,17 +80,15 @@ def execute(store, run, args):
         from scripts.modular.replay import locked_build
         ref=locked_build(store,args.locked,run,plan=dry);run.finish(system=ref)
         return ref
-    hardware_build = args.target in ('soc-description','gateware') or args.refresh_hardware or backend_parts.changed(args) or args.synthesize
+    hardware_build = args.target in ('system','soc-description','gateware','cpu') or args.refresh_hardware or args.synthesize
     if not hardware_build:
         if args.target=='cpu':
             ref=import_legacy(store,args.hardware,run);parts=read(store.path(ref)/'bundle.lock.json')['components']
             run.step('cpu','REUSE',parts['cpu']);run.finish(system=ref,artifact=parts['cpu']);return parts['cpu']
         return build_firmware_system(store,args.hardware,args.target,run,plan=dry,application=args.source)
-    base = None
-    if not args.profile:
-        ref = import_legacy(store,args.hardware,run)
-        base = read(store.path(ref)/'bundle.lock.json')['components']
-    v, cpu = backend_parts.resolve(store,run,args,base,plan=dry)
+    v, cpu = backend_parts.resolve(store,run,args,plan=dry)
+    if args.target == 'cpu':
+        run.finish(plan=dry, artifact=cpu); return cpu
     if dry and not cpu:
         for name in ('soc-description','bootloader','gateware','hal-sdk','bios'):
             run.step(name,'BUILD',reason='resolved hardware request; exact cache check occurs when upstream outputs exist')
@@ -142,17 +133,14 @@ def backend(store, run, args, dry):
         module=importlib.import_module('scripts.builders.'+name)
         actual=SimpleNamespace(**vars(args));actual.output_dir=output
         actual.prepare_only=False;actual.record=False;actual.pack_only=False
-        if args.target=='uboot':
-            actual.without_video=False
-            for flag in args.feature:
-                if flag not in ('video=on','video=off'):raise ValueError('U-Boot supports --feature video=on|off')
-                actual.without_video=flag=='video=off'
         if args.target in ('opensbi','uboot'):
             system = machines.part(machine, 'system')
             import_legacy, materialize = system.import_legacy, system.materialize
             ref=import_legacy(store,args.hardware,run)
             view=store.build/'work/hardware-view'/ref['digest']
             actual.soc_dir=materialize(store,ref,view)
+            if args.target == 'uboot':
+                actual.without_video = not read(actual.soc_dir / 'validation.json')['features']['video']
             run.result['system']=ref
         output.mkdir(parents=True,exist_ok=True)
         write(output/'build.lock.json',dict(schema=1,target=args.target,request=request))
@@ -195,17 +183,8 @@ def output_view(store,run,args,ref):
     machine = machines.system_machine(store, ref)
     materialize = machines.part(machine, 'system').materialize
     from scripts.tools.build_records import source_identity, register, now, write_json
-    from scripts.tools.build_recipe import create_recipe
     output=materialize(store,ref,args.output_dir.resolve())
-    source=source_identity(store.root);source.update(kind='captured',created_at=now())
-    # New recipes capture mini's canonical invocation; old recipes remain tied
-    # to their historical checkout and are never rewritten to today's flags.
-    v=read(output/'validation.json')
-    cpu=Path(v['cpu_verilog']) if v.get('cpu_verilog') else None
-    argv=machines.part(machine, 'configuration').configuration_arguments(
-        v,args.source or store.root/'firmware/bios/main.c',cpu,'reproduced',
-        synthesize=v.get('synthesis_requested',False))
-    source['recipe']=str(create_recipe(output,source,argv,cpu,root=store.root,entrypoint='scripts/mini.py'))
+    source=source_identity(store.root);source.update(kind='working-tree-hashes',created_at=now())
     record=register(output,'build',source,root=store.root)
     write_json(output/'build-info.json',dict(id=record['id'],status=record['status'],source=source))
     run.result['output_dir']=str(output);run.result['build_id']=record['id'];run.save()

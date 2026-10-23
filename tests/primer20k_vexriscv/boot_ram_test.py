@@ -7,12 +7,15 @@ from migen.sim import run_simulation, passive
 from litex.soc.interconnect import wishbone
 from litedram.common import LiteDRAMNativePort
 from gateware.machines.primer20k_vexriscv.memory.shared_l2 import SharedL2
+from gateware.description import resolve_machine
+from gateware.machines.primer20k_vexriscv.address_map import AddressMap
+_layout = AddressMap(resolve_machine('primer20k_vexriscv').memory)
 
 
 def exercise(size):
     dut=Module();ready=Signal();wb=wishbone.Interface(data_width=32,address_width=32,addressing='word')
     port=LiteDRAMNativePort('both',23,128)
-    dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=size,enabled=ready,boot_ram=True))
+    dut.submodules.cache=cache=ResetInserter()(SharedL2(wb,port,size=size,enabled=ready,boot_ram=True, layout=_layout))
     ram={};traffic=[]
     @passive
     def memory():

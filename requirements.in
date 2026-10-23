@@ -12,3 +12,4 @@ pythondata-software-picolibc @ git+https://github.com/litex-hub/pythondata-softw
 pythondata-software-compiler-rt @ git+https://github.com/litex-hub/pythondata-software-compiler_rt.git@6eb76609c9627bf26635e57c63fb22cda7115887
 meson
 ninja
+jsonschema==4.23.0

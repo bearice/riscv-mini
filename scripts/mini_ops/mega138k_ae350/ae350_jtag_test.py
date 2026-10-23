@@ -23,8 +23,7 @@ def perform(args):
         store = Store()
         boot_ref = store.get(ref)['dependencies']['bootloader']
         boot = store.get(boot_ref)
-        if boot['config'].get('image_abi') != amap.image_abi():
-            raise ValueError('Selected candidate uses a different address ABI')
+        abi = boot['config']['image_abi']
         expected = (store.path(boot_ref) / 'outputs/boot.bin').read_bytes()
         fs = root / 'gateware/impl/pnr/project.fs'
         op.report.update(artifact=ref, fs_sha256=file_hash(fs), rom_build_id=build_id,

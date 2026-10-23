@@ -1,6 +1,6 @@
 # 模块化构建
 
-跨构建复用、独立 BIOS/HAL/bootloader 目标、store/run 目录与完整 lock 导出见 [组件构建操作](component-builds.md)。下面保留完整 SoC 生成器的硬件配置和历史验证说明。
+跨构建复用、独立 BIOS/HAL/bootloader 目标、store/run 目录与完整 lock 导出见 [组件构建操作](component-builds.md)。当前硬件配置见 [平台构建配置](platform-descriptions.md)。下文的配置组合与资格记录保留用于理解历史设计；执行构建前应在机器 JSON 设置相应功能。
 
 默认构建生成唯一的 `build/runs/<时间>-<Git版本>-<配置>-<用途>`，不再覆盖固定目录。
 查询当前/基线/最新构建、最终产物归档和中间目录清理见 [构建目录说明](build-artifacts.md)；提交流程见 [SOP](pre-commit-sop.md)。
@@ -38,7 +38,7 @@ CPU/sys 60 MHz、DDR 120 MHz 不变。
 
 未明确启用的默认依赖项会随父功能一起关闭：例如 `--feature sd=off` 同时关闭
 默认的 FatFs，`--feature flash=off` 同时关闭默认 Ethernet。若明确指定互相冲突
-的开关，则构建立即报错；例如 `--feature filesystem=on --feature sd=off`。最小配置
+的开关，则构建立即报错；例如 `--feature filesystem=on`。最小配置
 下启用依赖功能时需一起指定其父功能。
 
 CPU 能力、SD profile 和 DDS 音频配置的完整命令及验证边界见
@@ -50,19 +50,19 @@ MMU 默认开启、FPU 默认关闭；minimal 默认关闭两者，仍可分别�
 .venv/Scripts/python.exe scripts/mini.py build system --synthesize --output-dir build/full
 
 # 内核 + Flash；不占用显示和 USB PLL。
-.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --synthesize --output-dir build/minimal
+.venv/Scripts/python.exe scripts/mini.py build system --synthesize --output-dir build/minimal
 
 # 只经 UART 启动。
-.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature flash=off --output-dir build/uart-only
+.venv/Scripts/python.exe scripts/mini.py build system --output-dir build/uart-only
 
 # 内核 + Flash + 原生 SD 块接口，不链接 FatFs。
-.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature sd=on --output-dir build/sd-blocks
+.venv/Scripts/python.exe scripts/mini.py build system --output-dir build/sd-blocks
 
-# 最小双麦克风波形系统；USB 按键控制可另加 --feature usb=on。
-.venv/Scripts/python.exe scripts/mini.py build system --profile minimal --feature video=on --feature mic=on --feature mic_stereo=on --source firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c --output-dir build/mic-only
+# 最小双麦克风波形系统；USB 按键控制可另加
+.venv/Scripts/python.exe scripts/mini.py build system --source firmware/examples/primer20k_vexriscv/microphone_stereo_demo.c --output-dir build/mic-only
 
 # 从全功能系统裁掉网络和音频输出。
-.venv/Scripts/python.exe scripts/mini.py build system --feature eth=off --feature usb=off --feature audio=off --output-dir build/capture
+.venv/Scripts/python.exe scripts/mini.py build system --output-dir build/capture
 ```
 
 `--synthesize` 才执行 Gowin；否则只生成 RTL 和编译固件。构建不下载 FPGA，

@@ -42,7 +42,7 @@ class AudioData(LiteXModule):
 
 
 class FabricAudio(LiteXModule):
-    def __init__(self, clock_hz=amap.FABRIC_HZ, fifo_depth=512, sample_rate=48000):
+    def __init__(self, clock_hz, fifo_depth=512, sample_rate=48000):
         self.tx_pads = Record([('bck', 1), ('ws', 1), ('din', 1), ('pa_en', 1)])
         self.rx_pads = Record([('data', 1), ('bck', 1), ('lr', 1), ('ws', 1)])
         self.tx_bus = AHBInterface(data_width=32, address_width=32)
