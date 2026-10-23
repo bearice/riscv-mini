@@ -12,7 +12,7 @@
     "hardware_isa": "rv32imafdc_zicsr_zifencei",
     "initial_software_abi": "ilp32",
     "software_qualification": "integer ABI; floating-point, MMU and interrupt software outside memory qualification",
-    "vendor_reference_configuration": "src/riscv_ae350_soc/riscv_ae350_soc.ipc",
+      "subsystem_configuration": "gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_config.v",
     "core_clock_route": "PLL_R[0]/CLKOUT1"
   },
   "memory": {
@@ -70,8 +70,6 @@
       "status": "reference-only"
     }
   },
-  "reference_project": "ae350_customized_demo.gprj",
-  "reference_scope": "AE350 native bus, ITCM bootstrap and hard local memory with DDR3",
   "runtime_abi": "rv32ima_zicsr_zifencei / ilp32; generated address ABI",
   "loader_format": "ae350-20k-frame-v1; 48-byte header, 128-byte packets, ABI/range/CRC checks",
   "video": "hdmi",
@@ -83,7 +81,6 @@
   ],
   "ddr3": {
     "ip_component": "gateware/vendor/gowin_gw5ast/gowin_ddr3_400 (Gowin DDR3 Memory Interface, 256-bit user interface)",
-    "ip_reference": "TangPrimer-138K/example/pro_ddr_test",
     "ip_config": {
       "MEMORY_CLK_MHZ": 400,
       "CLK_RATIO": "1:4",

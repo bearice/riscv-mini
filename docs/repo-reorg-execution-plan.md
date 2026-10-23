@@ -177,7 +177,7 @@ tests/
 - 另有一条 host 测试：用 ast 扫该机器入口的 import 闭包，声明集合必须是它的超集。漏声明失败，而不是把整个 `gateware/` 收进来。
 - **阶段 A 的 20K 声明**包含它当时实际 import 的 `machines/primer20k_vexriscv/**`（含 `memory/native_dma.py` 与 `peripherals/` 全部，audio/audio_clock/microphone/video 此时仍是机器文件）、`boards/primer20k_dock3713/board.json`（hardware.py:16 今日锁 `gateware/board.json`；machine_build_test 断言改 board.json 失效 20K——漏声明则隔离门假绿）、`devices/gpio`、`devices/ws2812`（阶段 A 随 gateware 一并移入——两机今日共用，见 §1）、`vendor/gowin_gw2a`、`vendor/litesdcard/sdcore.py`、`vendor/usb_*`，以及当时还留在 `scripts/modular/` 的 20K 后端文件。**不**包含 `ddr3_ahb.py`、`board_sense.py`、`io_map.py`、`vendor/gowin_gw5ast/`，也**不**包含 `devices/{audio,microphone,video}`——它们 B2-B4 才存在，拆出 core 的提交同一次把目录加进声明。
 - **阶段 A 的 138K 声明**包含 `boards/mega138k_pro/**`、`machines/mega138k_ae350/**`、`devices/gpio`、`devices/ws2812`、`vendor/gowin_gw5ast/**`，以及外部 vendor 工程。**不**包含 `devices/{audio,microphone,video}`、20K `memory/`、`shared_l2`、`vendor/gowin_gw2a`、`vendor/usb_*`。今天 AE350 RTL 不引用 audio（gateware/machines/{mega138k_ae350.py,mega138k_ae350_ddr.py,ae350_map.py} 的 import 图已核）。
-- 外部输入显式列入，不假装它在仓内：默认路径是 [scripts/modular/machines.py:99](../scripts/modular/machines.py:99) 的 `store.root.parent.parent / 'TangPrimer-138K/example/ae350_customized_demo'`。缺文件维持现有的响亮失败。搬迁不改这个仓外树。
+- 更正（2026-10-23）：`ae350_customized_demo` 是编写 AE350 实现时的只读参考，不是 machine-description/build 输入。AE350 构建只使用仓库内 `board.json`、`machine.json`、构建实现及已固定的 vendor HDL/IP 文件；缺少外部示例工程不应阻塞 plan/build。原先将外部示例扫描并归档为 machine-description 输入的流程已移除。
 - 新文件未出现在任一机器声明里，且被某机器 import：构建失败。没有 import 的新文件不自动进入任何 key。
 
 隔离不变式（阶段 A 起就应成立，阶段 D 后再测一次）：改 `io_map.py` 或 `board_sense.py` 只失效 138K；改 20K `audio.py` 或 `ddr.py` 只失效 20K。

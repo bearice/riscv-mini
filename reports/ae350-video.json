@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "passed": true,
+  "receipts": {
+    "gateware": "build/runs/20261023T020354847191Z-build-ae350-p6b-decode-pipeline-7691a3/result.json",
+    "p6a_soak": "build/runs/20261022T171446650410Z-board-ae350-video-suite/result.json",
+    "rgb565": "build/runs/20261023T021137875483Z-board-ae350-video-suite/result.json",
+    "tty": "build/runs/20261023T021310429739Z-board-ae350-video-suite/result.json",
+    "preflight": "build/runs/20261023T021412116546Z-board-ae350-audio-suite/result.json",
+    "combined": "build/runs/20261023T021641627444Z-board-ae350-audio-suite/result.json",
+    "combined_capture": "build/runs/20261023T021717324604Z-board-ae350-audio-video-capture/result.json"
+  },
+  "gateware": {
+    "component": "gateware",
+    "digest": "ae04a88908624cdc766d882463d095cefb384c433baa12e72267b5f55621828b"
+  },
+  "timing": {
+    "setup": 0,
+    "hold": 0,
+    "min_pulse_width_slack_ns": 0.037
+  },
+  "source_mode": {
+    "width": 640,
+    "height": 480,
+    "pixel_hz": 25000000,
+    "horizontal_total": 800,
+    "vertical_total": 525,
+    "nominal_hz": 59.523809523809526
+  },
+  "combined": {
+    "audio": {
+      "name": "results",
+      "values": {
+        "stage": 3306160129,
+        "error": 0,
+        "pio": 256,
+        "pio_gaps": 65,
+        "restarts": 100,
+        "snapshot": 512,
+        "minimum": 4294916902,
+        "maximum": 42536,
+        "activity": 1,
+        "overflow": 514,
+        "busy_reject": 11,
+        "hw_error": 12,
+        "frames": 86880131,
+        "played": 86880131,
+        "underruns": 0,
+        "rx_overruns": 0,
+        "tx_blocks": 56562,
+        "rx_blocks": 56562,
+        "rx_bad_sign": 0,
+        "guards": 0,
+        "cpu_writes": 11970854,
+        "sample_rate": 48000,
+        "accepted": 86880239,
+        "physical": 0,
+        "seconds": 1810,
+        "min_tx_level": 510,
+        "max_rx_level": 1,
+        "cache_control": 2,
+        "mic_stream_peak": 1725394,
+        "tx_selector": 9,
+        "dma_restarts": 100,
+        "schema": 1096089601
+      },
+      "elapsed_seconds": 1810.6606412059919,
+      "pc": "0x433c",
+      "failures": [],
+      "passed": true
+    },
+    "video": {
+      "name": "video-stress",
+      "words": [
+        1447624706,
+        0,
+        640,
+        480,
+        107963,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        105,
+        2069208210,
+        2355625431,
+        0,
+        0,
+        16777216,
+        1,
+        0,
+        224,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "source_rate": {
+      "name": "video-source-rate",
+      "frames": 107739,
+      "uart_window_seconds": 1810.003111521015,
+      "observed_frame_rate_hz": 59.52420706584465,
+      "method": "FPGA raster counter delta / host monotonic UART STREAM-to-DONE; includes stop/report overhead"
+    },
+    "captured_frames": 109816,
+    "pattern_errors": 0,
+    "usb_timestamps": {
+      "available": true,
+      "frames": 109806,
+      "window_seconds": 1829.990958,
+      "max_gap_ms": 20.406,
+      "nonmonotonic": 0,
+      "estimated_missing_frames": 0,
+      "timestamp_basis": "integer PTS/time_base",
+      "method": "delivered USB frame PTS gaps after warmup; not HDMI input frame enumeration"
+    }
+  },
+  "flash_written": false,
+  "current_changed": false,
+  "scope": "Delivered USB image checks; integer USB PTS gaps; FPGA raster delta / host UART window. Static images cannot enumerate missing/repeated HDMI input frames; no analog audio qualification.",
+  "final_tty_receipt": "build/runs/20261023T024828993810Z-board-ae350-video-suite/result.json",
+  "host_restored": {
+    "video0_acl": true,
+    "fpga_ftdi_driver": true,
+    "cpu_ftdi_driver": true
+  },
+  "resources": {
+    "logic": 13873,
+    "registers": 17627,
+    "bsram": 77,
+    "dsp": 5
+  }
+}

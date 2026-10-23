@@ -97,8 +97,11 @@ class FabricBoard(LiteXModule):
             Case(self.off, {**{offset: self.io_rdata.eq(value) for offset, value in io_read.items()},
                             'default': self.io_rdata.eq(0)}),
         ]
-        ws_go = self.commit & self.ws_selected & self.ws_ok & self.write
-        io_go = self.commit & self.io_selected & self.io_ok & self.write
+        ws_admit,io_admit=Signal(),Signal()
+        self.sync += [ws_admit.eq(self.ws_selected & self.ws_ok & self.write),
+                      io_admit.eq(self.io_selected & self.io_ok & self.write)]
+        ws_go = self.commit & ws_admit
+        io_go = self.commit & io_admit
         send = ws_go & (self.off == 0x0c) & self.wdata[0] & ~self.ws.busy
         busy_reject = ws_go & (self.off == 0x0c) & self.wdata[0] & self.ws.busy
         diag_pulse = io_go & (self.off == 0x0c) & self.wdata[2]

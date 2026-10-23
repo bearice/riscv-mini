@@ -32,6 +32,26 @@ def ws2812():
     return user_io()['ws2812']
 
 
+def video_binding(port=None):
+    """Differential TMDS pairs from the selected Mega 138K Pro HDMI port."""
+    video = load()['resources']['video']
+    selected = str(video['active_port'] if port is None else port)
+    if selected not in video['ports']:
+        raise ValueError('unknown HDMI output port ' + selected)
+    row = video['ports'][selected]
+    clock_pair = tuple(row['clock_pair'])
+    data_pairs = tuple(tuple(pair) for pair in row['data_pairs'])
+    pairs = (clock_pair, *data_pairs)
+    pins = tuple(pin for pair in pairs for pin in pair)
+    if (len(clock_pair) != 2 or len(data_pairs) != 3 or
+            any(len(pair) != 2 for pair in data_pairs) or len(set(pins)) != 8):
+        raise ValueError('invalid HDMI differential pin map for port ' + selected)
+    if video['io_standard'] != 'LVCMOS33D' or video['bank_vccio'] != 3.3:
+        raise ValueError('HDMI TMDS pins require the published 3.3V differential I/O standard')
+    return dict(port=selected, clock_pair=clock_pair, data_pairs=data_pairs, pins=pins,
+                io_standard=video['io_standard'], bank_vccio=video['bank_vccio'], drive=video['drive'])
+
+
 def inject_bit():
     return user_io()['gpio_inject_bit']
 
@@ -113,6 +133,7 @@ def reserved_pins():
     camera = resources['camera']
     for key in ('mipi0_lanes', 'mipi1_lanes', 'dock_control', 'dvp', 'shared_i2c_control'):
         pins.update(camera[key])
+    pins.update(video_binding()['pins'])
     pins.update(user_io()['protected_pins'])
     machine = json.loads(MACHINE_PATH.read_text(encoding='utf-8'))
     for value in machine['ddr3']['pins'].values():

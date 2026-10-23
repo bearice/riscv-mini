@@ -37,8 +37,10 @@ from gateware.boards.mega138k_pro import io_map
 from gateware.machines.mega138k_ae350 import address_map as ae350_map
 from gateware.machines.mega138k_ae350.clock import ClockReset
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
+from gateware.machines.mega138k_ae350.video_memory import VideoMemoryArbiter
+from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
 
-# DDR3 pin map (Tang Mega 138K Pro, vendor ae350_customized_demo.cst).
+# DDR3 pin map (Tang Mega 138K Pro, local board contract).
 DDR3_ADDR = 'N1 R1 R2 N2 P1 T2 N4 U1 T4 T3 M1 P4 N3 U2 U5'.split()
 DDR3_BA = 'M4 L5 K3'.split()
 DDR3_DM = 'F4 H9 E3 A3'.split()
@@ -168,8 +170,21 @@ def _user_io():
     return rows
 
 
+def _hdmi_io():
+    video = io_map.video_binding()
+    misc = Misc('PULL_MODE=NONE DRIVE=%s BANK_VCCIO=%s' %
+                (video['drive'], video['bank_vccio']))
+    standard = IOStandard(video['io_standard'])
+    return [
+        ('hdmi_clk_p', 0, Pins('X'), standard, misc),
+        ('hdmi_clk_n', 0, Pins('X')),
+        ('hdmi_data_p', 0, Pins('X X X'), standard, misc),
+        ('hdmi_data_n', 0, Pins('X X X')),
+    ]
+
+
 class DDRSoC(LiteXModule):
-    def __init__(self, board, soc_sources_dir=None):
+    def __init__(self, board, soc_sources_dir=None, implementation_options=None):
         self.ddr_ip_dir = DDR_IP_DIR
         self.ddr_ck_hz = 400e6
         ae350_map.require()
@@ -196,14 +211,24 @@ class DDRSoC(LiteXModule):
              Subsignal('bck', Pins(rx['bck']), Misc('PULL_MODE=NONE')),
              Subsignal('lr', Pins(rx['lr']), Misc('PULL_MODE=NONE')),
              Subsignal('ws', Pins(rx['ws']), Misc('PULL_MODE=NONE')), IOStandard(rx['io_standard'])),
-        ] + _ddr3_io() + _user_io()
+        ] + _ddr3_io() + _user_io() + _hdmi_io()
         platform = GowinPlatform(board['reference_part'], io, devicename=board['reference_device'])
+        hdmi = io_map.video_binding()
+        platform.add_platform_command('IO_LOC "hdmi_clk_p" %s;' % ','.join(hdmi['clock_pair']))
+        for lane, pair in enumerate(hdmi['data_pairs']):
+            platform.add_platform_command('IO_LOC "hdmi_data_p[%d]" %s;' % (lane, ','.join(pair)))
         ip_dir = self.ddr_ip_dir
         platform.add_source(os.path.join(ip_dir, 'gowin_pll_ddr3.v'))
         platform.add_source(os.path.join(ip_dir, 'ddr3_memory_interface.v'))
+        video_dir = Path(__file__).resolve().parents[2] / 'devices' / 'video' / 'hdmi'
+        for name in ('ae350_hdmi_phy.v', 'svo_tmds.v'):
+            platform.add_source(str(video_dir / name))
+        platform.add_verilog_include_path(str(video_dir))
         # SUG1220: the 80/100 MHz fabric paths close by tens of picoseconds.
-        platform.toolchain.options.update(use_cpu_as_gpio=1, use_mspi_as_gpio=1, use_sspi_as_gpio=1,
-                                          timing_driven=1, place_option=2, route_option=2)
+        options=dict(place_option=2,route_option=2)
+        options.update(implementation_options or {})
+        platform.toolchain.options.update(use_cpu_as_gpio=1,use_mspi_as_gpio=1,use_sspi_as_gpio=1,
+                                          timing_driven=1,**options)
         platform.default_clk_name = 'clk50'
         platform.default_clk_period = 20
         self.platform = platform
@@ -285,7 +310,8 @@ class DDRSoC(LiteXModule):
         err_bus = AHBInterface(data_width=64, address_width=32)
 
         # The hard macro resolves ILM/DLM internally. This port owns only DDR.
-        self.ddr_port = ClockDomainsRenamer({'sys': 'mem'})(DDR3AHB(ddr_bus, self.ddr.ui,
+        cpu_ui = DDR3UI()
+        self.ddr_port = ClockDomainsRenamer({'sys': 'mem'})(DDR3AHB(ddr_bus, cpu_ui,
                                 ready_i=calib_mem,
                                 accepted_i=ddr_bus.trans[1],
                                 end_burst_i=self.cpu.ahb_ram.readyout & (self.cpu.ahb_ram.trans == 0),
@@ -343,7 +369,25 @@ class DDRSoC(LiteXModule):
             0x44: self.data_cdc.o[112:144], 0x48: self.data_cdc.o[144:176],
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
         # Not self.platform: that attribute is the Gowin board platform.
-        self.ext = Ae350Platform(self.cpu, registers)
+        video = FabricVideo()
+        self.ext = Ae350Platform(self.cpu, registers, video=video)
+        self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
+            VideoMemoryArbiter(self.ddr.ui, cpu_ui, video.ui))
+        self.comb += [arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),
+                      arbiter.video_pending.eq(video.reader.pending),
+                      video.cpu_commands.eq(arbiter.cpu_commands),
+                      video.video_commands.eq(arbiter.video_commands),
+                      video.max_wait.eq(arbiter.max_video_wait),
+                      video.memory_fault.eq(arbiter.unexpected_response),
+                      video.reset.eq(ResetSignal('sys') | ~self.ddr.init_calib_complete |
+                                     ~self.crg.hdmi_pll.locked)]
+        self.specials += Instance('ae350_hdmi_phy',
+            i_resetn=~ResetSignal('sys'), i_locked=self.crg.hdmi_pll.locked,
+            i_clk_pixel=ClockSignal('hdmi_pix'), i_clk_5x_pixel=ClockSignal('hdmi_5x'),
+            i_clk_reset=ClockSignal('hdmi_reset'), i_rgb=video.pixels.rgb,
+            i_de=video.pixels.de, i_hsync=video.pixels.hsync, i_vsync=video.pixels.vsync,
+            o_tmds_clk_p=platform.request('hdmi_clk_p'), o_tmds_clk_n=platform.request('hdmi_clk_n'),
+            o_tmds_d_p=platform.request('hdmi_data_p'), o_tmds_d_n=platform.request('hdmi_data_n'))
         tx_pad = platform.request('audio')
         rx_pad = platform.request('microphone')
         for name in ('bck', 'ws', 'din', 'pa_en'):
@@ -389,6 +433,8 @@ class DDRSoC(LiteXModule):
         def build_timing_constraints(vns):
             name, ext = _orig_sdc(vns)
             extra = [
+                *self.crg.pll.extra_constraints,
+                *self.crg.hdmi_clock_constraints,
                 'create_clock -name ddr_ui_clk -period %.4f -waveform {0 %.4f} [get_pins {ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]'
                     % (4000.0 / (self.ddr_ck_hz / 1e6), 2000.0 / (self.ddr_ck_hz / 1e6)),
                 'create_clock -name ddr_memory_clk -period %.4f -waveform {0 %.4f} [get_nets {ddr3_memory_clk}]'
@@ -397,6 +443,7 @@ class DDRSoC(LiteXModule):
                 'set_clock_groups -asynchronous '
                 '-group [get_clocks {sys_clk}] -group [get_clocks {cpu_clk}] '
                 '-group [get_clocks {mem_clk}] '
+                '-group [get_clocks {hdmi_pix_clk hdmi_5x_clk hdmi_reset_clk}] '
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '
                 '-group [get_clocks {ddr_clk_ref}]',
             ]

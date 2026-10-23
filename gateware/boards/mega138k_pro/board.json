@@ -144,7 +144,23 @@
     },
     "video": {
       "output": "hdmi",
-      "lcd_migration": "deferred"
+      "lcd_migration": "deferred",
+      "active_port": "0",
+      "io_standard": "LVCMOS33D",
+      "bank_vccio": 3.3,
+      "drive": 8,
+      "ports": {
+        "0": {
+          "connector": "HDMI TX (DVI_TX in dock schematic)",
+          "clock_pair": ["Y22", "Y23"],
+          "data_pairs": [["AB24", "AC24"], ["V24", "W24"], ["AA22", "AA23"]]
+        },
+        "1": {
+          "connector": "HDMI RX (DVI_RX in dock schematic)",
+          "clock_pair": ["K20", "J20"],
+          "data_pairs": [["D19", "C19"], ["M15", "L15"], ["J25", "J26"]]
+        }
+      }
     }
   },
   "ddr_candidates": [
@@ -169,18 +185,6 @@
   ],
   "conflicts": [
     {
-      "resource": "uart",
-      "board_reference": "N16/P15",
-      "customized_demo": "V16/U16",
-      "resolution": "P1 must select and verify the BL616 route"
-    },
-    {
-      "resource": "reset",
-      "board_reference": "U4 LVCMOS15",
-      "customized_demo": "G16 LVCMOS33",
-      "resolution": "Do not copy the demo CST as the board constraint"
-    },
-    {
       "resource": "MIC-ARRAY",
       "owners": [
         "microphone",
@@ -192,14 +196,12 @@
     {
       "resource": "part",
       "board_reference": "Confirm silicon marking/speed grade",
-      "customized_demo": "GW5AST-LV138FPG676AC1/I0",
-      "resolution": "Reference part is not physical confirmation"
+      "resolution": "Build target follows board.json; physical silicon marking is not confirmed"
     }
   ],
   "evidence": [
     "docs/images/mega138k-pro-ddr-20261017.png",
     "TangPrimer-138K/docs/02_Schematic",
-    "TangPrimer-138K/example/ae350_customized_demo",
     "docs/ae350-migration-stages.md"
   ],
   "user_io": {

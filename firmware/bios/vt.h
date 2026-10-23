@@ -3,8 +3,12 @@
 #define BIOS_VT_H
 #include <stdint.h>
 
+#ifndef VT_COLS
 #define VT_COLS 80
+#endif
+#ifndef VT_ROWS
 #define VT_ROWS 34
+#endif
 #define VT_MAXPARAM 16
 
 // 属性位（16 位）：bit15 reverse，bit14 bold，bits13-10 前景 0-15，bits9-6 背景 0-15。

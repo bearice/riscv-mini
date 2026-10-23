@@ -1,11 +1,9 @@
 """Machine selection and immutable P0 inputs; no hardware generation is implied."""
-import re
 import hashlib
-import xml.etree.ElementTree as ET
 from pathlib import Path
 import sys
 sys.path[:0] = [str(Path(__file__).resolve().parents[4]), str(Path(__file__).resolve().parents[4] / 'scripts')]
-from scripts.modular.storage import canonical, digest, source_file_hash, source_bytes, SOURCE_HASH_FORMAT, member, read, write
+from scripts.modular.storage import canonical, digest, source_file_hash, source_bytes, SOURCE_HASH_FORMAT, read, write
 from scripts.modular.environment import discover, identity
 from scripts.modular.machines.mega138k_ae350.ae350 import timing_report  # re-export for tools
 
@@ -48,32 +46,12 @@ def check_system(store, ref, machine=None):
         raise ValueError('Machine mismatch: expected ' + expected + ', got ' + actual)
 
 
-def _source_inputs(reference):
-    """Archive the declared project and every non-temporary source sidecar.
+def resolve(store):
+    """Resolve P0 from repository-owned board and machine contracts only.
 
-    Includes encrypted HDL, IPC, constraints and arbitrary init/data suffixes.
-    File inventory is locked as well as contents. Generated temp/ and impl/ are
-    excluded explicitly; this is a fixed-input closure, not an IP regeneration claim.
+    Vendor example projects are design references. They are never opened,
+    inventoried, or copied into the machine-description artifact.
     """
-    project = reference / 'ae350_customized_demo.gprj'
-    tree = ET.parse(project)
-    files = {project.name: project}
-    for node in tree.findall('./FileList/File'):
-        if node.get('enable', '1') != '1':
-            continue
-        path = member(reference, node.attrib['path'])
-        if not path.is_file():
-            raise ValueError('Missing declared vendor input: ' + str(path))
-        files[path.relative_to(reference).as_posix()] = path
-    for path in sorted((reference / 'src').rglob('*')):
-        relative = path.relative_to(reference)
-        if path.is_file() and 'temp' not in relative.parts:
-            member(reference, relative.as_posix())
-            files[relative.as_posix()] = path
-    return files, tree.find('Device').attrib
-
-
-def resolve(store, reference=None):
     board_path = store.root / 'gateware/boards/mega138k_pro/board.json'
     machine_path = store.root / 'gateware/machines/mega138k_ae350/machine.json'
     board, machine = read(board_path), read(machine_path)
@@ -99,32 +77,20 @@ def resolve(store, reference=None):
     for name, ceiling in (('core', 800000000), ('ddr_ck', 400000000)):
         if not 0 < clocks[name]['target_hz'] <= ceiling:
             raise ValueError('AE350 clock exceeds specification: ' + name)
-    reference = Path(reference) if reference else store.root.parent.parent / 'TangPrimer-138K/example/ae350_customized_demo'
-    vendor, device = _source_inputs(reference.resolve())
-    if device.get('pn') != board['reference_part'] or device.get('name') != board['reference_device']:
-        raise ValueError('Vendor project part does not match the reference Board description')
     files = {'inputs/board.json': board_path, 'inputs/machine.json': machine_path}
-    files.update({'inputs/vendor/' + name: path for name, path in vendor.items()})
     # Lock the resolver itself; dependency selection changes invalidate descriptions.
     for name, path in (('description.py', store.root / 'scripts/modular/machines/mega138k_ae350/description.py'),
                        ('storage.py', store.root / 'scripts/modular/storage.py'),
                        ('environment.py', store.root / 'scripts/modular/environment.py')):
         files['inputs/build/' + name] = path
     hashes = {name: source_file_hash(path) for name, path in sorted(files.items())}
-    external = []
-    for name, path in vendor.items():
-        if path.suffix.lower() not in ('.ipc', '.v', '.mod', '.sdc', '.cst'):
-            continue
-        for number, line in enumerate(path.read_text(encoding='utf-8', errors='replace').splitlines(), 1):
-            if re.search(r'[A-Za-z]:[/\\]', line):
-                external.append(dict(file=name, line=number, text=line.strip()))
     env = discover(['python', 'gowin'], store.root)
     lock = dict(schema=1, machine=machine, board=board, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes,
-                tools=identity(env), vendor_project_device=device,
+                tools=identity(env),
+                device=dict(name=board['reference_device'], part=board['reference_part'], source='board.json'),
                 evidence=dict(host_description=True, physical_board=False,
                               rtl_generated=False, synthesized=False, board_tested=False),
-                closure=dict(fixed_vendor_inputs='archived', vendor_regeneration='incomplete',
-                             external_path_references=external),
+                closure=dict(scope='repository-owned-board-machine-and-build-inputs'),
                 blockers=machine['pending'])
     return lock, files
 
@@ -132,8 +98,8 @@ def resolve(store, reference=None):
 def execute(store, run, args, dry):
     """Build only the real P0 artifact; defer unimplemented machine backends."""
     unsupported = [key for key in ('output_dir', 'locked', 'profile', 'cpu_verilog', 'cpu_variant', 'sd_profile',
-                   'usb_backend', 'audio_clock', 'boot_mode', 'rom_size', 'l2_size', 'place_option',
-                   'route_option', 'rtl_hierarchy', 'vexriscv_source', 'java', 'sbt_launch',
+                   'usb_backend', 'audio_clock', 'boot_mode', 'rom_size', 'l2_size',
+                   'rtl_hierarchy', 'vexriscv_source', 'java', 'sbt_launch',
                    'locked_config') if getattr(args, key, None) is not None]
     unsupported += [key for key in ('generate', 'refresh_hardware', 'relaxed_pc_calculation', 'compressed',
                                   'pipelined_fetch', 'arithmetic_matrix') if getattr(args, key, False)]
@@ -141,6 +107,8 @@ def execute(store, run, args, dry):
         unsupported.append('feature')
     if unsupported:
         raise ValueError('AE350 does not yet support these overrides: ' + ', '.join(unsupported))
+    if any(getattr(args,key,None) is not None for key in ('place_option','route_option')) and args.target not in ('gateware','soc-description'):
+        raise ValueError('AE350 placement/routing options require a hardware generation target')
     if getattr(args, 'synthesize', False) and args.target != 'gateware':
         raise ValueError('AE350 --synthesize requires the gateware target')
     if getattr(args, 'source', None) is not None and args.target != 'payload':
@@ -152,19 +120,19 @@ def execute(store, run, args, dry):
     # A P0 description starts from explicit source inputs, never from 20K current.
     if args.hardware != 'current':
         raise ValueError('AE350 P0 describes source inputs; --hardware selection is pending P1')
-    lock, files = resolve(store, getattr(args, 'reference_root', None))
+    lock, files = resolve(store)
     key = digest(lock)
     run.result.update(machine=AE350, configuration=lock['machine'], blockers=lock['blockers'],
                       board_identity_confirmed=False, resolved_input_key=key)
     write(run.path / 'machine.lock.json', lock)
     found = store.lookup('machine-description', key)
     run.step('machine-description', 'REUSE' if found else 'BUILD', found,
-             reason='exact Board/Machine/vendor/tool input closure')
+             reason='exact repository-owned Board/Machine/tool input closure')
     if not dry and not found:
         snapshot = {name: source_bytes(path) for name, path in files.items()}
         if any(hashlib.sha256(data).hexdigest() != lock['sources'][name] for name, data in snapshot.items()):
             raise ValueError('Machine inputs changed during capture')
-        current_lock, _ = resolve(store, getattr(args, 'reference_root', None))
+        current_lock, _ = resolve(store)
         if current_lock != lock:
             raise ValueError('Machine input inventory changed during capture')
         snapshot['machine.lock.json'] = canonical(lock)

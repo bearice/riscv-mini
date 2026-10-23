@@ -129,6 +129,8 @@ class BoardSense(LiteXModule):
         stopped = Signal(reset=1)
         rise = Signal()
         tick = Signal()
+        admitted=Signal()
+        self.sync += admitted.eq(self.selected & self.ok & self.write)
         self.specials += TempAdc(0, adc_rst_n, req, adc_ready, adc_value)
         self.comb += [
             high.eq(percent * (FAN_PERIOD // 100)),
@@ -136,7 +138,7 @@ class BoardSense(LiteXModule):
             rise.eq(tach_sync & ~tach_prev),
             tick.eq(div == TACH_DIV - 1),
             millideg.eq(raw * 250),
-            start.eq(self.commit & self.selected & self.ok & self.write &
+            start.eq(self.commit & admitted &
                      (self.off == 0x0c) & (self.wdata == 1)),
         ]
         reads = {
@@ -176,7 +178,7 @@ class BoardSense(LiteXModule):
             ready_sync.eq(ready_meta),
             value_meta.eq(adc_value),
             value_sync.eq(value_meta),
-            If(self.commit & self.selected & self.write & self.ok & (self.off == 0x20),
+            If(self.commit & admitted & (self.off == 0x20),
                percent.eq(self.wdata[:7])),
             If(start,
                 busy.eq(1), valid.eq(0), error.eq(0), req.eq(1), guard.eq(0)

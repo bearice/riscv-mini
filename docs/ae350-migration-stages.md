@@ -46,15 +46,27 @@ P3是进入任何正式DMA外设的门槛，不因GPIO或CPU memcpy可用就跳�
 
 ### P6：HDMI视频与图形控制台
 
-交付：单路TX、视频时序/TMDS encoder/serializer、scan/pixel/FIFO/reader/CSR拆分，DDR framebuffer、RGB565/INDEX8、换帧/调色板/回卷按能力启用；恢复BIOS终端显示。640x480/60是建议首模式，720p/60后续单独通过；二者不是用户已指定的分辨率要求。
+目标仅针对 Tang Mega 138K Pro / AE350；20K 的 480×272 LCD 继续使用原实现。用户已将 HDMI TX 接入本机 USB 采集卡，P6 用它作为视频接收端和可重复抓帧的验收设备。
+
+交付：一条 HDMI 连接器输出；DVI兼容 TMDS 视频；时序、encoder/serializer、像素流、FIFO/CDC、DDR reader 与 CSR 分层；先交 RGB565 双缓冲和 BIOS TTY，再按独立能力门禁加入 INDEX8/调色板、回卷及更高分辨率。首版实际模式为640×480、25MHz像素时钟、59.5238Hz源帧率；720p60 是后续独立目标，尚非用户指定要求。scanout reader 与 CPU/DMAC 经事务轮转共用 DDR UI，跨域 FIFO 和带 epoch 的像素流支持连续扫描。
+
+2026-10-23 状态：P6a 测试图30分钟、P6b 双缓冲100次翻页/100次停启、P6c BIOS VT/共享字体TTY采集、P6d audio/mic/CPU/video并发1810秒均通过。完整PnR setup/hold为0/0，最小脉宽裕量+0.037ns。逐帧USB图样检查、源raster计数与USB时间戳分别记录；UVC不独立暴露HDMI输入时序。详见[实现说明](ae350-video.md)与[验收报告](../reports/ae350-video.md)。
+
+实施顺序：
+
+1. **P6a：无 DDR 的发射链路。** 冻结实际使用的一个 HDMI 口、TMDS 差分管脚与电气约束；核对板卡实物/版本、管脚 bank 和 VCCIO。设计 AE350 已用 PLL 与视频像素/5×serializer 时钟的组合，明确 lock、相位和复位释放关系；复用经审阅的 SVO/TMDS 核心和测试图，不照搬其 PLL/CST/SDC。默认先不实现 HDMI 音频、DDC/EDID、CEC 或 HPD。用色条、网格、边缘标记等内建图样驱动 TMDS，不访问 DDR。
+2. **P6b：DDR RGB565 scanout。** 确定专用 scanout reader 如何进入已验证 DDR 通路，采用有界突发与 FIFO 跨入像素域；定义帧起止、stride、对齐、地址范围、back/front 所有权、vblank 原子换帧、underflow 与 address_error 行为。buffer 从经验证可供外设使用的 DDR 池分配；CPU 写完后按 AE350 非一致 DMA 规则 clean，再提交给 reader。先由诊断载荷写已知帧图案并读回 CSR 状态。
+3. **P6c：BIOS 与应用接口。** 为 AE350 定义自己的 video 设备能力、RGB565 framebuffer、present/stop/status HAL；适配 BIOS TTY、清屏/滚屏/ANSI 输出和基础图形呈现。不要沿用 20K LCD CSR 地址或把 480×272 面板几何硬编码成 HDMI 合同。RGB565 稳定后再决定是否启用 INDEX8/调色板、YWRAP。
+4. **P6d：组合验收。** HDMI scanout、CPU DDR 压力和 P5 audio/mic 同时运行；记录 video FIFO 水位、最长 DDR 服务空窗、frames、underflow/address_error、audio underrun/overflow，以及采集端的输入模式和丢帧统计。
 
 通过：
 
-- P6a先不依赖DDR，用测试图确认单路TMDS差分对/通道、pixel与serializer时钟及相位/reset、同步极性和完整边界；显示器连续锁定30分钟，无黑屏/闪点。支持HPD检测时验证拔插恢复；没有实现HPD时明确记录重新锁定/复位流程。
-- 模拟图案的完整framebuffer与输出像素顺序一致；上下边界/stride/双缓冲/帧首提交不混帧；支持的YWRAP/INDEX8分别测试。
-- P6b接入DDR后，目标模式连续30分钟，在CPU内存压力+audio+mic负载下video稳态underflow/address_error=0，audio无underrun；记录最长DDR服务空窗与FIFO最低水位。
-- 独立可用读带宽先达到目标有效像素带宽的1.5倍作为准入参考；最终以组合负载下不饥饿为准。RGB565 640x480/60参考55.296MB/s，720p/60参考165.888MB/s；低分辨率通过不代表720p已通过。
-- 注入一次长时DDR阻塞能按定义丢帧/恢复，无死锁；物理显示色彩、边界、撕裂/闪烁另做目视验收。TMDS视频通过不等于HDMI音频、EDID协商或CEC通过，这些能力需独立声明。
+- P6a 用采集卡确认锁定到约定的输入尺寸/帧率，抓取色条、RGB 顺序、方向和四边界与预期一致；持续采集30分钟无失锁、黑帧或图样异常。先查询采集卡可接收模式；若不接受640×480p60，记录其报告的模式并选两端共同支持的模式，不能把未验证的640×480记为通过。
+- 主机端优先选无压缩 UVC 格式抓帧；若设备只给压缩格式，则按容差检查图形位置/色块并将压缩误差与 FPGA 输出错误分开记录。采集卡验证 TMDS 接收后的图像，不代替示波器对电气眼图/jitter 的测量。
+- DDR 帧图对比检查 RGB565 字节/通道顺序、像素方向、首末行列、stride、合法/非法地址、完整帧长度和换帧边界。双缓冲重复提交至少100次，不出现半帧切换/撕裂；故意制造 FIFO starvation 后按定义输出并在下一帧恢复，无死锁。
+- RGB565 640×480/60 有效像素流量为36.864 MB/s，独立 reader 带宽达到55.296 MB/s作为准入参考；最终仍以组合压力下无饥饿为准。720p/60 RGB565 分别为110.592 MB/s与165.888 MB/s，另开验收，不继承640×480结论。
+- 组合负载连续30分钟，video 稳态 underflow/address_error=0、P5 audio underrun/mic overflow=0；采集端报告无信号中断和异常帧。完整 PnR 的 setup/hold/minimum pulse 通过，新增时钟、CDC、输出约束和实际资源占用有审查结果。
+- BIOS TTY 能在 HDMI 上清屏、滚屏、处理约定的 ANSI 序列并恢复文字画面；图形应用能写非活动帧、present 后显示完整帧。HPD 未实现时记录需要重新配置/复位才能恢复；HDMI 音频、DDC/EDID、CEC 不随视频链路通过自动视为完成。
 
 ### P7：SD、文件系统与BIOS运行环境
 

@@ -24,6 +24,8 @@ AE350_CLOSURE = (
     'gateware/devices/audio/__init__.py',
     'gateware/devices/audio/core.py',
     'gateware/devices/audio/clock.py',
+    'gateware/devices/video/hdmi/ae350_hdmi_phy.v',
+    'gateware/devices/video/hdmi/svo_tmds.v',
     'gateware/devices/microphone/__init__.py',
     'gateware/devices/microphone/core.py',
     'gateware/machines/mega138k_ae350/__init__.py',
@@ -31,11 +33,13 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/clock.py',
     'gateware/machines/mega138k_ae350/cpu.py',
     'gateware/machines/mega138k_ae350/ddr3_ahb.py',
+    'gateware/machines/mega138k_ae350/video_memory.py',
     'gateware/machines/mega138k_ae350/interconnect.py',
     'gateware/machines/mega138k_ae350/machine.json',
     'gateware/machines/mega138k_ae350/peripherals/board_io.py',
     'gateware/machines/mega138k_ae350/peripherals/board_sense.py',
     'gateware/machines/mega138k_ae350/peripherals/audio.py',
+    'gateware/machines/mega138k_ae350/peripherals/video.py',
     'gateware/machines/mega138k_ae350/platform.py',
     'gateware/machines/mega138k_ae350/soc.py',
     'gateware/vendor/gowin_gw5ast/ae350_soc/DDR3_TOP.v',
@@ -55,7 +59,6 @@ AE350_CLOSURE = (
     'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_flash.v',
     'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_soc.v',
     'gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_top.v',
-    'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/PROVENANCE.json',
     'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/ddr3_memory_interface.ipc',
     'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/ddr3_memory_interface.v',
     'gateware/vendor/gowin_gw5ast/gowin_ddr3_400/gowin_pll_ddr3.ipc',
@@ -252,10 +255,15 @@ def implementation_flow(text, seed):
     return flow
 
 
-def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, profile='ddr', pnr_mode='full'):
+def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, profile='ddr', pnr_mode='full',
+        place_option=None, route_option=None):
     if profile not in PROFILES:
         raise ValueError('Unknown AE350 profile: ' + profile)
     files = _inputs(store, hardware=True, profile=profile)
+    options=dict(place_option=2 if place_option is None else place_option,
+                 route_option=2 if route_option is None else route_option)
+    if options['place_option'] not in range(5) or options['route_option'] not in range(3):
+        raise ValueError('invalid AE350 implementation options')
     hashes = {name: source_file_hash(path) for name, path in files.items()}
     from gateware.machines.mega138k_ae350 import address_map as ae350_map
     from scripts.modular.machines.mega138k_ae350.ddr_inputs import DDR_PROFILE
@@ -268,6 +276,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
                   rom_bytes=ae350_map.ROM_SIZE, fabric_sram_bytes=0,
                   ddr_ck_mhz=400,
                   synthesize=synthesize,
+                  implementation_options=options,
                   qualification='PnR-not-board-tested' if synthesize else 'generated-not-synthesized-not-board-tested')
     deps = {'cpu': cpu, 'bootloader': boot}
     config['pnr_mode'] = pnr_mode if synthesize else 'full'
@@ -317,7 +326,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
             (ip_out / name).write_bytes(source_bytes(vendor / name))
         (ip_out / 'gw_itcm_config.v').write_text(
             '`define ITCM_SIZE 13\n`define ITCM_INIT_PATH "%s"\n' % init.as_posix(), encoding='utf-8')
-        soc = DDRSoC(board, soc_sources_dir=ip_out)
+        soc = DDRSoC(board,soc_sources_dir=ip_out,implementation_options=options)
         if seed:
             baseline = work / ('baseline.' + ('p' if seed['mode'] == 'place' else 'pr'))
             baseline.write_bytes((store.path(seed['artifact']) / seed['member']).read_bytes())
@@ -407,7 +416,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     # subdirectory is staged as its own include root, keeping the bare
     # #include names the sources use today.
     runtime = store.root / 'firmware/bsp/mega138k_ae350'
-    payload_dirs = ('runtime', 'dma', 'io', 'audio')
+    payload_dirs = ('runtime', 'dma', 'io', 'audio', 'video')
     for sub in payload_dirs:
         for path in sorted((runtime / sub).iterdir()):
             if path.is_file():
@@ -427,6 +436,10 @@ def payload(store, run, cpu, args, profile, plan=False):
             files['inputs/payload/' + key] = path
             if compile_all and path.suffix in ('.c', '.S'):
                 units.append(key)
+    shared_vt = store.root / 'firmware/bios'
+    project('video-common', [shared_vt / 'vt.c', shared_vt / 'vt.h'], shared_vt, True)
+    shared_font = store.root / 'firmware/common'
+    project('video-font', [shared_font / 'font5x7.h'], shared_font)
     if diagnostic:
         source = store.root / PAYLOAD / 'main.c'
     if directory is not None:
@@ -466,6 +479,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     flags = [*[flag for flag in BASE_FLAGS if not flag.startswith('-O')], optimize,
              '-march=rv32ima_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none',
+             '-DVT_COLS=80', '-DVT_ROWS=30',
              *['-D' + value for value in getattr(args, 'define', [])], *extra_flags]
     config = dict(schema=1, machine='mega138k_ae350', purpose='AE350-memory-diagnostics' if diagnostic else 'AE350-application',
                   binary='outputs/payload.bin', translation_units=units, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, tools=identity(env), flags=flags,
@@ -501,6 +515,7 @@ def payload(store, run, cpu, args, profile, plan=False):
                     destination.write_bytes(source_bytes(path))
         flags += ['-I' + str(staged / 'application')]
         flags += ['-I' + str(staged / sub) for sub in payload_dirs]
+        flags += ['-I' + str(staged / sub) for sub in ('video-common', 'video-font')]
         flags += ['-I' + str(staged / ('include%d' % i)) for i in range(len(getattr(args, 'include_dir', [])))]
         # Most payloads do not use the display identity. Avoid invalidating
         # runtime objects merely because an unrelated source changed the key.
@@ -550,7 +565,8 @@ def build(store, run, args, cpu, board, plan):
     artifact = boot
     if args.target != 'bootloader' and boot:
         artifact = rtl(store, run, cpu, boot, board, args.target, plan, getattr(args, 'synthesize', False), profile,
-                       getattr(args, 'pnr_mode', 'full'))
+                       getattr(args, 'pnr_mode', 'full'),
+                       getattr(args,'place_option',None),getattr(args,'route_option',None))
     elif args.target != 'bootloader':
         run.step(args.target, 'BUILD', reason='requires the platform bootloader output')
     if not plan and artifact:

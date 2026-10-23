@@ -40,8 +40,8 @@ DMA buffer/长度必须完整覆盖独占的 32 字节 cache line，位于有效
 ## 验收入口
 
 ```sh
-python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --reference-root <vendor-project>
-python scripts/mini.py build payload --machine mega138k_ae350 --reference-root <vendor-project> \
+python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize
+python scripts/mini.py build payload --machine mega138k_ae350 \
   --source firmware/diagnostics/mega138k_ae350/ae350_audio_suite.c --helper string \
   --define AE350_AUDIO_SECONDS=1800
 python scripts/mini.py board audio-suite --build <gateware-result.json> --payload <payload-result.json> \

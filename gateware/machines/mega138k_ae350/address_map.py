@@ -40,6 +40,16 @@ WS2812_BASE = 0xF8070000
 IO_BASE = 0xF8080000
 AUDIO_BASE = 0xF8010000
 MIC_BASE = 0xF8020000
+VIDEO_BASE = 0xF8030000
+VIDEO_ID = 0xAE350501
+VIDEO_CAP = 15  # RGB565, double buffer, vblank commit, built-in pattern
+VIDEO_REGS = dict(CONTROL=0x0c, STATUS=0x10, IRQ_STATUS=0x14, IRQ_ENABLE=0x18,
+    LAST_ERROR=0x1c, BASE0=0x20, BASE1=0x24, STRIDE=0x28, COMMIT=0x2c,
+    FRAMES=0x30, UNDERFLOWS=0x34, ADDRESS_ERROR=0x38, TIMEOUT_ERROR=0x3c,
+    ACTIVE_BASE=0x40, PIXEL_HZ=0x44, GEOMETRY=0x48, EPOCH=0x4c, FIFO_MIN=0x50,
+    MAX_WAIT=0x54, READS=0x58, CPU_COMMANDS=0x5c, MISSING=0x60, SEQUENCE=0x64,
+    ACTIVE_SEQUENCE=0x68, CANCELLED=0x6c, ERRORS=0x70, CLEAR_ERRORS=0x74,
+    REQUEST_OVERFLOW=0x78)
 AUDIO_DATA = 0xE8000000
 MIC_DATA = 0xE8010000
 AUDIO_REQ = 2
@@ -92,12 +102,13 @@ CAP_WS2812 = 64
 CAP_SENSE = 128
 CAP_AUDIO = 256
 CAP_MIC = 512
+CAP_VIDEO = 1024
 FLAG_PRESENT = 1
 FLAG_DATA = 2
 FLAG_DMA = 4
 FLAG_IRQ = 8
 SYSINFO_CAP = (CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED |
-               CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE | CAP_AUDIO | CAP_MIC)
+               CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE | CAP_AUDIO | CAP_MIC | CAP_VIDEO | CAP_FABRIC_READER)
 WS2812_ID = 0xAE350301
 IO_ID = 0xAE350302
 WS2812_CAP = 3  # wired controller present
@@ -150,7 +161,9 @@ AUDIO_EP = (
 MIC_EP = (
     MIC_ID, MIC_BASE, 0x1000, MIC_DATA, 4, ABI_VERSION,
     EXT_INT_MIC | (MIC_REQ << 8) | ((FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16), MIC_DMA_SEL)
-DEVICE_COUNT = 7
+VIDEO_EP = (VIDEO_ID, VIDEO_BASE, 0x1000, 0, 0, ABI_VERSION,
+            (FLAG_PRESENT << 16), 0)
+DEVICE_COUNT = 8
 STATUS_ADDR = DDR_CSR_BASE
 CALIB_CYCLES_ADDR = DDR_CSR_BASE + 4
 READ_COUNT_ADDR = DDR_CSR_BASE + 0x18
@@ -172,7 +185,7 @@ WINDOWS = (
     ('ilm', ILM_BASE, ILM_SIZE, 'hard-local-memory'),
     ('dlm', DLM_BASE, DLM_SIZE, 'hard-local-memory'),
     ('platform-csr', CSR_BASE, CSR_SIZE, 'implemented'),
-    ('periph-csr', 0xF8010000, 0x80000, 'audio-mic-ws2812-board-io'),
+    ('periph-csr', 0xF8010000, 0x80000, 'audio-mic-video-ws2812-board-io'),
     ('ext-ahb', EXT_AHB_BASE, EXT_AHB_SIZE, 'audio-mic-loopback-data'),
 )
 SUBRANGES = (
@@ -189,6 +202,10 @@ def interface():
     from gateware.boards.mega138k_pro import io_map
     binding = io_map.gpio_binding()
     return dict(cpu='ae350-rv32imac', image_version=1, load=DDR_CODE,
+        video=dict(csr=VIDEO_BASE, width=640, height=480, format='RGB565',
+                   pixel_hz=25000000, serializer_hz=125000000,
+                   pins=io_map.video_binding(), commit='vblank-snapshot',
+                   memory='round-robin-single-outstanding-DDR3-UI', abi=ABI_VERSION, registers=VIDEO_REGS),
         audio=dict(pins=io_map.audio_binding(), sample_rate=48000,
             tx=dict(csr=AUDIO_BASE, data=AUDIO_DATA, irq=EXT_INT_AUDIO, request=AUDIO_REQ,
                     selector=AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=ABI_VERSION),
@@ -207,7 +224,7 @@ def interface():
         loader=dict(max_bytes=DDR_CODE_MAX, stack_top=PAYLOAD_STACK_TOP),
         uart=dict(base=0xf0300000, baud=115200),
         capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1',
-                          dmac='exported-unproven', ext_ahb='loopback', fabric_reader='unsupported',
+                          dmac='exported-unproven', ext_ahb='loopback', fabric_reader='RGB565-scanout',
                           board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core',
                           fan='pwm-percent-25khz', temperature='die-quarter-degree'))
 
@@ -220,6 +237,9 @@ def image_abi():
 
 def check():
     errors = []
+    if len(set(VIDEO_REGS.values())) != len(VIDEO_REGS) or any(
+            off < 0x0c or off >= 0x1000 or off % 4 for off in VIDEO_REGS.values()):
+        errors.append('invalid video register layout')
     for spans in ([(n, b, s) for n, b, s, _ in WINDOWS], SUBRANGES):
         spans = sorted(spans, key=lambda span: span[1])
         for name, base, size in spans:
@@ -284,6 +304,7 @@ def c_header():
                  if name.isupper() and isinstance(value, int)}
     return ('#pragma once\n/* Generated from ae350_map.py. */\n' +
         ''.join('#define AE350_%s 0x%xu\n' % item for item in sorted(constants.items())) +
+        ''.join('#define AE350_VIDEO_%s 0x%xu\n' % item for item in sorted(VIDEO_REGS.items())) +
         '#define AE350_IMAGE_ABI 0x%08xu\n' % image_abi())
 
 

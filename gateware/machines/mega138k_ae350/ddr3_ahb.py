@@ -128,6 +128,7 @@ class DDR3AHB(LiteXModule):
         self.recovering = Signal()
         self.recovery_failed = Signal()
         self.ui_idle_ddr = Signal()
+        self.ui_pending_ddr = Signal()
         self.ui_idle_sys = Signal()
         self.busy = Signal()
         # Diagnostics read through the ROM status window by the CPU JTAG.
@@ -175,7 +176,7 @@ class DDR3AHB(LiteXModule):
         addr = Signal(32)
         is_write = Signal()
         tsize = Signal(3)
-        lifetime = Signal(32)
+        lifetime = Signal(max=response_timeout + 2)
         resp_data = Signal(64)
         resp_error = Signal()
         resp_hold = Signal()
@@ -271,6 +272,10 @@ class DDR3AHB(LiteXModule):
         must_flush = Signal()
         retire = Signal()
         commit_addr = Signal(32)
+        same_control = Signal()
+        same_control.attr.add(('syn_keep', 1))
+        self.comb += same_control.eq(_equal(Cat(peek_burst, peek_size, peek_prot),
+                                                Cat(burst_type, burst_size, burst_prot)))
         # An aligned beat fits in one data-bus lane of the 32-byte line.
         # Shift only inside that lane; a 32-bit barrel fans out across the buffer.
         lane_bytes = bus.data_width // 8
@@ -288,14 +293,12 @@ class DDR3AHB(LiteXModule):
             beat_lane.eq(rel[lane_shift:lane_shift + (nlanes - 1).bit_length()]),
             same_line.eq(self.wbuf_valid & _equal(wbuf_block, rel[5:32])),
             write_merge.eq(is_write & chain & (peek_trans == 3) & peek_write
-                & _equal(peek_addr, expected) & (peek_burst == burst_type)
-                & (peek_size == burst_size) & (peek_prot == burst_prot)
+                & _equal(peek_addr, expected) & same_control
                 & _equal(peek_rel[5:32], rel[5:32])),
             write_busy.eq(is_write & chain & (peek_trans == 1)),
             must_flush.eq(self.wbuf_valid
                 & ~((peek_trans == 3) & peek_write & chain & _equal(peek_addr, expected)
-                    & (peek_burst == burst_type) & (peek_size == burst_size)
-                    & (peek_prot == burst_prot) & _equal(peek_rel[5:32], wbuf_block))
+                    & same_control & _equal(peek_rel[5:32], wbuf_block))
                 & ~((peek_trans == 1) & chain)),
             commit_addr.eq(self.base + Cat(Constant(0, 5), wbuf_block)),
         ]
@@ -436,14 +439,24 @@ class DDR3AHB(LiteXModule):
                 ),
             ]
 
+        decode_saved = Signal()
+
         def accept_bus():
-            return accept(bus.trans, bus.addr, bus.write, bus.size, bus.burst, bus.prot,
-                          bad, in_range, aligned, sequential, next_address, burst_continue, 0)
+            # Separate phase ownership from validation and burst arithmetic.
+            # This also keeps flush/response decisions off the metadata enables.
+            return [
+                NextValue(owned_trans, bus.trans),
+                NextValue(owned_addr, bus.addr),
+                NextValue(owned_write, bus.write),
+                NextValue(owned_size, bus.size),
+                NextValue(owned_burst, bus.burst),
+                NextValue(owned_prot, bus.prot),
+                NextValue(decode_saved, 0),
+                NextState("DECODE"),
+            ]
 
         def accept_owned():
-            return accept(owned_trans, owned_addr, owned_write, owned_size, owned_burst,
-                          owned_prot, o_bad, o_in_range, o_aligned, o_sequential, o_next,
-                          o_continue, owned_write)
+            return [NextValue(decode_saved, owned_write), NextState("DECODE")]
 
         def capture():
             # The registered decoder presents an accepted transfer for one cycle.
@@ -462,6 +475,12 @@ class DDR3AHB(LiteXModule):
 
         fsm = FSM(reset_state="ADDRESS")
         self.fsm = fsm
+        fsm.act("DECODE",
+            *accept(owned_trans, owned_addr, owned_write, owned_size, owned_burst,
+                    owned_prot, o_bad, o_in_range, o_aligned, o_sequential, o_next,
+                    o_continue, decode_saved),
+            ready_d.eq(0),
+        )
         pending = Signal()          # a data phase was accepted but never served
         # A decoder can accept the first address while this slave is draining
         # in the background (the preceding transfer belonged to another slave).
@@ -470,7 +489,7 @@ class DDR3AHB(LiteXModule):
         incoming = accepted_i if accepted_i is not None else (bus.trans[1] & bus.readyout)
         wdata64 = Signal(64)
         self.comb += wdata64.eq(bus.wdata)
-        drain = Signal(32)
+        drain = Signal(max=max(10, 4 * ui_timeout + 2))
         # A closing beat reports the failure as its own HRESP. An idle flush
         # has already acknowledged its beats, so the next access reports it.
         def note_fault():
@@ -638,11 +657,12 @@ class DDR3AHB(LiteXModule):
                         ready_d.eq(address_level(owned | bus.trans[1], pending)),
                     ),
                 ).Else(
-                    # Latch the whole block, then the beat lane, in this cycle.
-                    # A lost calibration or an idle master must not publish it.
+                    # Data can be captured even when the line will be invalid.
+                    # Keep live HTRANS/end_burst off the 256-bit register enable;
+                    # only the validity bit decides whether later beats use it.
+                    NextValue(rline_data, resp.dout[:256]),
+                    NextValue(rline_block, rel[5:32]),
                     If(ready_i & ~end_burst,
-                        NextValue(rline_data, resp.dout[:256]),
-                        NextValue(rline_block, rel[5:32]),
                         NextValue(rline_valid, 1),
                     ).Else(
                         NextValue(rline_valid, 0),
@@ -795,7 +815,7 @@ class DDR3AHB(LiteXModule):
                       recorder=(self.rec_w, self.rec_w_mask, self.rec_w_data,
                                 self.rec_w_n, self.rec_r, self.rec_r_blk,
                                 self.rec_r_sel, self.rec_r_n),
-                      idle_out=self.ui_idle_ddr, data_width=bus.data_width))
+                      idle_out=self.ui_idle_ddr, data_width=bus.data_width, pending_out=self.ui_pending_ddr))
         self.specials += MultiReg(self.ui_idle_ddr, self.ui_idle_sys, "sys")
 
 
@@ -806,7 +826,7 @@ class _UIEngine(LiteXModule):
     single-cycle DDR pulses, so this engine is instantiated inside a
     ``ClockDomainsRenamer`` that puts it in the ``ddr`` domain.
     """
-    def __init__(self, ui, req, resp, base, ui_timeout, recorder=None, idle_out=None, data_width=64):
+    def __init__(self, ui, req, resp, base, ui_timeout, recorder=None, idle_out=None, data_width=64, pending_out=None):
         is_write = Signal()
         uisize = Signal(3)
         uiaddr = Signal(32)
@@ -815,8 +835,10 @@ class _UIEngine(LiteXModule):
         line_data = Signal(256)
         line_mask = Signal(32)
         rd_block = Signal(256)
-        counter = Signal(24)
+        counter = Signal(max=ui_timeout + 2)
         self.state = uistate = FSM(reset_state="IDLE")
+        if pending_out is not None:
+            self.comb += pending_out.eq(uistate.ongoing('SEND'))
         wr_bytes = Signal(32)
         offset = Signal(32)
         # beat index inside the 32-byte transfer, and its bit shift (0/64/128/192)

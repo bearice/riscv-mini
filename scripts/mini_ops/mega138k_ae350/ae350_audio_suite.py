@@ -1,21 +1,28 @@
 """Run real-time audio without halting the CPU until the final UART marker."""
 import time
 import json
+import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from modular.storage import Store, file_hash
 from mini_ops.common import Operation
 from mini_ops.mega138k_ae350.ae350 import candidate
 from mini_ops.mega138k_ae350.ae350_payload import resolve_payload, payload_file
-from mini_ops.mega138k_ae350.ae350_audio_contract import NAMES, judge, judge_routes
+from mini_ops.mega138k_ae350.ae350_audio_contract import NAMES, judge, judge_routes, judge_video
 from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 def perform(args):
     op=Operation('ae350-audio-suite'); hardware=None
+    video_future=video_pool=None
+    video_cancel=threading.Event()
+    video_device=getattr(args,'video_capture_device',None)
     print('Operation logs:',op.path,flush=True)
     try:
         if not 5<=args.soak_seconds<=3600 or not args.soak_seconds+10<=args.timeout<=4000:
             raise ValueError('audio budget needs 5..3600 seconds and timeout >= soak+10, <=4000')
         if args.qualify_routes and args.capture_device: raise ValueError('route qualification has no analog playback')
+        if args.qualify_routes and video_device: raise ValueError('route qualification has no video stress payload')
         root,ref,build_id=candidate(args.build)
         store=Store();manifest=store.get(ref)
         boot=store.get(manifest['dependencies']['bootloader'])
@@ -37,6 +44,26 @@ def perform(args):
         op.record('banner',text=wait_loader(s,build_id,30))
         image=ae350_image.build(payload);(op.path/'image.bin').write_bytes(image)
         s.upload(image,load=ae350_image.LOAD,abi=ae350_image.abi_tag())
+        if video_device:
+            from mini_ops.mega138k_ae350.ae350_video_suite import capture
+            ffmpeg=shutil.which('ffmpeg')
+            if not ffmpeg:raise ValueError('video capture requires ffmpeg in PATH')
+            video_op=Operation('ae350-audio-video-capture')
+            video_op.report.update(artifact=ref,payload_artifact=pref,parent_operation=str(op.path),
+                capture_device=video_device,flash_written=False,
+                scope='every delivered USB frame: RGB/CMY panels; static frame repetition is not detected')
+            op.report['video_capture_operation']=str(video_op.path)
+            op.save()
+            def record_video():
+                try:
+                    capture(video_op,video_device,args.soak_seconds+30,ffmpeg,stop_event=video_cancel,
+                            input_format='mjpeg',fps=60)
+                    video_op.report['passed']=True
+                except Exception as error:
+                    video_op.report.update(passed=False,error=str(error));raise
+                finally:video_op.save()
+            video_pool=ThreadPoolExecutor(max_workers=1)
+            video_future=video_pool.submit(record_video)
         started=time.monotonic()
         s.until(b'AE350 AUDIO ',30)
         marker=s.until(b'\r\n',5).strip()
@@ -66,6 +93,7 @@ def perform(args):
                 chunk.extend(data)
                 if data==b'\n':
                     print(chunk.decode(errors='replace').strip(),flush=True);chunk.clear()
+                    if video_future is not None and video_future.done():video_future.result()
             s.until(b'AE350 AUDIO DONE\r\n',max(1,args.timeout-(time.monotonic()-started)),on_chunk=progress)
             stream_seconds=time.monotonic()-stream_started
         elif marker!=b'DONE': raise RuntimeError('unexpected audio UART marker '+repr(marker))
@@ -100,12 +128,29 @@ def perform(args):
         pc=cpu.register(0x7b1)
         if not amap.DDR_CODE<=pc<amap.DDR_CODE+len(payload): errors.append('PC outside audio payload')
         if cpu.register(0x342): errors.append('unexpected mcause')
+        if video_device:
+            raw_video=cpu.read_memory(amap.RESULTS_BASE+96*4,32*4)
+            v=[int.from_bytes(raw_video[i:i+4],'little') for i in range(0,128,4)]
+            op.record('video-stress',words=v)
+            errors.extend(judge_video(v,args.soak_seconds))
+            if marker==b'STREAM' and v[19]:
+                delta=(v[4]-v[19])&0xffffffff
+                op.record('video-source-rate',frames=delta,uart_window_seconds=stream_seconds,
+                    observed_frame_rate_hz=delta/stream_seconds,
+                    method='FPGA raster counter delta / host monotonic UART STREAM-to-DONE; includes stop/report overhead')
         op.record('results',values=dict(zip(NAMES,words)),elapsed_seconds=elapsed,pc=hex(pc),
                   failures=errors,passed=not errors)
         if marker==b'STREAM' and args.soak_seconds>=30:
             op.record('serializer-rate',frames=words[12],uart_window_seconds=stream_seconds,
                       observed_frame_rate_hz=words[12]/stream_seconds,
                       method='serializer frame counter / host monotonic UART STREAM-to-DONE; includes stop/report overhead')
+        hardware.resume()
+        if video_future is not None:
+            if errors:video_cancel.set()
+            try:
+                video_future.result(timeout=max(10,args.soak_seconds+60-(time.monotonic()-started)))
+            except Exception:
+                if not errors:raise
         hardware.close();hardware=None
         op.report.update(passed=not errors,phase='dma-route-qualification' if args.qualify_routes else 'audio-digital-and-requested-capture')
         op.save()
@@ -115,4 +160,6 @@ def perform(args):
     except Exception as error:
         op.report.update(passed=False,error=str(error));op.save();raise
     finally:
+        if video_future is not None and not video_future.done():video_cancel.set()
+        if video_pool is not None:video_pool.shutdown(wait=True,cancel_futures=True)
         if hardware is not None: hardware.close()

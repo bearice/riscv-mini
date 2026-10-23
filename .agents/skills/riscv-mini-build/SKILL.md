@@ -5,6 +5,10 @@ description: 在 TangPrimer-20K/riscv-mini 创建最小或完整系统构建、�
 
 # 构建与 PnR
 
+## 铁律：重复构建必须使用相同 workspace
+
+同一 machine/target 的重复构建必须复用同一个 workspace，包括修改源码、调整参数、时序收敛、失败重试和复验。已有 `--workspace` 就沿用原值，未指定时始终使用 `default`。严禁按尝试次数、阶段、时间戳、用途或参数组合更换 workspace；严禁为并行重试另开 workspace。重复构建在原工作区串行执行，保留编译器、Ninja 和 Gowin 缓存。使用 `--purpose` 和自动生成的 run 收据区分尝试，不能用 workspace 名充当运行编号。
+
 在 riscv-mini 仓库根目录先运行 `nix develop`，使用 flake 管理的 Python、依赖和 xPack RISC-V 工具链；Linux/NixOS 使用 `python` 或 `.venv/bin/python`。Windows PowerShell 使用 `.venv/Scripts/python.exe`。先确认 Git 状态与操作对象；命令中的尖括号为本次实际值，参数查对应脚本 `--help`。项目外调用时解析用户级 skill junction 的 Target，其上三级为仓库根目录。
 
 构建身份与参数读取 `docs/build-artifacts.md`。

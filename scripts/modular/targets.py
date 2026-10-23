@@ -31,8 +31,6 @@ def add_targets(parser):
         if name in CORE or name == 'payload':
             target.add_argument('--ae350-profile', choices=('ddr',), default='ddr',
                                 help='AE350 DDR memory platform')
-        if name in CORE or name in ('machine-description', 'payload'):
-            target.add_argument('--reference-root', type=Path, help='AE350 vendor input directory; archived by content, never an unidentified dependency')
         if name == 'machine-description':
             continue
         if name in CORE:
@@ -69,8 +67,6 @@ def execute(store, run, args):
         raise ValueError('--pnr-mode requires --synthesize')
     if machine != machines.PRIMARY:
         return machines.execute(store, run, args, dry)
-    if getattr(args, 'reference_root', None):
-        raise ValueError('--reference-root requires --machine ' + machines.AE350)
     if args.target == 'machine-description':
         raise ValueError('P0 machine-description requires --machine ' + machines.AE350
                          + '; 20K uses its existing soc-description')

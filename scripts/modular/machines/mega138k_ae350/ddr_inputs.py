@@ -1,8 +1,8 @@
 """P2 DDR3 machine profile: the single place where geometry, timings and the
 window contract live for both the build record and the board operation.
 
-Values are copied from gateware/machines/mega138k_ae350/machine.json (which cites the
-vendor IP configuration, the H5TQ4G63EFR geometry and the vendor DDR test).
+Values are copied from gateware/machines/mega138k_ae350/machine.json, which is the
+repository-owned geometry, timing, and DDR interface contract.
 Changing anything here changes the gateware build key (the module is part of
 the hashed source closure).
 """

@@ -36,6 +36,20 @@ def judge(words, seconds):
     return errors
 
 
+def judge_video(words, seconds):
+    if len(words)!=32:return ['invalid video stress result length']
+    errors=[]
+    if words[0]!=0x56490002 or words[1] or words[2:4]!=[640,480]:
+        errors.append('video stress schema/setup failed')
+    if any(words[i] for i in (5,6,7,8,9,14,15)):
+        errors.append('video error/underflow/guard counter')
+    if words[4]<seconds*58 or words[12]<seconds*58*19200 or not words[13]:
+        errors.append('continuous video read/CPU workload missing')
+    if words[16] not in (0x01000000,0x01100000) or words[17]!=1 or words[18]:
+        errors.append('video inactive or pending at completion')
+    return errors
+
+
 def judge_routes(words, loopback):
     if len(words)!=32 or len(loopback)!=4: return ['invalid routing result length']
     errors=[]

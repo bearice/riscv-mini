@@ -29,11 +29,12 @@ def parser():
         ('dma-suite','AE350 DMA: upload the DMA suite and judge its result contract'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
         ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
+        ('video-suite','AE350 HDMI: SRAM test card and USB video capture'),
         ('ae350-upload','AE350 memory: autonomous ROM POST then UART image upload and execution'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -88,6 +89,14 @@ def parser():
             op.add_argument('--timeout', type=int, default=120,
                             help='UART completion deadline, including warmup (1..4000 s)')
             op.add_argument('--capture-device', help='explicit host line input; hw:0,0 on Linux')
+            op.add_argument('--video-capture-device', help='also verify HDMI panels on this V4L2 video node')
+        if name == 'video-suite':
+            op.add_argument('--capture-device', required=True, help='Linux V4L2 video node, for example /dev/video0')
+            op.add_argument('--soak-seconds', type=int, default=10, help='test-card observation duration (1..3600 s)')
+            op.add_argument('--payload', help='optional RGB565/TTY diagnostic payload build result')
+            op.add_argument('--cpu-jtag-location', help='required to judge a loaded video payload after capture')
+            op.add_argument('--pattern', choices=('panels', 'console'), default='panels')
+            op.add_argument('--expected-frame', type=Path, help='console: renderer-generated raw 640x480 RGB565 frame')
         if name == 'ddr-suite':
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--cpu-jtag-location', required=True)

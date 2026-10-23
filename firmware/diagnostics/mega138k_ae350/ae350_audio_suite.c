@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "ae350_audio.h"
 #include "ae350_address_map.h"
+#ifdef AE350_VIDEO_STRESS
+#include "ae350_video_fixture.h"
+#endif
 #ifndef AE350_AUDIO_SECONDS
 #define AE350_AUDIO_SECONDS 5u
 #endif
@@ -67,6 +70,22 @@ static void finish(unsigned error) {
     }
     int tx_rc=audio_tx_stop(), rx_rc=mic_rx_stop();
     if (!error && (tx_rc||rx_rc)) out[ERROR]=0x100u|(uint32_t)(tx_rc?tx_rc:rx_rc);
+#ifdef AE350_VIDEO_STRESS
+    struct ae350_video_status video;
+    if(ae350_video_status(&video))out[97]=1;
+    else {
+        out[98]=video.width;out[99]=video.height;out[100]=video.frames;
+        out[101]=video.underflows;out[102]=video.missing;out[103]=video.address_error;
+        out[104]=video.timeout_error;out[105]=video.errors;out[106]=video.fifo_min;
+        out[107]=video.max_wait;out[108]=video.reads;out[109]=video.cpu_commands;
+        out[110]=video.request_overflow;out[112]=video.active_base;
+        out[113]=video.enabled;out[114]=video.pending;
+        out[111]=out[97]?1u:(unsigned)video_fixture_guards();
+        if(video.underflows || video.missing || video.address_error || video.timeout_error ||
+           video.errors || video.request_overflow || out[111])out[97]=2;
+    }
+    if(out[97] && !out[ERROR])out[ERROR]=0x200u|out[97];
+#endif
     out[STAGE]=DONE;
     __asm__ volatile("fence":::"memory");
     puts("AE350 AUDIO DONE\r\n");
@@ -81,6 +100,11 @@ int main(void) {
     uint32_t cache_control;
     __asm__ volatile("csrr %0, 0x7ca":"=r"(cache_control));
     out[R27]=cache_control;
+#ifdef AE350_VIDEO_STRESS
+    for(unsigned i=96;i<128;i++)out[i]=0;
+    out[96]=0x56490002u;out[97]=(unsigned)video_fixture_init();
+    if(out[97])finish(0x200u|out[97]);
+#endif
     if (AE350_AUDIO_SECONDS<5u || AE350_AUDIO_SECONDS>3600u) finish(1);
     if (audio_tx_init() || mic_rx_init(0)) finish(2);
     out[SAMPLE_RATE]=audio_tx_info(AUDIO_RATE);
@@ -234,6 +258,9 @@ int main(void) {
     if(audio_tx_dma_start(0,TXBUF,BLOCK)||mic_rx_dma_start(1,RXBUF,BLOCK))finish(21);
     start=cycles();
     while(audio_tx_info(AUDIO_LEVEL)<256u)if(expired(start))finish(22);
+#ifdef AE350_VIDEO_STRESS
+    out[115]=W(AE350_VIDEO_BASE+VIDEO_FRAMES);
+#endif
     puts("AE350 AUDIO STREAM\r\n");
     if(audio_tx_start(0))finish(23);
     uint32_t last_frames=0,last_progress=cycles(),next_tick=480000u,window_peak=0;

@@ -1,5 +1,9 @@
 # Repository workflow
 
+## Build workspace iron rule
+
+Repeated builds of the same machine/target MUST reuse the SAME workspace. This includes source edits, parameter tuning, timing closure, failed-build retries and verification rebuilds. Keep the existing `--workspace` value; use `default` when none was selected. NEVER create a new workspace name per attempt, phase, timestamp, purpose or parameter combination. Preserve the workspace and its compiler/Ninja/Gowin caches between builds. Use `--purpose` and automatic run receipts to distinguish attempts. Serialize repeated builds in that workspace; do not create new workspaces just to run retries concurrently.
+
 For basic operations (find/build artifacts, observe/recover the board, RAM run, persistent update, verification), start with `scripts/mini.py --help` and [the task guide](scripts/README.md). Use its operation workflows rather than composing programmer/UART calls or writing temporary probes. Operation and test receipts live in `build/runs/`; historical `build/operations/` is retained.
 
 For BIOS-only builds, component reuse, environment discovery, portable locks or source replay, read [component builds](docs/component-builds.md). Use `mini.py build bios --hardware current` to retain selected hardware; `plan` explains reuse. New candidates keep `current` unchanged. All builds use `mini.py build <target>` and `mini.py plan <target>`, including hardware generation, CPU and upstream OS/payload targets. Do not add standalone build entry points or prepare/record wrappers. Historical recipes execute their own preserved checkout through `mini.py builds reproduce`.

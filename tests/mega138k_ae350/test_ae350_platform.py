@@ -45,6 +45,12 @@ def apb(cpu, write, addr, data=0, strb=0xf):
     yield cpu.apb_enable.eq(1)
     yield
     yield
+    for _ in range(16):
+        if (yield cpu.apb_ready):
+            break
+        yield
+    else:
+        raise AssertionError('APB ready timeout')
     err = yield cpu.apb_slverr
     value = yield cpu.apb_data
     ready = yield cpu.apb_ready
@@ -75,7 +81,9 @@ def main():
         err, value, _ = yield from apb(cpu, False, amap.SYSINFO_BASE)
         check('sysinfo id unchanged', err == 0 and value == amap.SYSINFO_ID, hex(value))
         err, value, _ = yield from apb(cpu, False, amap.SYSINFO_BASE + 0x08)
-        check('fabric reader is not advertised', err == 0 and (value & amap.CAP_FABRIC_READER) == 0, hex(value))
+        check('HDMI fabric reader capability', err == 0 and
+              (value & (amap.CAP_FABRIC_READER | amap.CAP_VIDEO)) ==
+              (amap.CAP_FABRIC_READER | amap.CAP_VIDEO), hex(value))
         err, value, _ = yield from apb(cpu, False, amap.SYSINFO_BASE + 0x40)
         check('loopback device entry', err == 0 and value == amap.LOOPBACK_ID, hex(value))
         for base, identity, table, selector_off, selector in (

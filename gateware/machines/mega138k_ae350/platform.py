@@ -163,7 +163,8 @@ class LoopbackFifo(LiteXModule):
 class Ae350Platform(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics):
+    def __init__(self, cpu, diagnostics, video=None):
+        self.video = video
         fifo_bus = AHBInterface(data_width=32, address_width=32)
         err_bus = AHBInterface(data_width=32, address_width=32)
         self.fifo = LoopbackFifo(fifo_bus)
@@ -175,7 +176,7 @@ class Ae350Platform(LiteXModule):
             (amap.MIC_DATA, 0x10000, self.audio.rx_bus),
             (amap.LOOPBACK_DATA, 4, fifo_bus),
             (0, 1 << 32, err_bus),
-        ], require_sel=True)
+        ], require_sel=True, registered=True)
         self.irq_enable = Signal()
         self.irq_pending = Signal()
         self.req_enable = Signal()
@@ -197,19 +198,24 @@ class Ae350Platform(LiteXModule):
         self.board = FabricBoard()
         self.sense = BoardSense()
         wait = Signal()
+        access_q = Signal()
         addr_q = Signal(32)
         wdata_q = Signal(32)
         write_q = Signal()
         strb_q = Signal(4)
         read_data = Signal(32)
         error = Signal()
+        error_q = Signal()
+        self.sync += error_q.eq(error)
         error.attr.add(("syn_keep", 1))
         off = Signal(12)
         commit = Signal()
         self.comb += [
             cpu.apb_ready.eq(~wait),
             off.eq(addr_q[:12]),
-            commit.eq(cpu.apb_select & cpu.apb_enable & wait),
+            # The hard APB outputs arrive late in the fabric cycle. Register
+            # the access phase before driving wide device write-enable cones.
+            commit.eq(access_q & wait),
             self.fifo.req_enable.eq(self.req_enable),
             # The pulse catcher must gate REQ as well as the counter. Otherwise
             # two CPU-clock ACK pulses can merge before the next fabric edge.
@@ -240,77 +246,85 @@ class Ae350Platform(LiteXModule):
         sense = addr_q[12:] == (amap.SENSE_BASE >> 12)
         audio = addr_q[12:] == (amap.AUDIO_BASE >> 12)
         mic = addr_q[12:] == (amap.MIC_BASE >> 12)
+        video_page = addr_q[12:] == (amap.VIDEO_BASE >> 12)
+        video_ok = video.ok if video is not None else 0
+        video_rdata = video.rdata if video is not None else 0
         legal = (addr_q[:2] == 0) & (~write_q | (strb_q == 0xf))
         sys_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24,
                                *range(0x40, 0x40 + 32, 4), *range(0x60, 0x60 + 32, 4),
                                *range(0x80, 0x80 + 32, 4), *range(0xa0, 0xa0 + 32, 4),
-                               *range(0xc0, 0x120, 4)))
+                               *range(0xc0, 0x140, 4)))
         irq_ro = _onehot(off, (0x00, 0x04, 0x08, 0x10, 0x20))
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
+        sys_data, irq_data, dma_data, ddr_data = (Signal(32) for _ in range(4))
         self.comb += [
-            read_data.eq(0),
-            error.eq(1),
-            If(legal & sysinfo & ~write_q & sys_ro,
-                error.eq(0),
-                Case(off, {
-                    0x00: read_data.eq(amap.SYSINFO_ID),
-                    0x04: read_data.eq(amap.ABI_VERSION),
-                    0x08: read_data.eq(amap.SYSINFO_CAP),
-                    0x20: read_data.eq(amap.DEVICE_COUNT),
-                    0x24: read_data.eq(32),
-                    **{0x40 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.LOOPBACK_EP)},
-                    **{0x60 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.DMAC_EP)},
-                    **{0x80 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.WS2812_EP)},
-                    **{0xa0 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.IO_EP)},
-                    **{0xc0 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.SENSE_EP)},
-                    **{0xe0 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.AUDIO_EP)},
-                    **{0x100 + 4 * i: read_data.eq(value) for i, value in enumerate(amap.MIC_EP)},
-                })).Elif(legal & audio & self.audio.tx_ok,
-                error.eq(0), read_data.eq(self.audio.tx_rdata)
-                ).Elif(legal & mic & self.audio.rx_ok,
-                error.eq(0), read_data.eq(self.audio.rx_rdata)
-                ).Elif(legal & sense & self.sense.ok,
-                error.eq(0), read_data.eq(self.sense.rdata)
-                ).Elif(legal & ws & self.board.ws_ok,
-                error.eq(0), read_data.eq(self.board.ws_rdata)
-                ).Elif(legal & board & self.board.io_ok,
-                error.eq(0), read_data.eq(self.board.io_rdata)
-                ).Elif(legal & irq & (
-                    (~write_q & (irq_ro | (off == 0x14) | (off == 0x18))) |
-                    (write_q & (off == 0x14)) |
-                    (write_q & (off == 0x18) & (wdata_q[1:] == 0))),
-                error.eq(0),
-                Case(off, {
-                    0x00: read_data.eq(amap.IRQ_ID),
-                    0x04: read_data.eq(amap.ABI_VERSION),
-                    0x08: read_data.eq(amap.CAP_EXT_IRQ),
-                    0x10: read_data.eq(self.irq_pending),
-                    0x14: read_data.eq(self.irq_pending),
-                    0x18: read_data.eq(self.irq_enable),
-                    0x20: read_data.eq(1),
-                })).Elif(legal & ddr & ~write_q,
-                error.eq(0),
-                Case(off, {offset: read_data.eq(value) for offset, value in diagnostics.items()})).Elif(legal & dma & (
-                    (~write_q & (dma_ro | (off == 0x0c) | (off == 0x10))) |
-                    (write_q & (off == 0x0c) & (wdata_q[2:] == 0)) |
-                    (write_q & (off == 0x10) & ((wdata_q & ~0xc) == 0))),
-                error.eq(0),
-                Case(off, {
-                    0x00: read_data.eq(amap.DMA_SVC_ID),
-                    0x04: read_data.eq(amap.ABI_VERSION),
-                    0x08: read_data.eq(amap.DMA_SVC_CAP),
-                    0x0c: read_data.eq(self.req_enable << 1),
-                    0x10: read_data.eq(status),
-                    0x20: read_data.eq(self.fifo.level),
-                    0x24: read_data.eq(amap.LOOPBACK_DEPTH),
-                    0x28: read_data.eq(amap.REQ_MAP),
-                    0x2c: read_data.eq(Cat(self.ack_tx, self.ack_rx)),
-                })),
+            sys_data.eq(0), irq_data.eq(0), dma_data.eq(0), ddr_data.eq(0),
+            Case(off, {
+                0: sys_data.eq(amap.SYSINFO_ID), 4: sys_data.eq(amap.ABI_VERSION),
+                8: sys_data.eq(amap.SYSINFO_CAP), 0x20: sys_data.eq(amap.DEVICE_COUNT),
+                0x24: sys_data.eq(32),
+                **{0x40+4*i: sys_data.eq(v) for i,v in enumerate(amap.LOOPBACK_EP)},
+                **{0x60+4*i: sys_data.eq(v) for i,v in enumerate(amap.DMAC_EP)},
+                **{0x80+4*i: sys_data.eq(v) for i,v in enumerate(amap.WS2812_EP)},
+                **{0xa0+4*i: sys_data.eq(v) for i,v in enumerate(amap.IO_EP)},
+                **{0xc0+4*i: sys_data.eq(v) for i,v in enumerate(amap.SENSE_EP)},
+                **{0xe0+4*i: sys_data.eq(v) for i,v in enumerate(amap.AUDIO_EP)},
+                **{0x100+4*i: sys_data.eq(v) for i,v in enumerate(amap.MIC_EP)},
+                **{0x120+4*i: sys_data.eq(v) for i,v in enumerate(amap.VIDEO_EP)},
+            }),
+            Case(off, {
+                0: irq_data.eq(amap.IRQ_ID),4: irq_data.eq(amap.ABI_VERSION),
+                8: irq_data.eq(amap.CAP_EXT_IRQ),0x10: irq_data.eq(self.irq_pending),
+                0x14: irq_data.eq(self.irq_pending),0x18: irq_data.eq(self.irq_enable),
+                0x20: irq_data.eq(1),
+            }),
+            Case(off, {offset: ddr_data.eq(value) for offset,value in diagnostics.items()}),
+            Case(off, {
+                0: dma_data.eq(amap.DMA_SVC_ID),4: dma_data.eq(amap.ABI_VERSION),
+                8: dma_data.eq(amap.DMA_SVC_CAP),0x0c: dma_data.eq(self.req_enable<<1),
+                0x10: dma_data.eq(status),0x20: dma_data.eq(self.fifo.level),
+                0x24: dma_data.eq(amap.LOOPBACK_DEPTH),0x28: dma_data.eq(amap.REQ_MAP),
+                0x2c: dma_data.eq(Cat(self.ack_tx,self.ack_rx)),
+            }),
         ]
-        control = commit & legal & dma & (off == 0x0c) & write_q & (wdata_q[2:] == 0)
-        sticky = commit & legal & dma & (off == 0x10) & write_q & ((wdata_q & ~0xc) == 0)
-        w1c = commit & legal & irq & (off == 0x14) & write_q & wdata_q[0]
+        # Pages are disjoint. A balanced OR avoids the old priority chain
+        # through every device before the registered APB response.
+        pages = [
+            (legal & sysinfo & ~write_q & sys_ro,sys_data),
+            (legal & audio & self.audio.tx_ok,self.audio.tx_rdata),
+            (legal & mic & self.audio.rx_ok,self.audio.rx_rdata),
+            (legal & video_page & video_ok,video_rdata),
+            (legal & sense & self.sense.ok,self.sense.rdata),
+            (legal & ws & self.board.ws_ok,self.board.ws_rdata),
+            (legal & board & self.board.io_ok,self.board.io_rdata),
+            (legal & irq & ((~write_q & (irq_ro | (off==0x14) | (off==0x18))) |
+                (write_q & (off==0x14)) | (write_q & (off==0x18) & (wdata_q[1:]==0))),irq_data),
+            (legal & ddr & ~write_q,ddr_data),
+            (legal & dma & ((~write_q & (dma_ro | (off==0x0c) | (off==0x10))) |
+                (write_q & (off==0x0c) & (wdata_q[2:]==0)) |
+                (write_q & (off==0x10) & ((wdata_q & ~0xc)==0))),dma_data),
+        ]
+        # Page-local readback registers cut the device decode from the final
+        # response mux. CSR reads are observations; write admission/commit
+        # still use the current device status on the execution cycle.
+        words=[]
+        for valid,value in pages:
+            sampled=Signal(32)
+            self.sync += sampled.eq(Mux(valid,value,0))
+            words.append(sampled)
+        while len(words)>1:
+            words=[words[i] | words[i+1] if i+1<len(words) else words[i]
+                   for i in range(0,len(words),2)]
+        self.comb += [read_data.eq(words[0]), error.eq(~reduce(or_,[valid for valid,_ in pages]))]
+        control_q,sticky_q,w1c_q,irq_enable_q=(Signal() for _ in range(4))
+        self.sync += [
+            control_q.eq(legal & dma & (off==0x0c) & write_q & (wdata_q[2:]==0)),
+            sticky_q.eq(legal & dma & (off==0x10) & write_q & ((wdata_q & ~0xc)==0)),
+            w1c_q.eq(legal & irq & (off==0x14) & write_q & wdata_q[0]),
+            irq_enable_q.eq(legal & irq & (off==0x18) & write_q & (wdata_q[1:]==0)),
+        ]
+        control,sticky,w1c=commit & control_q,commit & sticky_q,commit & w1c_q
         self.comb += [
             self.fifo.clear.eq(control & wdata_q[0]),
             self.fifo.clear_overflow.eq(sticky & wdata_q[2]),
@@ -323,21 +337,29 @@ class Ae350Platform(LiteXModule):
             self.audio.tx_selected.eq(legal & audio),
             self.audio.rx_selected.eq(legal & mic),
         ]
+        if video is not None:
+            self.comb += [video.off.eq(off), video.write.eq(write_q), video.wdata.eq(wdata_q),
+                          video.commit.eq(commit), video.selected.eq(legal & video_page)]
         self.sync += [
             If(~cpu.apb_select,
                 wait.eq(0),
+                access_q.eq(0),
             ).Elif(~cpu.apb_enable,
                 addr_q.eq(cpu.apb_addr),
                 wdata_q.eq(cpu.apb_wdata),
                 write_q.eq(cpu.apb_write),
                 strb_q.eq(cpu.apb_strb),
                 wait.eq(1),
+                access_q.eq(0),
+            ).Elif(wait & ~access_q,
+                access_q.eq(1),
             ).Elif(wait,
                 wait.eq(0),
+                access_q.eq(0),
                 cpu.apb_data.eq(read_data),
-                cpu.apb_slverr.eq(error),
+                cpu.apb_slverr.eq(error_q),
                 If(control, self.req_enable.eq(wdata_q[1])),
-                If(commit & legal & irq & (off == 0x18) & write_q & (wdata_q[1:] == 0),
+                If(commit & irq_enable_q,
                    self.irq_enable.eq(wdata_q[0])),
             ),
             If(self.fifo.clear,

@@ -88,8 +88,11 @@ class FabricAudio(LiteXModule):
         seen_done = Signal()
         tx_events = Signal(2)
         rx_events = Signal(3)
-        tx_go = self.commit & self.tx_selected & self.tx_ok & self.write
-        rx_go = self.commit & self.rx_selected & self.rx_ok & self.write
+        tx_admit,rx_admit=Signal(),Signal()
+        self.sync += [tx_admit.eq(self.tx_selected & self.tx_ok & self.write),
+                      rx_admit.eq(self.rx_selected & self.rx_ok & self.write)]
+        tx_go = self.commit & tx_admit
+        rx_go = self.commit & rx_admit
         self.comb += [
             tx_clear.eq(tx_go & (self.off == 0x0c) & self.wdata[3]),
             rx_clear.eq(rx_go & (self.off == 0x0c) & self.wdata[5]),
