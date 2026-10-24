@@ -97,6 +97,47 @@ class PlatformDescriptionTests(unittest.TestCase):
         config['ip']['ddr3']['parameters']['Memory_Clock'] = 300
         with self.assertRaisesRegex(ValueError, 'DDR UI clock'): from_data(board, config)
 
+    def test_ae350_registers_all_generated_ip_sources(self):
+        from gateware.machines.mega138k_ae350.soc import DDRSoC
+        board, config = load_machine(HARD, self.root)
+        artifacts = {
+            name: dict(module=ip['module'], directory='build/ip/' + name,
+                       primary=ip['module'] + '.v',
+                       files={ip['module'] + '.v': 'main',
+                              ip['module'] + '_mod.v': 'helper',
+                              ip['module'] + '.ipc': 'config'})
+            for name, ip in config['ip'].items()
+        }
+        artifacts['ddr_pll']['files']['project/src/pll_init.v'] = 'initialization'
+        soc = DDRSoC(from_data(board, config, artifacts))
+        sources = {Path(row[0]).name for row in soc.platform.sources}
+        for name in ('ddr3', 'ddr_pll'):
+            self.assertIn(config['ip'][name]['module'] + '_mod.v', sources)
+        self.assertFalse(any(name.endswith('.ipc') for name in sources))
+        self.assertIn('pll_init.v', sources)
+        self.assertTrue(any('ddr3_pll/u_pll/PLL_inst' in command
+                            for command in soc.platform.toolchain.additional_cst_commands))
+        pll = next(item for item in soc.ddr._fragment.specials
+                   if getattr(item, 'name_override', None) == 'ddr3_pll')
+        self.assertIn('init_clk', {item.name for item in pll.items})
+
+    def test_native_hdmi_differential_constraints(self):
+        from gateware.machines.mega138k_ae350.ports import bind_ports as bind_ae350
+        from litex.build.gowin.gowin import _build_cst
+        platform = create_platform(bind_ae350(resolve_machine(HARD, self.root)), 'clk50', {})
+        names = {}
+        for name in ('hdmi_clk_p', 'hdmi_clk_n', 'hdmi_data_p', 'hdmi_data_n'):
+            pad = platform.request(name)
+            names[pad] = name + ('0' if 'data' in name else '')
+        rows = [(names[signal], pins, other, resource)
+                for signal, pins, other, resource in platform.constraint_manager.get_sig_constraints()]
+        output = self.root / 'native-pins'
+        _build_cst(rows, [], [], str(output))
+        cst = output.with_suffix('.cst').read_text()
+        self.assertIn('IO_LOC "hdmi_clk_p" Y22,Y23;', cst)
+        self.assertIn('IO_LOC "hdmi_data_p0" AB24,AC24;', cst)
+        self.assertNotIn(',X', cst)
+
 
 if __name__ == '__main__':
     unittest.main()

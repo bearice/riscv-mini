@@ -45,7 +45,7 @@ DDR3_CTRL = ('cs_n','ras_n','cas_n','we_n','cke','odt','reset_n')
 
 class GowinDDR3(LiteXModule):
     """Gowin_PLL_DDR3 + DDR3_Memory_Interface_Top with an ``ddr`` clock domain."""
-    def __init__(self, platform, pads, *, controller_module, pll_module):
+    def __init__(self, platform, pads, *, controller_module, pll_module, pll_initialization=False):
         ui = DDR3UI()
         self.ui = ui
         self.clk_out = Signal()
@@ -61,8 +61,10 @@ class GowinDDR3(LiteXModule):
         self.specials += Instance(pll_module, name='ddr3_pll',
             i_clkin=clk50, i_reset=0,
             i_enclk0=1, i_enclk2=pll_stop,
-            o_clkout0=clk_ref, o_clkout2=memory_clk, o_lock=self.pll_lock)
-        platform.toolchain.additional_cst_commands.append('INS_LOC "ddr3_pll/PLL_inst" PLL_L[0];')
+            o_clkout0=clk_ref, o_clkout2=memory_clk, o_lock=self.pll_lock,
+            **({'i_init_clk': clk50} if pll_initialization else {}))
+        pll_path = 'ddr3_pll/u_pll/PLL_inst' if pll_initialization else 'ddr3_pll/PLL_inst'
+        platform.toolchain.additional_cst_commands.append('INS_LOC "%s" PLL_L[0];' % pll_path)
 
         self.specials += Instance(controller_module, name='ddr3',
             # Clocks / reset / calibration.
@@ -136,7 +138,11 @@ class DDRSoC(LiteXModule):
         for name in ('ddr3', 'ddr_pll'):
             artifact = config.artifacts[name]
             directory = root / artifact['directory']
-            platform.add_source(str(directory / artifact['primary']))
+            for filename in sorted(artifact['files']):
+                source = directory / filename
+                if source.suffix.lower() in ('.v', '.sv', '.vhd', '.vhdl'):
+                    platform.add_source(str(source))
+                    platform.add_verilog_include_path(str(source.parent))
             platform.add_verilog_include_path(str(directory))
             platform.add_verilog_include_path(str((directory / artifact['primary']).parent))
         video_dir = Path(__file__).resolve().parents[2] / 'devices' / 'video' / 'hdmi'
@@ -177,7 +183,9 @@ class DDRSoC(LiteXModule):
             pixel_hz=config.clocks.video, reset_active_low=resources['core_reset'].signals['reset'].active_low)
         self.cpu = NativeAE350(wrapper=True, data_domain='mem', vendor_itcm=True, module=config.artifacts['cpu']['module'])
         self.ddr = GowinDDR3(platform, pads, controller_module=config.artifacts['ddr3']['module'],
-                             pll_module=config.artifacts['ddr_pll']['module'])
+                             pll_module=config.artifacts['ddr_pll']['module'],
+                             pll_initialization=any(Path(name).name.lower() == 'pll_init.v'
+                                 for name in config.artifacts['ddr_pll']['files']))
 
         # DDR UI clock domain and its asynchronous reset.
         self.cd_ddr = ClockDomain('ddr')

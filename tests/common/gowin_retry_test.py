@@ -26,9 +26,11 @@ class GowinRetryTests(unittest.TestCase):
             calls.append(log)
             log.write_text(outputs[index], encoding='utf-8')
             return codes[index]
-        with patch('scripts.modular.gowin.time.sleep') as sleep:
+        # Replace only Gowin's time binding: storage.write also sleeps when
+        # Windows temporarily refuses an atomic replace.
+        with patch('scripts.modular.gowin.time') as clock:
             code, log = run_with_license_retry(attempt, self.path)
-        return code, log, calls, sleep, json.loads((self.path / 'gowin-attempts.json').read_text())
+        return code, log, calls, clock.sleep, json.loads((self.path / 'gowin-attempts.json').read_text())
 
     def test_transient_signatures(self):
         for text in ('License verification failed Connection timeout',
@@ -91,7 +93,8 @@ class GowinRetryTests(unittest.TestCase):
             calls.append(log)
             log.write_text('License verification failed Connection timeout')
             return 1
-        with patch('scripts.modular.gowin.time.sleep', side_effect=KeyboardInterrupt):
+        with patch('scripts.modular.gowin.time') as clock:
+            clock.sleep.side_effect = KeyboardInterrupt
             with self.assertRaises(KeyboardInterrupt):
                 run_with_license_retry(attempt, self.path)
         self.assertEqual(len(calls), 1)
@@ -114,7 +117,7 @@ class GowinRetryTests(unittest.TestCase):
             with log.open('w', encoding='utf-8') as stream:
                 return subprocess.run([sys.executable, str(fixture), str(len(counter))],
                                       stdout=stream, stderr=subprocess.STDOUT).returncode
-        with patch('scripts.modular.gowin.time.sleep'):
+        with patch('scripts.modular.gowin.time'):
             code, final = run_with_license_retry(attempt, self.path)
         self.assertEqual(code, 0)
         self.assertEqual(len(counter), 2)

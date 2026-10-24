@@ -131,7 +131,8 @@ def generate(recipe_path):
                  if path.is_file() and (path.suffix in extensions or path.parent.name == 'itcm_initial')
                  and (path == primary or not path.name.endswith('_tmp.v'))
                  and (path == primary or not any(part in
-                     ('target','obj','ivy','sbt-global','coursier','sbt-boot','ext','project','logs','temp')
+                     ('target','obj','ivy','sbt-global','coursier','sbt-boot','ext','logs','temp')
+                     + (('project',) if definition['generator'] == 'vexriscv' else ())
                      for part in path.relative_to(stage).parts))}
         if primary.relative_to(stage).as_posix() not in files:
             raise ValueError('Primary vendor output is missing')

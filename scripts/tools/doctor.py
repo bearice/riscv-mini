@@ -15,6 +15,7 @@ def main():
     report = {'python': platform.python_version(), 'executable': sys.executable, 'dependencies': {}, 'tools': tools}
     failed = []
     for package, module in [
+        ('jsonschema', 'jsonschema'), ('ninja', 'ninja'),
         ('migen', 'migen'), ('litex', 'litex'), ('litex-boards', 'litex_boards'),
         ('litedram', 'litedram'), ('litesdcard', 'litesdcard'), ('litespi', 'litespi'), ('liteeth','liteeth.phy.rmii'),
         ('pythondata-cpu-vexriscv', 'pythondata_cpu_vexriscv'),

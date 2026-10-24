@@ -32,11 +32,13 @@ class IOBindings:
         self.signals(name, {rename.get(key,key): signals[key] for key in keys}, index)
 
     def differential_port(self, positive, negative, signals):
-        # Gowin accepts each differential pair as one native Pins token.
-        # ConstraintManager still owns allocation and final port resolution.
+        # LiteX pairs scalar _p/_n ports itself; indexed resource names become
+        # _p0/_n0 and need Gowin's explicit comma-separated pin token.
+        native_pair = len(signals) == 1 and positive.endswith('_p') and negative == positive[:-2] + '_n'
         for index, signal in enumerate(signals):
-            self.resources.append((positive, index, Pins(','.join(signal.pins)), *constraints(signal)))
-            self.resources.append((negative, index, Pins('X')))
+            pins = signal.pins[0] if native_pair else ','.join(signal.pins)
+            self.resources.append((positive, index, Pins(pins), *constraints(signal)))
+            self.resources.append((negative, index, Pins(signal.pins[1] if native_pair else 'X')))
 
     def signals(self, name, signals, index=0):
         self.resources.append((name, index, *[Subsignal(key, Pins(' '.join(spec.pins)),
