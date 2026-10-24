@@ -97,10 +97,9 @@ def qualify_sdc(modules,top,text):
 
 
 def split_verilog(platform, *, deep=False):
-    # Keep source modules separate, while permitting cross-module synthesis
-    # optimization. Preserving the synthesis netlist hierarchy congests the
-    # full MMU/FPU design; this setting has passed complete Gowin PnR.
-    platform.toolchain.options['netlist_hierarchy'] = 0
+    # Keep source modules separate and select Gowin's explicit flatten mode.
+    # The literal option has different synthesis output from numeric 0.
+    platform.toolchain.options['netlist_hierarchy'] = 'flatten'
     get_verilog = platform.get_verilog
 
     def convert(fragment, **kwargs):

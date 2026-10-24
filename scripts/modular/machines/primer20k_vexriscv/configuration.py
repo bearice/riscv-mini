@@ -73,7 +73,7 @@ def resolve(store, run, args, base=None, plan=False):
         usb_backend=settings.usb_backend, audio_clock=settings.audio_clock,
         clock_hz=machine.clocks.sys, ddr_clock_hz=machine.clocks.sys * 2,
         verilog_mode='flat' if hierarchy=='flat' else 'hierarchical', rtl_hierarchy=hierarchy,
-        netlist_hierarchy=None if hierarchy=='flat' else 0,
+        netlist_hierarchy=None if hierarchy=='flat' else 'flatten',
         place_option=settings.place_option, route_option=settings.route_option)
     v['rom_size_bytes'] = v['rom_size_bytes'] if mode=='rom' else 0
     v['expected_plls'] = pll_count(features, v['usb_backend'], v['audio_clock'])
