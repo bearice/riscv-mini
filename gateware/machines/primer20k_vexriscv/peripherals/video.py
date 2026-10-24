@@ -103,6 +103,9 @@ class RGBLCD(LiteXModule):
         ring_end = Signal(32)
         cursor = Signal(32)
         valid_base = self.valid_base = Signal()
+        launch_check = Signal()
+        launch_valid = Signal()
+        launch_slot, launch_bank = Signal(), Signal()
         # Geometry is configured only while stopped. A nine-step multiply keeps
         # this infrequent calculation out of DSPs and the DMA admission path.
         width,height = Signal(9),Signal(9)
@@ -152,15 +155,20 @@ class RGBLCD(LiteXModule):
             If(start.o,self._frames.status.eq(self._frames.status+1),pending.eq(self._enable.storage)),
             If(error.o,self._underflows.status.eq(self._underflows.status+1)),
             If(done.o,busy.eq(0),self._completed.status.eq(self._completed.status+1)),
-            If(pending & ~busy,
+            If(pending & ~busy & ~launch_check,
                 pending.eq(0),
                 If(self._enable.storage,
-                    self._address_error.status.eq(~valid_base),
-                    If(valid_base,busy.eq(1),issuing.eq(1),offset.eq(0),
-                        frame_words.eq(scan_bytes>>shift),
-                        selected.eq(requested_slot),selected_bank.eq(self._commit.storage[1]),frame_base.eq(requested_base),
-                        cursor.eq(requested_base),ring_start.eq(self._wrap_start.storage),
-                        ring_end.eq(self._wrap_end.storage)))),
+                    launch_check.eq(1),launch_valid.eq(valid_base),
+                    launch_slot.eq(requested_slot),launch_bank.eq(self._commit.storage[1]),
+                    frame_words.eq(scan_bytes>>shift),
+                    frame_base.eq(requested_base),
+                    cursor.eq(requested_base),ring_start.eq(self._wrap_start.storage),
+                    ring_end.eq(self._wrap_end.storage))),
+            If(launch_check,launch_check.eq(0),
+                If(self._enable.storage,
+                    self._address_error.status.eq(~launch_valid),
+                    If(launch_valid,busy.eq(1),issuing.eq(1),offset.eq(0),
+                        selected.eq(launch_slot),selected_bank.eq(launch_bank)))),
             If(port.cmd.valid & port.cmd.ready,
                 final_burst.eq(offset==frame_words-1),
                 If(offset==frame_words-1,issuing.eq(0)).Else(offset.eq(offset+1)),

@@ -128,6 +128,7 @@ class FabricVideo(LiteXModule):
 
         base0, base1 = Signal(32), Signal(32)
         stride = Signal(32, reset=width * 2)
+        frame_span = Signal(33, reset=height * width * 2)
         control = Signal(2)
         sequence = Signal(32)
         snapshot = Signal(98)
@@ -235,7 +236,7 @@ class FabricVideo(LiteXModule):
         valid_config = Signal()
         self.comb += [
             selected_base.eq(Mux(control[1], base1, base0)),
-            last_byte.eq(selected_base + (height - 1) * stride + width * 2),
+            last_byte.eq(selected_base + frame_span),
             valid_config.eq(~control[0] | ((selected_base >= 0x100000) & (selected_base[:5] == 0) &
                 (stride >= width * 2) & (stride < 65536) & (stride[:5] == 0) & (last_byte <= (1 << 30)))),
         ]
@@ -271,7 +272,9 @@ class FabricVideo(LiteXModule):
         go=self.commit & admitted
         self.sync += If(go,Case(self.off,{
             reg['CONTROL']: control.eq(self.wdata[:2]),reg['BASE0']: base0.eq(self.wdata),
-            reg['BASE1']: base1.eq(self.wdata),reg['STRIDE']: stride.eq(self.wdata),
+            reg['BASE1']: base1.eq(self.wdata),
+            reg['STRIDE']: [stride.eq(self.wdata),
+                frame_span.eq((height - 1) * self.wdata + width * 2)],
             reg['COMMIT']: If(pending,command_error.eq(1))
                 .Elif(~valid_config,admission_error.eq(1))
                 .Else(snapshot.eq(Cat(selected_base,stride,control,sequence+1)),sequence.eq(sequence+1)),

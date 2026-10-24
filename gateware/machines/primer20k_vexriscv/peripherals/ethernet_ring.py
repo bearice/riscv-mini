@@ -5,7 +5,7 @@ OWN=bit31, DONE=bit30, ERROR=bit29; completion length is status bits 0..11.
 The CPU publishes TX producer and RX consumer sequences after a memory fence.
 Hardware publishes completion only after payload commit / MAC SRAM reader completion.
 """
-from migen import Signal, If, FSM, NextState, NextValue, Mux
+from migen import Signal, If, FSM, NextState, NextValue, Mux, Cat
 from litex.gen import LiteXModule
 from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 from litex.soc.interconnect.csr_eventmanager import EventManager, EventSourceLevel, EventSourcePulse
@@ -56,7 +56,14 @@ class EthernetRingDMA(LiteXModule):
         config_valid = (((mask == 0) | (mask == 1) | (mask == 3) | (mask == 7) | (mask == 15)) &
             region_valid(rx_base, ring_bytes) & region_valid(tx_base, ring_bytes) &
             ((rx_base + ring_bytes <= tx_base) | (tx_base + ring_bytes <= rx_base)))
-        enable = self._control.storage & config_valid
+        # Validate a snapshot before admission. Live CSR changes immediately
+        # cancel traffic, while the arithmetic checks have a full cycle.
+        config = Cat(rx_base, tx_base, mask)
+        checked_config = Signal(len(config))
+        checked_valid = Signal()
+        config_stable = config == checked_config
+        self.sync += [checked_config.eq(config), checked_valid.eq(config_valid)]
+        enable = self._control.storage & config_stable & checked_valid
         self.comb += self.active.eq(self._control.storage)
         rx_head, tx_head = self._rx_producer.status, self._tx_consumer.status
         rx_used, tx_used = Signal(16), Signal(16)
@@ -108,7 +115,7 @@ class EthernetRingDMA(LiteXModule):
             self.ev.tx.trigger.eq(completed),
             self._busy.status.eq(~fsm.ongoing('IDLE') | copy.busy | ~reader.idle | ~writer.idle)]
         self.sync += [completed.eq(0),
-            If(self._control.storage & ~config_valid, self._error.status.eq(1))]
+            If(self._control.storage & config_stable & ~checked_valid, self._error.status.eq(1))]
 
         def action(name, *statements):
             fsm.act(name, If(~enable, NextState('IDLE')).Else(*statements))
@@ -136,7 +143,10 @@ class EthernetRingDMA(LiteXModule):
             If(lane == 2, NextValue(flags, dr.rdata.data)),
             If(lane == 3, NextState('VALIDATE')).Else(NextValue(lane, lane + 1))))
         payload_size = Mux(receive, size, capacity)
-        payload_valid = (region_valid(buffer, payload_size) & (payload_size >= 14) & (payload_size <= 1530) &
+        payload_valid = Signal()
+        # Buffer and capacity arrive before the final descriptor word, so the
+        # registered predicate is ready when VALIDATE owns the descriptor.
+        self.sync += payload_valid.eq(region_valid(buffer, payload_size) & (payload_size >= 14) & (payload_size <= 1530) &
             (~receive | (size <= capacity)) &
             ((buffer + payload_size <= rx_base) | (buffer >= rx_base + ring_bytes)) &
             ((buffer + payload_size <= tx_base) | (buffer >= tx_base + ring_bytes)))

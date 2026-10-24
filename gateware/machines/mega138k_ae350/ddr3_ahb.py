@@ -274,8 +274,17 @@ class DDR3AHB(LiteXModule):
         commit_addr = Signal(32)
         same_control = Signal()
         same_control.attr.add(('syn_keep', 1))
-        self.comb += same_control.eq(_equal(Cat(peek_burst, peek_size, peek_prot),
-                                                Cat(burst_type, burst_size, burst_prot)))
+        if lookahead is None:
+            self.comb += same_control.eq(_equal(Cat(peek_burst, peek_size, peek_prot),
+                                               Cat(burst_type, burst_size, burst_prot)))
+        else:
+            # Compare in parallel with the lookahead capture, rather than
+            # after it on the HREADY/state/owned-address enable chain. Burst
+            # context changes in DECODE; these predicates are not consumed
+            # there or in DATA, so they are refreshed before WBUF/ADDRESS.
+            self.sync += same_control.eq(_equal(
+                Cat(lookahead.burst, lookahead.size, lookahead.prot),
+                Cat(burst_type, burst_size, burst_prot)))
         # An aligned beat fits in one data-bus lane of the 32-byte line.
         # Shift only inside that lane; a 32-bit barrel fans out across the buffer.
         lane_bytes = bus.data_width // 8

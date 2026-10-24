@@ -34,7 +34,7 @@ gowin_special_overrides[TempAdc] = GowinTempAdc
 from gateware.gowin_platform import create_platform
 from gateware.machines.mega138k_ae350.ports import bind_ports
 from gateware.machines.mega138k_ae350.address_map import AddressMap
-from gateware.machines.mega138k_ae350.clock import ClockReset
+from gateware.machines.mega138k_ae350.clock import ClockReset, PLLStatusSynchronizer
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
 from gateware.machines.mega138k_ae350.video_memory import VideoMemoryArbiter
 from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
@@ -50,6 +50,10 @@ class GowinDDR3(LiteXModule):
         self.ui = ui
         self.clk_out = Signal()
         self.pll_lock = Signal()
+        # Keep the vendor lock expression on the synchronizer's data path.
+        # Factoring PLL_INIT state into a synchronous RESET pin bypasses the
+        # explicitly constrained first-stage data input of the lock receiver.
+        self.pll_lock.attr.add(('syn_keep', 1))
         self.init_calib_complete = Signal()
 
         clk50 = platform.lookup_request('clk50')
@@ -192,9 +196,9 @@ class DDRSoC(LiteXModule):
         self.comb += self.cd_ddr.clk.eq(self.ddr.clk_out)
         self.specials += AsyncResetSynchronizer(self.cd_ddr, ~self.ddr.pll_lock | ResetSignal('sys'))
         calib_sys = Signal()
-        lock_sys = Signal()
-        self.specials += [MultiReg(self.ddr.init_calib_complete, calib_sys, 'sys'),
-                          MultiReg(self.ddr.pll_lock, lock_sys, 'sys')]
+        self.lock_status = PLLStatusSynchronizer(self.ddr.pll_lock)
+        lock_sys = self.lock_status.o
+        self.specials += MultiReg(self.ddr.init_calib_complete, calib_sys, 'sys')
         calib_mem = Signal()
         self.specials += MultiReg(self.ddr.init_calib_complete, calib_mem, 'mem')
 
@@ -359,6 +363,10 @@ class DDRSoC(LiteXModule):
         def build_timing_constraints(vns):
             name, ext = _orig_sdc(vns)
             extra = [
+                # PLL LOCK is asynchronous even when its initialization FSM
+                # uses clk50. Only the metastability catcher is exempt; the
+                # second stage and every status consumer remain timed.
+                'set_false_path -to [get_pins {%s}]' % self.lock_status.first_stage_pin,
                 *self.crg.pll.extra_constraints,
                 *self.crg.hdmi_clock_constraints,
                 'create_clock -name ddr_ui_clk -period %.4f -waveform {0 %.4f} [get_pins {ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]'

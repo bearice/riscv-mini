@@ -76,13 +76,12 @@ class SharedL2(LiteXModule):
             *([If(~boot_index,tp.dat_w.eq(0)),dp.we.eq(1),dp.dat_w.eq(0)] if boot_ram else []),
             If(cursor==size//16-1,NextValue(cursor,0),NextValue(cleaning,0),NextState('IDLE')).Else(NextValue(cursor,cursor+1)))
         cpu_capture=[NextValue(owner,0),NextValue(address,master.adr[2:]-(RAM_BASE>>4)),
-            NextValue(payload,Replicate(master.dat_w,4)),
             # Concatenation preserves all four shift bits in generated Verilog.
             # A 2-bit lane * 3-bit constant has only a 3-bit self-determined
             # result as a shift operand, aliasing lanes 2/3 onto lanes 0/1.
             NextValue(mask,master.sel << Cat(0,0,master.adr[:2])),NextValue(write,master.we),
             NextValue(lane,master.adr[:2]),NextValue(abandoned,0),
-            NextValue(allocate,active & (master.adr < (RAM_END>>2))),NextState('RAM')]
+            NextValue(allocate,active & (master.adr < (RAM_END>>2))),NextState('CPU_DATA')]
         fsm.act('IDLE',
             If((request | (active != self._enable.storage)) & (enabled if boot_ram else 1) & maintenance_ready,
                 NextValue(cleaning,1),NextValue(cursor,0),
@@ -100,6 +99,11 @@ class SharedL2(LiteXModule):
                     2:If(dma.cmd.valid,dma.cmd.ready.eq(1),NextValue(owner,2),
                         NextValue(address,dma.cmd.addr),NextValue(write,dma.cmd.we),NextValue(allocate,0),
                         If(dma.cmd.we,NextState('DMA_DATA')).Else(NextState('RAM')))})))
+        # Wishbone holds its data until acknowledgement. Separate the wide
+        # payload capture from arbitration and abandon a withdrawn request.
+        fsm.act('CPU_DATA',If(master.cyc,
+            NextValue(payload,Replicate(master.dat_w,4)),NextState('RAM'))
+            .Else(NextState('IDLE')))
         # Keep producer ownership until cache/DDR commit. Capture held write
         # data without ready; ready is returned only in COMPLETE.
         fsm.act('DMA_DATA',If(dma.wdata.valid,NextValue(payload,dma.wdata.data),

@@ -107,7 +107,6 @@ class VideoFrameReader(LiteXModule):
         end = Signal(33)
         self.fsm = fsm = FSM(reset_state='IDLE')
         self.comb += [
-            end.eq(base + (height - 1) * stride + width * 2),
             ui.cmd.eq(1), ui.burst.eq(0),
             ui.addr.eq(address[2:31] & ~Constant(7, 29)),
             ui.wr_data_en.eq(0), ui.wr_data_end.eq(0), ui.wr_data_mask.eq(0xffffffff),
@@ -120,9 +119,14 @@ class VideoFrameReader(LiteXModule):
                     NextValue(epoch, request.epoch), NextValue(self.enabled, request.run),
                     NextValue(address, request.base),
                     NextValue(row_base, request.base), NextValue(column, 0), NextValue(index, 0),
-                    NextValue(elapsed, 0), NextState('CHECK')]
+                    NextValue(elapsed, 0), NextState('EXTENT')]
 
         fsm.act('IDLE', request.ready.eq(1), If(request.valid, *accept()))
+        # Bound calculation is once per frame, away from the FIFO admission
+        # and invalid-address state transition. It adds no per-block latency.
+        fsm.act('EXTENT',
+            NextValue(end, base + (height - 1) * stride + width * 2),
+            NextState('CHECK'))
         fsm.act('CHECK',
             If(~self.enabled, NextState('IDLE'))
             .Elif((base < min_base) | (base[:5] != 0) | (stride < width * 2) |

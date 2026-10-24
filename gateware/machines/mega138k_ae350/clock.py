@@ -5,6 +5,18 @@ from litex.gen import LiteXModule
 from litex.soc.cores.clock.gowin_gw5a import GW5APLL
 
 
+class PLLStatusSynchronizer(LiteXModule):
+    """Two resetless stages for the vendor's asynchronous lock indication."""
+    first_stage_pin = 'ddr_pll_lock_meta_s*/D'
+
+    def __init__(self, lock):
+        self.meta = Signal(name_override='ddr_pll_lock_meta', reset_less=True)
+        self.o = Signal(name_override='ddr_pll_lock_sync', reset_less=True)
+        for stage in (self.meta, self.o):
+            stage.attr.update({('syn_keep', 1), ('syn_preserve', 1)})
+        self.sync += [self.meta.eq(lock), self.o.eq(self.meta)]
+
+
 class FabricPLL(LiteXModule):
     """800MHz VCO for the machine's fabric/core/data clocks (Gowin UG306).
 

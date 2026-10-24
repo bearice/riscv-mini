@@ -12,6 +12,18 @@ from litex.soc.interconnect.csr import CSRStorage, CSRStatus
 from gateware.machines.primer20k_vexriscv.peripherals.usb import USBPHYInit
 
 
+class ULPIOutputEnables(LiteXModule):
+    """Local output-enable drivers, retaining asynchronous DIR turnaround."""
+    def __init__(self, ready, direction, initial):
+        self.oe = Signal(8)
+        for bit in range(8):
+            local = Signal(name_override=f'ulpi_oe_{bit}')
+            local.attr.update({('syn_keep', 1), ('syn_maxfan', 1)})
+            value = initial[bit] & ~direction
+            self.comb += [local.eq(Mux(ready, 1, value) if bit < 3 else value),
+                          self.oe[bit].eq(local)]
+
+
 class USBPIOBridge(LiteXModule):
     """One registered request/reply, with independent AXI AW/W acceptance."""
     def __init__(self,wb,axil):
@@ -78,9 +90,8 @@ class USBHostUltra(LiteXModule):
             # Preserve immediate raw DIR gating during ULPI initialization.
             # The init FSM already releases D[7:3] in SERIAL. Avoid a
             # redundant ready mux on these enables; DIR still acts directly.
-            self.comb += oe.eq(Cat(
-                Mux(phy.ready,7,phy.oe[:3] & Replicate(~pads.dir,3)),
-                phy.oe[3:] & Replicate(~pads.dir,5)))
+            self.output_enables = ULPIOutputEnables(phy.ready,pads.dir,phy.oe)
+            self.comb += oe.eq(self.output_enables.oe)
             drive=Cat(Mux(phy.ready,serial_data,phy.do[:3]),phy.init_output[3:])
         else:
             self.comb += oe.eq(Mux(phy.ready,7,phy.oe & Replicate(~pads.dir,8)))

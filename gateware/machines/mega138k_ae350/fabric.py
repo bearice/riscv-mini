@@ -312,8 +312,12 @@ class AE350Fabric(LiteXModule):
         words=[]
         for valid,value in pages:
             sampled=Signal(32)
-            self.sync += sampled.eq(Mux(valid,value,0))
-            words.append(sampled)
+            selected=Signal()
+            sampled.attr.add(('syn_preserve', 1))
+            self.sync += [sampled.eq(value), selected.eq(valid)]
+            # Register data and admission independently: a deep page decode
+            # must not become the synchronous RESET of every read-data bit.
+            words.append(Mux(selected,sampled,0))
         while len(words)>1:
             words=[words[i] | words[i+1] if i+1<len(words) else words[i]
                    for i in range(0,len(words),2)]

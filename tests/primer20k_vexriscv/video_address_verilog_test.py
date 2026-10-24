@@ -53,7 +53,9 @@ task wrap_check(input [31:0] start_address,end_address,address,input expected);
  base0=address;select_buffer=0;wrap_start=start_address;wrap_end=end_address;
  sys_rst=0;video_rst=0;repeat(8)tick;
  if(valid_base!==expected)$fatal(1,"ring admission %x %x %x",start_address,end_address,address);
- enable=1;force dut.pending=1'b1;tick;release dut.pending;
+ // Hold the command sink while the frame admission pipeline completes.
+ cmd_ready=0;
+ enable=1;force dut.pending=1'b1;tick;release dut.pending;tick;
  if(busy!==expected || address_error!==!expected)$fatal(1,"ring start");
  if(expected)begin
  issued=0;cycles=0;next_address=address;
