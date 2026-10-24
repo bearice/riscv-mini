@@ -61,7 +61,7 @@ def perform(args):
                 if not amap.ROM_STACK_BOTTOM <= regs['sp'] <= amap.ROM_STACK_TOP or regs['mcause']:
                     raise RuntimeError('ROM is not running cleanly with its DLM stack')
                 op.report["calibrations"].append(dict(index=index + 1, status=hex(status), cycles=cycles,
-                    clock_hz=amap.FABRIC_HZ, kind="FPGA-SRAM-reconfiguration", passed=True))
+                    clock_hz=store.get(ref)['config']['bus_hz'], kind="FPGA-SRAM-reconfiguration", passed=True))
                 if index == repeat - 1:
                     op.record("counter-clock", **measure_counter_clock(cpu))
             (op.path / "sram.log").rename(op.path / ("sram-%02d.log" % (index + 1)))

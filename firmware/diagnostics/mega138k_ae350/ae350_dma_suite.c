@@ -105,7 +105,8 @@ static void rejections(void) {
     req.src = SRC;
     req.dst = CANARY;
     req.bytes = 4u;
-    req.need_cap = AE350_CAP_FABRIC_READER;
+    /* Bit 31 is unadvertised; the video reader is a supported capability. */
+    req.need_cap = 1u << 31;
     note(1u << 3, ae350_dma_submit(&req), AE350_DMA_ERR_CAP);
     bind(&req);
     req.device = 0x12340001u;

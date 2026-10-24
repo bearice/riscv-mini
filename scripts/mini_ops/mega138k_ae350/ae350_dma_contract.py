@@ -35,7 +35,7 @@ SCOPE = {
     'bulk': '10000 32-bit copies, 1..32 words, increment, fixed source, decrement, one 4 KiB boundary cross',
     'widths': '8-byte and 4-halfword copies; wider than 32-bit is rejected and not claimed',
     'irq': 'published IRQ-page identity only; no PLIC-to-CPU handler',
-    'fabric_reader': 'unsupported; the capability bit stays clear and a request for it is rejected',
+    'capability_rejection': 'an unadvertised capability request is rejected before starting a transfer',
     'frequency': 'the programmed bitstream point only; a failed build is not a device limit',
     'cache': 'post-invalidate values/guards required; pre-sync stale reads are observations, not guaranteed cache residency',
     'drain': 'abort waits until the channel enable bit is clear and the buffer is stable before reuse',
