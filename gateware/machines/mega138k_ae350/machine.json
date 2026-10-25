@@ -33,7 +33,10 @@
     "ws2812": "ws2812",
     "fan": "fan",
     "cpu_jtag": "cpu_jtag",
-    "sd": "sdcard"
+    "sd": "sdcard",
+    "flash": "user_flash",
+    "i2c": "system_i2c",
+    "twi_mux": "twi_mux"
   },
   "gpio": {
     "leds": [
@@ -78,9 +81,9 @@
         "ENABLE_GPIO": true,
         "ENABLE_UART2": true,
         "ENABLE_UART1": false,
-        "ENABLE_SPI": false,
+        "ENABLE_SPI": true,
         "ENABLE_PIT": false,
-        "ENABLE_I2C": false,
+        "ENABLE_I2C": true,
         "ENABLE_DMAC": true,
         "ENABLE_EXTENDED_AHB_SLAVE": true,
         "ENABLE_EXTENDED_AHB_MASTER": false,

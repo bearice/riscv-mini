@@ -143,7 +143,8 @@ int ae350_sd_read(uint32_t sector,void *buffer,unsigned count) {
     }
     return 0;
 fail:
-    info.error++;int rc=ae350_sd_stop();return rc?rc:-1;
+    info.error=0x10000000u | ((SD(0x9c)&15u)<<8) | ((SD(0xa0)&15u)<<12) | ((ae350_dma_poll(channel)&255u)<<16);
+    int rc=ae350_sd_stop();return rc?rc:-1;
 }
 void ae350_sd_info(struct ae350_sd_info *out) {
     volatile struct ae350_sd_info *dst=out;

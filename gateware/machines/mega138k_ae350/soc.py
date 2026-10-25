@@ -355,6 +355,9 @@ class DDRSoC(LiteXModule):
             platform.add_source(str(soc_sources_dir / name))
         platform.add_verilog_include_path(str(soc_sources_dir))
         self.cpu.connect_jtag(platform.request('cpu_jtag'))
+        self.cpu.connect_management(platform.request('user_flash'),platform.request('system_i2c'))
+        # Mux selection always has a defined output (reset channel 0).
+        self.comb += platform.request('twi_mux_sel').eq(self.cpu.gpio_out[ae350_map.TWI_MUX_GPIO_SHIFT:ae350_map.TWI_MUX_GPIO_SHIFT+3])
         platform.add_period_constraint(platform.lookup_request('cpu_jtag').tck, 10000)
         self.specials += Tristate(platform.request('fan_pwm'), 0, self.ext.sense.pull)
         self.comb += self.ext.sense.tach.eq(platform.request('fan_tach'))

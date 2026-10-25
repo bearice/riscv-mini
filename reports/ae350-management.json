@@ -1,0 +1,314 @@
+{
+  "schema": 1,
+  "date": "2026-10-25",
+  "machine": "mega138k_ae350",
+  "passed": true,
+  "snapshot_commit": "a013c0d79a4e384fa3d7b657a6581949cff6bcaa",
+  "gateware": {
+    "component": "gateware",
+    "digest": "461f28416ba9306f3e67b473c34f1101bd0aaa7c538d89c8c52c0e88096f8aea"
+  },
+  "fs_sha256": "2ed4027a2117a68ec3628d5adc4616eaf88823e434a2220cf210f436303c4982",
+  "payload": {
+    "component": "payload",
+    "digest": "43572904acc95be42cd1a9802f4eec1f1ad956650a3eaa918bb41bd349ec7395"
+  },
+  "receipts": {
+    "gateware": "build/runs/20261025T014946450220Z-build-management-sd-response-once-5869ed/result.json",
+    "bus": "build/runs/20261025T020008406374Z-board-ae350-bus-suite/result.json",
+    "sd50": "build/runs/20261025T015844272328Z-board-ae350-sd-suite/result.json",
+    "payload": "build/runs/20261025T012541819385Z-build-spi-i2c-final-readonly-f367cc/result.json"
+  },
+  "timing": {
+    "setup": 0,
+    "hold": 0,
+    "min_pulse_width_slack_ns": 0.037
+  },
+  "flash": {
+    "chip": "board user U7",
+    "controller": "0x2002047",
+    "jedec": "0xef4018",
+    "bytes": 16777216,
+    "status": "0x0",
+    "sfdp": "0x50444653",
+    "configured_spi_hz": 1000000,
+    "read_offset": 256,
+    "read_bytes": 512,
+    "crc32": "0xbd7bc39f",
+    "repeat_crc32": "0xbd7bc39f",
+    "unaligned_buffer_guard": true,
+    "bounds_rejected": true,
+    "writes": false,
+    "xip": false
+  },
+  "i2c": {
+    "controller": "0x2021011",
+    "source_hz": 80000000,
+    "setup": "0x14981905",
+    "mode": "7-bit PIO, conservative standard-speed timing",
+    "mux": "two 74HC4051, GPIO selector",
+    "pins": {
+      "scl": "K25",
+      "sda": "K26",
+      "selector": [
+        "N19",
+        "P19",
+        "P26"
+      ]
+    },
+    "gpio_bits": [
+      20,
+      21,
+      22
+    ],
+    "selected_eeprom_branch": 2,
+    "eeprom_address": "0x50",
+    "eeprom_register": 0,
+    "eeprom_read_bytes": 16,
+    "crc32": "0xb3441ce7",
+    "repeat_crc32": "0xb3441ce7",
+    "missing_address": "0x55",
+    "missing_result": "NACK",
+    "selector_readback_mask": "0xff",
+    "address_0x60_ack_mask": "0x18",
+    "address_0x50_ack_mask": "0x7",
+    "eeprom_data_written": false
+  },
+  "bus_words": [
+    1112932351,
+    0,
+    33562695,
+    15679512,
+    16777216,
+    0,
+    1346651731,
+    3179004831,
+    3179004831,
+    0,
+    0,
+    33689617,
+    24581,
+    2,
+    0,
+    0,
+    3007585511,
+    3007585511,
+    4294967292,
+    25189,
+    1,
+    2097152,
+    4210688,
+    25185,
+    0,
+    4294967294,
+    4294967294,
+    1000000,
+    345512197,
+    0,
+    0,
+    1112866818,
+    4294967292,
+    4294967292,
+    4294967292,
+    0,
+    0,
+    4294967292,
+    4294967292,
+    4294967292,
+    24,
+    255,
+    0,
+    7,
+    0,
+    0,
+    0,
+    0
+  ],
+  "sd50_regression": {
+    "passed": true,
+    "payload": {
+      "component": "payload",
+      "digest": "c3d310a1c3f75d6fff758318124cc3013d2483621208d931a858828e4fbfdba2"
+    },
+    "samples": [
+      {
+        "index": 0,
+        "start": 366885.693637971,
+        "cycles": 591484362,
+        "wall_seconds": 0.7448796770186163,
+        "bytes": 1048576,
+        "call_bytes": 512,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 794066988.6006534,
+        "mib_s": 1.3424987026126203
+      },
+      {
+        "index": 1,
+        "start": 366886.544206789,
+        "cycles": 571765552,
+        "wall_seconds": 0.7106178670073859,
+        "bytes": 1048576,
+        "call_bytes": 512,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 804603400.1479127,
+        "mib_s": 1.407226086520009
+      },
+      {
+        "index": 2,
+        "start": 366887.356319851,
+        "cycles": 571610220,
+        "wall_seconds": 0.7308593000052497,
+        "bytes": 1048576,
+        "call_bytes": 512,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 782107062.1881588,
+        "mib_s": 1.3682524119113175
+      },
+      {
+        "index": 3,
+        "start": 366888.192862072,
+        "cycles": 218533001,
+        "wall_seconds": 0.2689571699593216,
+        "bytes": 1048576,
+        "call_bytes": 4096,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 812519707.2569287,
+        "mib_s": 3.718064107200581
+      },
+      {
+        "index": 4,
+        "start": 366888.566965515,
+        "cycles": 218453349,
+        "wall_seconds": 0.28521505295066163,
+        "bytes": 1048576,
+        "call_bytes": 4096,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 765925033.5492969,
+        "mib_s": 3.506126305938651
+      },
+      {
+        "index": 5,
+        "start": 366888.957822073,
+        "cycles": 218643885,
+        "wall_seconds": 0.2689577559940517,
+        "bytes": 1048576,
+        "call_bytes": 4096,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 812930209.771811,
+        "mib_s": 3.718056005873711
+      },
+      {
+        "index": 6,
+        "start": 366889.331974746,
+        "cycles": 218605630,
+        "wall_seconds": 0.28551419998984784,
+        "bytes": 1048576,
+        "call_bytes": 65536,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 765655893.8496686,
+        "mib_s": 3.50245276779774
+      },
+      {
+        "index": 7,
+        "start": 366889.722890121,
+        "cycles": 218538602,
+        "wall_seconds": 0.26876975601771846,
+        "bytes": 1048576,
+        "call_bytes": 65536,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 813107119.0375787,
+        "mib_s": 3.7206567242412336
+      },
+      {
+        "index": 8,
+        "start": 366890.097289696,
+        "cycles": 218409026,
+        "wall_seconds": 0.28504365601111203,
+        "bytes": 1048576,
+        "call_bytes": 65536,
+        "crc32": 302120497,
+        "error": 0,
+        "guards": 1,
+        "observed_cycle_hz": 766230089.3007267,
+        "mib_s": 3.5082345420135095
+      }
+    ],
+    "crc32": "1201fe31",
+    "median_cycle_mib_s": {
+      "512": 1.3991748841839986,
+      "4096": 3.660774328541802,
+      "65536": 3.660680505314114
+    }
+  },
+  "source_references": [
+    {
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/spi/spi-atcspi200.c",
+      "blob_sha": "b532c58c0ab9191e7c57f46a83e413bdf9efd26c"
+    },
+    {
+      "url": "https://github.com/andestech/linux/blob/ast-v5_4_0-branch/drivers/i2c/busses/i2c-atciic100.c",
+      "blob_sha": "0842513da83ea5f8584ff87ce4a4c88f223bb858"
+    },
+    {
+      "url": "https://github.com/zephyrproject-rtos/zephyr/blob/main/drivers/i2c/i2c_andes_atciic100.h",
+      "blob_sha": "9312427ee8ef24705269a5c856d6ec435ac7d302"
+    }
+  ],
+  "failed_candidates": [
+    {
+      "receipt": "build/runs/20261025T004328912518Z-build-spi-i2c-board-connect-c63f14/result.json",
+      "reason": "SDK IO-port combination unresolved encrypted module"
+    },
+    {
+      "receipt": "build/runs/20261025T004859213457Z-build-spi-i2c-fabric-pads-3045f9/result.json",
+      "reason": "10 setup violations, worst -0.117ns"
+    },
+    {
+      "receipt": "build/runs/20261025T005917436251Z-build-spi-i2c-place3-0829a2/result.json",
+      "reason": "479 setup violations, worst -1.476ns"
+    },
+    {
+      "receipt": "build/runs/20261025T011423163588Z-build-spi-i2c-sd-retime-e45d48/result.json",
+      "reason": "STA passed and management passed, but SD regression failed due buffered-response PHY re-arm race"
+    }
+  ],
+  "sd_regression_failures": [
+    "build/runs/20261025T013502344211Z-board-ae350-sd-suite/result.json",
+    "build/runs/20261025T014546196972Z-board-ae350-sd-suite/result.json",
+    "build/runs/20261025T014705534260Z-board-ae350-sd-suite/result.json"
+  ],
+  "final_state": {
+    "cpu": "management completion WFI",
+    "spi_idle": true,
+    "i2c_disabled": true,
+    "mux_and_gpio_direction_restored": true,
+    "ftdi_drivers_restored": true,
+    "flash_written": false,
+    "eeprom_data_written": false,
+    "current_changed": false
+  },
+  "limits": [
+    "no storage programming/erase",
+    "no XIP or persistent startup",
+    "no SPI DMA/Quad acceptance",
+    "no I2C 10-bit/IRQ/multimaster/fault-injection acceptance",
+    "downstream ACKs do not identify or configure all devices",
+    "no audio/video/SD long combined stress"
+  ]
+}

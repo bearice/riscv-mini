@@ -262,10 +262,9 @@ class AE350Fabric(LiteXModule):
         video_ok = video.ok if video is not None else 0
         video_rdata = video.rdata if video is not None else 0
         legal = (addr_q[:2] == 0) & (~write_q | (strb_q == 0xf))
-        sys_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24,
-                               *range(0x40, 0x40 + 32, 4), *range(0x60, 0x60 + 32, 4),
-                               *range(0x80, 0x80 + 32, 4), *range(0xa0, 0xa0 + 32, 4),
-                               *range(0xc0, 0x160, 4)))
+        # Device entries are contiguous 32-byte records. Decode the record
+        # index rather than OR-ing every individual address into error_q.
+        sys_ro = _onehot(off,(0,4,8,0x20,0x24)) | ((off[5:]>=2) & (off[5:]<2+amap.DEVICE_COUNT))
         irq_ro = _onehot(off, (0x00, 0x04, 0x08, 0x10, 0x20))
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
@@ -283,6 +282,8 @@ class AE350Fabric(LiteXModule):
                 **{0xc0+4*i: sys_data.eq(v) for i,v in enumerate(amap.SENSE_EP)},
                 **{0xe0+4*i: sys_data.eq(v) for i,v in enumerate(amap.AUDIO_EP)},
                 **{0x100+4*i: sys_data.eq(v) for i,v in enumerate(amap.MIC_EP)},
+                **{0x160+4*i: sys_data.eq(v) for i,v in enumerate(amap.SPI_EP)},
+                **{0x180+4*i: sys_data.eq(v) for i,v in enumerate(amap.I2C_EP)},
                 **{0x140+4*i: sys_data.eq(v) for i,v in enumerate(amap.SD_EP)},
                 **{0x120+4*i: sys_data.eq(v) for i,v in enumerate(amap.VIDEO_EP)},
             }),

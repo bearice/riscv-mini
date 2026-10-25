@@ -11,6 +11,7 @@
 | HDMI | DVI 兼容 TMDS、640×480 RGB565、双缓冲及共享 VT 文字终端；见 [视频](video.md) |
 | SD / 文件系统 / 完整 BIOS | [原生 SD](sd.md) 的 4-bit、硬 DMAC 只读门禁已过；文件系统和完整 BIOS 未交付；复用 VT 渲染器不代表已有完整 BIOS 或其二级程序 ABI |
 | 网络 / USB Host / Linux | 未交付；芯片或板上具备相关资源不等于已有驱动和完整运行环境 |
+| 用户 Flash / TWI | 硬核 SPI/I2C 接用户 U7 Flash 与 TWI mux；只读识别/访问见 [管理总线](management.md)，不含持久启动或下游设备配置 |
 | XIP / Flash 安装 | XIP 仅预留地址，未实例化；不提供已验收持久启动流程 |
 
 HDMI 的 INDEX8、720p、HDMI 音频、DDC/EDID、CEC 与热插拔恢复不随 RGB565 视频验收自动成立。共享外设核心也不表示继承 20K 地址、缓存规则、频率或二进制兼容性。

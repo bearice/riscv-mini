@@ -33,6 +33,24 @@ def bind_csr(owner, reg, offset, go, off, wdata):
             csr.wr_stb.eq(go & (off==offset+index*4)),csr.rd_stb.eq(0)]
 
 
+class CommandResponsePipe(LiteXModule):
+    """Buffer response bytes while acknowledging exactly one PHY request.
+
+    The Core holds request.valid until it consumes the buffered last byte.
+    PHY sink.ready acknowledges the actual end earlier, so remember that end
+    and suppress re-arming until the Core leaves its response state.
+    """
+    def __init__(self,phy):
+        self.sink=stream.Endpoint(phy.sink.description)
+        self.fifo=stream.SyncFIFO(phy.source.description,depth=2,buffered=True)
+        self.source=self.fifo.source
+        completed=Signal()
+        self.comb += [self.sink.connect(phy.sink,omit={'valid'}),
+                      phy.sink.valid.eq(self.sink.valid & ~completed),
+                      phy.source.connect(self.fifo.sink)]
+        self.sync += If(~self.sink.valid,completed.eq(0)).Elif(phy.sink.valid & phy.sink.ready,completed.eq(1))
+
+
 class SDTransport(LiteXModule):
     def __init__(self, pads, device, clock_hz, ram_bytes):
         cd = Signal(reset=1)
@@ -40,13 +58,17 @@ class SDTransport(LiteXModule):
         self.phy = SDPHY(SimpleNamespace(clk=pads.clk, cmd=pads.cmd, data=pads.data, cd=cd),
                          device, clock_hz, cmd_timeout=.25, data_timeout=.5)
         self.read_requests = ResetInserter()(stream.SyncFIFO([('block_length',10)],depth=2,buffered=True))
-        self.comb += self.read_requests.source.connect(self.phy.datar.sink)
+        self.read_buffer = ResetInserter()(stream.Buffer([('block_length',10)],pipe_valid=True,pipe_ready=True))
+        self.comb += [self.read_requests.source.connect(self.read_buffer.sink),
+                      self.read_buffer.source.connect(self.phy.datar.sink)]
         phy = self.phy
+        self.responses = CommandResponsePipe(phy.cmdr)
         self.command_pipe = stream.SyncFIFO(phy.cmdw.sink.description,depth=2,buffered=True)
         self.comb += self.command_pipe.source.connect(phy.cmdw.sink)
-        self.core = SDCore(SimpleNamespace(cmdw=SimpleNamespace(sink=self.command_pipe.sink),cmdr=phy.cmdr,dataw=phy.dataw,
-            datar=SimpleNamespace(sink=self.read_requests.sink,source=phy.datar.source)))
-        self.comb += self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE'))
+        self.core = SDCore(SimpleNamespace(cmdw=SimpleNamespace(sink=self.command_pipe.sink),cmdr=SimpleNamespace(sink=self.responses.sink,source=self.responses.source),dataw=phy.dataw,
+            datar=SimpleNamespace(sink=self.read_requests.sink,source=phy.datar.source)),buffered_data=True)
+        self.comb += [self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE')),
+                      self.read_buffer.reset.eq(self.core.fsm.ongoing('IDLE'))]
 
 
 class WordFIFO(LiteXModule):

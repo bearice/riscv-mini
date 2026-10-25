@@ -22,7 +22,7 @@ from litesdcard.crc import CRC
 # SDCore -------------------------------------------------------------------------------------------
 
 class SDCore(LiteXModule):
-    def __init__(self, phy, bounded=True):
+    def __init__(self, phy, bounded=True, buffered_data=False):
         self.sink   = stream.Endpoint([("data", 8)])
         self.source = stream.Endpoint([("data", 8)])
         self.irq = Signal()
@@ -92,7 +92,7 @@ class SDCore(LiteXModule):
 
         data_read_fifo = ResetInserter()(stream.SyncFIFO(
             [("data", 8), ("status", 3), ("drop", 1)],
-            depth=64,
+            depth=64, buffered=buffered_data,
         ))
         self.submodules.data_read_fifo = data_read_fifo
         self.comb += phy.datar.source.connect(data_read_fifo.sink)

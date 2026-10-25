@@ -49,11 +49,12 @@ def operations(machine):
     machine = normalise(machine)
     if machine == AE350:
         from scripts.mini_ops.mega138k_ae350 import (
-            ae350, ae350_ddr_suite, ae350_dma_suite, ae350_io_suite, ae350_jtag_test, ae350_upload, ae350_audio_suite, ae350_video_suite, ae350_sd_suite)
+            ae350, ae350_ddr_suite, ae350_dma_suite, ae350_io_suite, ae350_jtag_test, ae350_upload, ae350_audio_suite, ae350_video_suite, ae350_sd_suite, ae350_bus_suite)
         return {
             'jtag-test': ae350_jtag_test.perform,
             'ddr-suite': ae350_ddr_suite.perform,
             'dma-suite': ae350_dma_suite.perform,
+            'bus-suite': ae350_bus_suite.perform,
             'sd-suite': ae350_sd_suite.perform,
             'io-suite': ae350_io_suite.perform,
             'audio-suite': ae350_audio_suite.perform,

@@ -653,6 +653,92 @@
           "active_low": true
         }
       }
+    },
+    "user_flash": {
+      "kind": "spi",
+      "signals": {
+        "cs_n": {
+          "pins": [
+            "L25"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "clk": {
+          "pins": [
+            "P20"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "mosi": {
+          "pins": [
+            "R21"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "miso": {
+          "pins": [
+            "T22"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up"
+        },
+        "wp_n": {
+          "pins": [
+            "R22"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "hold_n": {
+          "pins": [
+            "R20"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        }
+      }
+    },
+    "system_i2c": {
+      "kind": "i2c",
+      "signals": {
+        "scl": {
+          "pins": [
+            "K25"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up"
+        },
+        "sda": {
+          "pins": [
+            "K26"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up"
+        }
+      }
+    },
+    "twi_mux": {
+      "kind": "twi_mux",
+      "signals": {
+        "sel": {
+          "pins": [
+            "N19",
+            "P19",
+            "P26"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "down",
+          "drive_ma": 8
+        }
+      }
     }
   },
   "reserved_pins": [
@@ -688,13 +774,8 @@
     "H11",
     "H12",
     "J10",
-    "K25",
-    "K26",
     "L14",
     "M14",
-    "N19",
-    "P19",
-    "P26",
     "V1",
     "V11",
     "V3",

@@ -81,3 +81,8 @@ AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独
 ## 原生 SD 只读检查
 
 原生 4-bit PHY/Core、硬核 DMAC FIFO、接线与限制见 [SD](sd.md)。`board sd-suite --build <gateware-result.json> --payload <sd-payload-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG>` 执行 SRAM/UART 装载与只读扇区检查，不写卡。独立主机 LBA0 CRC32 可通过 `--expected-sector-crc` 传入；未提供时只记录内部读一致性，不记为主机参考校验通过。
+
+
+## 用户 Flash 与 TWI 管理总线
+
+接线、硬核 BSP 与边界见 [管理总线](management.md)。`board bus-suite --build <gateware-result.json> --payload <bus-suite-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG>` 只验证用户 Flash 读取与 TWI mux/EEPROM 连通性，UART 完成前不暂停 CPU；不写 Flash 或 EEPROM 数据。

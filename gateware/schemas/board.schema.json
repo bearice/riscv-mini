@@ -166,7 +166,9 @@
             "spi",
             "rmii",
             "ulpi",
-            "spi_lcd"
+            "spi_lcd",
+            "i2c",
+            "twi_mux"
           ]
         },
         "signals": {
@@ -1799,6 +1801,36 @@
                         }
                       }
                     ]
+                  },
+                  "wp_n": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "hold_n": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -2157,6 +2189,96 @@
                   "dc",
                   "rst_n",
                   "bl_n"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "i2c"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signals": {
+                "type": "object",
+                "properties": {
+                  "scl": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sda": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "scl",
+                  "sda"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "twi_mux"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signals": {
+                "type": "object",
+                "properties": {
+                  "sel": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "sel"
                 ],
                 "additionalProperties": false
               }

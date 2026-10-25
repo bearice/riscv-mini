@@ -197,6 +197,14 @@
         "phy_reset": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "i2c": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "twi_mux": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         }
       },
       "required": [
@@ -628,6 +636,18 @@
               "sd": {
                 "type": "string",
                 "minLength": 1
+              },
+              "flash": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "i2c": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "twi_mux": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
               }
             },
             "required": [

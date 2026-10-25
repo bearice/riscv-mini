@@ -74,6 +74,7 @@ void main(void) {
     r[8]=info.command;r[9]=info.response;r[10]=info.error;
     puts("SD_BENCH CONFIG ");hex(info.hz);putc(' ');hex(info.width);putc(' ');hex(AE350_CPU_HZ);putc(' ');hex(cache);puts("\r\n");
     if(!rc && info.sectors>FIRST_LBA+BYTES/512)rc=measure();else rc=-1;
+    ae350_sd_info(&info);r[11]=info.command;r[12]=info.response;r[13]=info.error;r[14]=info.reads;
     r[6]=rc;r[7]=ae350_sd_stop();
     r[0]=0x5342ffff;
     puts("SD_BENCH DONE\r\n");
