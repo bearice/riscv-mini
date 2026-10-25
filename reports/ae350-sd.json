@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "phase": "P7 native SD bring-up",
+  "passed": true,
+  "phase_complete": false,
+  "receipts": {
+    "gateware": "build/runs/20261024T141830828101Z-build-sd-csr-fields-269210/result.json",
+    "payload": "build/runs/20261024T142133769809Z-build-sd-readonly-routes-40e30a/result.json",
+    "board": "build/runs/20261024T142450171035Z-board-ae350-sd-suite/result.json",
+    "initial_failure": "build/runs/20261024T141550884962Z-board-ae350-sd-suite/result.json"
+  },
+  "gateware": {
+    "component": "gateware",
+    "digest": "c0856d5475c091db47cfff09817c574680bfe9da2f15ab38f44d6e781945ebc0"
+  },
+  "payload": {
+    "component": "payload",
+    "digest": "23eb167598a2c8498bcf1a590f8dcd5088af917b76461e11b390bb72c53c5809"
+  },
+  "timing": {
+    "setup": 0,
+    "hold": 0,
+    "min_pulse_width_slack_ns": 0.037
+  },
+  "sd": {
+    "name": "results",
+    "completion": "0x5344ffff",
+    "words": [
+      1397030911,
+      0,
+      0,
+      1932515906,
+      43605,
+      0,
+      1932515906,
+      938324323,
+      165,
+      165,
+      31116288,
+      10000000,
+      4,
+      9,
+      0,
+      12,
+      2816,
+      0,
+      0,
+      1,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1396965377
+    ],
+    "polls": [
+      {
+        "t": 0.27,
+        "stage": "0x53440001"
+      },
+      {
+        "t": 0.53,
+        "stage": "0x5344ffff"
+      }
+    ],
+    "pc": "0x4048",
+    "mcause": "0x0",
+    "trap": [
+      "0x0",
+      "0x0",
+      "0x0",
+      "0x0",
+      "0x0"
+    ],
+    "init_error": 0,
+    "read_error": 0,
+    "sector_crc": "0x732fda42",
+    "unaligned_error": 0,
+    "repeat_sector_crc": "0x732fda42",
+    "eight_sector_crc": "0x37edb163",
+    "sectors": 31116288,
+    "hz": 10000000,
+    "width": 4,
+    "reads": 9,
+    "tx_route_error": 0,
+    "tx_gate_wait": 1,
+    "tx_level": 8,
+    "tx_drain": 0,
+    "errors": 0,
+    "last_command": 12,
+    "response": "0xb00"
+  },
+  "media_written": false,
+  "flash_written": false,
+  "host_reference_matched": null,
+  "selectors": {
+    "tx": {
+      "request": 4,
+      "selector": 11,
+      "validated": "request gate off/on to staging FIFO, no card write"
+    },
+    "rx": {
+      "request": 5,
+      "selector": 12,
+      "validated": "SCR and nine sectors via hard DMAC"
+    }
+  },
+  "remaining": [
+    "independent host sector CRC",
+    "FatFs and dedicated test-file writes",
+    "BIOS file/runtime services",
+    "selected AE350 application",
+    "audio/video/SD 30-minute stress"
+  ],
+  "cleanup": {
+    "ftdi_driver_bindings_restored": true,
+    "channel_drained": true
+  }
+}

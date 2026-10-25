@@ -163,7 +163,7 @@ class LoopbackFifo(LiteXModule):
 class AE350Fabric(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics, io, layout, video=None):
+    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None):
         amap = layout
         self.video = video
         fifo_bus = AHBInterface(data_width=32, address_width=32)
@@ -171,8 +171,15 @@ class AE350Fabric(LiteXModule):
         self.fifo = LoopbackFifo(fifo_bus)
         self.audio = FabricAudio(clock_hz=io.machine.clocks.sys)
         self.err = ErrorSlave(err_bus)
+        if sd is not None:
+            for bit,ack in ((amap.SD_TX_REQ,sd.tx_ack),(amap.SD_RX_REQ,sd.rx_ack)):
+                caught=Signal()
+                self.specials += AckCatch(cpu.dma_ack[bit],caught)
+                self.comb += ack.eq(caught | cpu.dma_ack[bit])
         # HSEL is the macro's decode of the 128MiB extended-AHB window.
+        sd_slaves = [] if sd is None else [(amap.SD_TX_DATA,4,sd.tx_bus),(amap.SD_RX_DATA,4,sd.rx_bus)]
         self.ic = MemInterconnect(cpu.ahb_exts, [
+            *sd_slaves,
             (amap.AUDIO_DATA, 0x10000, self.audio.tx_bus),
             (amap.MIC_DATA, 0x10000, self.audio.rx_bus),
             (amap.LOOPBACK_DATA, 4, fifo_bus),
@@ -223,7 +230,8 @@ class AE350Fabric(LiteXModule):
             self.fifo.ack_tx.eq(level_tx),
             self.fifo.ack_rx.eq(level_rx),
             cpu.dma_req.eq(Cat(self.fifo.req_tx, self.fifo.req_rx,
-                              self.audio.tx_req, self.audio.rx_req, Constant(0, 4))),
+                              self.audio.tx_req, self.audio.rx_req,
+                              sd.tx_req if sd is not None else 0, sd.rx_req if sd is not None else 0, Constant(0, 2))),
             cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 1),
                                  self.audio.tx_irq, self.audio.rx_irq, Constant(0, 3),
                                  self.board.irq, Constant(0, 8))),
@@ -247,6 +255,9 @@ class AE350Fabric(LiteXModule):
         sense = addr_q[12:] == (amap.SENSE_BASE >> 12)
         audio = addr_q[12:] == (amap.AUDIO_BASE >> 12)
         mic = addr_q[12:] == (amap.MIC_BASE >> 12)
+        sd_page = addr_q[12:] == (amap.SD_BASE >> 12)
+        sd_ok = sd.ok if sd is not None else 0
+        sd_rdata = sd.rdata if sd is not None else 0
         video_page = addr_q[12:] == (amap.VIDEO_BASE >> 12)
         video_ok = video.ok if video is not None else 0
         video_rdata = video.rdata if video is not None else 0
@@ -254,7 +265,7 @@ class AE350Fabric(LiteXModule):
         sys_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24,
                                *range(0x40, 0x40 + 32, 4), *range(0x60, 0x60 + 32, 4),
                                *range(0x80, 0x80 + 32, 4), *range(0xa0, 0xa0 + 32, 4),
-                               *range(0xc0, 0x140, 4)))
+                               *range(0xc0, 0x160, 4)))
         irq_ro = _onehot(off, (0x00, 0x04, 0x08, 0x10, 0x20))
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
@@ -272,6 +283,7 @@ class AE350Fabric(LiteXModule):
                 **{0xc0+4*i: sys_data.eq(v) for i,v in enumerate(amap.SENSE_EP)},
                 **{0xe0+4*i: sys_data.eq(v) for i,v in enumerate(amap.AUDIO_EP)},
                 **{0x100+4*i: sys_data.eq(v) for i,v in enumerate(amap.MIC_EP)},
+                **{0x140+4*i: sys_data.eq(v) for i,v in enumerate(amap.SD_EP)},
                 **{0x120+4*i: sys_data.eq(v) for i,v in enumerate(amap.VIDEO_EP)},
             }),
             Case(off, {
@@ -292,6 +304,7 @@ class AE350Fabric(LiteXModule):
         # Pages are disjoint. A balanced OR avoids the old priority chain
         # through every device before the registered APB response.
         pages = [
+            (legal & sd_page & sd_ok,sd_rdata),
             (legal & sysinfo & ~write_q & sys_ro,sys_data),
             (legal & audio & self.audio.tx_ok,self.audio.tx_rdata),
             (legal & mic & self.audio.rx_ok,self.audio.rx_rdata),
@@ -342,6 +355,9 @@ class AE350Fabric(LiteXModule):
             self.audio.tx_selected.eq(legal & audio),
             self.audio.rx_selected.eq(legal & mic),
         ]
+        if sd is not None:
+            self.comb += [sd.off.eq(off), sd.write.eq(write_q), sd.wdata.eq(wdata_q),
+                          sd.commit.eq(commit), sd.selected.eq(legal & sd_page)]
         if video is not None:
             self.comb += [video.off.eq(off), video.write.eq(write_q), video.wdata.eq(wdata_q),
                           video.commit.eq(commit), video.selected.eq(legal & video_page)]
@@ -358,11 +374,11 @@ class AE350Fabric(LiteXModule):
                 access_q.eq(0),
             ).Elif(wait & ~access_q,
                 access_q.eq(1),
-            ).Elif(wait,
+            ).Elif(wait & (~sd_page | ~legal | (sd.complete if sd is not None else 1)),
                 wait.eq(0),
                 access_q.eq(0),
-                cpu.apb_data.eq(read_data),
-                cpu.apb_slverr.eq(error_q),
+                cpu.apb_data.eq(Mux(sd_page & legal,sd.rdata if sd is not None else 0,read_data)),
+                cpu.apb_slverr.eq(Mux(sd_page & legal,sd.error if sd is not None else 1,error_q)),
                 If(control, self.req_enable.eq(wdata_q[1])),
                 If(commit & irq_enable_q,
                    self.irq_enable.eq(wdata_q[0])),

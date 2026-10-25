@@ -77,3 +77,7 @@ JTAG 用于 halt、寄存器/内存观察、身份核对及显式恢复。无 JT
 AE350 平台操作合同见 [当前上板说明](operations.md)。普通工作使用 `board run/recover/verify`，诊断使用 `board ddr-suite`；`ae350-upload` 仅保留为兼容别名。上传必须明确传入 `--payload <payload-build-result.json>`，不再自动挑选其他构建的最新载荷。无 JTAG 的上传只证明 ROM 接收与交接，执行核验和拒绝路径测试使用显式 CPU JTAG。完整时序检查包含 setup、hold 和 minimum pulse width。
 
 AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独立于内存诊断。普通应用和 DDR suite 都经同一 UART loader 装载；`board jtag-test` 只读核验 ITCM、本地内存和 POST，`board recover` 执行显式恢复。
+
+## 原生 SD 只读检查
+
+原生 4-bit PHY/Core、硬核 DMAC FIFO、接线与限制见 [SD](sd.md)。`board sd-suite --build <gateware-result.json> --payload <sd-payload-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG>` 执行 SRAM/UART 装载与只读扇区检查，不写卡。独立主机 LBA0 CRC32 可通过 `--expected-sector-crc` 传入；未提供时只记录内部读一致性，不记为主机参考校验通过。

@@ -613,6 +613,46 @@
           "pull": "none"
         }
       }
+    },
+    "sdcard": {
+      "kind": "sd",
+      "signals": {
+        "clk": {
+          "pins": [
+            "D23"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "cmd": {
+          "pins": [
+            "D24"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "data": {
+          "pins": [
+            "H23",
+            "J23",
+            "A25",
+            "B25"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "drive_ma": 8
+        },
+        "detect": {
+          "pins": [
+            "J15"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "up",
+          "active_low": true
+        }
+      }
     }
   },
   "reserved_pins": [

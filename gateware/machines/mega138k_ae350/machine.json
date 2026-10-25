@@ -32,7 +32,8 @@
     ],
     "ws2812": "ws2812",
     "fan": "fan",
-    "cpu_jtag": "cpu_jtag"
+    "cpu_jtag": "cpu_jtag",
+    "sd": "sdcard"
   },
   "gpio": {
     "leds": [

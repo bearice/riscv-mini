@@ -35,6 +35,8 @@ def candidate(selection):
 
 
 def perform(args):
+    if args.operation == 'status':
+        return status(args)
     if args.operation == 'debug-scan':
         return debug_scan(args)
     if args.operation not in ('run', 'recover', 'verify'):
@@ -78,4 +80,26 @@ def debug_scan(args):
         raise
     finally:
         op.save()
+    return op
+
+
+def status(args):
+    """Passively observe the selected UART without resetting or programming."""
+    import time
+    from mini_ops.mega138k_ae350.ae350_session import HardwareSession
+    op=Operation('ae350-status')
+    try:
+        with HardwareSession(op,port=args.port) as hardware:
+            port=hardware.open_serial()
+            deadline=time.monotonic()+args.seconds
+            data=bytearray()
+            while time.monotonic()<deadline:
+                data.extend(port.read(4096))
+            output=data.decode(errors='replace')
+            op.record('uart',output=output,bytes=len(data),observation='data' if data else 'silent-unknown')
+            op.report.update(passed=True,reset=False,flash_written=False)
+            print(output if data else 'UART silent; board state is unknown',flush=True)
+    except Exception as error:
+        op.report.update(passed=False,error=str(error));op.save();raise
+    op.save()
     return op

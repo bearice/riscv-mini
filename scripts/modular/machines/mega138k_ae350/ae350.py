@@ -28,6 +28,9 @@ AE350_CLOSURE = (
     'gateware/devices/ws2812/core.py',
     'gateware/devices/audio/__init__.py',
     'gateware/devices/audio/core.py',
+    'gateware/vendor/litesdcard/sdcore.py',
+    'gateware/machines/mega138k_ae350/peripherals/sd.py',
+    'gateware/machines/mega138k_ae350/sd_cdc.py',
     'gateware/devices/audio/clock.py',
     'gateware/devices/video/hdmi/ae350_hdmi_phy.v',
     'gateware/devices/video/hdmi/svo_tmds.v',
@@ -102,7 +105,7 @@ def _inputs(store, hardware=False, profile='ddr'):
     if hardware:
         # Preserve installed Python implementation bytes, including the hard
         # macro adapter and bus/PLL logic; package version alone is insufficient.
-        for name in ('migen', 'litex'):
+        for name in ('migen', 'litex', 'litesdcard'):
             base = Path(importlib.import_module(name).__file__).parent
             for path in sorted(base.rglob('*.py')):
                 files['inputs/python/' + name + '/' + path.relative_to(base).as_posix()] = path
@@ -429,7 +432,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     # subdirectory is staged as its own include root, keeping the bare
     # #include names the sources use today.
     runtime = store.root / 'firmware/bsp/mega138k_ae350'
-    payload_dirs = ('runtime', 'dma', 'io', 'audio', 'video')
+    payload_dirs = ('runtime', 'dma', 'io', 'audio', 'video', 'sd')
     for sub in payload_dirs:
         for path in sorted((runtime / sub).iterdir()):
             if path.is_file():

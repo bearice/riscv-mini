@@ -1,0 +1,655 @@
+{
+  "schema": 1,
+  "date": "2026-10-25",
+  "machine": "mega138k_ae350",
+  "passed": true,
+  "gateware": {
+    "component": "gateware",
+    "digest": "55ef9313e9341be856395f01ce974d6c93b54516b351c7f24b0325aa9d67a279"
+  },
+  "gateware_receipt": "build/runs/20261024T152707373816Z-build-sd-100mhz-register-fifo-fbb155/result.json",
+  "timing": {
+    "setup": 0,
+    "hold": 0,
+    "min_pulse_width_slack_ns": 0.037
+  },
+  "clocks": {
+    "cpu": 800000000,
+    "sys": 80000000,
+    "mem": 100000000,
+    "ddr_ck": 400000000,
+    "sd_controller_domain": "mem",
+    "sd_controller": 100000000
+  },
+  "workload": {
+    "first_lba": 2048,
+    "bytes_per_sample": 1048576,
+    "repetitions": 3,
+    "cache_control": 3,
+    "expected_crc32": "1201fe31",
+    "driver_max_command_bytes": 4096,
+    "concurrent_audio_video": false
+  },
+  "timing_method": {
+    "primary": "rdcycle64 at 800MHz; CPU uninterrupted, initialization/CRC/UART formatting excluded",
+    "calibration": "previous long cache-off host monotonic run observed 799.742870 MHz median, same CPU PLL settings",
+    "calibration_receipt": "build/runs/20261024T143832038985Z-board-ae350-sd-suite/result.json",
+    "secondary": "raw host UART START/END time retained; short windows show USB/UART scheduling jitter"
+  },
+  "measurements": [
+    {
+      "receipt": "build/runs/20261024T153602200290Z-board-ae350-sd-suite/result.json",
+      "gateware": {
+        "component": "gateware",
+        "digest": "55ef9313e9341be856395f01ce974d6c93b54516b351c7f24b0325aa9d67a279"
+      },
+      "payload": {
+        "component": "payload",
+        "digest": "493769fc5d3cee1856e32ea70a79b248c0f085a3b67dc1dc1209c452b5f2a3fc"
+      },
+      "config": {
+        "sd_hz": 10000000,
+        "width": 4,
+        "configured_cpu_hz": 800000000,
+        "cache_control": 3
+      },
+      "samples": [
+        {
+          "index": 0,
+          "start": 329523.786865439,
+          "cycles": 633669299,
+          "wall_seconds": 0.795496192004066,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 796571128.0196313,
+          "mib_s": 1.2570770420418163,
+          "cycle_mib_s": 1.2624881799741414
+        },
+        {
+          "index": 1,
+          "start": 329524.687158595,
+          "cycles": 631521668,
+          "wall_seconds": 0.7955327919917181,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 793834866.8430182,
+          "mib_s": 1.2570192078397826,
+          "cycle_mib_s": 1.2667815540416263
+        },
+        {
+          "index": 2,
+          "start": 329525.588298374,
+          "cycles": 630956676,
+          "wall_seconds": 0.7795087450067513,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 809428604.9280119,
+          "mib_s": 1.282859244884211,
+          "cycle_mib_s": 1.2679158972873756
+        },
+        {
+          "index": 3,
+          "start": 329526.487624396,
+          "cycles": 279528433,
+          "wall_seconds": 0.3385973609983921,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 825548173.7240338,
+          "mib_s": 2.953360289198322,
+          "cycle_mib_s": 2.861962883038807
+        },
+        {
+          "index": 4,
+          "start": 329526.946688507,
+          "cycles": 279529737,
+          "wall_seconds": 0.33857779699610546,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 825599727.6844923,
+          "mib_s": 2.953530942879585,
+          "cycle_mib_s": 2.861949532045673
+        },
+        {
+          "index": 5,
+          "start": 329527.405519453,
+          "cycles": 279547705,
+          "wall_seconds": 0.3386310359928757,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 825522988.9970312,
+          "mib_s": 2.953066593757338,
+          "cycle_mib_s": 2.8617655795099446
+        },
+        {
+          "index": 6,
+          "start": 329527.864819086,
+          "cycles": 279360938,
+          "wall_seconds": 0.338299626018852,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 825779624.0792545,
+          "mib_s": 2.955959519577696,
+          "cycle_mib_s": 2.8636788153968755
+        },
+        {
+          "index": 7,
+          "start": 329528.32369966,
+          "cycles": 279365629,
+          "wall_seconds": 0.33906000695424154,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 823941553.9140902,
+          "mib_s": 2.949330441484232,
+          "cycle_mib_s": 2.8636307296056094
+        },
+        {
+          "index": 8,
+          "start": 329528.780445953,
+          "cycles": 279364613,
+          "wall_seconds": 0.3413100769976154,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 818506782.6226292,
+          "mib_s": 2.9298871243317746,
+          "cycle_mib_s": 2.8636411441272984
+        }
+      ],
+      "summary": [
+        {
+          "call_bytes": 512,
+          "median_cycle_mib_s": 1.2667815540416263,
+          "median_host_mib_s": 1.2570770420418163
+        },
+        {
+          "call_bytes": 4096,
+          "median_cycle_mib_s": 2.861949532045673,
+          "median_host_mib_s": 2.953360289198322
+        },
+        {
+          "call_bytes": 65536,
+          "median_cycle_mib_s": 2.8636411441272984,
+          "median_host_mib_s": 2.949330441484232
+        }
+      ],
+      "status": [
+        1396899839,
+        0,
+        10000000,
+        4,
+        800000000,
+        3,
+        0,
+        0,
+        6,
+        2336,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "receipt": "build/runs/20261024T153643101160Z-board-ae350-sd-suite/result.json",
+      "gateware": {
+        "component": "gateware",
+        "digest": "55ef9313e9341be856395f01ce974d6c93b54516b351c7f24b0325aa9d67a279"
+      },
+      "payload": {
+        "component": "payload",
+        "digest": "8fe2ad566e463e2863b7481b24d9755a06b098dcfcd2b9141b63c3154019f8f3"
+      },
+      "config": {
+        "sd_hz": 25000000,
+        "width": 4,
+        "configured_cpu_hz": 800000000,
+        "cache_control": 3
+      },
+      "samples": [
+        {
+          "index": 0,
+          "start": 329565.72840568,
+          "cycles": 575302403,
+          "wall_seconds": 0.709769593027886,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 810548111.177534,
+          "mib_s": 1.4089079186021303,
+          "cycle_mib_s": 1.3905730200817534
+        },
+        {
+          "index": 1,
+          "start": 329566.554993412,
+          "cycles": 573271780,
+          "wall_seconds": 0.7145897290320136,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 802239042.5014316,
+          "mib_s": 1.3994043846034625,
+          "cycle_mib_s": 1.395498658594358
+        },
+        {
+          "index": 2,
+          "start": 329567.371692474,
+          "cycles": 572419528,
+          "wall_seconds": 0.7296464529936202,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 784516289.5693609,
+          "mib_s": 1.3705267748471377,
+          "cycle_mib_s": 1.3975763594144888
+        },
+        {
+          "index": 3,
+          "start": 329568.206863143,
+          "cycles": 218864792,
+          "wall_seconds": 0.26966472598724067,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 811618172.1533564,
+          "mib_s": 3.708308516581125,
+          "cycle_mib_s": 3.65522472888193
+        },
+        {
+          "index": 4,
+          "start": 329568.581502295,
+          "cycles": 218948280,
+          "wall_seconds": 0.285402356996201,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 767156523.5283409,
+          "mib_s": 3.5038253030731314,
+          "cycle_mib_s": 3.6538309412615617
+        },
+        {
+          "index": 5,
+          "start": 329568.972523026,
+          "cycles": 218962536,
+          "wall_seconds": 0.2690010780352168,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 813983860.5826483,
+          "mib_s": 3.717457221004457,
+          "cycle_mib_s": 3.6535930511875327
+        },
+        {
+          "index": 6,
+          "start": 329569.348838082,
+          "cycles": 218765917,
+          "wall_seconds": 0.2836248080129735,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 771321516.3815757,
+          "mib_s": 3.5257846695633837,
+          "cycle_mib_s": 3.6568767702511904
+        },
+        {
+          "index": 7,
+          "start": 329569.737656773,
+          "cycles": 218788369,
+          "wall_seconds": 0.26880437397630885,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 813931580.6642454,
+          "mib_s": 3.7201775596409576,
+          "cycle_mib_s": 3.656501502600442
+        },
+        {
+          "index": 8,
+          "start": 329570.111613776,
+          "cycles": 218839113,
+          "wall_seconds": 0.2858008809853345,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 765704823.0415686,
+          "mib_s": 3.4989395293407566,
+          "cycle_mib_s": 3.655653639941412
+        }
+      ],
+      "summary": [
+        {
+          "call_bytes": 512,
+          "median_cycle_mib_s": 1.395498658594358,
+          "median_host_mib_s": 1.3994043846034625
+        },
+        {
+          "call_bytes": 4096,
+          "median_cycle_mib_s": 3.6538309412615617,
+          "median_host_mib_s": 3.708308516581125
+        },
+        {
+          "call_bytes": 65536,
+          "median_cycle_mib_s": 3.656501502600442,
+          "median_host_mib_s": 3.5257846695633837
+        }
+      ],
+      "status": [
+        1396899839,
+        0,
+        25000000,
+        4,
+        800000000,
+        3,
+        0,
+        0,
+        6,
+        2336,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "receipt": "build/runs/20261024T153724437617Z-board-ae350-sd-suite/result.json",
+      "gateware": {
+        "component": "gateware",
+        "digest": "55ef9313e9341be856395f01ce974d6c93b54516b351c7f24b0325aa9d67a279"
+      },
+      "payload": {
+        "component": "payload",
+        "digest": "18ab3712dfb1ddea6a82d2174db610c493ff2029f7fc6d68d8278b5efe680bc2"
+      },
+      "config": {
+        "sd_hz": 50000000,
+        "width": 4,
+        "configured_cpu_hz": 800000000,
+        "cache_control": 3
+      },
+      "samples": [
+        {
+          "index": 0,
+          "start": 329605.789838035,
+          "cycles": 574312186,
+          "wall_seconds": 0.7082432269817218,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 810896827.7007211,
+          "mib_s": 1.4119443178604627,
+          "cycle_mib_s": 1.392970616855412
+        },
+        {
+          "index": 1,
+          "start": 329606.618611922,
+          "cycles": 573562780,
+          "wall_seconds": 0.7123749819584191,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 805141666.2937758,
+          "mib_s": 1.4037550802961374,
+          "cycle_mib_s": 1.3947906452367778
+        },
+        {
+          "index": 2,
+          "start": 329607.436849112,
+          "cycles": 572319268,
+          "wall_seconds": 0.7273164110374637,
+          "bytes": 1048576,
+          "call_bytes": 512,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 786891728.7094188,
+          "mib_s": 1.3749174153427572,
+          "cycle_mib_s": 1.3978211895532409
+        },
+        {
+          "index": 3,
+          "start": 329608.269935453,
+          "cycles": 219388553,
+          "wall_seconds": 0.26946000097086653,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 814178550.4696107,
+          "mib_s": 3.7111259422437173,
+          "cycle_mib_s": 3.646498365846827
+        },
+        {
+          "index": 4,
+          "start": 329608.645882615,
+          "cycles": 218198205,
+          "wall_seconds": 0.284576317993924,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 766747586.5109012,
+          "mib_s": 3.513995848457604,
+          "cycle_mib_s": 3.666391297765259
+        },
+        {
+          "index": 5,
+          "start": 329609.036891867,
+          "cycles": 218295452,
+          "wall_seconds": 0.26749688701238483,
+          "bytes": 1048576,
+          "call_bytes": 4096,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 816067261.3356175,
+          "mib_s": 3.7383612615787225,
+          "cycle_mib_s": 3.6647579813069124
+        },
+        {
+          "index": 6,
+          "start": 329609.404880356,
+          "cycles": 218206882,
+          "wall_seconds": 0.28831499902298674,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 756834999.009548,
+          "mib_s": 3.4684286401633657,
+          "cycle_mib_s": 3.6662455036592294
+        },
+        {
+          "index": 7,
+          "start": 329609.800036134,
+          "cycles": 217952529,
+          "wall_seconds": 0.26919651695061475,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 809640969.6117439,
+          "mib_s": 3.7147583160723223,
+          "cycle_mib_s": 3.6705240525105354
+        },
+        {
+          "index": 8,
+          "start": 329610.175865034,
+          "cycles": 218069281,
+          "wall_seconds": 0.2820191599894315,
+          "bytes": 1048576,
+          "call_bytes": 65536,
+          "crc32": 302120497,
+          "error": 0,
+          "guards": 1,
+          "observed_cycle_hz": 773242786.0864915,
+          "mib_s": 3.54585837372707,
+          "cycle_mib_s": 3.6685588925292048
+        }
+      ],
+      "summary": [
+        {
+          "call_bytes": 512,
+          "median_cycle_mib_s": 1.3947906452367778,
+          "median_host_mib_s": 1.4037550802961374
+        },
+        {
+          "call_bytes": 4096,
+          "median_cycle_mib_s": 3.6647579813069124,
+          "median_host_mib_s": 3.7111259422437173
+        },
+        {
+          "call_bytes": 65536,
+          "median_cycle_mib_s": 3.6685588925292048,
+          "median_host_mib_s": 3.54585837372707
+        }
+      ],
+      "status": [
+        1396899839,
+        0,
+        50000000,
+        4,
+        800000000,
+        3,
+        0,
+        0,
+        6,
+        2304,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "media_written": false,
+  "flash_written": false,
+  "current_changed": false,
+  "qualification": "50MHz High Speed CMD6 negotiated and verified, native 4-bit RX short-read integrity and API throughput; no card writes or long combined stress",
+  "implementation": {
+    "cdc": "retained APB/AHB transactions in asynchronous FIFOs, ACK event synchronization and sys REQ suppression",
+    "data_fifo": "16-word registers per direction",
+    "command_pipe": "two-entry FIFO between SDCore and CMD PHY"
+  },
+  "excluded_implementations": [
+    {
+      "receipt": "build/runs/20261024T145859041811Z-build-sd-100mhz-domain-d4c8a3/result.json",
+      "failure": "203 setup violations"
+    },
+    {
+      "receipt": "build/runs/20261024T151219122196Z-build-sd-100mhz-ack-command-pipe-9965be/result.json",
+      "failure": "setup/hold0/0, minimum pulse width -0.586ns in SD BSRAM FIFO"
+    }
+  ],
+  "final_state": {
+    "cpu": "completion WFI",
+    "sd_requests_disabled": true,
+    "dmac_drained": true,
+    "last_sd_mode_hz": 50000000,
+    "ftdi_bindings_restored": true
+  }
+}

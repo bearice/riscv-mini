@@ -11,6 +11,7 @@ def bind_ports(machine):
     io.resource('cpu_jtag', d.cpu_jtag)
     io.pad('fan_pwm', d.fan, 'pwm')
     io.pad('fan_tach', d.fan, 'tach')
+    io.resource('sdcard', d.sd, rename={'detect':'cd'})
     io.resource('audio', d.audio, rename={'data': 'din'})
     io.resource('microphone', d.microphones[0])
     for group, port in (('leds', 'user_led'), ('buttons', 'user_button')):

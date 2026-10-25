@@ -624,6 +624,10 @@
               "cpu_jtag": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "sd": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [

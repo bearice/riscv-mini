@@ -14,7 +14,8 @@ __attribute__((section(".ilm.text"), noinline))
 static int endpoint(uint32_t addr, uint32_t width, uint32_t handshake, uint32_t source) {
     if (handshake && ((source && !(handshake & 1u)) || (!source && (handshake & 1u))))
         return width == 4u && addr == (handshake <= 2u ? AE350_LOOPBACK_DATA :
-                                     (source ? AE350_MIC_DATA : AE350_AUDIO_DATA));
+                                     (handshake <= 4u ? (source ? AE350_MIC_DATA : AE350_AUDIO_DATA) :
+                                      (source ? AE350_SD_RX_DATA : AE350_SD_TX_DATA)));
     return in_ddr(addr, width);
 }
 
@@ -162,7 +163,7 @@ int ae350_dma_submit(const struct ae350_dma_req *req) {
     if (req->irq_id != W(AE350_IRQ_BASE)) return AE350_DMA_ERR_BIND;
     if ((req->need_cap & ~W(AE350_SYSINFO_BASE + 0x08u)) != 0) return AE350_DMA_ERR_CAP;
     if (req->channel > 7u) return AE350_DMA_ERR_BIND;
-    if (req->handshake > 4u) return AE350_DMA_ERR_BIND;
+    if (req->handshake > 6u) return AE350_DMA_ERR_BIND;
     if (ae350_dma_busy(req->channel)) return AE350_DMA_ERR_BUSY;
     if (req->handshake && (((req->handshake & 1u) && req->dst_mode != 2u) ||
                            (!(req->handshake & 1u) && req->src_mode != 2u))) return AE350_DMA_ERR_BIND;
@@ -180,9 +181,9 @@ int ae350_dma_submit(const struct ae350_dma_req *req) {
     ctrl = (code << 21) | (code << 18) | (req->src_mode << 14) | (req->dst_mode << 12) |
            (1u << 3) | (1u << 2) | (1u << 1);
     if (req->handshake & 1u)
-        ctrl |= (1u << 16) | ((req->handshake == 1u ? 0u : AE350_AUDIO_DMA_SEL) << 4);
+        ctrl |= (1u << 16) | ((req->handshake == 1u ? 0u : (req->handshake == 3u ? AE350_AUDIO_DMA_SEL : AE350_SD_TX_DMA_SEL)) << 4);
     else if (req->handshake)
-        ctrl |= (1u << 17) | ((req->handshake == 2u ? 1u : AE350_MIC_DMA_SEL) << 8);
+        ctrl |= (1u << 17) | ((req->handshake == 2u ? 1u : (req->handshake == 4u ? AE350_MIC_DMA_SEL : AE350_SD_RX_DMA_SEL)) << 8);
     base = 0x40u + req->channel * 0x20u;
     DMAC(0x30) = (1u << req->channel) * 0x10101u;
     DMAC(base) = 0;

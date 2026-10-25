@@ -27,6 +27,7 @@ def parser():
         ('jtag-test','AE350 memory: inspect ITCM identity, local memories and autonomous POST'),
         ('ddr-suite','AE350 memory: upload DDR diagnostics over UART and observe results'),
         ('dma-suite','AE350 DMA: upload the DMA suite and judge its result contract'),
+        ('sd-suite','AE350 native SD: read-only DMAC and sector CRC checks'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
         ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
         ('video-suite','AE350 HDMI: SRAM test card and USB video capture'),
@@ -34,7 +35,7 @@ def parser():
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -72,6 +73,13 @@ def parser():
                             help='seconds between completion polls; every poll halts the CPU')
             op.add_argument('--timeout', type=int, default=90,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
+        if name == 'sd-suite':
+            op.add_argument('--benchmark', action='store_true', help='read throughput payload; no debugger pauses until UART completion')
+            op.add_argument('--payload', required=True)
+            op.add_argument('--cpu-jtag-location', required=True)
+            op.add_argument('--poll-interval', type=float, default=0.25)
+            op.add_argument('--timeout', type=int, default=60)
+            op.add_argument('--expected-sector-crc', type=lambda x:int(x,0), help='CRC32 of card LBA0 from an independent host reference')
         if name == 'io-suite':
             op.add_argument('--payload', required=True, help='AE350 I/O suite payload build result')
             op.add_argument('--cpu-jtag-location', required=True)

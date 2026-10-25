@@ -38,6 +38,8 @@ from gateware.machines.mega138k_ae350.clock import ClockReset, PLLStatusSynchron
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
 from gateware.machines.mega138k_ae350.video_memory import VideoMemoryArbiter
 from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
+from gateware.machines.mega138k_ae350.peripherals.sd import FabricSD
+from gateware.machines.mega138k_ae350.sd_cdc import SDClockCrossing
 
 DDR3_CTRL = ('cs_n','ras_n','cas_n','we_n','cke','odt','reset_n')
 
@@ -299,7 +301,9 @@ class DDRSoC(LiteXModule):
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
         # Not self.platform: that attribute is the Gowin board platform.
         video = FabricVideo()
-        self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video)
+        self.sd_native = ClockDomainsRenamer('mem')(FabricSD(platform.request('sdcard'),platform.device,ae350_map.DATA_HZ,ae350_map.DDR_SIZE))
+        self.sd = SDClockCrossing(self.sd_native)
+        self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
             VideoMemoryArbiter(self.ddr.ui, cpu_ui, video.ui))
         self.comb += [arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),
