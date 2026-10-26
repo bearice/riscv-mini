@@ -97,6 +97,10 @@ initial begin
   await_status(7,3);
   wait(green_pixels>=32);
   if(red_pixels<32)$fatal(1,"old frame was truncated on flip");
+  wr(`VIDEO_STRIDE,32'h10000);wr(`VIDEO_COMMIT,1);
+  change;off=`VIDEO_ADDRESS_ERROR;#1;if(rdata!=1)$fatal(1,"oversize stride was accepted");
+  if(pending || active_base_pixel!=32'h200000)$fatal(1,"oversize stride was published");
+  wr(`VIDEO_CLEAR_ERRORS,1);wr(`VIDEO_STRIDE,32'd32);
   wr(`VIDEO_BASE1,32'h200001);wr(`VIDEO_COMMIT,1);
   change;off=`VIDEO_ADDRESS_ERROR;#1;if(rdata!=1)$fatal(1,"invalid base not rejected");
   if(pending || active_base_pixel!=32'h200000)$fatal(1,"invalid configuration was published");

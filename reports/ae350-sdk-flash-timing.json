@@ -1,0 +1,49 @@
+{
+  "run": "20261025T193750671679Z-build-sdk-flash-sys100-route2-b7ee01",
+  "passed": false,
+  "setup": 10406,
+  "hold_including_removal": 2,
+  "worst_setup_slack_ns": -4.789,
+  "min_pulse_width_slack_ns": 1.124,
+  "clock_fmax_mhz": {
+    "sys": 67.616,
+    "mem": 76.577,
+    "ddr_ui": 67.771,
+    "audio": 83.352
+  },
+  "worst_path": {
+    "start": "SDK Flash reg_spiif_timing_r[0]",
+    "end": "SDK Flash spi_txfifo empty",
+    "launch_clock": "sys_clk",
+    "capture_clock": "sys_clk",
+    "data_delay_ns": 14.716
+  },
+  "removal_slack_ns": [
+    -0.136,
+    -0.131
+  ],
+  "qualification": "failed-not-board-tested",
+  "sys50_diagnostic": {
+    "run": "20261025T195735274220Z-build-sdk-flash-sys50-diagnostic-reset-phase90-1713a8",
+    "passed": false,
+    "sys_setup": 0,
+    "setup": 114,
+    "setup_by_clock": {
+      "mem": 102,
+      "ddr_ui": 11,
+      "audio": 1
+    },
+    "hold_including_removal": 0,
+    "worst_setup_slack_ns": -0.416,
+    "min_pulse_width_slack_ns": 1.134,
+    "clock_fmax_mhz": {
+      "sys": 50.744,
+      "mem": 96.028,
+      "ddr_ui": 96.002,
+      "audio": 79.107
+    },
+    "evidence": "build/runs/20261025T195735274220Z-build-sdk-flash-sys50-diagnostic-reset-phase90-1713a8/timing-evidence",
+    "qualification": "failed-not-board-tested",
+    "source_configuration_restored_to_sys100": true
+  }
+}

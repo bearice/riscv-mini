@@ -33,6 +33,7 @@ from gateware.machines.mega138k_ae350 import address_map as amap
 from gateware.machines.mega138k_ae350.peripherals.board_io import FabricBoard
 from gateware.machines.mega138k_ae350.peripherals.board_sense import BoardSense
 from gateware.machines.mega138k_ae350.peripherals.audio import FabricAudio
+from gateware.machines.mega138k_ae350.flash_apb import FlashRegisterAdapter
 
 
 def _onehot(off, offsets):
@@ -163,13 +164,14 @@ class LoopbackFifo(LiteXModule):
 class AE350Fabric(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None):
+    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None):
         amap = layout
         self.video = video
         fifo_bus = AHBInterface(data_width=32, address_width=32)
         err_bus = AHBInterface(data_width=32, address_width=32)
         self.fifo = LoopbackFifo(fifo_bus)
-        self.audio = FabricAudio(clock_hz=io.machine.clocks.sys)
+        self.audio = FabricAudio(clock_hz=amap.FABRIC_HZ)
+        self.flash = FlashRegisterAdapter(flash) if flash is not None else None
         self.err = ErrorSlave(err_bus)
         if sd is not None:
             for bit,ack in ((amap.SD_TX_REQ,sd.tx_ack),(amap.SD_RX_REQ,sd.rx_ack)):
@@ -206,24 +208,21 @@ class AE350Fabric(LiteXModule):
         self.board = FabricBoard(io, clock_hz=io.machine.clocks.sys)
         self.sense = BoardSense(clock_hz=io.machine.clocks.sys)
         wait = Signal()
-        access_q = Signal()
+        phase = Signal()
         addr_q = Signal(32)
         wdata_q = Signal(32)
         write_q = Signal()
         strb_q = Signal(4)
         read_data = Signal(32)
-        error = Signal()
         error_q = Signal()
-        self.sync += error_q.eq(error)
-        error.attr.add(("syn_keep", 1))
         off = Signal(12)
         commit = Signal()
         self.comb += [
             cpu.apb_ready.eq(~wait),
             off.eq(addr_q[:12]),
-            # The hard APB outputs arrive late in the fabric cycle. Register
-            # the access phase before driving wide device write-enable cones.
-            commit.eq(access_q & wait),
+            # One access stage admits the captured command before its single
+            # commit edge. SD/Flash retain ownership until native completion.
+            commit.eq(phase & wait),
             self.fifo.req_enable.eq(self.req_enable),
             # The pulse catcher must gate REQ as well as the counter. Otherwise
             # two CPU-clock ACK pulses can merge before the next fabric edge.
@@ -246,25 +245,30 @@ class AE350Fabric(LiteXModule):
             level_tx.eq(catch_tx | cpu.dma_ack[0]),
             level_rx.eq(catch_rx | cpu.dma_ack[1]),
         ]
-        sysinfo = addr_q[12:] == (amap.SYSINFO_BASE >> 12)
-        irq = addr_q[12:] == (amap.IRQ_BASE >> 12)
-        ddr = addr_q[12:] == (amap.DDR_CSR_BASE >> 12)
-        dma = addr_q[12:] == (amap.DMA_SVC_BASE >> 12)
-        ws = addr_q[12:] == (amap.WS2812_BASE >> 12)
-        board = addr_q[12:] == (amap.IO_BASE >> 12)
-        sense = addr_q[12:] == (amap.SENSE_BASE >> 12)
-        audio = addr_q[12:] == (amap.AUDIO_BASE >> 12)
-        mic = addr_q[12:] == (amap.MIC_BASE >> 12)
-        sd_page = addr_q[12:] == (amap.SD_BASE >> 12)
+        sysinfo,irq,ddr,dma,ws,board,sense,audio,mic,sd_page,video_page = [Signal() for _ in range(11)]
+        self.comb += [
+            signal.eq(addr_q[12:] == (base >> 12)) for signal,base in (
+                (sysinfo,amap.SYSINFO_BASE),(irq,amap.IRQ_BASE),(ddr,amap.DDR_CSR_BASE),
+                (dma,amap.DMA_SVC_BASE),(ws,amap.WS2812_BASE),(board,amap.IO_BASE),
+                (sense,amap.SENSE_BASE),(audio,amap.AUDIO_BASE),(mic,amap.MIC_BASE),
+                (sd_page,amap.SD_BASE),(video_page,amap.VIDEO_BASE))]
         sd_ok = sd.ok if sd is not None else 0
         sd_rdata = sd.rdata if sd is not None else 0
-        video_page = addr_q[12:] == (amap.VIDEO_BASE >> 12)
         video_ok = video.ok if video is not None else 0
         video_rdata = video.rdata if video is not None else 0
-        legal = (addr_q[:2] == 0) & (~write_q | (strb_q == 0xf))
+        legal = Signal()
+        self.comb += legal.eq((addr_q[:2] == 0) & (~write_q | (strb_q == 0xf)))
+        flash_page = Signal()
+        self.comb += flash_page.eq(addr_q[12:] == (amap.FLASH_CTRL_BASE >> 12))
+        flash_done = self.flash.complete if self.flash is not None else 1
+        flash_data = self.flash.rdata if self.flash is not None else 0
+        flash_error = self.flash.error if self.flash is not None else 1
+        if self.flash is not None:
+            self.comb += [self.flash.off.eq(off),self.flash.wdata.eq(wdata_q),self.flash.write.eq(write_q),
+                          self.flash.selected.eq(legal & flash_page),self.flash.commit.eq(commit)]
         # Device entries are contiguous 32-byte records. Decode the record
         # index rather than OR-ing every individual address into error_q.
-        sys_ro = _onehot(off,(0,4,8,0x20,0x24)) | ((off[5:]>=2) & (off[5:]<2+amap.DEVICE_COUNT))
+        sys_ro = _onehot(off,(0,4,8,0xc,0x10,0x14,0x20,0x24)) | ((off[5:]>=2) & (off[5:]<2+amap.DEVICE_COUNT))
         irq_ro = _onehot(off, (0x00, 0x04, 0x08, 0x10, 0x20))
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
@@ -274,6 +278,9 @@ class AE350Fabric(LiteXModule):
             Case(off, {
                 0: sys_data.eq(amap.SYSINFO_ID), 4: sys_data.eq(amap.ABI_VERSION),
                 8: sys_data.eq(amap.SYSINFO_CAP), 0x20: sys_data.eq(amap.DEVICE_COUNT),
+                0xc: sys_data.eq(amap.BOOT_CONTRACT_VERSION),
+                0x10: sys_data.eq(amap.FABRIC_HZ),
+                0x14: sys_data.eq(amap.image_abi()),
                 0x24: sys_data.eq(32),
                 **{0x40+4*i: sys_data.eq(v) for i,v in enumerate(amap.LOOPBACK_EP)},
                 **{0x60+4*i: sys_data.eq(v) for i,v in enumerate(amap.DMAC_EP)},
@@ -320,22 +327,10 @@ class AE350Fabric(LiteXModule):
                 (write_q & (off==0x0c) & (wdata_q[2:]==0)) |
                 (write_q & (off==0x10) & ((wdata_q & ~0xc)==0))),dma_data),
         ]
-        # Page-local readback registers cut the device decode from the final
-        # response mux. CSR reads are observations; write admission/commit
-        # still use the current device status on the execution cycle.
-        words=[]
-        for valid,value in pages:
-            sampled=Signal(32)
-            selected=Signal()
-            sampled.attr.add(('syn_preserve', 1))
-            self.sync += [sampled.eq(value), selected.eq(valid)]
-            # Register data and admission independently: a deep page decode
-            # must not become the synchronous RESET of every read-data bit.
-            words.append(Mux(selected,sampled,0))
-        while len(words)>1:
-            words=[words[i] | words[i+1] if i+1<len(words) else words[i]
-                   for i in range(0,len(words),2)]
-        self.comb += [read_data.eq(words[0]), error.eq(~reduce(or_,[valid for valid,_ in pages]))]
+        # At 50MHz decode the captured transaction directly. Only the final
+        # APB response is registered; slow SD/Flash pages retain ownership.
+        self.comb += [read_data.eq(reduce(or_, [Mux(valid,value,0) for valid,value in pages])),
+                      error_q.eq(~reduce(or_, [valid for valid,_ in pages]))]
         control_q,sticky_q,w1c_q,irq_enable_q=(Signal() for _ in range(4))
         self.sync += [
             control_q.eq(legal & dma & (off==0x0c) & write_q & (wdata_q[2:]==0)),
@@ -365,21 +360,24 @@ class AE350Fabric(LiteXModule):
         self.sync += [
             If(~cpu.apb_select,
                 wait.eq(0),
-                access_q.eq(0),
+                phase.eq(0),
             ).Elif(~cpu.apb_enable,
                 addr_q.eq(cpu.apb_addr),
                 wdata_q.eq(cpu.apb_wdata),
                 write_q.eq(cpu.apb_write),
                 strb_q.eq(cpu.apb_strb),
                 wait.eq(1),
-                access_q.eq(0),
-            ).Elif(wait & ~access_q,
-                access_q.eq(1),
-            ).Elif(wait & (~sd_page | ~legal | (sd.complete if sd is not None else 1)),
+                phase.eq(0),
+            ).Elif(wait & ~phase,
+                phase.eq(1),
+            ).Elif(wait & (~sd_page | ~legal | (sd.complete if sd is not None else 1)) &
+                    (~flash_page | ~legal | flash_done),
                 wait.eq(0),
-                access_q.eq(0),
-                cpu.apb_data.eq(Mux(sd_page & legal,sd.rdata if sd is not None else 0,read_data)),
-                cpu.apb_slverr.eq(Mux(sd_page & legal,sd.error if sd is not None else 1,error_q)),
+                phase.eq(0),
+                cpu.apb_data.eq(Mux(sd_page & legal,sd.rdata if sd is not None else 0,
+                    Mux(flash_page & legal,flash_data,read_data))),
+                cpu.apb_slverr.eq(Mux(sd_page & legal,sd.error if sd is not None else 1,
+                    Mux(flash_page & legal,flash_error,error_q))),
                 If(control, self.req_enable.eq(wdata_q[1])),
                 If(commit & irq_enable_q,
                    self.irq_enable.eq(wdata_q[0])),

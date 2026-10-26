@@ -40,10 +40,10 @@ module tb;
         $fatal(1,"100MHz data waveform: period=%f high=%f",period,high_time);
     end
     @(posedge sys_clk);start=$realtime;@(posedge sys_clk);period=$realtime-start;
-    if(period<12.485 || period>12.515)$fatal(1,"80MHz fabric period %f",period);
+    if(period<19.985 || period>20.015)$fatal(1,"50MHz fabric period %f",period);
     @(posedge cpu_clk);start=$realtime;@(posedge cpu_clk);period=$realtime-start;
     if(period<1.235 || period>1.265)$fatal(1,"800MHz core period %f",period);
-    $display("PASS Gowin PLL model: 80/800/100MHz, data high/low 5.05/4.95ns");$finish;
+    $display("PASS Gowin PLL model: 50/800/100MHz, data high/low 5.05/4.95ns");$finish;
   end
   initial begin #5000000;$fatal(1,"PLL model lock/clock timeout");end
 endmodule
@@ -57,6 +57,11 @@ class Platform:
 
 class FabricPLLTest(unittest.TestCase):
     def test_physical_clock_waveforms(self):
+        for fabric_hz in (50e6,):
+            with self.subTest(fabric_hz=fabric_hz):
+                self.check_physical_clock_waveforms(fabric_hz)
+
+    def check_physical_clock_waveforms(self, fabric_hz):
         iv, vvp = shutil.which('iverilog'), shutil.which('vvp')
         self.assertTrue(iv and vvp, 'iverilog/vvp required')
         library = Path(os.environ['GOWIN_HOME']) / 'IDE/simlib/gw5a/prim_sim.v'
@@ -66,7 +71,7 @@ class FabricPLLTest(unittest.TestCase):
             setattr(m.clock_domains, 'cd_' + name, ClockDomain(name))
         clk50 = Signal()
         m.submodules.pll = pll = FabricPLL(Platform(), clk50,
-            [(m.cd_sys, 80e6), (m.cd_cpu, 800e6), (m.cd_mem, 100e6)])
+            [(m.cd_sys, fabric_hz), (m.cd_cpu, 800e6), (m.cd_mem, 100e6)], 50e6)
         ports = dict(clk50=clk50, reset=pll.reset, locked=pll.locked,
                      sys_clk=m.cd_sys.clk, cpu_clk=m.cd_cpu.clk, mem_clk=m.cd_mem.clk)
         for name, signal in ports.items():
@@ -75,7 +80,8 @@ class FabricPLLTest(unittest.TestCase):
             directory = Path(directory)
             (directory / 'dut.v').write_text(str(verilog.convert(m, ios=set(ports.values()), name='dut',
                 special_overrides={AsyncResetSynchronizer: GowinAsyncResetSynchronizer})))
-            (directory / 'tb.v').write_text(TB)
+            testbench = TB
+            (directory / 'tb.v').write_text(testbench)
             compiled = directory / 'test.vvp'
             subprocess.run([iv, '-g2012', '-s', 'tb', '-o', str(compiled),
                             str(directory / 'dut.v'), str(directory / 'tb.v'), str(library)], check=True)

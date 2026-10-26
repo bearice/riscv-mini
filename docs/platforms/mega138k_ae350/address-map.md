@@ -2,9 +2,9 @@
 
 > 适用机器：`mega138k_ae350`。配置以机器 JSON 和所选硬件产物的导出为准。
 
-更新：2026-10-21。当前平台使用厂商 ITCM 启动镜像、硬核 ILM/DLM 与零基址 DDR，无 fabric 工作 SRAM、JTAG mailbox 或 launcher。唯一地址合同为 `gateware/machines/mega138k_ae350/address_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](io.md)。LED 使用板级输出寄存器，硬 GPIO IOPORT 未启用。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
+更新：2026-10-26。当前源码使用配置 Flash U4 官方 0x600000 固件分区独立 XIP bootrom、硬核 ILM/DLM 与零基址 DDR，无 fabric 工作 SRAM、JTAG mailbox 或 launcher。唯一地址合同为 `gateware/machines/mega138k_ae350/address_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](io.md)。LED 使用板级输出寄存器，硬 GPIO IOPORT 未启用。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
 
-最新启动顺序：先参考20K ROM完成自主短POST与UART payload loader，JTAG仅作可选恢复；Flash/XIP实际实现后置，地址预留保留。启动协议见[bootloader](bootloader.md)。
+最新启动顺序：官方 Flash Instruction Memory→U4 0x600000 固件分区 8 KiB XIP→硬 ILM/DLM 初始化→自主 POST→UART payload loader；JTAG 用于观察和恢复。启动协议见[bootloader](bootloader.md)。
 
 ## 1. 全局窗口
 
@@ -12,8 +12,8 @@
 | --- | --- | --- |
 | 0x00000000–0x3fffffff | DDR，预期 1GiB | CPU/fabric/DMAC 使用相同的物理字节地址；容量按实测发布，无减 0x2000 的转换 |
 | 0x40000000–0x7fffffff | 未映射数据窗口 | 有界 ERROR；无 fabric 工作 SRAM，不映射 DDR 镜像 |
-| 0x80000000–0x80007fff | 厂商 ITCM，32KiB | BSRAM 初始化启动镜像，替代自定义 ROM AHB 桥 |
-| 0x88000000–0x8fffffff | XIP地址窗口，预留128MiB | 只映射所选Flash已确认容量/分区；实际容量之外有界报错，不镜像 |
+| 0x80000000–0x80001fff | 独立 bootrom，8 KiB | 只读 XIP，映射配置 Flash U4 从 0x600000 开始的 8 KiB 固件分区，无 fabric ITCM |
+| 0x80002000–0x8fffffff | 官方 Flash 指令窗口的其余部分 | 当前软件不使用，容量之外/回绕行为未验收 |
 | 0xa0000000–0xa000ffff | 硬核 ILM | 启动/应用关键代码，显式复制；DMA 可达性待 P3 |
 | 0xa0200000–0xa020ffff | 硬核 DLM | 工作数据、独立栈与保留诊断结果；无 JTAG mailbox |
 | 0xc0000000、0xe0000000 等 | 厂商 BMC/译码保留区 | 不安排项目外设 |
@@ -101,10 +101,12 @@ minor只追加兼容能力/寄存器；移动地址、改变位语义、descript
 
 ## 6. XIP与Flash地址合同
 
-CPU XIP基址选择**0x88000000**，预留至0x8fffffff（128MiB），处于厂商0x80000000–0x8fffffff指令窗口内。保留0x80000000–0x80007fff的 ITCM 启动镜像，二者不覆盖。未实现区和Flash容量之外的地址不允许回绕。
+CPU 复位与 bootrom 链接入口为 **0x80000000**，8 KiB 代码槽对应 U4 物理偏移 **0x600000**。采用官方 SPI Flash Instruction Memory + Flash Register R/W Mode，不启用 ITCM 或自定义 ROM SPI 后端。官方指令硬件窗口为 0x80000000–0x8fffffff，软件目前仅使用启动槽；整个窗口的容量边界与回绕行为尚未验收，不能声称越界一定总线报错。
 
-该窗口仅为预留，当前启动后端使用 ITCM，XIP 未实例化。Flash 芯片、容量、片选、协议、分区和写入/恢复合同在实现相应后端时定义；不能套用 20K 的 Flash 偏移或把硬核普通 SPI 当作取指控制器。
+U4 物理分区为配置位流 [0,0x600000)、独立 bootrom [0x600000,0x602000)，其余保留。FR 管理页使用预留的 0xf8090000，并把内部 FR 地址译回官方示例的 0xf8000000+offset，避免覆盖 SYSINFO。U7 仍接 0xf0f00000 硬 SPI。
 
 ## 实现与验证范围
 
 已实现的设备地址、通道与所有权见 [DMA](dma.md)、[I/O](io.md)、[音频](audio.md) 和 [视频](video.md)。其他预留槽不发布为已存在设备。地址范围不表示整段 DDR 容量已通过板测；验证边界见 [内存合同](memory-validation.md)。
+
+独立 bootrom 的最小合同发现寄存器位于 SYSINFO `+0x0c/+0x10/+0x14`，分别为启动合同版本、sys/APB Hz、当前硬件 image ABI，均只读。安装和验收状态见 [bootloader](bootloader.md)。

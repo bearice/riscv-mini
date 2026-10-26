@@ -108,5 +108,7 @@ for memory in fragment.specials:
     if isinstance(memory,Memory):
         for port in memory.ports:
             if port.dat_r is None:port.dat_r=Signal(memory.width)
-run_simulation(fragment,{'sys':bench2()},clocks={'sys':(10,3),'mem':8})
+run_simulation(fragment,{'sys':bench2()},clocks={
+    'sys':(int(1e9/machine.clocks.sys),3),
+    'mem':int(1e9/machine.clocks.data_memory_bus)})
 print('PASS full fabric APB CDC exactly-once commit/readback/errors and no duplicate REQ after ACK')

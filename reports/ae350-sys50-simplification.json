@@ -1,0 +1,46 @@
+{
+  "run": "20261026T062546792531Z-build-sys50-simplified-full-system-0c55fc",
+  "artifact": {
+    "component": "gateware",
+    "digest": "eaebc3f795263b06f3fb2395c5a7fcc6dea183e5226279c21f75b2c287c25d59"
+  },
+  "bootloader": {
+    "component": "bootloader",
+    "digest": "d96c9542d1ad12ffa836f700ca067b947364c04413abc0a1317f7ce391df95c0"
+  },
+  "workspace": "default",
+  "passed": true,
+  "qualification": "PnR-not-board-qualified",
+  "clocks_hz": {
+    "sys": 50000000,
+    "ahb": 50000000,
+    "apb": 50000000,
+    "cpu": 800000000,
+    "mem": 100000000,
+    "ddr_ui": 100000000,
+    "ddr_ck": 400000000,
+    "pixel": 25000000,
+    "serializer": 125000000
+  },
+  "audio_domain": "sys",
+  "audio_sample_rate_hz": 48000,
+  "timing": {
+    "setup": 0,
+    "hold": 0,
+    "min_pulse_width_slack_ns": 0.038,
+    "worst_listed_setup_slack_ns": 0.013
+  },
+  "resources": {
+    "logic": 23654,
+    "registers": 30550,
+    "bsram": 45,
+    "dsp_units": 4.5
+  },
+  "test_reports": [
+    "ae350-sys50-simplification-tests.json",
+    "ae350-sys50-verilog-tests.json"
+  ],
+  "board_tested": false,
+  "flash_written": false,
+  "current_changed": false
+}

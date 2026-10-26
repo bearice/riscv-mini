@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "tests": [
+    {
+      "test": "tests/mega138k_ae350/boot_contract_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.470s\n\nOK\n",
+      "source_sha256": "db9d8147fa0e13a3212c2e466d472742cde0bf006b1f2d3c3d9f0fc0f329f076"
+    },
+    {
+      "test": "tests/mega138k_ae350/flash_apb_test.py",
+      "exit_code": 0,
+      "stdout": "PASS Flash FR setup/access waits, stable fields, translated address, exactly-once and invalid-access isolation\n",
+      "stderr": "",
+      "source_sha256": "77bec5a0ace045de7f8c7f24d878fd486a4968931849054c7066509493e1b870"
+    },
+    {
+      "test": "tests/mega138k_ae350/flash_page_test.py",
+      "exit_code": 0,
+      "stdout": "PASS FR page translation/handshake, SYSINFO isolation and partial/unknown access rejection\n",
+      "stderr": "",
+      "source_sha256": "6c39169d7a942d016cdf94ad2dc7e34475b0a9a5d7dd5e880a4859fabf7d4578"
+    },
+    {
+      "test": "tests/common/machine_build_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 4.762s\n\nOK\n",
+      "source_sha256": "64eed242ecb1be2c7b2cceadcb9a90f15caee45fb48eb3bbcb1f54414b23a47b"
+    },
+    {
+      "test": "tests/mega138k_ae350/hdmi_reset_verilog_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "Ran 1 test; OK",
+      "source_sha256": "86620a5184c4de031de37e7abce3184559303ac144ef45c36a2da85ebeb55e33",
+      "command": "nix shell nixpkgs#iverilog --command nix develop --command python tests/mega138k_ae350/hdmi_reset_verilog_test.py"
+    },
+    {
+      "test": "tests/mega138k_ae350/audio_cdc_test.py",
+      "exit_code": 0,
+      "stdout": "PASS sys100/audio80 and sys50/audio80: owned APB/AHB, IRQ, long-ACK recovery",
+      "stderr": "",
+      "source_sha256": "fc864aa84c26fdc10baeecc67fed13204274af46d919902a4bbd258216e9a813"
+    }
+  ],
+  "current_configuration_qualification": false,
+  "status": "historical-before-sys50-simplification",
+  "superseded_by": [
+    "ae350-sys50-simplification-tests.json",
+    "ae350-sys50-verilog-tests.json"
+  ]
+}

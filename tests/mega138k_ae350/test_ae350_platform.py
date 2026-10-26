@@ -50,7 +50,7 @@ def apb(cpu, write, addr, data=0, strb=0xf):
     yield cpu.apb_enable.eq(1)
     yield
     yield
-    for _ in range(16):
+    for _ in range(96):
         if (yield cpu.apb_ready):
             break
         yield
@@ -81,6 +81,10 @@ def main():
         check('address contract', amap.check() == [], amap.check())
         err, value, ready = yield from apb(cpu, False, amap.SYSINFO_BASE)
         check('sysinfo id', err == 0 and ready == 1 and value == amap.SYSINFO_ID, hex(value))
+        for addr, expected in ((amap.BOOT_CONTRACT_ADDR, 1), (amap.BOOT_CLOCK_ADDR, amap.FABRIC_HZ),
+                               (amap.BOOT_IMAGE_ABI_ADDR, amap.image_abi())):
+            err, value, _ = yield from apb(cpu, False, addr)
+            check('stable boot discovery', err == 0 and value == expected, hex(value))
         err, value, _ = yield from apb(cpu, True, amap.SYSINFO_BASE, 0)
         check('sysinfo rejects writes', err == 1, err)
         err, value, _ = yield from apb(cpu, False, amap.SYSINFO_BASE)

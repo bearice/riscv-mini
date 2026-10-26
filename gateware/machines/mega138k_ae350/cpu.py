@@ -99,7 +99,7 @@ class AE350ROM(LiteXModule):
 
 
 class NativeAE350(LiteXModule):
-    def __init__(self, wrapper=False, data_domain='sys', vendor_itcm=False, module=None):
+    def __init__(self, wrapper=False, data_domain='sys', vendor_itcm=False, module=None, vendor_flash=False):
         self.wrapper = wrapper
         self.module = module or ('RiscV_AE350_SOC_Top' if wrapper else 'AE350_SOC')
         self.reset = Signal()
@@ -160,10 +160,20 @@ class NativeAE350(LiteXModule):
                 o_TDO_OE         = Open(),
             )
             self.ahb_exts = ahb_exts
-            if vendor_itcm:
+            if vendor_itcm or vendor_flash:
                 for port in ('i_ROM_HRDATA', 'i_ROM_HREADY', 'i_ROM_HRESP',
                              'o_ROM_HADDR', 'o_ROM_HTRANS', 'o_ROM_HWRITE'):
                     self.cpu_params.pop(port)
+            if vendor_flash:
+                from migen import Record
+                self.flash_apb = p = Record([('addr',32),('wdata',32),('rdata',32),
+                    ('select',1),('enable',1),('write',1),('ready',1)])
+                self.apb_clock_out,self.apb_resetn_out = Signal(),Signal()
+                self.cpu_params.update(o_APB_PCLK=self.apb_clock_out,o_APB_PRSTN=self.apb_resetn_out,
+                    i_FR_PCLK=self.apb_clock_out,i_FR_PRESETN=self.apb_resetn_out,
+                    i_FR_PADDR=p.addr,i_FR_PWDATA=p.wdata,o_FR_PRDATA=p.rdata,
+                    i_FR_PSEL=p.select,i_FR_PENABLE=p.enable,i_FR_PWRITE=p.write,o_FR_PREADY=p.ready)
+            if wrapper:
                 self.apb_addr = Signal(32)
                 self.apb_data = Signal(32)
                 self.apb_wdata = Signal(32)
@@ -402,6 +412,11 @@ class NativeAE350(LiteXModule):
             release,sense=Signal(reset=1),Signal()
             self.specials += Tristate(pad,0,~release,sense)
             self.cpu_params.update({'i_I2C_'+name+'_IN':sense,'o_I2C_'+name+'_OUT':release})
+
+    def connect_boot_flash(self, pads):
+        for name,pad in (('CSN',pads.cs_n),('CLK',pads.clk),('MOSI',pads.mosi),
+                         ('MISO',pads.miso),('WPN',pads.wp_n),('HOLDN',pads.hold_n)):
+            self.cpu_params['io_FLASH_SPI_'+name] = pad
 
     def connect_jtag(self, pads):
         if self.wrapper:

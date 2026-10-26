@@ -8,6 +8,7 @@ import json
 import subprocess
 import time
 import os
+import re
 from pathlib import Path
 
 import sys
@@ -95,10 +96,34 @@ class HardwareSession:
         return int.from_bytes(self.halt().read_memory(address, 4), 'little')
 
     # -- programming -----------------------------------------------------
-    def program(self, fs):
+    def check_fpga(self, cable_serial):
+        self._acquire()
+        base = [self.tools['openfpgaloader'], '-c', 'ft2232', '--ftdi-serial', cable_serial]
+        detected = subprocess.run([*base, '--detect'], capture_output=True, text=True, timeout=30)
+        output = detected.stdout + detected.stderr
+        (self.op.path / 'fpga-detect.log').write_text(output)
+        if detected.returncode or not re.search(r'\b0x0*1081b\b', output, re.I):
+            raise SessionError('Serial-selected cable does not report the AE350 FPGA target')
+        return base
+
+    def program(self, fs, cable_serial=None):
         if self.dry_run:
             return True
         self._acquire()
+        if cable_serial:
+            # Keep Flash and SRAM operations on libusb when a serial-selected
+            # Flash operation has just reattached the kernel FTDI driver.
+            base = self.check_fpga(cable_serial)
+            command = [*base, '--write-sram', str(fs)]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+            (self.op.path / 'sram.log').write_text(result.stdout + result.stderr)
+            output = result.stdout + result.stderr
+            ok = result.returncode == 0 and not re.search(r'\berror\s*:|\bfailed\b|\bFAIL\b', output, re.I)
+            self.op.record('sram', command=command, programmer_passed=ok, transport='openfpgaloader')
+            if not ok:
+                raise SessionError('SRAM programming failed; inspect sram.log')
+            self.programmed = Path(fs)
+            return True
         location = resolve_location(self.tools['programmer'], self.location,
                                     identity=0x0001081B, log_path=self.op.path / 'cables.log')
         command = [self.tools['programmer'], '--location', location, '--device', 'GW5AST-138B',

@@ -205,6 +205,10 @@
         "twi_mux": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "boot_flash": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -591,10 +595,10 @@
           "boot": {
             "properties": {
               "mode": {
-                "const": "rom"
+                "const": "xip"
               },
               "rom_size_bytes": {
-                "const": 32768
+                "const": 8192
               }
             }
           },
@@ -648,6 +652,10 @@
               "twi_mux": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "boot_flash": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -656,7 +664,8 @@
               "microphones",
               "ws2812",
               "fan",
-              "cpu_jtag"
+              "cpu_jtag",
+              "boot_flash"
             ],
             "additionalProperties": false
           },
@@ -876,6 +885,9 @@
             "LANG": {
               "type": "integer",
               "minimum": 0
+            },
+            "FlashRegisterRWMode": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -909,7 +921,8 @@
             "PWM_CHANNEL_0",
             "ItcmSize",
             "ItcmInstructionMemory",
-            "LANG"
+            "LANG",
+            "FlashRegisterRWMode"
           ],
           "additionalProperties": false
         }
@@ -1331,6 +1344,9 @@
     "rtl_hard": {
       "type": "object",
       "properties": {
+        "timing_probe": {
+          "type": "boolean"
+        },
         "place_option": {
           "enum": [
             0,

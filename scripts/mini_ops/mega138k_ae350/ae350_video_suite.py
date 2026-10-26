@@ -1,4 +1,6 @@
 """SRAM-load an explicit HDMI candidate and verify its SVO test card via V4L2."""
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 import hashlib
 import json
 import os
@@ -251,9 +253,9 @@ def perform(args):
             store = Store()
             boot = store.get(store.get(ref)['dependencies']['bootloader'])
             from gateware.machines.mega138k_ae350 import address_map as amap
-            abi = boot['config']['image_abi']
+            abi = hardware_abi(store, ref)
             payload_ref, payload_root = resolve_payload(store, payload, expected_abi=abi)
-            if store.get(payload_ref)['config']['image_abi'] != boot['config']['image_abi']:
+            if store.get(payload_ref)['config']['image_abi'] != hardware_abi(store, ref):
                 raise ValueError('payload ABI differs from the selected gateware bootloader')
             payload_data = payload_file(payload_root).read_bytes()
             image = ae350_image.build(payload_data, abi)

@@ -51,6 +51,8 @@ def operations(machine):
         from scripts.mini_ops.mega138k_ae350 import (
             ae350, ae350_ddr_suite, ae350_dma_suite, ae350_io_suite, ae350_jtag_test, ae350_upload, ae350_audio_suite, ae350_video_suite, ae350_sd_suite, ae350_bus_suite)
         return {
+            'update': __import__('scripts.mini_ops.mega138k_ae350.ae350_update', fromlist=['perform']).perform,
+            'bootrom': __import__('scripts.mini_ops.mega138k_ae350.ae350_bootrom', fromlist=['perform']).perform,
             'jtag-test': ae350_jtag_test.perform,
             'ddr-suite': ae350_ddr_suite.perform,
             'dma-suite': ae350_dma_suite.perform,

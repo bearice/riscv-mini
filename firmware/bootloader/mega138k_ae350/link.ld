@@ -2,10 +2,12 @@ OUTPUT_ARCH(riscv)
 ENTRY(_start)
 /* Generated from gateware/machines/mega138k_ae350/address_map.py: MEMORY regions and the
  * hard local memory and explicit stack regions. */
-INCLUDE ae350_map.ld
+INCLUDE ae350_boot_contract.ld
 SECTIONS {
-    .text : { KEEP(*(.text.start)) *(.text*) *(.rodata*) . = ALIGN(4); } > rom
-    .ilm : { . = ALIGN(4); __ilm_start = .; *(.ilm.text*) . = ALIGN(4); __ilm_end = .; } > ilm AT>rom
+    .text : { KEEP(*(.text.start)) . = ALIGN(4); } > rom
+    /* Run the loader in the existing hard ILM, including UART polling and CRC.
+       Its source image remains in the independent XIP partition. */
+    .ilm : { . = ALIGN(4); __ilm_start = .; *(.text*) *(.rodata*) *(.ilm.text*) . = ALIGN(4); __ilm_end = .; } > ilm AT>rom
     __ilm_load = LOADADDR(.ilm);
     .data : { . = ALIGN(4); __data_start = .; *(.data*) *(.sdata*) . = ALIGN(4); __data_end = .; } > dlm AT>rom
     __data_load = LOADADDR(.data);

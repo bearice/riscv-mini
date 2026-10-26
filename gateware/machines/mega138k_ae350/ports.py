@@ -12,6 +12,7 @@ def bind_ports(machine):
     io.pad('fan_pwm', d.fan, 'pwm')
     io.pad('fan_tach', d.fan, 'tach')
     io.resource('user_flash', d.flash)
+    io.resource('boot_flash', d.boot_flash)
     io.resource('system_i2c', d.i2c)
     io.pad('twi_mux_sel', d.twi_mux, 'sel')
     io.resource('sdcard', d.sd, rename={'detect':'cd'})

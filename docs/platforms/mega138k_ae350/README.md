@@ -1,8 +1,10 @@
 # Tang Mega 138K Pro / AE350
 
-机器 `mega138k_ae350`，板卡 `mega138k_pro`。AE350 硬核从厂商 ITCM 启动，使用硬核 ILM/DLM 与零基址 DDR；普通应用和诊断载荷经统一 UART loader 装载。
+机器 `mega138k_ae350`，板卡 `mega138k_pro`。当前源码使用配置 Flash U4 官方 0x600000 固件分区 8 KiB XIP bootrom，不实例化 fabric ITCM。用户已决定 sys/AHB/APB 使用 50 MHz，CPU 800 MHz、mem/DDR UI 100 MHz、DDR CK 400 MHz；音频回到 sys 域，移除此前提频增加的独立音频 CDC、额外 AHB 响应中继和 APB 多级读回流水。最小Flash与完整系统均在50MHz通过STA，bootrom/配置Flash读回及重载启动已验收，见[50 MHz 简化记录](../../../reports/ae350-sys50-simplification.md)。使用硬核 ILM/DLM 与零基址 DDR；普通应用和诊断载荷经统一 UART loader 装载。安装方法见 [bootloader](bootloader.md)，隔离结果见[最小系统探测](../../../reports/ae350-minimal-flash-timing.md)；既有 80 MHz 板测报告不代表新组合已上板通过。
 
 当前构建参数来自 [Machine JSON](../../../gateware/machines/mega138k_ae350/machine.json) 与 [Board JSON](../../../gateware/boards/mega138k_pro/board.json)。20K 的 BIOS、L2 启动 RAM、XIP 分区与 current 不用于本机器；共享构建入口不表示已支持相同固件和发布套件。
+
+控制寄存器与低带宽外设使用 50 MHz sys。大量数据通过独立 mem/DDR 通路；新增高吞吐外设应接 DDR UI 仲裁和 DMA/队列，使用必要的 CDC 连接控制面，不通过提高全局 sys 或软件反复搬运 CSR 实现带宽。
 
 | 主题 | 文档 |
 | --- | --- |

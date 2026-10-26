@@ -22,6 +22,8 @@ def candidate(selection):
     store = Store()
     manifest = store.get(ref, recursive=True)
     config = manifest['config']
+    if config.get('timing_probe'):
+        raise ValueError('Timing-only probe is not a runnable AE350 board image')
     if ref['component'] != 'gateware' or config.get('machine') != 'mega138k_ae350' or not config.get('synthesize'):
         raise ValueError('Board test requires synthesized AE350 gateware')
     root = store.path(ref)
@@ -32,6 +34,13 @@ def candidate(selection):
         raise ValueError('AE350 timing metadata differs from the implementation report')
     boot = store.get(manifest['dependencies']['bootloader'])
     return root, ref, boot['config']['build_id']
+
+
+def hardware_abi(store, ref):
+    manifest = store.get(ref)
+    if 'image_abi' in manifest['config']:
+        return manifest['config']['image_abi']
+    return store.get(manifest['dependencies']['bootloader'])['config']['image_abi']
 
 
 def perform(args):

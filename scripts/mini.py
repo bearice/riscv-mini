@@ -22,12 +22,13 @@ def parser():
         ('recover','SRAM load selected gateware, enter loader and query Flash header'),
         ('repair-xip','Restore selected XIP boot region, then SRAM load and exact readback; writes Flash'),
         ('run','SRAM gateware + UART application to DDR; no Flash writes'),
-        ('update','Program complete Flash image directly, without SPI Verify, then Flash boot'),
+        ('update','Write selected persistent configuration and verify machine-specific Flash boot'),
         ('verify','Check firmware, boot protocol, exact Flash contents or external cold boot'),
-        ('jtag-test','AE350 memory: inspect ITCM identity, local memories and autonomous POST'),
+        ('jtag-test','AE350 memory: inspect boot ROM identity, local memories and autonomous POST'),
         ('ddr-suite','AE350 memory: upload DDR diagnostics over UART and observe results'),
         ('dma-suite','AE350 DMA: upload the DMA suite and judge its result contract'),
         ('bus-suite','AE350 board SPI Flash and TWI mux read-only connectivity'),
+        ('bootrom','AE350 prepare independent 8 KiB boot ROM; --install explicitly writes the Flash firmware slot'),
         ('sd-suite','AE350 native SD: read-only DMAC and sector CRC checks'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
         ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
@@ -36,7 +37,7 @@ def parser():
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -78,6 +79,9 @@ def parser():
             op.add_argument('--payload', required=True)
             op.add_argument('--cpu-jtag-location', required=True)
             op.add_argument('--timeout', type=int, default=60)
+        if name == 'bootrom':
+            op.add_argument('--install', action='store_true', help='explicitly write only U4 boot slot at 0x600000, then verify and SRAM boot')
+            op.add_argument('--cable-serial', help='FPGA FT2232 serial; required for installation')
         if name == 'sd-suite':
             op.add_argument('--benchmark', action='store_true', help='read throughput payload; no debugger pauses until UART completion')
             op.add_argument('--payload', required=True)
@@ -139,8 +143,10 @@ def parser():
         if name in ('run','update','verify'):
             op.add_argument('--image',type=Path,help='Compatible app.img override; default selected build image')
         if name=='update':
+            op.add_argument('--cable-serial', help='AE350 FPGA FT2232 serial for bounded Flash update')
+            op.add_argument('--bootrom-install', type=Path, help='AE350 successful matching bootrom installation result.json')
             op.add_argument('--method',choices=('auto','programmer'),default='programmer',
-                            help='auto: DDR software SPI (needs a booting loader). programmer (default): direct Flash op8/op31, no SRAM download, SPI Verify or readback')
+                            help='20K: auto uses DDR SPI, programmer uses direct op8/op31. AE350: programmer writes bounded configuration blocks with readback after a verified bootrom install')
         if name=='verify':
             op.add_argument('--suite',choices=('firmware','boot','loader','flash','spi','cold'),default='firmware')
             op.add_argument('--soak-seconds',type=int,default=0)

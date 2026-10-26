@@ -2,7 +2,7 @@
 
 Topology
 --------
-* Vendor ITCM boot image, hard ILM/DLM and zero-based DDR; no work SRAM.
+* SDK configuration Flash XIP, hard ILM/DLM and zero-based DDR; no work SRAM.
 * Independent 64-bit data AHB crosses asynchronous FIFOs into
   the 256-bit DDR user interface (100 MHz for 400 MHz CK).
 * CPU reset release uses synchronized calibration status and a bounded
@@ -187,7 +187,8 @@ class DDRSoC(LiteXModule):
         self.crg = ClockReset(platform, fabric_hz=ae350_map.FABRIC_HZ, data_hz=ae350_map.DATA_HZ,
             input_hz=board.input_clock_hz, cpu_hz=config.clocks.cpu,
             pixel_hz=config.clocks.video, reset_active_low=resources['core_reset'].signals['reset'].active_low)
-        self.cpu = NativeAE350(wrapper=True, data_domain='mem', vendor_itcm=True, module=config.artifacts['cpu']['module'])
+        self.cpu = NativeAE350(wrapper=True, data_domain='mem', vendor_flash=True, module=config.artifacts['cpu']['module'])
+        self.cpu.connect_boot_flash(platform.request('boot_flash'))
         self.ddr = GowinDDR3(platform, pads, controller_module=config.artifacts['ddr3']['module'],
                              pll_module=config.artifacts['ddr_pll']['module'],
                              pll_initialization=any(Path(name).name.lower() == 'pll_init.v'
@@ -303,7 +304,8 @@ class DDRSoC(LiteXModule):
         video = FabricVideo()
         self.sd_native = ClockDomainsRenamer('mem')(FabricSD(platform.request('sdcard'),platform.device,ae350_map.DATA_HZ,ae350_map.DDR_SIZE))
         self.sd = SDClockCrossing(self.sd_native)
-        self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd)
+        self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
+                               flash=self.cpu.flash_apb)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
             VideoMemoryArbiter(self.ddr.ui, cpu_ui, video.ui))
         self.comb += [arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),
@@ -349,7 +351,7 @@ class DDRSoC(LiteXModule):
         # Only the sources the configured subsystem actually needs: the
         # embedded SPI-flash/DDR3 paths stay out (their DDR3 IP would collide
         # with the standalone 400 MHz IP instance and they are not enabled).
-        soc_sources = (config.artifacts['cpu']['primary'], 'riscv_ae350_soc.v', 'gw_dtcm.v', 'gw_itcm.v')
+        soc_sources = (config.artifacts['cpu']['primary'], 'riscv_ae350_soc.v', 'riscv_ae350_flash.v')
         soc_sources_dir = Path(soc_sources_dir) if soc_sources_dir is not None else root / config.artifacts['cpu']['directory']
         for name in soc_sources:
             platform.add_source(str(soc_sources_dir / name))
@@ -376,6 +378,17 @@ class DDRSoC(LiteXModule):
                 'set_false_path -to [get_pins {%s}]' % self.lock_status.first_stage_pin,
                 *self.crg.pll.extra_constraints,
                 *self.crg.hdmi_clock_constraints,
+                # SDK example/Flash defines the slave/input/pad clocks
+                # separately. Bound them by the fastest source (AHB/APB sys)
+                # rather than reusing its example's 50-MHz period. Only these
+                # SDK mode clocks and sys are mutually exclusive; the rest of
+                # our bus/DDR timing groups stay unchanged.
+                'create_clock -name sdk_flash_slave_clk -period %g [get_nets {%s/u_RiscV_AE350_SOC/u_riscv_ae350_flash_top/u_gwspiflash/u_spi_spiif/spi_w_clk_slv_20}]'
+                    % (1e9 / ae350_map.FABRIC_HZ, self.cpu.module),
+                'create_clock -name sdk_flash_pad_clk -period %g [get_ports {boot_flash_clk}]'
+                    % (1e9 / ae350_map.FABRIC_HZ),
+                'set_clock_groups -exclusive -group [get_clocks {sdk_flash_slave_clk}] '
+                '-group [get_clocks {sdk_flash_pad_clk}] -group [get_clocks {sys_clk}]',
                 'create_clock -name ddr_ui_clk -period %.4f -waveform {0 %.4f} [get_pins {ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]'
                     % (4000.0 / (self.ddr_ck_hz / 1e6), 2000.0 / (self.ddr_ck_hz / 1e6)),
                 'create_clock -name ddr_memory_clk -period %.4f -waveform {0 %.4f} [get_nets {ddr3_memory_clk}]'

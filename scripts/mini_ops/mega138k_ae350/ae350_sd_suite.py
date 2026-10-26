@@ -1,4 +1,6 @@
 """Run native SD read-only checks over the normal SRAM/UART/JTAG workflow."""
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 import time
 
 from modular.storage import Store, file_hash
@@ -20,7 +22,7 @@ def perform(args):
         store = Store()
         manifest = store.get(ref)
         boot = store.get(manifest['dependencies']['bootloader'])
-        abi = boot['config']['image_abi']
+        abi = hardware_abi(store, ref)
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         payload = payload_file(payload_root).read_bytes()
         from mini_ops.mega138k_ae350 import ae350_image

@@ -739,6 +739,47 @@
           "drive_ma": 8
         }
       }
+    },
+    "config_flash": {
+      "kind": "spi",
+      "signals": {
+        "cs_n": {
+          "pins": [
+            "P18"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "clk": {
+          "pins": [
+            "H13"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "mosi": {
+          "pins": [
+            "R14"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "miso": {
+          "pins": [
+            "R15"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "wp_n": {
+          "pins": [
+            "P14"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "hold_n": {
+          "pins": [
+            "N14"
+          ],
+          "io_standard": "LVCMOS33"
+        }
+      }
     }
   },
   "reserved_pins": [

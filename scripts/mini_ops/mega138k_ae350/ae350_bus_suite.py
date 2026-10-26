@@ -1,4 +1,6 @@
 """Read-only SPI Flash / TWI mux qualification through the public board path."""
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 from modular.storage import Store,file_hash
 from mini_ops.common import Operation
 from mini_ops.mega138k_ae350.ae350 import candidate
@@ -13,7 +15,7 @@ def perform(args):
     try:
         root,ref,build_id=candidate(args.build)
         store=Store();manifest=store.get(ref)
-        boot=store.get(manifest['dependencies']['bootloader']);abi=boot['config']['image_abi']
+        boot=store.get(manifest['dependencies']['bootloader']);abi=hardware_abi(store, ref)
         payload_ref,payload_root=resolve_payload(store,args.payload,expected_abi=abi)
         payload=payload_file(payload_root).read_bytes()
         fs=root/'gateware/impl/pnr/project.fs'

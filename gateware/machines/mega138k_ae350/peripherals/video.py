@@ -274,7 +274,9 @@ class FabricVideo(LiteXModule):
             reg['CONTROL']: control.eq(self.wdata[:2]),reg['BASE0']: base0.eq(self.wdata),
             reg['BASE1']: base1.eq(self.wdata),
             reg['STRIDE']: [stride.eq(self.wdata),
-                frame_span.eq((height - 1) * self.wdata + width * 2)],
+                # Larger strides are rejected by valid_config independently;
+                # only the valid 16-bit range needs the span multiplier.
+                frame_span.eq((height - 1) * self.wdata[:16] + width * 2)],
             reg['COMMIT']: If(pending,command_error.eq(1))
                 .Elif(~valid_config,admission_error.eq(1))
                 .Else(snapshot.eq(Cat(selected_base,stride,control,sequence+1)),sequence.eq(sequence+1)),

@@ -2,7 +2,9 @@
 
 > 适用机器：`mega138k_ae350`。配置以机器 JSON 和所选硬件产物的导出为准。
 
-PT8211 TX 和单只 I2S RX 复用 `gateware/devices/` 协议核心。AE350 使用 APB 控制页、固定地址 AHB FIFO 数据口和硬 DMAC。运行点为 sys 80 MHz、mem 100 MHz、DDR CK 400 MHz；板测结论以匹配构建的 `board audio-suite` 回执为准。
+PT8211 TX 和单只 I2S RX 复用 `gateware/devices/` 协议核心。AE350 使用 APB 控制页、固定地址 AHB FIFO 数据口和硬 DMAC。当前配置为 sys 50 MHz、mem 100 MHz、DDR CK 400 MHz；板测结论以匹配构建的 `board audio-suite` 回执为准，原 sys80 板测结论不自动继承。
+
+为 sys100 实验增加的独立 audio80 域及 APB/AHB 事务 CDC 已删除，协议核心、FIFO、控制和请求均回到 sys50。CPU/硬 DMAC 的 ACK 脉冲捕获仍保留；音频 DMA 的 DDR 内存侧走已有独立数据通路。
 
 ## 接线与格式
 
@@ -12,7 +14,7 @@ TX 每个 32 位字低 16 位左、高 16 位右，先发右（WS=0）、再发�
 
 PT8211 在 BCK 上升沿接收二补码、MSB 先发，WS 低/高分别选择右/左声道；格式依据厂商 [PT8211 V1.7 §Function Description](https://www.princeton.com.tw/Portals/0/activeforums_Attach/PT8211%20V1.7_E.pdf?ver=I8v0SNPIQri_LxlOI2sp7w%3D%3D)。发送器在下降沿更新 DIN/WS，供下一个上升沿采样。
 
-共享有理数时钟使能产生平均 48,000 frame/s、TX BCLK 1.536 MHz、RX BCLK 3.072 MHz。逻辑均在 sys 域，不新增 PLL；边沿量化误差小于 12.5 ns，三帧合计 5000 sys 周期。
+共享有理数时钟使能产生平均 48,000 frame/s、TX BCLK 1.536 MHz、RX BCLK 3.072 MHz。协议逻辑在 sys50 域，边沿量化小于 20 ns，三帧合计 3125 个 sys 周期。50 MHz 参数下的物理串行协议解码和 FIFO/REQ/ACK 回归已通过，模拟输出声学和实板验收另行判定。
 
 ## CSR 和 FIFO
 

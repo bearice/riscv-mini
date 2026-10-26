@@ -28,7 +28,7 @@ python scripts/mini.py build <target> --machine <machine> --purpose candidate
 | machine | 操作与验收 | 关键区别 |
 | --- | --- | --- |
 | `primer20k_vexriscv` | [20K 操作与更新](../docs/platforms/primer20k_vexriscv/operations.md) | 软件 DDR 初始化、ROM/XIP、BIOS、Flash 分区与固件套件 |
-| `mega138k_ae350` | [AE350 操作与验收](../docs/platforms/mega138k_ae350/operations.md) | ITCM 启动、ILM/DLM、UART payload、CPU JTAG 与结果合同 |
+| `mega138k_ae350` | [AE350 操作与验收](../docs/platforms/mega138k_ae350/operations.md) | 配置Flash XIP启动、ILM/DLM、UART payload、CPU JTAG 与结果合同 |
 
 选择准确的 build/artifact 或 run `result.json`；已有 current 必须核对所属机器。串口、FPGA location、CPU JTAG、启动存储和可用测试套件都按机器与实际连接选择，不从另一机器继承默认值。
 

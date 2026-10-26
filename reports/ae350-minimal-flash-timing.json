@@ -1,0 +1,55 @@
+{
+  "scope": "AE350+SDK Flash with FR APB enabled+PLL/reset+UART/JTAG; no DDR/SD/audio/video",
+  "tests": [
+    {
+      "sys_hz": 100000000,
+      "run": "20261026T011925577986Z-build-minimal-sdk-flash-sys100-6ad448",
+      "passed": false,
+      "setup": 8883,
+      "hold": 0,
+      "worst_setup_slack_ns": -6.57,
+      "min_pulse_width_slack_ns": 0.13,
+      "reported_sys_fmax_mhz": 60.349
+    },
+    {
+      "sys_hz": 80000000,
+      "run": "20261026T012523054122Z-build-minimal-sdk-flash-sys80-a14e12",
+      "passed": false,
+      "setup": 3637,
+      "hold": 0,
+      "worst_listed_setup_slack_ns": -4.157,
+      "rising_to_falling_slack_ns": -2.265,
+      "min_pulse_width_slack_ns": 1.237,
+      "reported_sys_fmax_mhz": 58.717
+    },
+    {
+      "sys_hz": 50000000,
+      "core_hz": 800000000,
+      "run": "20261026T043739663184Z-build-minimal-sdk-flash-sys50-e10cd6",
+      "artifact": {
+        "component": "gateware",
+        "digest": "75f99d3ee79c5022857ce5883d47af9119981ac30fcf3fa8966519536a5d3a9d"
+      },
+      "passed": true,
+      "setup": 0,
+      "hold": 0,
+      "worst_setup_slack_ns": 0.127,
+      "min_pulse_width_slack_ns": 4.987,
+      "reported_sys_fmax_mhz": 50.319,
+      "qualification": "timing-probe-not-board-image",
+      "board_tested": false
+    }
+  ],
+  "final_sys_hz": 80000000,
+  "final_timing_probe": false,
+  "board_programmed": false,
+  "flash_written": false,
+  "full_system_80mhz_qualified": false,
+  "host_tests": {
+    "platform_description": 11,
+    "machine_build": 21,
+    "probe_isolation": 2
+  },
+  "final_configuration_is_historical": true,
+  "superseded_by": "ae350-sys50-simplification.json"
+}

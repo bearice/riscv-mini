@@ -47,6 +47,12 @@ class PlatformDescriptionTests(unittest.TestCase):
         path.write_text(path.read_text().replace('"schema_version": 2', '"schema_version": 2, "schema_version": 2'))
         with self.assertRaisesRegex(ValueError, 'Duplicate JSON property'): load_machine(SOFT, self.root)
 
+    def test_dedicated_audio_clock_is_hard_machine_only(self):
+        _, config = load_machine(SOFT, self.root)
+        config['clocks']['audio'] = 80000000
+        self.machine_path(SOFT).write_text(json.dumps(config))
+        with self.assertRaises(ValueError): load_machine(SOFT, self.root)
+
     def test_cpu_features_have_one_source(self):
         board, config = load_machine(SOFT, self.root)
         config['ip']['cpu']['parameters'].update(mmu=True, fpu=True)

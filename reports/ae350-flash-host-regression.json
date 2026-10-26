@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "tests": [
+    {
+      "test": "tests/common/mini_operations_test.py",
+      "exit_code": 0,
+      "stdout": "Programmer step: sram\nExact Flash readback: application 60 bytes MISMATCH\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: reload-one\nDetected Gowin JTAG location: 4145\nProgrammer step: reload-two\nDetected Gowin JTAG location: 4161\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nSoftware SPI write: application 60 bytes\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes MISMATCH\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nOperation logs: /tmp/nix-shell.Qp4tvh/tmp3jfng4t_/build/runs/20261026T070516699319Z-board-update\nProgrammer step: xip\nProgrammer step: xip\nProgrammer step: configuration\nProgrammer step: flash-xip\nProgrammer step: flash-application\nProgrammer step: reload\nProgrammer step: configuration\nProgrammer step: flash-xip\nProgrammer step: quiesce-sram\nProgrammer step: application\nProgrammer step: repair-xip-programmer\nProgrammer step: restore-sram\nExact Flash readback: application 60 bytes MISMATCH\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nProgrammer step: xip\nProgrammer step: sram\nProgrammer step: restore-sram\nOperation logs: /tmp/nix-shell.Qp4tvh/tmp4ok8vhx8/build/runs/20261026T070516791610Z-board-verify\nSelected build: /tmp/nix-shell.Qp4tvh/tmp4ok8vhx8/artifact boot=xip\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nSoftware SPI write: application 60 bytes\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes PASS\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nSoftware SPI write: application 60 bytes\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes PASS\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\n",
+      "stderr": ".......usage: mini_operations_test.py [-h]\n                               {configure,build,plan,release,builds,_worker,import,show,materialize,reproduce,test,pin,compat,clean,board,doctor,guide}\n                               ...\nmini_operations_test.py: error: --image is supported by firmware/flash verification only\n.............................\n----------------------------------------------------------------------\nRan 36 tests in 0.260s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/test_boot_session.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/workflow_test.py",
+      "exit_code": 0,
+      "stdout": "Cleaning /tmp/nix-shell.80NGxH/tmp67c7qfix/build/runs/test; recipe preserved at /tmp/nix-shell.80NGxH/tmp67c7qfix/build/recipes/test\nCleaning /tmp/nix-shell.80NGxH/tmpxn0w8yy0/build/runs/test; recipe preserved at /tmp/nix-shell.80NGxH/tmpxn0w8yy0/build/recipes/test\nHEAD is now at 1df4f62 fixture\nCleaning /tmp/nix-shell.80NGxH/tmpefc139s6/build/runs/test; recipe preserved at /tmp/nix-shell.80NGxH/tmpefc139s6/build/recipes/test\nCleaning /tmp/nix-shell.80NGxH/tmpefc139s6/build/runs/test; recipe preserved at /tmp/nix-shell.80NGxH/tmpefc139s6/build/recipes/test\nHEAD is now at 1df4f62 fixture\nCleaning 2 work caches; plan: /tmp/nix-shell.80NGxH/tmpx0grx0df/build/reports/cleanup/work-plan.json\nWould clean 1 work caches; plan: /tmp/nix-shell.80NGxH/tmpnvprh15_/build/reports/cleanup/work-plan.json\nCleaning 1 work caches; plan: /tmp/nix-shell.80NGxH/tmpnvprh15_/build/reports/cleanup/work-plan.json\n",
+      "stderr": "test_bundle_must_match_current_versions (__main__.WorkflowTests) ... ok\ntest_changelog_component_version_must_match_manifest (__main__.WorkflowTests) ... ok\ntest_cleanup_handles_readonly_gowin_outputs (__main__.WorkflowTests) ... ok\ntest_cleanup_protects_pins_and_releases (__main__.WorkflowTests) ... ok\ntest_cleanup_retains_recipe (__main__.WorkflowTests) ... ok\ntest_component_versions_are_validated (__main__.WorkflowTests) ... ok\ntest_dirty_recipe_replays_commit_patch_and_untracked_inputs (__main__.WorkflowTests) ... Preparing worktree (detached HEAD 1df4f62)\nok\ntest_explicit_optional_evidence_cannot_claim_a_failed_check_passed (__main__.WorkflowTests) ... ok\ntest_failed_pnr_cannot_be_pinned (__main__.WorkflowTests) ... ok\ntest_failed_zero_and_missing_identity_are_rejected (__main__.WorkflowTests) ... ok\ntest_final_bundle_tampering (__main__.WorkflowTests) ... ok\ntest_historical_registration_is_not_latest (__main__.WorkflowTests) ... ok\ntest_interrupted_cleanup_can_be_retried (__main__.WorkflowTests) ... ok\ntest_lightweight_record_cannot_be_promoted_to_release_verification (__main__.WorkflowTests) ... ok\ntest_measurement_workload_and_build_mismatch (__main__.WorkflowTests) ... ok\ntest_optional_review_still_detects_staged_drift (__main__.WorkflowTests) ... ok\ntest_ordinary_commits_require_no_validation_receipts (__main__.WorkflowTests) ... ok\ntest_other_commits_cannot_implicitly_write_changelog (__main__.WorkflowTests) ... ok\ntest_pin_rejects_fail_and_mismatched_image (__main__.WorkflowTests) ... ok\ntest_release_requires_current_successful_checks (__main__.WorkflowTests) ... ok\ntest_release_rtl_keeps_hardware_and_performance_gates (__main__.WorkflowTests) ... ok\ntest_release_version_alone_enables_release_validation (__main__.WorkflowTests) ... ok\ntest_release_version_validation (__main__.WorkflowTests) ... ok\ntest_scope_tracks_index_and_excludes_self_reference (__main__.WorkflowTests) ... ok\ntest_software_release_needs_checks_without_new_hardware (__main__.WorkflowTests) ... ok\ntest_version_input_is_preserved_when_replaying (__main__.WorkflowTests) ... Preparing worktree (detached HEAD 1df4f62)\nok\ntest_work_cleanup_continues_after_inaccessible_root (__main__.WorkflowTests) ... ok\ntest_work_cleanup_preserves_catalog_roots_and_final_artifacts (__main__.WorkflowTests) ... ok\n\n----------------------------------------------------------------------\nRan 28 tests in 0.335s\n\nOK\n",
+      "environment": "commit.gpgsign=false only for fixture child processes; signing agent unavailable"
+    },
+    {
+      "test": "tests/mega138k_ae350/flash_update_test.py",
+      "exit_code": 0,
+      "test_count": 5,
+      "passed": true,
+      "evidence": "Observed Nix Python test command completed with OK",
+      "source_sha256": "725d07453321ac5568a94832a7dc1e1bd96cd1b3b8dc907df9670752e1455ba7"
+    },
+    {
+      "test": "tests/mega138k_ae350/boot_contract_test.py",
+      "exit_code": 0,
+      "test_count": 7,
+      "passed": true,
+      "evidence": "Observed Nix Python test command completed with OK",
+      "source_sha256": "3e00f115e3869d165a501bdf4dca63a2c1f282255b2655d1404b02cb95d0904d"
+    }
+  ]
+}

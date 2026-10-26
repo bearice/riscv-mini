@@ -1,0 +1,60 @@
+{
+  "passed": true,
+  "tests": [
+    {
+      "test": "tests/common/platform_description_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "...........\n----------------------------------------------------------------------\nRan 11 tests in 1.774s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/machine_build_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 4.320s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/test_ae350_platform.py",
+      "exit_code": 0,
+      "stdout": "PASS address contract []\nPASS sysinfo id 0xae350001\nPASS stable boot discovery 0x1\nPASS stable boot discovery 0x2faf080\nPASS stable boot discovery 0xd372f5cb\nPASS sysinfo rejects writes 1\nPASS sysinfo id unchanged 0xae350001\nPASS HDMI fabric reader capability 0x3fff\nPASS loopback device entry 0xae350101\nPASS audio device identity 0xae350401\nPASS controller selector in device table 9\nPASS controller selector in device page 9\nPASS audio device identity 0xae350402\nPASS controller selector in device table 10\nPASS controller selector in device page 10\nPASS partial audio control write rejected\nPASS rejected write has no audio side effect 2\nPASS unmapped apb errors 1\nPASS unaligned apb errors 1\nPASS ddr diagnostic still readable 0xa3500300\nPASS ddr diagnostic rejects writes 1\nPASS push accepted 0\nPASS hole errors 1\nPASS pop after hole 0x11223344\nPASS empty pop errors 1\nPASS underflow sticky 0x9\nPASS narrow write errors 1\nPASS narrow write did not push 0\nPASS data-phase write accepted 0\nPASS data-phase pop 0x44556677\nPASS deselected port does not push 0\nPASS level still empty 0\nPASS fill\nPASS full push errors 1\nPASS overflow sticky and full 0xe\nPASS drain order\nPASS irq enable 0\nPASS irq push 0\nPASS irq pending (1, '0x1')\nPASS irq clear 0\nPASS data remains after irq clear 0x44556677\nPASS request enable 0\nPASS tx request while empty 0x1\nPASS rx request while occupied 0x3\nPASS tx request falls while ack is high 0x2\nPASS tx request rises after ack falls 0x3\nPASS ack rising edge counted 0x1\nPASS tx request stays low when full 0x2\nPASS tx request returns after one pop (0, '0x3')\nPASS soft reset accepted 0\nPASS soft reset empties the fifo 0\nPASS soft reset clears irq 0\nPASS soft reset clears sticky errors 0x1\nRESULT PASS\n",
+      "stderr": ""
+    },
+    {
+      "test": "tests/mega138k_ae350/test_ae350_interconnect.py",
+      "exit_code": 0,
+      "stdout": "PASS sram write accepted 0\nPASS sram read back 0x1111222233334444\nPASS ddr write accepted 0\nPASS ddr read back 0x112233\nPASS ddr read after sram write 0x112233\nPASS sram read after ddr read 0xdeadbeefdeadbeef\nPASS accept counter advanced by three (7, 4)\nPASS alternating ddr/sram traffic\nPASS alternating sram data intact\nPASS switch completion: sram bytes captured ['0x78', '0x56', '0x34', '0x12']\nPASS switch completion: sram store landed 0x12345678\nPASS unmapped address errors 1\nPASS recovered after unmapped error 0x12345678\nPASS every accepted address reached exactly one slave (30, 30, 19, 10, 1)\nPASS no slave saw an address it did not own (0, 0)\nRESULT PASS\n",
+      "stderr": ""
+    },
+    {
+      "test": "tests/mega138k_ae350/ahb_candidate_test.py",
+      "exit_code": 0,
+      "stdout": "PASS unselected candidate ignored in idle/completion; response ownership and later selection preserved\n",
+      "stderr": ""
+    },
+    {
+      "test": "tests/mega138k_ae350/flash_page_test.py",
+      "exit_code": 0,
+      "stdout": "PASS FR page translation/handshake, SYSINFO isolation and partial/unknown access rejection\n",
+      "stderr": ""
+    },
+    {
+      "test": "tests/mega138k_ae350/test_audio.py",
+      "exit_code": 0,
+      "stdout": "PASS physical PT8211/I2S decode, signed PCM24, snapshot, stream overflow/recovery, AHB errors/data-phase, REQ/ACK, stop\n",
+      "stderr": ""
+    },
+    {
+      "test": "tests/mega138k_ae350/boot_contract_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.421s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/sd_cdc_test.py",
+      "exit_code": 0,
+      "stdout": "PASS asynchronous SD AHB data phase, ordered words and two-cycle ERROR propagation\nPASS full fabric APB CDC exactly-once commit/readback/errors and no duplicate REQ after ACK\n",
+      "stderr": "",
+      "clock_ratio": "sys50/mem100"
+    }
+  ]
+}

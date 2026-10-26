@@ -1,4 +1,6 @@
 """Run real-time audio without halting the CPU until the final UART marker."""
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 import time
 import json
 import shutil
@@ -26,7 +28,7 @@ def perform(args):
         root,ref,build_id=candidate(args.build)
         store=Store();manifest=store.get(ref)
         boot=store.get(manifest['dependencies']['bootloader'])
-        abi=boot['config']['image_abi']
+        abi=hardware_abi(store, ref)
         pref,proot=resolve_payload(store,args.payload,expected_abi=abi);payload=payload_file(proot).read_bytes()
         op.report.update(artifact=ref,fs_sha256=file_hash(root/'gateware/impl/pnr/project.fs'),
                          rom_build_id=build_id,payload_artifact=pref,payload_sha256=file_hash(payload_file(proot)),

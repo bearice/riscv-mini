@@ -9,7 +9,7 @@
     "abi": "ilp32"
   },
   "clocks": {
-    "sys": 80000000,
+    "sys": 50000000,
     "cpu": 800000000,
     "data_memory_bus": 100000000,
     "video": 25175000
@@ -21,8 +21,8 @@
     "size_bytes": 1073741824
   },
   "boot": {
-    "mode": "rom",
-    "rom_size_bytes": 32768
+    "mode": "xip",
+    "rom_size_bytes": 8192
   },
   "devices": {
     "video": "video_0",
@@ -36,7 +36,8 @@
     "sd": "sdcard",
     "flash": "user_flash",
     "i2c": "system_i2c",
-    "twi_mux": "twi_mux"
+    "twi_mux": "twi_mux",
+    "boot_flash": "config_flash"
   },
   "gpio": {
     "leds": [
@@ -72,8 +73,8 @@
         "ENABLE_DTCM": false,
         "ENABLE_DDR3": false,
         "ENABLE_CUSTOMIZED_INSTRUCTION": false,
-        "ENABLE_ITCM": true,
-        "ENABLE_SPI_FLASH": false,
+        "ENABLE_ITCM": false,
+        "ENABLE_SPI_FLASH": true,
         "ENABLE_EXTENDED_APB_SLAVE": true,
         "ENABLE_SMU": false,
         "ENABLE_RTC": true,
@@ -97,7 +98,8 @@
         "PWM_CHANNEL_0": false,
         "ItcmSize": 0,
         "ItcmInstructionMemory": true,
-        "LANG": 0
+        "LANG": 0,
+        "FlashRegisterRWMode": true
       }
     },
     "ddr3": {

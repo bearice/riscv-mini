@@ -92,7 +92,7 @@ def validate_pair(board, config):
     required = {'clock': 'clock', 'core_reset': 'reset', 'debug_uart': 'uart',
                 config['memory']['resource']: 'ddr3'}
     kinds = dict(video=('hdmi', 'rgb_lcd'), audio=('audio',), ws2812=('ws2812',),
-                 i2c=('i2c',), twi_mux=('twi_mux',), sd=('sd',), fan=('fan',), cpu_jtag=('jtag',), flash=('spi',),
+                 i2c=('i2c',), twi_mux=('twi_mux',), sd=('sd',), fan=('fan',), cpu_jtag=('jtag',), flash=('spi',), boot_flash=('spi',),
                  ethernet=('rmii',), ethernet_clock=('clock',), usb=('ulpi',),
                  spi_lcd=('spi_lcd',), phy_reset=('reset',))
     for name, ref in config['devices'].items():
@@ -121,18 +121,18 @@ def validate_pair(board, config):
         parameters = config['ip']['cpu']['parameters']
         # The native adapter wires these ports. Reject layouts it cannot consume
         # before invoking a generator rather than silently ignoring the setting.
-        required_ports = ('ENABLE_CUSTOMIZED_DATA', 'ENABLE_ITCM', 'ENABLE_EXTENDED_APB_SLAVE',
+        required_ports = ('ENABLE_CUSTOMIZED_DATA', 'ENABLE_SPI_FLASH', 'FlashRegisterRWMode', 'ENABLE_EXTENDED_APB_SLAVE',
                           'ENABLE_UART2', 'ENABLE_GPIO', 'ENABLE_RTC', 'ENABLE_DMAC',
                           'ENABLE_EXTENDED_AHB_SLAVE', 'ENABLE_PLIC', 'ENABLE_SPI', 'ENABLE_I2C')
         if any(not parameters[name] for name in required_ports):
-            raise ValueError('AE350 fabric requires its ITCM, DDR master, APB/AHB slave, UART2, GPIO, RTC, DMA, PLIC, SPI and I2C ports')
-        unsupported_ports = ('ENABLE_DTCM', 'ENABLE_DDR3', 'ENABLE_CUSTOMIZED_INSTRUCTION',
-                             'ENABLE_SPI_FLASH', 'ENABLE_EXTENDED_AHB_MASTER',
+            raise ValueError('AE350 fabric requires SDK Flash/FR APB, DDR master, APB/AHB slave, UART2, GPIO, RTC, DMA, PLIC, SPI and I2C ports')
+        unsupported_ports = ('ENABLE_DTCM', 'ENABLE_DDR3', 'ENABLE_ITCM',
+                             'ENABLE_CUSTOMIZED_INSTRUCTION', 'ENABLE_EXTENDED_AHB_MASTER',
                              'ENABLE_GPIO_IO_PORTS', 'ENABLE_SPI2_IO_PORTS', 'ENABLE_I2C_IO_PORTS')
         if any(parameters[name] for name in unsupported_ports):
             raise ValueError('AE350 fabric does not connect the selected additional native ports')
-        if parameters['ItcmSize'] != 0 or config['boot']['rom_size_bytes'] != 32768:
-            raise ValueError('AE350 ITCM boot adapter currently requires the 32 KiB configuration')
+        if config['boot'] != dict(mode='xip', rom_size_bytes=8192):
+            raise ValueError('AE350 boot adapter requires the independent 8 KiB XIP ROM')
         if config['clocks']['data_memory_bus'] * 4 != config['ip']['ddr3']['parameters']['Memory_Clock'] * 1000000:
             raise ValueError('DDR UI clock must match the selected controller CK/4 clock')
         ddr = config['ip']['ddr3']['parameters']
@@ -252,6 +252,7 @@ class DeviceDescription:
     fan: Optional[str] = None
     cpu_jtag: Optional[str] = None
     flash: Optional[str] = None
+    boot_flash: Optional[str] = None
     i2c: Optional[str] = None
     twi_mux: Optional[str] = None
     ethernet: Optional[str] = None
@@ -275,6 +276,7 @@ class GPIODescription:
 class RTLDescription:
     place_option: int
     route_option: int
+    timing_probe: bool = False
     features: Optional[Mapping[str, bool]] = None
     cpu_variant: Optional[str] = None
     cpu_verilog: Optional[str] = None

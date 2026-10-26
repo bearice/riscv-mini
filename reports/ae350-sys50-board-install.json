@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "artifact": {
+    "component": "gateware",
+    "digest": "eaebc3f795263b06f3fb2395c5a7fcc6dea183e5226279c21f75b2c287c25d59"
+  },
+  "bootloader": {
+    "component": "bootloader",
+    "digest": "d96c9542d1ad12ffa836f700ca067b947364c04413abc0a1317f7ce391df95c0"
+  },
+  "fs_sha256": "42d521bee600e1ffbc5133ce86cac9bd61d00bfce20a3818f9b6644c2d77f383",
+  "configuration_bytes": 4701386,
+  "configuration_sha256": "8c1c8b4c00b8fc565e9ddbf15992ee1086135ecb5ae2e560d5c02b7008b58ed4",
+  "configuration_programmed_extent": 4718592,
+  "flash_jedec": "0xef4018",
+  "bootrom_slot_sha256": "f8e9b3b4b158278febc6e5acb1da389f03b97785221795df56b27c9cd6ec2678",
+  "boot_build_id": "b80f3f898102",
+  "hardware_contract": {
+    "name": "hardware-contract",
+    "image_abi": "0xd372f5cb",
+    "bus_hz": 50000000
+  },
+  "operation_runs": {
+    "bootrom": "20261026T064853526825Z-board-ae350-bootrom",
+    "jtag": "20261026T065736047850Z-board-ae350-jtag-test",
+    "update": "20261026T070028342946Z-board-ae350-update"
+  },
+  "configuration_readback_matched": true,
+  "boot_neighborhood_unchanged": true,
+  "configuration_guard_unchanged": true,
+  "boot_method": "JTAG RELOAD from persistent Flash",
+  "final_boot": "riscv-mini AE350 ROM b80f3f898102\r\nPOST 600d0000\r\nDDR INIT OK\r\nBL> ",
+  "physical_power_cycle": false,
+  "current_changed": false,
+  "remaining": [
+    "full-region DDR validation",
+    "UART payload and peripheral suites for this image"
+  ]
+}

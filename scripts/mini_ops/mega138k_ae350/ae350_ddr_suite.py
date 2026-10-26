@@ -1,4 +1,6 @@
 """Load diagnostics through the normal UART loader; JTAG only observes DLM results."""
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 import struct
 import time
 from modular.storage import Store, file_hash
@@ -50,7 +52,7 @@ def perform(args):
         store = Store()
         manifest = store.get(ref)
         boot = store.get(manifest['dependencies']['bootloader'])
-        abi = boot['config']['image_abi']
+        abi = hardware_abi(store, ref)
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         if store.get(payload_ref)['config'].get('purpose') != 'AE350-memory-diagnostics':
             raise ValueError('DDR suite requires the diagnostic payload, not a user application')

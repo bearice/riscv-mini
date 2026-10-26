@@ -27,7 +27,7 @@ module tb;
   always #20 pixel=~pixel;
   always #4 fast=~fast;
   initial begin
-    #8;
+    #10;
     forever begin
       if(run_reset_clock) reset_clock=1;
       #20; reset_clock=0; #20;
@@ -41,7 +41,10 @@ module tb;
     .tmds_clk_p(cp),.tmds_clk_n(cn),.tmds_d_p(dp),.tmds_d_n(dn));
   always @(posedge dut.serializer_resetn) begin
     if(!locked || !resetn) $fatal(1,"released while reset or lock loss asserted");
-    if(!reset_clock || $realtime-last_pixel < 7.99) $fatal(1,"wrong reset release phase");
+    if(!reset_clock || $realtime-last_pixel < 9.99 || $realtime-last_pixel > 10.01)
+      $fatal(1,"wrong reset release phase");
+    if($realtime-last_fast < 1.99 || $realtime-last_fast > 2.01)
+      $fatal(1,"reset release overlaps serializer clock edge");
     releases=releases+1;
   end
   task wait_release;

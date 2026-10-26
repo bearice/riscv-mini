@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "tests": [
+    {
+      "test": "tests/mega138k_ae350/fabric_pll_verilog_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:14421: warning: @* found no sensitivities so it will never trigger.\n/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:14657: warning: @* found no sensitivities so it will never trigger.\n/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:14752: warning: @* found no sensitivities so it will never trigger.\n/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:14847: warning: @* found no sensitivities so it will never trigger.\n/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:14942: warning: @* found no sensitivities so it will never trigger.\n/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:15028: warning: @* found no sensitivities so it will never trigger.\n/home/bearice/Gowin_V1.9.12.04_linux/IDE/simlib/gw5a/prim_sim.v:15114: warning: @* found no sensitivities so it will never trigger.\n.\n----------------------------------------------------------------------\nRan 1 test in 0.118s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/video_scanout_verilog_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 2.765s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/hdmi_reset_verilog_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".\n----------------------------------------------------------------------\nRan 1 test in 0.019s\n\nOK\n"
+    }
+  ]
+}

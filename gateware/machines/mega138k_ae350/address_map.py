@@ -3,6 +3,14 @@ from gateware.io import IOBindings
 
 ROM_BASE = 2147483648
 
+BOOT_CONTRACT_ADDR = 0xf800000c
+BOOT_CLOCK_ADDR = 0xf8000010
+BOOT_IMAGE_ABI_ADDR = 0xf8000014
+BOOT_CONTRACT_VERSION = 1
+
+FLASH_CTRL_BASE = 0xf8090000
+FLASH_CTRL_SIZE = 0x80
+
 ILM_BASE = 2684354560
 
 ILM_SIZE = 64 << 10
@@ -246,9 +254,9 @@ RLINE_HIT_ADDR = DDR_CSR_BASE + 68
 
 WAIT_CYCLES_ADDR = DDR_CSR_BASE + 72
 
-XIP_BASE = 2281701376
+XIP_BASE = ROM_BASE
 
-XIP_SIZE = 128 << 20
+XIP_SIZE = 256 << 20
 
 DDR_CODE = 12288
 
@@ -276,7 +284,7 @@ class AddressMap:
         self.GPIO_BUTTON_MASK = gpio['button_mask']
         self.GPIO_IRQ_MASK = gpio['irq_mask']
         self.ROM_CODE_BYTES = self.ROM_SIZE
-        self.WINDOWS = (('ddr', self.DDR_BASE, self.DDR_SIZE, 'implemented'), ('boot-itcm', self.ROM_BASE, self.ROM_SIZE, 'vendor-fabric-ITCM'), ('xip', self.XIP_BASE, self.XIP_SIZE, 'reserved-not-implemented'), ('ilm', self.ILM_BASE, self.ILM_SIZE, 'hard-local-memory'), ('dlm', self.DLM_BASE, self.DLM_SIZE, 'hard-local-memory'), ('platform-csr', self.CSR_BASE, self.CSR_SIZE, 'implemented'), ('periph-csr', 4160815104, 524288, 'audio-mic-video-ws2812-board-io'), ('ext-ahb', self.EXT_AHB_BASE, self.EXT_AHB_SIZE, 'audio-mic-loopback-data'))
+        self.WINDOWS = (('ddr', self.DDR_BASE, self.DDR_SIZE, 'implemented'), ('boot-xip', self.ROM_BASE, self.ROM_SIZE, 'SDK-Flash-U4-offset-0x600000'), ('flash-control', self.FLASH_CTRL_BASE, 4096, 'SDK-FR-APB'), ('sdk-flash-rest', self.ROM_BASE + self.ROM_SIZE, self.XIP_SIZE - self.ROM_SIZE, 'SDK-aperture-capacity-bounds-unqualified'), ('ilm', self.ILM_BASE, self.ILM_SIZE, 'hard-local-memory'), ('dlm', self.DLM_BASE, self.DLM_SIZE, 'hard-local-memory'), ('platform-csr', self.CSR_BASE, self.CSR_SIZE, 'implemented'), ('periph-csr', 4160815104, 524288, 'audio-mic-video-ws2812-board-io'), ('ext-ahb', self.EXT_AHB_BASE, self.EXT_AHB_SIZE, 'audio-mic-loopback-data'))
 
     def __getattr__(self, name):
         if name.isupper() and name in globals():

@@ -5,6 +5,8 @@ packet framing (`boot_image.packet`) and the acknowledgements, and the 20K
 image rules (`boot_image.pack_image`/`unpack_image`) with the AE350 load address.
 JTAG is used only to restart the ROM entry and to read where the CPU ended up.
 """
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 import json
 import sys
 import time
@@ -47,7 +49,7 @@ def perform_upload(args, selected=None):
         root, ref, build_id = selected if selected is not None else candidate(args.build)
         store = Store()
         boot_ref = store.get(ref)['dependencies']['bootloader']
-        abi = store.get(boot_ref)['config']['image_abi']
+        abi = hardware_abi(store, ref)
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         payload = payload_file(payload_root).read_bytes()
         image = ae350_image.build(payload, abi)

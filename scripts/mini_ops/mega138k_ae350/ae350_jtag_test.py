@@ -1,9 +1,11 @@
 """Read-only CPU debug qualification after programming an exact candidate.
 
-Program loading belongs to UART. This checks the TAP, initialized ITCM bytes,
+Program loading belongs to UART. This checks the TAP, boot ROM bytes,
 local-memory configuration, ROM POST and the platform status bank. No probe,
 mailbox protocol, DPC redirection or program injection is used.
 """
+from mini_ops.mega138k_ae350.ae350 import hardware_abi
+
 import time
 from modular.storage import Store, file_hash
 from mini_ops.mega138k_ae350.ae350 import candidate
@@ -23,7 +25,7 @@ def perform(args):
         store = Store()
         boot_ref = store.get(ref)['dependencies']['bootloader']
         boot = store.get(boot_ref)
-        abi = boot['config']['image_abi']
+        abi = hardware_abi(store, ref)
         expected = (store.path(boot_ref) / 'outputs/boot.bin').read_bytes()
         fs = root / 'gateware/impl/pnr/project.fs'
         op.report.update(artifact=ref, fs_sha256=file_hash(fs), rom_build_id=build_id,
@@ -34,17 +36,25 @@ def perform(args):
         from mini_ops.mega138k_ae350.ae350_session import HardwareSession
         for index in range(repeat):
             with HardwareSession(op, cpu_jtag_location=args.cpu_jtag_location,
-                                 location=args.location) as hardware:
+                                 location=args.location, port=args.port) as hardware:
+                is_xip = store.get(ref)['config'].get('instruction_memory') == 'SDK-Flash-U4+hard-ILM'
+                if is_xip:
+                    from tools.boot_session import BootSession
+                    from mini_ops.mega138k_ae350.ae350_upload import wait_loader
+                    uart = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
                 hardware.program(fs)
-                time.sleep(.3)
+                if is_xip:
+                    op.record('banner', text=wait_loader(uart, build_id, 60))
+                else:
+                    time.sleep(.3)
                 cpu = hardware.halt()
                 actual = cpu.read_memory(amap.ROM_BASE, len(expected))
                 (op.path / 'rom-readback.bin').write_bytes(actual)
                 if actual != expected:
-                    raise RuntimeError('Initialized ITCM differs from the selected boot image')
+                    raise RuntimeError('Boot ROM differs from the selected boot image')
                 for offset in (12, 0, 28, 4, 0, 16):
                     if cpu.read_memory(amap.ROM_BASE + offset, 4) != expected[offset:offset+4]:
-                        raise RuntimeError('Nonsequential ITCM read mismatch')
+                        raise RuntimeError('Nonsequential ROM read mismatch')
                 regs = {name: cpu.register(number) for name, number in
                     [('milmb', 0x7c0), ('mdlmb', 0x7c1), ('micm_cfg', 0xfc0), ('mdcm_cfg', 0xfc1),
                      ('pc', 0x7b1), ('sp', 0x1002), ('mcause', 0x342), ('mepc', 0x341)]}
@@ -54,6 +64,12 @@ def perform(args):
                     raise RuntimeError('Unexpected hard ILM/DLM configuration')
                 post = [int.from_bytes(cpu.read_memory(amap.RESULTS_BASE + i*4, 4), 'little') for i in range(12)]
                 status = int.from_bytes(cpu.read_memory(amap.STATUS_ADDR, 4), 'little')
+                if is_xip:
+                    observed_abi = int.from_bytes(cpu.read_memory(0xf8000014, 4), 'little')
+                    observed_clock = int.from_bytes(cpu.read_memory(0xf8000010, 4), 'little')
+                    op.record('hardware-contract', image_abi=hex(observed_abi), bus_hz=observed_clock)
+                    if observed_abi != abi or observed_clock != store.get(ref)['config']['bus_hz']:
+                        raise RuntimeError('Running hardware ABI or bus clock differs from selected gateware')
                 cycles = int.from_bytes(cpu.read_memory(amap.CALIB_CYCLES_ADDR, 4), 'little')
                 op.record('autonomous-post', words=[hex(value) for value in post], status=hex(status))
                 if post[0] != 0xd0b00001 or post[6] != 0 or post[7] != 0xd0b00002 or status & 7 != 3:
@@ -66,7 +82,7 @@ def perform(args):
                     op.record("counter-clock", **measure_counter_clock(cpu))
             (op.path / "sram.log").rename(op.path / ("sram-%02d.log" % (index + 1)))
         op.report['passed'] = True
-        print('PASS ITCM identity, CPU JTAG, hard ILM/DLM and autonomous POST', flush=True)
+        print('PASS boot ROM identity, CPU JTAG, hard ILM/DLM and autonomous POST', flush=True)
         return op
     except Exception as error:
         op.report.update(passed=False, error=str(error))

@@ -10,7 +10,7 @@
  * Diagnostic results occupy a reserved DLM region; no fabric work SRAM.
  */
 #include <stdint.h>
-#include "ae350_address_map.h"
+#include "ae350_boot_contract.h"
 
 #define UART2_BASE   0xf0300000u
 #define UART_OSCR    0x14u
@@ -20,7 +20,7 @@
 #define UART_LCR     0x2cu
 #define UART_LSR     0x34u
 #define UART_REG(o)  (*(volatile uint32_t *)(UART2_BASE + (o)))
-#define UART_APB_HZ  AE350_FABRIC_HZ
+#define UART_APB_HZ  (*(volatile uint32_t *)AE350_BOOT_CLOCK_ADDR)
 #define UART_BAUD    115200u
 
 #define RES          ((volatile uint32_t *)AE350_RESULTS_BASE)
@@ -159,7 +159,7 @@ static void loader(void) {
             hc ^= 0xffffffffu;
             if (h[0] != IMG_MAGIC || h[1] != IMG_VERSION || h[2] != IMG_HDR ||
                 h[8] || h[9] || h[10] || hc != h[11]) { puts("ERR HEADER\r\n"); goto retry; }
-            if (h[3] != AE350_IMAGE_ABI) { puts("ERR ABI\r\n"); goto retry; }
+            if (h[3] != *(volatile uint32_t *)AE350_BOOT_IMAGE_ABI_ADDR) { puts("ERR ABI\r\n"); goto retry; }
             if (h[4] < 4u || h[4] > AE350_MAX || h[5] != AE350_LOAD || h[6] != AE350_LOAD) {
                 puts("ERR RANGE\r\n"); goto retry;
             }
@@ -220,6 +220,8 @@ static void loader(void) {
 
 void main(void) {
     uint32_t errs = 0;
+    if (*(volatile uint32_t *)AE350_BOOT_CONTRACT_ADDR != AE350_BOOT_CONTRACT_VERSION)
+        for (;;) { } /* No UART timing assumptions before checking the contract. */
     uart_init();
     __asm__ volatile("csrr %0, 0x7c0" : "=r"(RES[8]));
     __asm__ volatile("csrr %0, 0x7c1" : "=r"(RES[9]));

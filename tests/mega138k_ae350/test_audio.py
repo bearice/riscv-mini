@@ -16,7 +16,8 @@ from test_ae350_interconnect import xact
 
 
 def main():
-    d = FabricAudio(clock_hz=24_576_000, fifo_depth=8)
+    d = FabricAudio(clock_hz=amap.FABRIC_HZ, fifo_depth=8)
+    frame_cycles = (amap.FABRIC_HZ + 47999) // 48000
     serial_words = []
     values = [0x123456, 0x800000, 0x7fffff, 0xffffff]
 
@@ -76,7 +77,7 @@ def main():
         assert (yield d.tx.level)==3
         yield from control(True,0x18,1)
         yield from control(True,0xc,1)
-        for _ in range(512*5): yield
+        for _ in range(frame_cycles*5): yield
         assert (yield d.tx.played)==3
         assert (yield d.tx.underruns)>0
         assert (yield d.tx_irq)
@@ -112,7 +113,7 @@ def main():
 
         # Arm and enable in the same command must work after the clock starts.
         assert (yield from control(False,0xc,17))[0]
-        for _ in range(512*10):
+        for _ in range(frame_cycles*10):
             if (yield d.rx.done): break
             yield
         else: raise AssertionError('snapshot did not finish')
@@ -127,13 +128,13 @@ def main():
         assert set(got)==set(valid), [hex(w) for w in got]
         assert (yield from xact(d.rx_bus,False,amap.MIC_DATA))[0]==1
         yield from control(False,0xc,1|4|16)
-        for _ in range(512*14): yield
+        for _ in range(frame_cycles*14): yield
         assert (yield d.rx.overruns)>0 and (yield d.rx.busy)
         assert (yield d.rx.accepted)==8
         yield from control(False,0xc,1|4|8)
         assert (yield d.rx_req)
         for _ in range(8): assert (yield from xact(d.rx_bus,False,amap.MIC_DATA))[0]==0
-        for _ in range(512*2): yield
+        for _ in range(frame_cycles*2): yield
         assert (yield d.rx.accepted)>8, 'stream must resume after overflow and drain'
         before=(yield d.rx.accepted)
         assert not (yield from control(False,0xc,1|2|4|8))[0], 'cannot change live channel'

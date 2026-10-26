@@ -13,7 +13,7 @@ Dock 4071f 原理图的 SDIO/M.2 页（J19、R189–R195）及本地板卡示例
 | DAT0 / DAT1 / DAT2 / DAT3 | H23 / J23 / A25 / B25 | LVCMOS33，上拉 |
 | DET | J15 | 低有效，有卡为 0 |
 
-SD 控制器运行在现有 100 MHz mem 域，APB/AHB 保持 sys 80 MHz，通过保留事务的异步 FIFO 完成跨域；REQ 在 sys 域被 ACK 立即抑制，ACK 以事件同步回 mem 域。
+SD 控制器逻辑使用 100 MHz mem 域，sys 控制面为 50 MHz；二者保留不同 PLL 输出和显式 CDC。保留事务的 FIFO、REQ 抑制和 ACK 事件适配器负责跨域。卡侧 50 MHz 仍由 mem100 分频产生，不随 sys 降频。既有 SD 板测报告对应 sys80/mem100 的组合，不自动延伸到新配置；主机事务回归已覆盖简化后的控制面。
 
 数据路径：SDPHY/Core ↔ 字节/32-bit 转换与双向 FIFO ↔ Extended AHB 固定地址端点 ↔ 硬核 DMAC ↔ 既有 DDR AHB 通路。SD 不增加独立 DDR 主端口，不使用 LiteSDCard 的 Wishbone 内存 DMA 前端。FIFO 每方向 16 个 32-bit 寄存器字，字节顺序按小端内存转换；AHB 只允许对正确方向的固定数据字做 32-bit 访问，空读/满写及非法地址有界 ERROR。请求按 FIFO 可用性产生，ACK 捕获与 audio/mic 相同。
 
