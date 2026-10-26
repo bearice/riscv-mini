@@ -35,6 +35,7 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
                   purpose='AE350-ROM-bootloader',
                   source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, flags=flags, tools=identity(env),
                   rom_base=ae350_map.ROM_BASE, rom_bytes=ae350_map.ROM_SIZE,
+                  flash_bytes=ae350_map.FLASH_BYTES,
                   dlm_base=ae350_map.DLM_BASE, dlm_bytes=ae350_map.DLM_SIZE,
                   results_base=ae350_map.RESULTS_BASE,
                   uart_base=0xf0300000, uart_clock='SYSINFO+0x10', image_abi_source='SYSINFO+0x14',
@@ -59,8 +60,8 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         ae350_map.require()
         gen = work / 'generated'
         gen.mkdir(parents=True, exist_ok=True)
-        text_file(gen / 'ae350_boot_contract.h', boot_contract.c_header())
-        text_file(gen / 'ae350_boot_contract.ld', boot_contract.ld_fragment())
+        text_file(gen / 'ae350_boot_contract.h', boot_contract.c_header(ae350_map.ROM_SIZE))
+        text_file(gen / 'ae350_boot_contract.ld', boot_contract.ld_fragment(ae350_map.ROM_SIZE))
         text_file(gen / 'identity.h', '#define %s "%s"\n' % (macro, key[:12]))
         flags = [*flags, '-I' + str(gen), '-Wl,-L,' + str(gen)]
         bsp = store.root / BOOTLOADER
@@ -78,8 +79,9 @@ def firmware(store, run, cpu, plan=False, profile='ddr'):
         snapshot['outputs/elf-attributes.txt'] = attributes.encode()
         snapshot['outputs/ae350_boot_contract.h'] = gen / 'ae350_boot_contract.h'
         snapshot['outputs/ae350_boot_contract.ld'] = gen / 'ae350_boot_contract.ld'
-        snapshot['outputs/flash-layout.json'] = canonical(dict(flash='config-U4', flash_bytes=boot_contract.FLASH_BYTES,
-            offset=boot_contract.FLASH_OFFSET, size=boot_contract.ROM_SIZE, erase_bytes=4096,
+        snapshot['outputs/flash-layout.json'] = canonical(dict(flash='config-U4', flash_bytes=ae350_map.FLASH_BYTES,
+            offset=boot_contract.FLASH_OFFSET, size=ae350_map.ROM_SIZE, erase_bytes=4096,
+            image_bytes=(work / 'boot.bin').stat().st_size,
             cpu_base=ae350_map.ROM_BASE, controller='ae350-sdk-flash',
             programming='explicit-install-only'))
         snapshot['build.lock.json'] = canonical(config)

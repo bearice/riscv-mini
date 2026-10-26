@@ -4,7 +4,7 @@
 
 PT8211 TX 和单只 I2S RX 复用 `gateware/devices/` 协议核心。AE350 使用 APB 控制页、固定地址 AHB FIFO 数据口和硬 DMAC。当前配置为 sys 50 MHz、mem 100 MHz、DDR CK 400 MHz；板测结论以匹配构建的 `board audio-suite` 回执为准，原 sys80 板测结论不自动继承。
 
-为 sys100 实验增加的独立 audio80 域及 APB/AHB 事务 CDC 已删除，协议核心、FIFO、控制和请求均回到 sys50。CPU/硬 DMAC 的 ACK 脉冲捕获仍保留；音频 DMA 的 DDR 内存侧走已有独立数据通路。
+协议核心、FIFO、控制和请求均运行在sys50。CPU/硬 DMAC 的 ACK 脉冲捕获仍保留；音频 DMA 的 DDR 内存侧走已有独立数据通路。
 
 ## 接线与格式
 

@@ -1,6 +1,6 @@
 # AE350 构建与增量 PnR
 
-138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建独立 8 KiB XIP 启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断。AE350 machine-description 只从仓库内的 `board.json`、`machine.json` 和构建实现生成；`ae350_customized_demo` 仅供开发时查阅，不由构建器打开、扫描或纳入输入闭包。Gowin IP 与 AE350 wrapper 的实际构建输入是仓库内固定并校验哈希的 vendor 文件。构建与板测使用准确产物身份，不消费 20K current。恢复核对所选硬件关联的启动镜像。位流不包含 bootrom 字节；首次使用前须通过独立安装操作写入 U4 官方 0x600000 固件分区，见 [bootloader](bootloader.md)。
+138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建Flash固件区中的独立XIP启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断。AE350 machine-description 只从仓库内的 `board.json`、`machine.json` 和构建实现生成；`ae350_customized_demo` 仅供开发时查阅，不由构建器打开、扫描或纳入输入闭包。Gowin IP 与 AE350 wrapper 的实际构建输入是仓库内固定并校验哈希的 vendor 文件。构建与板测使用准确产物身份，不消费 20K current。恢复核对所选硬件关联的启动镜像。位流不包含 bootrom 字节；首次使用前须通过独立安装操作写入 U4 官方 0x600000 固件分区，见 [bootloader](bootloader.md)。
 
 ## 138K/AE350 增量 PnR
 

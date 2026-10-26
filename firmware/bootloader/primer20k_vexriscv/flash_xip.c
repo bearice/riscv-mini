@@ -4,10 +4,10 @@
  */
 #include "flash.h"
 #include "../../common/memory_layout.h"
-unsigned flash_size(void) { return MINI_FLASH_SIZE; }
+unsigned flash_size(void) { return MINI_FLASH_WINDOW_SIZE; }
 int flash_init(uint32_t *id) { if(id)*id=0;return 1; }
 int flash_read(unsigned address,void *data,unsigned length) {
-    if(address>=MINI_FLASH_SIZE || length>MINI_FLASH_SIZE-address)return 0;
+    if(address>=MINI_FLASH_WINDOW_SIZE || length>MINI_FLASH_WINDOW_SIZE-address)return 0;
     const volatile unsigned char *source=(const volatile unsigned char *)(MINI_XIP_BASE+address);
     unsigned char *dest=data;
     while(length--)*dest++=*source++;

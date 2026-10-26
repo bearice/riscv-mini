@@ -8,7 +8,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[3]),
                 str(Path(__file__).resolve().parents[3] / 'scripts')]
 
 from scripts.primer20k_vexriscv.boot_image import abi_tag
-from scripts.tools.boot_image import FLASH_OFFSET, FLASH_SIZE, unpack_image
+from scripts.tools.boot_image import FLASH_OFFSET, IMAGE_REGION_END, unpack_image
 from scripts.tools.build_records import ROOT, artifact_identity, get_record, pnr_passed
 
 
@@ -110,7 +110,7 @@ class Build:
         size = configuration_bytes(self.fs)
         if size >= limit:
             raise ValueError('Configuration image does not fit below boot/application partition')
-        if FLASH_OFFSET + len(self.image) > FLASH_SIZE:
+        if FLASH_OFFSET + len(self.image) > min(IMAGE_REGION_END, self.validation.get('flash_size_bytes', IMAGE_REGION_END)):
             raise ValueError('Application exceeds Flash partition')
         writes.append(dict(name='application', offset=FLASH_OFFSET, path=str(self.image_path),
                            sha256=self.image_sha256))

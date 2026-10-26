@@ -1,6 +1,6 @@
 # AE350 后续平台路线
 
-当前平台以厂商 ITCM 启动、硬核 ILM/DLM 和零基址 DDR 为基础。旧 P0/P1 过程说明、fabric ROM/SRAM 监视器和临时调试入口已退役；历史实现见 snapshot commit。当前交付依据为[内存验证合同](memory-validation.md)、[平台操作](platform.md)与[最终验收报告](../../../reports/ae350-p2.md)。P3 的板测记录写在该节末尾。P4 的实现和仍开着的板级门禁见 [板级 I/O](io.md)。
+当前平台以官方Flash XIP启动、硬核ILM/DLM和零基址DDR为基础。当前交付依据为[内存验证合同](memory-validation.md)、[平台操作](operations.md)与[最终验收报告](../../../reports/ae350-p2.md)。P3 的板测记录写在该节末尾。P4 的实现和仍开着的板级门禁见 [板级 I/O](io.md)。
 
 ### P3：互连、硬核DMAC与缓存所有权（当前运行点完成）
 

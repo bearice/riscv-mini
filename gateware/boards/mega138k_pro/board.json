@@ -704,7 +704,8 @@
           "pull": "up",
           "drive_ma": 8
         }
-      }
+      },
+      "size_bytes": 16777216
     },
     "system_i2c": {
       "kind": "i2c",
@@ -779,7 +780,8 @@
           ],
           "io_standard": "LVCMOS33"
         }
-      }
+      },
+      "size_bytes": 16777216
     }
   },
   "reserved_pins": [

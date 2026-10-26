@@ -28,7 +28,7 @@ def parser():
         ('ddr-suite','AE350 memory: upload DDR diagnostics over UART and observe results'),
         ('dma-suite','AE350 DMA: upload the DMA suite and judge its result contract'),
         ('bus-suite','AE350 board SPI Flash and TWI mux read-only connectivity'),
-        ('bootrom','AE350 prepare independent 8 KiB boot ROM; --install explicitly writes the Flash firmware slot'),
+        ('bootrom','AE350 prepare boot firmware; --install writes its image in the Flash firmware region'),
         ('sd-suite','AE350 native SD: read-only DMAC and sector CRC checks'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
         ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
@@ -126,7 +126,7 @@ def parser():
             op.add_argument('--stress-seconds', type=int, default=0,
                             help='stress duration handed to the payload (0 = payload default)')
             op.add_argument('--traversal-mb', type=int, default=0,
-                            help='traversal window in MiB (0 = the whole 1 GiB-8 KiB)')
+                            help='traversal window in MiB (0 = the configured DDR window, excluding the live payload)')
             op.add_argument('--timeout', type=int, default=600,
                             help='Overall wall-clock budget for the payload (1..3600 s)')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')

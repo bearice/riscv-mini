@@ -116,6 +116,11 @@ def validate_pair(board, config):
                 if pin in occupied:
                     raise ValueError('Pin %s claimed by %s and %s' % (pin, occupied[pin], ref))
                 occupied[pin] = ref
+    for device in ('flash', 'boot_flash'):
+        if config['devices'].get(device):
+            size = resources[config['devices'][device]].get('size_bytes')
+            if type(size) is not int or size <= 0:
+                raise ValueError('Flash resource requires board size_bytes: ' + device)
     memory = config['memory']
     if config['cpu']['kind'] == 'hard':
         parameters = config['ip']['cpu']['parameters']
@@ -131,8 +136,11 @@ def validate_pair(board, config):
                              'ENABLE_GPIO_IO_PORTS', 'ENABLE_SPI2_IO_PORTS', 'ENABLE_I2C_IO_PORTS')
         if any(parameters[name] for name in unsupported_ports):
             raise ValueError('AE350 fabric does not connect the selected additional native ports')
-        if config['boot'] != dict(mode='xip', rom_size_bytes=8192):
-            raise ValueError('AE350 boot adapter requires the independent 8 KiB XIP ROM')
+        if config['boot']['mode'] != 'xip':
+            raise ValueError('AE350 requires Flash XIP boot')
+        capacity = resources[config['devices']['boot_flash']].get('size_bytes')
+        if type(capacity) is not int or capacity <= 0x600000:
+            raise ValueError('Configuration Flash capacity must contain offset 0x600000')
         if config['clocks']['data_memory_bus'] * 4 != config['ip']['ddr3']['parameters']['Memory_Clock'] * 1000000:
             raise ValueError('DDR UI clock must match the selected controller CK/4 clock')
         ddr = config['ip']['ddr3']['parameters']
@@ -196,6 +204,7 @@ class SignalDescription:
 class ResourceDescription:
     kind: str
     signals: Mapping[str, SignalDescription]
+    size_bytes: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -239,7 +248,7 @@ class MemoryDescription:
 @dataclass(frozen=True)
 class BootDescription:
     mode: str
-    rom_size_bytes: int
+    rom_size_bytes: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -343,7 +352,7 @@ def from_data(board, config, artifacts=None):
             if 'drive_overrides' in values:
                 values['drive_overrides'] = _freeze(values['drive_overrides'])
             signals[name] = SignalDescription(**values)
-        resources[ref] = ResourceDescription(resource['kind'], MappingProxyType(signals))
+        resources[ref] = ResourceDescription(resource['kind'], MappingProxyType(signals), resource.get('size_bytes'))
     physical = BoardDescription(board['id'], FPGADescription(**board['fpga']),
         board['input_clock_hz'], MappingProxyType(resources), tuple(board['reserved_pins']))
     devices = {**config['devices'], 'microphones': tuple(config['devices']['microphones'])}

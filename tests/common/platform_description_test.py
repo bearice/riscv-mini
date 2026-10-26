@@ -18,6 +18,30 @@ HARD = 'mega138k_ae350'
 
 
 class PlatformDescriptionTests(unittest.TestCase):
+    def test_both_platforms_expose_board_flash_capacity(self):
+        for name, expected in ((SOFT, 8 << 20), (HARD, 16 << 20)):
+            board, config = load_machine(name)
+            key = config['devices'].get('boot_flash', config['devices']['flash'])
+            self.assertEqual(board['resources'][key]['size_bytes'], expected)
+            self.assertEqual(from_data(board, config).board.resources[key].size_bytes, expected)
+
+    def test_flash_capacity_is_required_and_positive(self):
+        for name in (SOFT, HARD):
+            board, config = load_machine(name)
+            key = config['devices'].get('boot_flash', config['devices']['flash'])
+            for value in (None, 0, -1):
+                bad = copy.deepcopy(board)
+                if value is None: bad['resources'][key].pop('size_bytes')
+                else: bad['resources'][key]['size_bytes'] = value
+                with self.assertRaises(ValueError): from_data(bad, config)
+
+    def test_hard_flash_region_has_no_duplicate_machine_capacity(self):
+        _, config = load_machine(HARD, self.root)
+        self.assertNotIn('rom_size_bytes', config['boot'])
+        config['boot']['rom_size_bytes'] = 10485760
+        self.machine_path(HARD).write_text(json.dumps(config))
+        with self.assertRaises(ValueError): load_machine(HARD, self.root)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

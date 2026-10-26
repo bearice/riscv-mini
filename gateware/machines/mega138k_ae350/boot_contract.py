@@ -1,12 +1,10 @@
 """Small, stable reset/loader contract; deliberately independent of devices."""
 VERSION = 1
-FLASH_BYTES = 16 << 20
-ROM_SIZE = 8192
 # Official SDK layout: configuration image below 6 MiB, firmware at 6 MiB.
 # CPU reset/link address stays 0x80000000; this is a physical Flash offset.
 FLASH_OFFSET = 0x600000
 CONSTANTS = dict(
-    ROM_BASE=0x80000000, ROM_SIZE=ROM_SIZE,
+    ROM_BASE=0x80000000,
     ILM_BASE=0xa0000000, ILM_SIZE=0x10000, ILM_CODE_BYTES=0x10000,
     DLM_BASE=0xa0200000, DLM_SIZE=0x10000, DLM_DATA_BYTES=0x8000,
     RESULTS_BASE=0xa0208000, LOCAL_PARAMS=0xa0208600,
@@ -23,16 +21,24 @@ def validate(layout):
     for name, value in CONSTANTS.items():
         if getattr(layout, name) != value:
             raise ValueError('Boot contract changed: ' + name)
+    if layout.ROM_SIZE != region_size(layout.FLASH_BYTES):
+        raise ValueError('Boot region must end at the selected board Flash capacity')
 
 
-def c_header():
+def region_size(flash_bytes):
+    if type(flash_bytes) is not int or flash_bytes <= FLASH_OFFSET:
+        raise ValueError('Configuration Flash does not contain the firmware region')
+    return flash_bytes - FLASH_OFFSET
+
+
+def c_header(rom_size):
     return '#pragma once\n' + ''.join(
-        '#define AE350_%s 0x%xu\n' % item for item in sorted(CONSTANTS.items()))
+        '#define AE350_%s 0x%xu\n' % item for item in sorted(dict(CONSTANTS, ROM_SIZE=rom_size).items()))
 
 
-def ld_fragment():
+def ld_fragment(rom_size):
     c = CONSTANTS
-    regions = [('rom', 'rx', c['ROM_BASE'], ROM_SIZE),
+    regions = [('rom', 'rx', c['ROM_BASE'], rom_size),
                ('ilm', 'rwx', c['ILM_BASE'], c['ILM_CODE_BYTES']),
                ('dlm', 'rw', c['DLM_BASE'], c['DLM_DATA_BYTES'])]
     text = 'MEMORY {\n' + ''.join(' %s (%s) : ORIGIN = 0x%x, LENGTH = 0x%x\n' % r for r in regions) + '}\n'

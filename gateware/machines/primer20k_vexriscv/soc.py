@@ -28,7 +28,7 @@ from gateware.machines.primer20k_vexriscv.peripherals.ethernet import add_ethern
 from gateware.machines.primer20k_vexriscv.peripherals.usb import add_usb
 from gateware.machines.primer20k_vexriscv.features import Features
 from gateware.machines.primer20k_vexriscv.config import cpu_capabilities
-from gateware.machines.primer20k_vexriscv.flash_xip import FLASH_BASE, FLASH_SIZE, XIP_OFFSET
+from gateware.machines.primer20k_vexriscv.flash_xip import FLASH_BASE, FLASH_WINDOW_SIZE, XIP_OFFSET
 from gateware.machines.primer20k_vexriscv.peripherals.audio_clock import AudioDDS
 
 class ClockResetGenerator(LiteXModule):
@@ -212,6 +212,7 @@ class MiniSoC(SoCCore):
             self.ws2812=WS2812(platform.request('rgb_led'), clock_hz=sys_hz)
 
         # SPI Flash and SD storage.
+        self.add_constant('CONFIG_FLASH_SIZE', config.board.resources[config.devices.flash].size_bytes)
         if features.flash:
             flash_pads=platform.request('spiflash')
             self.flash_spi=SPIMaster(flash_pads if boot_mode=='rom' else None,32,sys_hz,10e6,with_csr=False,mode='aligned')
@@ -221,7 +222,7 @@ class MiniSoC(SoCCore):
                 from gateware.machines.primer20k_vexriscv.flash_xip import FlashXIP
                 self.flash_xip=FlashXIP(flash_pads,self.flash_spi.pads)
                 self.bus.add_slave(name='spiflash',slave=self.flash_xip.bus,
-                    region=SoCRegion(origin=FLASH_BASE,size=FLASH_SIZE,mode='r',cached=True))
+                    region=SoCRegion(origin=FLASH_BASE,size=FLASH_WINDOW_SIZE,mode='r',cached=True))
         self.add_constant('CONFIG_BOOT_XIP',int(boot_mode=='xip'))
         self.add_constant('CONFIG_SD_NATIVE',int(sd_backend=='native'))
         self.add_constant('CONFIG_SD_LITE',int(sd_profile=='lite'))

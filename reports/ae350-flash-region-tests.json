@@ -1,0 +1,44 @@
+{
+  "passed": true,
+  "tests": [
+    {
+      "test": "tests/mega138k_ae350/boot_contract_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "........\n----------------------------------------------------------------------\nRan 8 tests in 0.456s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/flash_update_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.003s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/platform_description_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "...........\n----------------------------------------------------------------------\nRan 11 tests in 1.778s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/machine_build_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 4.399s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/boot_linker_test.py",
+      "exit_code": 0,
+      "test_count": 2,
+      "evidence": "Real RISC-V link/objcopy: separate 80 KiB code/constants, exact 10 MiB image accepted, overflow rejected"
+    }
+  ],
+  "bootloader_build_run": "20261026T074249327937Z-build-boot-firmware-to-flash-end-ea8b91",
+  "bootloader_artifact": {
+    "component": "bootloader",
+    "digest": "339737b1ab5c0960ae8f6aa393fb63a0215301fcfe6d707ea39ebd5713bc7d5b"
+  },
+  "bootloader_build_passed": true,
+  "board_programmed": false,
+  "legacy_artifact_prepare_dry_run": "20261026T075025343659Z-board-ae350-bootrom",
+  "superseded_by": "board-flash-capacity-tests.json"
+}

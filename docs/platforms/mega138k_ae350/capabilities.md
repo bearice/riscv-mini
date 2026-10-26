@@ -4,7 +4,7 @@
 
 | 功能 | 实现与边界 |
 | --- | --- |
-| 启动与内存 | 独立 8 KiB XIP bootrom、硬核 ILM/DLM、UART loader、零基址 DDR；见 [启动与操作](operations.md) 和 [内存验证合同](memory-validation.md) |
+| 启动与内存 | Flash XIP bootloader、硬核 ILM/DLM、UART loader、零基址 DDR；见 [启动与操作](operations.md) 和 [内存验证合同](memory-validation.md) |
 | DMA | 硬 DMAC 的 DDR/loopback 及音频 FIFO 通路；缓存与通道所有权见 [DMA](dma.md) |
 | 板级 I/O | 板级 LED、按键/事件、WS2812、硬 GPIO 输入和 PLIC→CPU IRQ；风扇调速未交付，见 [I/O](io.md) |
 | 音频与麦克风 | PT8211 TX、单路 I2S RX、硬 DMA 与并发诊断；数字链路与声学确认分开，见 [音频](audio.md) |

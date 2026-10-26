@@ -21,8 +21,7 @@
     "size_bytes": 1073741824
   },
   "boot": {
-    "mode": "xip",
-    "rom_size_bytes": 8192
+    "mode": "xip"
   },
   "devices": {
     "video": "video_0",

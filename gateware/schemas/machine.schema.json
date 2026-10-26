@@ -133,8 +133,7 @@
         }
       },
       "required": [
-        "mode",
-        "rom_size_bytes"
+        "mode"
       ],
       "additionalProperties": false
     },
@@ -448,7 +447,10 @@
                   8192
                 ]
               }
-            }
+            },
+            "required": [
+              "rom_size_bytes"
+            ]
           },
           "rtl": {
             "$ref": "#/$defs/rtl_soft"
@@ -596,10 +598,12 @@
             "properties": {
               "mode": {
                 "const": "xip"
-              },
-              "rom_size_bytes": {
-                "const": 8192
               }
+            },
+            "not": {
+              "required": [
+                "rom_size_bytes"
+              ]
             }
           },
           "rtl": {

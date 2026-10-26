@@ -273,7 +273,9 @@ class AddressMap:
         self.FABRIC_HZ = machine.clocks.sys
         self.CPU_HZ = machine.clocks.cpu
         self.DATA_HZ = machine.clocks.data_memory_bus
-        self.ROM_SIZE = machine.boot.rom_size_bytes
+        from gateware.machines.mega138k_ae350.boot_contract import region_size
+        self.FLASH_BYTES = machine.board.resources[machine.devices.boot_flash].size_bytes
+        self.ROM_SIZE = region_size(self.FLASH_BYTES)
         gpio = self.io.gpio_binding()
         self.GPIO_LED_COUNT = gpio['led_count']
         self.GPIO_BUTTON_COUNT = gpio['button_count']

@@ -219,6 +219,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
                   source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, cpu_integration='AE350-SDK-Flash-wrapper',
                   instruction_memory='SDK-Flash-U4+hard-ILM', data_memory='hard-DLM+DDR3-IP',
                   image_abi=ae350_map.image_abi(),
+                  boot_flash_bytes=ae350_map.FLASH_BYTES,
                   fabric_bus='native-AHB-burst+async-FIFO', data_memory_clock_hz=ae350_map.DATA_HZ,
                   tools=identity(discover(['python', 'gowin'], store.root)), packages=python_packages(),
                   core_hz=machine_config.clocks.cpu, bus_hz=ae350_map.FABRIC_HZ, ddr_profile=ddr_profile,

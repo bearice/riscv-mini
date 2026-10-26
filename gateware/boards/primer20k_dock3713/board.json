@@ -577,7 +577,8 @@
           ],
           "io_standard": "LVCMOS33"
         }
-      }
+      },
+      "size_bytes": 8388608
     },
     "ethernet": {
       "kind": "rmii",

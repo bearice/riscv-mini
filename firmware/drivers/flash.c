@@ -36,7 +36,7 @@ static int ready(unsigned milliseconds) {
     return 0;
 }
 static int writable(unsigned address, unsigned length) {
-    return capacity>=MINI_FLASH_SIZE && address>=MINI_FLASH_WRITABLE && address<MINI_FLASH_SIZE && length<=MINI_FLASH_SIZE-address;
+    return capacity>=MINI_FLASH_WINDOW_SIZE && address>=MINI_FLASH_WRITABLE && address<MINI_FLASH_WINDOW_SIZE && length<=MINI_FLASH_WINDOW_SIZE-address;
 }
 static int write_enable(void) {
     unsigned value;

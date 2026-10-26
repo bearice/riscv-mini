@@ -8,6 +8,8 @@
 - `gateware/boards/<board>/board.json`：FPGA、晶振、物理资源、引脚、电气约束和保留引脚。
 - `gateware/machines/<machine>/machine.json`：机器所用资源、时钟、内存窗口、启动、GPIO、RTL/PnR 参数和 IP 生成参数。
 
+SPI NOR的物理容量由Board资源的 `size_bytes` 定义。当前20K的 `resources.flash.size_bytes` 为8388608；138K的 `resources.config_flash.size_bytes` 和 `resources.user_flash.size_bytes` 为16777216。类型化描述、硬件导出和安装检查消费同一板级值。地址孔径、镜像分区和启动偏移属于平台布局：AE350固件容量按配置Flash容量减去0x600000计算，20K的XIP/镜像窗口保持平台定义的4MiB。
+
 未知字段、重复键、错误类型、资源冲突及不支持的参数组合会在构建前被拒绝。
 JSON 不保存自由文本、推测或验收状态。
 

@@ -65,6 +65,7 @@ def resolve(store, run, args, base=None, plan=False):
     v = dict(profile=profile, features=features.as_dict(), cpu_variant=variant,
         cpu_capabilities=capabilities, isa=cpu_isa(features, capabilities), abi=machine.cpu.abi,
         boot_mode=mode, rom_size_bytes=machine.boot.rom_size_bytes,
+        flash_size_bytes=machine.board.resources[machine.devices.flash].size_bytes,
         sram_size_bytes=0, l2_size_bytes=settings.l2_size_bytes,
         boot_ram_address=0x007ff000, boot_ram_size_bytes=4096, boot_ram_backend='pinned-l2',
         memory_system='shared-writeback', l2_policy='write-back', memory_burst_bytes=16,

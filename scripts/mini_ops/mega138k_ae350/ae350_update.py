@@ -5,8 +5,8 @@ from pathlib import Path
 from modular.storage import Store, read, file_hash
 from mini_ops.common import Operation
 from mini_ops.mega138k_ae350.ae350 import candidate
-from mini_ops.mega138k_ae350.ae350_bootrom import prepare, jedec_id, ERASE_BLOCK
-from gateware.machines.mega138k_ae350.boot_contract import FLASH_OFFSET, ROM_SIZE
+from mini_ops.mega138k_ae350.ae350_bootrom import prepare, jedec_id, ERASE_BLOCK, boot_region
+from gateware.machines.mega138k_ae350.boot_contract import FLASH_OFFSET
 
 
 def configuration_image(text):
@@ -52,7 +52,7 @@ def perform(args):
             raise ValueError('AE350 update uses the selected FPGA configuration, method programmer')
         root, ref, build_id = candidate(args.build)
         store = Store()
-        image, boot = prepare(store, ref)
+        image, boot, flash_bytes = prepare(store, ref)
         check_boot_receipt(read(Path(args.bootrom_install)), boot)
         fs = root / 'gateware/impl/pnr/project.fs'
         configuration = configuration_image(fs.read_text())
@@ -81,13 +81,16 @@ def perform(args):
             if result.returncode:
                 raise RuntimeError('Flash ' + name + ' failed; inspect operation log')
             return output
-        boot_start = FLASH_OFFSET - ERASE_BLOCK
+        boot_start, boot_bytes = boot_region(len(image), flash_bytes)
+        boot_prefix = FLASH_OFFSET - boot_start
         before_boot = op.path / 'boot-neighborhood-before.bin'
         output = run('backup-boot', ['--dump-flash', '--offset', hex(boot_start),
-                     '--file-size', str(3 * ERASE_BLOCK), str(before_boot)])
+                     '--file-size', str(boot_bytes), str(before_boot)])
         identity = jedec_id(output)
+        if 1 << (identity & 0xff) != flash_bytes:
+            raise RuntimeError('Detected Flash capacity differs from the selected board')
         boot_data = before_boot.read_bytes()
-        if len(boot_data) != 3 * ERASE_BLOCK or boot_data[ERASE_BLOCK:ERASE_BLOCK + ROM_SIZE] != image:
+        if len(boot_data) != boot_bytes or boot_data[boot_prefix:boot_prefix + len(image)] != image:
             raise RuntimeError('Installed boot ROM does not match the selected image')
         backup = op.path / 'configuration-before.bin'
         output = run('backup-configuration', ['--dump-flash', '--offset', '0',
@@ -110,7 +113,7 @@ def perform(args):
             raise RuntimeError('Configuration readback or erase-block guard differs')
         after_boot = op.path / 'boot-neighborhood-after.bin'
         run('readback-boot', ['--dump-flash', '--offset', hex(boot_start),
-            '--file-size', str(3 * ERASE_BLOCK), str(after_boot)])
+            '--file-size', str(boot_bytes), str(after_boot)])
         if after_boot.read_bytes() != boot_data:
             raise RuntimeError('Configuration programming altered the bootloader neighborhood')
         op.report.update(readback_sha256=file_hash(after), boot_guard_unchanged=True,

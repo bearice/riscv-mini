@@ -6,7 +6,7 @@ from litex.soc.interconnect.csr import CSRStatus, CSRStorage
 from gateware.machines.primer20k_vexriscv.address_map import XIP_BASE, XIP_WINDOW_SIZE
 
 FLASH_BASE = XIP_BASE
-FLASH_SIZE = XIP_WINDOW_SIZE
+FLASH_WINDOW_SIZE = XIP_WINDOW_SIZE
 XIP_OFFSET = 0x100000
 XIP_SIZE = 0x100000  # [1,2) MiB; the DDR app image starts at 2 MiB.
 

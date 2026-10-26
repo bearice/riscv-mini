@@ -42,8 +42,8 @@ static int address_command(unsigned command, unsigned address) {
     return 1;
 }
 static int writable(unsigned address,unsigned length) {
-    return capacity>=MINI_FLASH_SIZE && address>=MINI_FLASH_WRITABLE
-        && address<MINI_FLASH_SIZE && length<=MINI_FLASH_SIZE-address;
+    return capacity>=MINI_FLASH_WINDOW_SIZE && address>=MINI_FLASH_WRITABLE
+        && address<MINI_FLASH_WINDOW_SIZE && length<=MINI_FLASH_WINDOW_SIZE-address;
 }
 int flash_init(uint32_t *id) {
     capacity=0;*id=0;select_flash(0);flash_spi_clk_divider_write(6);

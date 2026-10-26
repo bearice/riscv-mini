@@ -180,6 +180,10 @@
           },
           "additionalProperties": false,
           "minProperties": 1
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [
@@ -2281,6 +2285,23 @@
                   "sel"
                 ],
                 "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "size_bytes"
+            ]
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "spi",
+                  "ddr3"
+                ]
               }
             }
           }

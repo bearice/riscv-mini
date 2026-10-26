@@ -2,24 +2,24 @@
 
 > 适用机器：`mega138k_ae350`。配置以机器 JSON 和所选硬件产物的导出为准。
 
-更新：2026-10-26。当前源码使用配置 Flash U4 官方 0x600000 固件分区独立 XIP bootrom、硬核 ILM/DLM 与零基址 DDR，无 fabric 工作 SRAM、JTAG mailbox 或 launcher。唯一地址合同为 `gateware/machines/mega138k_ae350/address_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](io.md)。LED 使用板级输出寄存器，硬 GPIO IOPORT 未启用。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
+更新：2026-10-26。当前源码使用配置 Flash U4 官方 0x600000 固件分区独立 XIP bootrom、硬核 ILM/DLM 与零基址 DDR。唯一地址合同为 `gateware/machines/mega138k_ae350/address_map.py`，板级引脚与极性来自 `board.json`。硬核 DMAC 位于 0xf0c00000，已在 80/100/400 MHz 完成轮询式验收。硬 GPIO 输入、WS2812 和板级事件页、GPIO/fabric PLIC→CPU ISR 及 DMA/DDR 并发已通过，见[板级 I/O](io.md)。LED 使用板级输出寄存器。风扇调速/停转不在本次交付中。DMA 所有权与限制见[DMA 服务](dma.md)。其余外设槽仍为规划；这里的 CSR 指 MMIO，不是 RISC-V CPU CSR。
 
-最新启动顺序：官方 Flash Instruction Memory→U4 0x600000 固件分区 8 KiB XIP→硬 ILM/DLM 初始化→自主 POST→UART payload loader；JTAG 用于观察和恢复。启动协议见[bootloader](bootloader.md)。
+启动顺序：官方Flash Instruction Memory→U4固件区XIP→硬ILM/DLM初始化→自主POST→UART payload loader；JTAG用于观察和恢复。启动协议见[bootloader](bootloader.md)。
 
 ## 1. 全局窗口
 
 | 地址范围（含端点） | 用途 | 合同 |
 | --- | --- | --- |
-| 0x00000000–0x3fffffff | DDR，预期 1GiB | CPU/fabric/DMAC 使用相同的物理字节地址；容量按实测发布，无减 0x2000 的转换 |
-| 0x40000000–0x7fffffff | 未映射数据窗口 | 有界 ERROR；无 fabric 工作 SRAM，不映射 DDR 镜像 |
-| 0x80000000–0x80001fff | 独立 bootrom，8 KiB | 只读 XIP，映射配置 Flash U4 从 0x600000 开始的 8 KiB 固件分区，无 fabric ITCM |
-| 0x80002000–0x8fffffff | 官方 Flash 指令窗口的其余部分 | 当前软件不使用，容量之外/回绕行为未验收 |
+| 0x00000000–0x3fffffff | DDR，预期 1GiB | CPU/fabric/DMAC共享零基址物理字节地址；容量按实测发布 |
+| 0x40000000–0x7fffffff | 未映射数据窗口 | 有界 ERROR |
+| 0x80000000–0x809fffff | Flash 固件区 | 只读 XIP，对应 U4 物理 0x600000 至器件末尾 |
+| 0x80a00000–0x8fffffff | 官方 Flash 指令窗口的其余部分 | 当前软件不使用，容量之外/回绕行为未验收 |
 | 0xa0000000–0xa000ffff | 硬核 ILM | 启动/应用关键代码，显式复制；DMA 可达性待 P3 |
-| 0xa0200000–0xa020ffff | 硬核 DLM | 工作数据、独立栈与保留诊断结果；无 JTAG mailbox |
+| 0xa0200000–0xa020ffff | 硬核 DLM | 工作数据、独立栈与保留诊断结果 |
 | 0xc0000000、0xe0000000 等 | 厂商 BMC/译码保留区 | 不安排项目外设 |
 | 0xe4000000 | 硬核 PLIC | 沿用厂商定义 |
 | 0xe6000000 / 0xe6400000 / 0xe6800000 | PLMT / PLIC软件中断 / Debug Module | 沿用厂商定义 |
-| 0xe8000000–0xefffffff | Extended AHB Slave，128MiB | fabric FIFO/数据口、诊断访问；不是第二个 DDR 地址空间 |
+| 0xe8000000–0xefffffff | Extended AHB Slave，128MiB | fabric FIFO/数据口、诊断访问 |
 | 0xf0000000–0xf0ffffff | 硬核 APB 外设窗口 | 保留厂商寄存器，不在这里分配自定义CSR |
 | 0xf8000000–0xfbffffff | Extended APB Slave，64MiB | 自定义平台和外设控制CSR |
 
@@ -101,9 +101,9 @@ minor只追加兼容能力/寄存器；移动地址、改变位语义、descript
 
 ## 6. XIP与Flash地址合同
 
-CPU 复位与 bootrom 链接入口为 **0x80000000**，8 KiB 代码槽对应 U4 物理偏移 **0x600000**。采用官方 SPI Flash Instruction Memory + Flash Register R/W Mode，不启用 ITCM 或自定义 ROM SPI 后端。官方指令硬件窗口为 0x80000000–0x8fffffff，软件目前仅使用启动槽；整个窗口的容量边界与回绕行为尚未验收，不能声称越界一定总线报错。
+CPU复位与固件链接入口为 **0x80000000**，对应U4物理偏移 **0x600000**。固件可增长到Flash末尾，当前16 MiB器件的可用固件容量为10 MiB。采用官方 SPI Flash Instruction Memory + Flash Register R/W Mode。SDK指令孔径为0x80000000–0x8fffffff；软件按实际Flash容量限制镜像，孔径其余地址的回绕/错误行为以专项实测为准。
 
-U4 物理分区为配置位流 [0,0x600000)、独立 bootrom [0x600000,0x602000)，其余保留。FR 管理页使用预留的 0xf8090000，并把内部 FR 地址译回官方示例的 0xf8000000+offset，避免覆盖 SYSINFO。U7 仍接 0xf0f00000 硬 SPI。
+U4物理分区为配置位流[0,0x600000)、固件[0x600000,Flash容量末尾)。FR管理页位于0xf8090000，内部FR地址按0xf8000000+offset转发；SYSINFO使用独立页。U7接0xf0f00000硬SPI。
 
 ## 实现与验证范围
 

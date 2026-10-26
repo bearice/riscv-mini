@@ -66,13 +66,13 @@ hal_result_t hal_flash_read(unsigned address,void *data,unsigned length) {return
 #endif
 #if MINI_FEATURE_FLASH
 hal_result_t hal_flash_program(unsigned address,const void *data,unsigned length) {
-    if(!data || address<MINI_FLASH_WRITABLE || address>=MINI_FLASH_SIZE || length>MINI_FLASH_SIZE-address)return HAL_INVALID;
+    if(!data || address<MINI_FLASH_WRITABLE || address>=MINI_FLASH_WINDOW_SIZE || length>MINI_FLASH_WINDOW_SIZE-address)return HAL_INVALID;
     return result(flash_program(address,data,length));
 }
 #endif
 #if MINI_FEATURE_FLASH
 hal_result_t hal_flash_erase(unsigned address) {
-    if((address&4095u) || address<MINI_FLASH_WRITABLE || address>MINI_FLASH_SIZE-4096)return HAL_INVALID;
+    if((address&4095u) || address<MINI_FLASH_WRITABLE || address>MINI_FLASH_WINDOW_SIZE-4096)return HAL_INVALID;
     return result(flash_erase_sector(address));
 }
 #endif

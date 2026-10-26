@@ -1,0 +1,79 @@
+{
+  "passed": true,
+  "tests": [
+    {
+      "test": "tests/common/machine_build_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 4.394s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/boot_contract_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.147s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/boot_linker_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.269s\n\nOK\n"
+    },
+    {
+      "test": "tests/mega138k_ae350/flash_update_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.003s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/mini_operations_test.py",
+      "exit_code": 0,
+      "stdout": "Programmer step: sram\nExact Flash readback: application 60 bytes MISMATCH\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: reload-one\nDetected Gowin JTAG location: 4145\nProgrammer step: reload-two\nDetected Gowin JTAG location: 4161\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nSoftware SPI write: application 60 bytes\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes MISMATCH\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nOperation logs: /tmp/nix-shell.WqDsAO/tmpb4fa503s/build/runs/20261026T115157039638Z-board-update\nProgrammer step: xip\nProgrammer step: xip\nProgrammer step: configuration\nProgrammer step: flash-xip\nProgrammer step: flash-application\nProgrammer step: reload\nProgrammer step: configuration\nProgrammer step: flash-xip\nProgrammer step: quiesce-sram\nProgrammer step: application\nProgrammer step: repair-xip-programmer\nProgrammer step: restore-sram\nExact Flash readback: application 60 bytes MISMATCH\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nProgrammer step: xip\nProgrammer step: sram\nProgrammer step: restore-sram\nOperation logs: /tmp/nix-shell.WqDsAO/tmp30vwk8f1/build/runs/20261026T115157129112Z-board-verify\nSelected build: /tmp/nix-shell.WqDsAO/tmp30vwk8f1/artifact boot=xip\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nSoftware SPI write: application 60 bytes\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes PASS\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\nProgrammer step: quiesce-sram\nSoftware SPI write: xip 36 bytes\nSoftware SPI write: application 60 bytes\nProgrammer step: configuration\nProgrammer step: reload\nExact Flash readback: application 60 bytes PASS\nExact Flash readback: xip 36 bytes PASS\nProgrammer step: restore-sram\n",
+      "stderr": ".......usage: mini_operations_test.py [-h]\n                               {configure,build,plan,release,builds,_worker,import,show,materialize,reproduce,test,pin,compat,clean,board,doctor,guide}\n                               ...\nmini_operations_test.py: error: --image is supported by firmware/flash verification only\n.............................\n----------------------------------------------------------------------\nRan 36 tests in 0.253s\n\nOK\n"
+    },
+    {
+      "test": "tests/common/test_boot_session.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n"
+    },
+    {
+      "test": "tests/primer20k_vexriscv/test_boot_image.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\n"
+    },
+    {
+      "test": "tests/primer20k_vexriscv/flash_xip_test.py",
+      "exit_code": 0,
+      "stdout": "Flash XIP SPI waveform, endian, writes, disable and ownership PASS\n",
+      "stderr": ""
+    },
+    {
+      "test": "tests/common/platform_description_test.py",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "..............\n----------------------------------------------------------------------\nRan 14 tests in 3.721s\n\nOK\n"
+    }
+  ],
+  "builds": {
+    "ae350": {
+      "run": "20261026T115437587188Z-build-board-derived-flash-region-4c04b3",
+      "passed": true,
+      "artifact": {
+        "component": "bootloader",
+        "digest": "0714cd7b6b3b04b5942f021809077700f7ff7b43673ff7f4249f8a949de8ea17"
+      }
+    },
+    "20k": {
+      "run": "20261026T115740820318Z-build-board-flash-capacity-bd6e8a",
+      "passed": true,
+      "artifact": {
+        "component": "soc-description",
+        "digest": "5419ff953d8b0b020453140a8c6ad4db12408127b037bda5d2400459455a97a5"
+      }
+    }
+  },
+  "exports_verified": true,
+  "board_programmed": false
+}

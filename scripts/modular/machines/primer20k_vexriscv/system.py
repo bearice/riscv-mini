@@ -82,6 +82,8 @@ def import_legacy(store, name, run):
     if file_hash(path / 'firmware/boot.bin') != v['firmware_sha256']:
         raise ValueError('Legacy bootloader hash differs')
     config = {k: v[k] for k in HARDWARE_FIELDS}
+    if 'flash_size_bytes' in v:
+        config['flash_size_bytes'] = v['flash_size_bytes']
     # Preserve actual archived raw metadata for provenance, never use paths as bindings.
     versions = v['component_versions']
     cpu_path = path / 'inputs/cpu' / Path(v['cpu_verilog']).name if v.get('cpu_verilog') else None

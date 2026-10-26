@@ -4,6 +4,8 @@
 
 当前构建参数来自 [Machine JSON](../../../gateware/machines/primer20k_vexriscv/machine.json) 与 [Board JSON](../../../gateware/boards/primer20k_dock3713/board.json)。文档中的 full、XIP、MMU/FPU 与资源数字若附带历史身份，只表示该配置的能力或验收；不能替代当前 JSON 和产物身份。
 
+板载NOR容量由Board的 `resources.flash.size_bytes` 声明，当前为8 MiB；构建导出 `flash_size_bytes` 和 `CONFIG_FLASH_SIZE`。平台的4 MiB XIP/镜像窗口与写入分区按[启动布局](bootloader.md)执行。
+
 | 主题 | 文档 |
 | --- | --- |
 | 系统与板卡 | [系统设计](system-design.md)、[板级参考](board-reference.md)、[时钟](clocks.md) |

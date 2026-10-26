@@ -2,7 +2,7 @@
 
 适用机器：`mega138k_ae350`。SPI 使用 AE350 硬核 ATCSPI200（`0xf0f00000`），I2C 使用硬核 ATCIIC100（`0xf0a00000`）。两者启用硬核数字端口，由 fabric 提供 SPI 三态缓冲与 I2C 开漏缓冲；I2C 只驱动低电平或释放，同时将物理 SCL/SDA 回接硬核输入，保留时钟伸展/仲裁所需的电平观察。
 
-这里只接入用户 Flash U7 和管理总线。本页的硬 SPI 只连接用户 Flash U7，不提供 program/erase API。配置 Flash U4 使用官方 SPI Flash Instruction Memory 和 FR 接口，独立 8 KiB bootrom 位于物理 0x600000；安装通过显式 host 操作完成，见 [bootloader](bootloader.md)。当前管理总线源时钟为 sys/APB 50 MHz，实际 SPI/I2C 分频以所选硬件导出为准。
+这里只接入用户 Flash U7 和管理总线。本页的硬 SPI 只连接用户 Flash U7，不提供 program/erase API。配置 Flash U4 使用官方 SPI Flash Instruction Memory 和 FR 接口，bootrom从物理0x600000开始，容量边界为Flash末尾；安装通过显式 host 操作完成，见 [bootloader](bootloader.md)。当前管理总线源时钟为 sys/APB 50 MHz，实际 SPI/I2C 分频以所选硬件导出为准。
 
 ## 物理连接
 
