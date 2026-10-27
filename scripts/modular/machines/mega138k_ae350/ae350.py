@@ -30,6 +30,8 @@ AE350_CLOSURE = (
     'gateware/devices/audio/core.py',
     'gateware/vendor/litesdcard/sdcore.py',
     'gateware/machines/mega138k_ae350/peripherals/sd.py',
+    'gateware/machines/mega138k_ae350/peripherals/sd_phy.py',
+    'gateware/machines/mega138k_ae350/peripherals/qspi.py',
     'gateware/machines/mega138k_ae350/sd_cdc.py',
     'gateware/devices/audio/clock.py',
     'gateware/devices/video/hdmi/ae350_hdmi_phy.v',
@@ -164,8 +166,15 @@ def incremental_seed(store, previous, config, board, mode):
     if ref:
         manifest = store.get(ref)
         old = manifest['config']
+        # IP recipe identity includes build/CLI source inputs. It is not a DDR
+        # configuration: a software workflow edit can change that identity.
+        # Keep every physical parameter, geometry, clock and tool check, then
+        # let Gowin match the old placement to the newly synthesized netlist.
+        def ddr_configuration(profile):
+            return {key:value for key,value in profile.items() if key!='ip_identity'} if isinstance(profile,dict) else profile
         compatible = (ref['component'] == 'gateware' and old.get('synthesize') and
-                      all(old.get(k) == config[k] for k in ('tools', 'ddr_profile', 'core_hz', 'bus_hz', 'data_memory_clock_hz')))
+                      all(old.get(k) == config[k] for k in ('tools', 'core_hz', 'bus_hz', 'data_memory_clock_hz')) and
+                      ddr_configuration(old.get('ddr_profile')) == ddr_configuration(config.get('ddr_profile')))
         if compatible:
             old_fpga = old.get('fpga')
             if old_fpga is None and 'cpu' in manifest['dependencies']:
@@ -177,7 +186,8 @@ def incremental_seed(store, previous, config, board, mode):
         if compatible and member in manifest['files']:
             timing_report(store.path(ref))
             return dict(artifact=ref, member=member, sha256=manifest['files'][member],
-                        mode='place' if mode == 'place' else 'pnr')
+                        mode='place' if mode == 'place' else 'pnr',
+                        ip_recipe_changed=old.get('ddr_profile') != config.get('ddr_profile'))
     if mode != 'auto':
         raise ValueError('No compatible successful PnR baseline in this workspace; first build with --pnr-mode full')
     return None
@@ -386,6 +396,8 @@ def payload(store, run, cpu, args, profile, plan=False):
     # #include names the sources use today.
     runtime = store.root / 'firmware/bsp/mega138k_ae350'
     payload_dirs = ('runtime', 'dma', 'io', 'audio', 'video', 'sd')
+    native_bios = args.target == 'bios'
+    with_bios = native_bios or 'AE350_WITH_BIOS=1' in getattr(args, 'define', [])
     for sub in payload_dirs:
         for path in sorted((runtime / sub).iterdir()):
             if path.is_file():
@@ -396,7 +408,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     directory = getattr(args, 'source_dir', None)
     if source is not None and directory is not None:
         raise ValueError('Choose --source or --source-dir, not both')
-    diagnostic = source is None and directory is None
+    diagnostic = source is None and directory is None and not native_bios
     if getattr(args, 'libc', 'none') != 'none':
         raise ValueError('AE350 payloads currently support freestanding --libc none only')
     def project(label, paths, base, compile_all=False):
@@ -405,13 +417,28 @@ def payload(store, run, cpu, args, profile, plan=False):
             files['inputs/payload/' + key] = path
             if compile_all and path.suffix in ('.c', '.S'):
                 units.append(key)
+    fatfs = store.root / 'firmware/vendor/fatfs'
+    project('fatfs', sorted(p for p in fatfs.iterdir() if p.suffix in ('.c', '.h')), fatfs, True)
+    if with_bios:
+        native = runtime / 'bios'
+        project('native-bios', sorted(p for p in native.iterdir()
+                if p.suffix in ('.c', '.h') and (native_bios or p.name not in ('main.c', 'editor.c'))), native, True)
+        api = store.root / 'firmware/bios/include'
+        project('bios/include', [api / 'bios.h'], api)
+        common = store.root / 'firmware/common'
+        project('common', [common / 'memory_layout.h', common / 'font5x7.h'], common)
+    if native_bios:
+        basic = store.root / 'firmware/apps/gwbasic'
+        project('application/gwbasic', sorted(p for p in basic.iterdir() if p.suffix in ('.c', '.h', '.S')), basic, True)
     shared_vt = store.root / 'firmware/bios'
     project('video-common', [shared_vt / 'vt.c', shared_vt / 'vt.h'], shared_vt, True)
     shared_font = store.root / 'firmware/common'
     project('video-font', [shared_font / 'font5x7.h'], shared_font)
-    if diagnostic:
+    if diagnostic and not native_bios:
         source = store.root / PAYLOAD / 'main.c'
-    if directory is not None:
+    if native_bios:
+        pass
+    elif directory is not None:
         directory = Path(directory).resolve()
         project('application', sorted(p for p in directory.rglob('*')
                 if p.is_file() and p.suffix in ('.c', '.S', '.h')), directory, True)
@@ -426,7 +453,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     for index, directory in enumerate(getattr(args, 'include_dir', [])):
         directory = Path(directory).resolve()
         project('include%d' % index, sorted(p for p in directory.rglob('*') if p.is_file()), directory)
-    for helper in getattr(args, 'helper', []):
+    for helper in set(getattr(args, 'helper', [])) | ({'string'} if with_bios else set()):
         if helper != 'string':
             raise ValueError('Unsupported AE350 helper: ' + helper)
         path = store.root / 'firmware/drivers/string.c'
@@ -449,6 +476,8 @@ def payload(store, run, cpu, args, profile, plan=False):
              *['-D' + value for value in getattr(args, 'define', [])], *extra_flags]
     config = dict(schema=1, storage_policy='outputs-only', fpga=dict(device=machine_config.board.fpga.device, part=machine_config.board.fpga.part), machine='mega138k_ae350', purpose='AE350-memory-diagnostics' if diagnostic else 'AE350-application',
                   binary='outputs/payload.bin', translation_units=units, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, tools=identity(env), flags=flags,
+                  software_role='resident-BIOS-with-GW-BASIC' if native_bios else 'application',
+                  runtime_bss=dict(base=0x80000,size_bytes=0x780000),
                   entry=ae350_map.DDR_CODE, max_bytes=ae350_map.DDR_CODE_MAX,
                   stack_top=ae350_map.PAYLOAD_STACK_TOP, image_abi=ae350_map.image_abi(),
                   parameters='outputs/parameters.json' if diagnostic else None,
@@ -481,7 +510,7 @@ def payload(store, run, cpu, args, profile, plan=False):
                     destination.write_bytes(source_bytes(path))
         flags += ['-I' + str(staged / 'application')]
         flags += ['-I' + str(staged / sub) for sub in payload_dirs]
-        flags += ['-I' + str(staged / sub) for sub in ('video-common', 'video-font')]
+        flags += ['-I' + str(staged / sub) for sub in ('video-common', 'video-font', 'fatfs', 'native-bios', 'bios/include', 'application/gwbasic')]
         flags += ['-I' + str(staged / ('include%d' % i)) for i in range(len(getattr(args, 'include_dir', [])))]
         # Most payloads do not use the display identity. Avoid invalidating
         # runtime objects merely because an unrelated source changed the key.
@@ -521,7 +550,7 @@ def payload(store, run, cpu, args, profile, plan=False):
 
 def build(store, run, args, cpu, board, plan):
     profile = 'ddr'
-    if args.target == 'payload':
+    if args.target in ('payload', 'bios'):
         artifact = payload(store, run, cpu, args, profile, plan)
         run.finish(plan=plan, artifact=artifact, hardware_qualified=False,
                    qualification='compiled-not-board-tested')

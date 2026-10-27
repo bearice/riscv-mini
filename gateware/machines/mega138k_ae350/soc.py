@@ -357,7 +357,12 @@ class DDRSoC(LiteXModule):
             platform.add_source(str(soc_sources_dir / name))
         platform.add_verilog_include_path(str(soc_sources_dir))
         self.cpu.connect_jtag(platform.request('cpu_jtag'))
-        self.cpu.connect_management(platform.request('user_flash'),platform.request('system_i2c'))
+        self.cpu.connect_management(platform.request('system_i2c'))
+        user_flash = platform.request('user_flash')
+        self.comb += [user_flash.cs_n.eq(self.ext.qspi.cs_n), user_flash.clk.eq(self.ext.qspi.clk)]
+        for bit, name in enumerate(('mosi', 'miso', 'wp_n', 'hold_n')):
+            self.specials += Tristate(getattr(user_flash, name), self.ext.qspi.dq_o[bit],
+                                      self.ext.qspi.dq_oe[bit], self.ext.qspi.dq_i[bit])
         # Mux selection always has a defined output (reset channel 0).
         self.comb += platform.request('twi_mux_sel').eq(self.cpu.gpio_out[ae350_map.TWI_MUX_GPIO_SHIFT:ae350_map.TWI_MUX_GPIO_SHIFT+3])
         platform.add_period_constraint(platform.lookup_request('cpu_jtag').tck, 10000)

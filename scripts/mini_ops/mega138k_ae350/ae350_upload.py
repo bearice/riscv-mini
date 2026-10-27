@@ -36,6 +36,46 @@ def wait_loader(session, build_id, timeout):
     return text
 
 
+def installed_provider(args, store, gate_ref):
+    """Explicit compatible installed firmware; no implicit board Flash update."""
+    selected = store.get(gate_ref)['dependencies']['bootloader']
+    receipt = getattr(args, 'bootrom_install', None)
+    if receipt is None:
+        return selected
+    from modular.storage import read
+    evidence = read(receipt)
+    if not (evidence.get('passed') and evidence.get('installed') and
+            evidence.get('operation') == 'ae350-bootrom'):
+        raise ValueError('Select a successful bootrom installation receipt')
+    provider = evidence['bootloader']
+    actual = store.get(provider, recursive=True)['config']
+    required = store.get(selected)['config']
+    for field in ('machine', 'boot_contract_version', 'rom_base', 'dlm_base', 'dlm_bytes',
+                  'payload_base', 'payload_bytes', 'payload_stack_top', 'results_base',
+                  'uart_base', 'uart_clock', 'image_abi_source', 'local_memory'):
+        if actual.get(field) != required.get(field):
+            raise ValueError('Installed bootloader contract differs: ' + field)
+    return provider
+
+
+def wait_provider(session, hardware, store, provider, timeout):
+    config = store.get(provider)['config']
+    text = wait_loader(session, config['build_id'], timeout)
+    # A receipt alone is not current-device evidence. Read every selected byte
+    # while the CPU is idle at the loader, before any peripheral transfer.
+    expected = (store.path(provider) / 'outputs/boot.bin').read_bytes()
+    cpu = hardware.halt()
+    try:
+        if cpu.read_memory(config['rom_base'], len(expected)) != expected:
+            raise RuntimeError('Installed bootloader readback mismatch')
+    finally:
+        hardware.resume()
+    hardware.op.record('installed-bootloader', artifact=provider, bytes=len(expected),
+                       build_id=config['build_id'], readback_matched=True)
+    hardware.close_cpu()
+    return text
+
+
 def perform_upload(args, selected=None):
     op = Operation('ae350-upload')
     print('Operation logs:', op.path, flush=True)

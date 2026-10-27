@@ -1,6 +1,6 @@
 # 原生 SD 与硬核 DMAC
 
-适用机器：`mega138k_ae350`。控制器复用锁定依赖中的 LiteSDCard `SDPHY` 与仓库 `gateware/vendor/litesdcard/sdcore.py`，以原生 1-bit 初始化，再协商 4-bit SDR。当前 BSP 只开放只读 bring-up；FatFs、文件写入、BIOS 文件服务及音视频/SD 组合验收尚未交付。
+适用机器：`mega138k_ae350`。控制器复用锁定依赖中的 LiteSDCard PHY 引擎 与仓库 `gateware/vendor/litesdcard/sdcore.py`，以原生 1-bit 初始化，再协商 4-bit SDR。BSP 提供原始块读写和 FatFs `diskio`，默认 25 MHz；BIOS 与文件操作见 [运行环境](runtime.md)，本轮验收见 [P7 记录](../../../reports/ae350-p7.md)。
 
 ## 接线与数据通路
 
@@ -13,7 +13,7 @@ Dock 4071f 原理图的 SDIO/M.2 页（J19、R189–R195）及本地板卡示例
 | DAT0 / DAT1 / DAT2 / DAT3 | H23 / J23 / A25 / B25 | LVCMOS33，上拉 |
 | DET | J15 | 低有效，有卡为 0 |
 
-SD 控制器逻辑使用 100 MHz mem 域，sys 控制面为 50 MHz；二者保留不同 PLL 输出和显式 CDC。保留事务的 FIFO、REQ 抑制和 ACK 事件适配器负责跨域。卡侧 50 MHz 仍由 mem100 分频产生，不随 sys 降频。既有 SD 板测报告对应 sys80/mem100 的组合，不自动延伸到新配置；主机事务回归已覆盖简化后的控制面。
+SD 控制器逻辑使用 100 MHz mem 域，sys 控制面为 50 MHz；二者保留不同 PLL 输出和显式 CDC。保留事务的 FIFO、REQ 抑制和 ACK 事件适配器负责跨域。卡侧默认 25 MHz，由 mem100 分频产生。接收使能相对上游增加一个 mem 周期，使用较晚的已寄存输入样本；原生 PHY 的命令、数据和 CRC 引擎保持复用。本轮 25 MHz 镜像的独立验收见 [P7 记录](../../../reports/ae350-p7.md)，历史 sys80 结果见原报告。
 
 数据路径：SDPHY/Core ↔ 字节/32-bit 转换与双向 FIFO ↔ Extended AHB 固定地址端点 ↔ 硬核 DMAC ↔ 既有 DDR AHB 通路。SD 不增加独立 DDR 主端口，不使用 LiteSDCard 的 Wishbone 内存 DMA 前端。FIFO 每方向 16 个 32-bit 寄存器字，字节顺序按小端内存转换；AHB 只允许对正确方向的固定数据字做 32-bit 访问，空读/满写及非法地址有界 ERROR。请求按 FIFO 可用性产生，ACK 捕获与 audio/mic 相同。
 
@@ -22,9 +22,9 @@ SD 控制器逻辑使用 100 MHz mem 域，sys 控制面为 50 MHz；二者保�
 | APB 控制页 | `0xf8040000`，4 KiB |
 | AHB TX DATA / RX DATA | `0xe8020000` / `0xe8020004` |
 | TX REQ / RX REQ | 4 / 5 |
-| 候选 TX selector / RX selector | 11 / 12，见下方验收范围 |
+| TX selector / RX selector | 11 / 12，见下方验收范围 |
 
-REQ 线号不等于 DMAC selector。当前 RX 映射经真实读卡 DMA 验证，TX 映射经请求门关闭/开启与 TX FIFO 传输验证；TX 测试不发送写卡命令，不能视为介质写入通过。详见 [验收记录](../../../reports/ae350-sd.md)。硬 DMAC 通道由调用者分配，BSP 初始化参数指定通道，生命周期内须独占；不占用 audio/mic 的通道。软件枚举以 SYSINFO 最后一个设备表条目和准确镜像 ABI 为准。
+REQ 线号不等于 DMAC selector。当前 RX/TX 映射经原始读取、请求门检查及专用文件写读验证；本轮介质验收见 [P7 记录](../../../reports/ae350-p7.md)，初始只读门禁见 [历史记录](../../../reports/ae350-sd.md)。硬 DMAC 通道由调用者分配，BSP 初始化参数指定通道，生命周期内须独占；不占用 audio/mic 的通道。软件枚举以 SYSINFO 的 SD 设备表条目和准确镜像 ABI 为准。
 
 ## 控制寄存器
 
@@ -48,9 +48,13 @@ REQ 线号不等于 DMAC selector。当前 RX 映射经真实读卡 DMA 验证�
 
 CSR 页没有 FIFO DATA 别名。PHY 时序配置在 core busy 时拒绝修改；停止须先关请求门，abort/disable 本次拥有的 DMAC 通道并确认排空，之后才能复位 SD FIFO 或复用内存。排空失败时保留所有权并返回错误。
 
-## 只读 BSP 与诊断
+## BSP、FatFs 与只读诊断
 
-`ae350_sd_init(channel)` 在约 400 kHz 初始化，读取 CSD/SCR 后协商 4-bit 并切换到 10 MHz；实际频率按本设备源时钟与 divider 回读计算。`ae350_sd_set_clock(hz)` 可选择不超过源时钟一半的速度，最高 50 MHz；超过 25 MHz 前必须完成 CMD6 High Speed 查询、切换与返回选择结果核验。当前卡已通过 50 MHz 短时只读测试，见 [频率对照](../../../reports/performance/ae350-sd-frequency.md)。`ae350_sd_read(lba, buffer, count)` 以最多 8 扇区拆分 CMD17/CMD18，CMD18 后 CMD12；调用者 buffer 可不对齐。DMA 只访问独立的 32-byte 对齐 DDR bounce buffer，交给设备前 clean，交还 CPU 前 invalidate；按非一致 DMA 使用。
+`ae350_sd_init(channel)` 在约 400 kHz 初始化，读取 CSD/SCR 后协商 4-bit 并切换到 25 MHz；实际频率按本设备源时钟与 divider 回读计算。`ae350_sd_set_clock(hz)` 可选择不超过源时钟一半的速度，最高 50 MHz；超过 25 MHz 前必须完成 CMD6 High Speed 查询、切换与返回选择结果核验。历史 sys80 组合的频率测试见 [频率对照](../../../reports/performance/ae350-sd-frequency.md)。`ae350_sd_read(lba, buffer, count)` 以最多 8 扇区拆分 CMD17/CMD18，CMD18 后 CMD12；调用者 buffer 可不对齐。DMA 只访问独立的 32-byte 对齐 DDR bounce buffer，交给设备前 clean，交还 CPU 前 invalidate；按非一致 DMA 使用。
+
+`ae350_sd_write(lba, buffer, count)` 使用相同的私有 bounce buffer 和硬 DMAC TX 路径，每次最多八扇区，以 CMD24/CMD25 写入，跨块后发送 CMD12，并用 CMD13 等待可传输状态。失败或取消时先关闭请求、abort/drain DMAC；排空失败保留缓冲所有权并使设备不可复用。
+
+FatFs 的 drive 0 独占 DMAC channel 4，提供 read/write、CTRL_SYNC 和几何查询。`bios_mount` 缓存挂载；`bios_unmount` 在文件句柄关闭后同步并释放设备。文件测试只新建专用目录和文件，不格式化介质。
 
 ```sh
 nix develop --command python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --purpose sd-native-dmac
@@ -64,14 +68,14 @@ nix develop --command python scripts/mini.py board sd-suite --build <gateware-re
 
 ## 读取速度
 
-`ae350_sd_benchmark.c` 使用相同只读 BSP，分别以 512 B、4 KiB、64 KiB API 调用读取 LBA 2048 起的 1 MiB，每种调用大小三轮。驱动内部最多每次传输 8 扇区，因此 64 KiB 调用仍拆为 4 KiB CMD18。计时包含命令、硬 DMAC、缓存同步和 bounce copy，CRC 与 UART 格式化在 CPU 周期计时区外；每轮检查相同内容 CRC 和两侧 guard。
+`ae350_sd_benchmark.c` 使用相同 BSP 的读取接口，分别以 512 B、4 KiB、64 KiB API 调用读取 LBA 2048 起的 1 MiB，每种调用大小三轮。驱动内部最多每次传输 8 扇区，因此 64 KiB 调用仍拆为 4 KiB CMD18。计时包含命令、硬 DMAC、缓存同步和 bounce copy，CRC 与 UART 格式化在 CPU 周期计时区外；每轮检查相同内容 CRC 和两侧 guard。
 
 ```sh
 nix develop --command python scripts/mini.py build payload --machine mega138k_ae350 --source firmware/diagnostics/mega138k_ae350/ae350_sd_benchmark.c --purpose sd-read-speed
-# 对照组额外传 --define SD_BENCH_CACHE=3，开启 CPU I/D cache；SD 时钟仍为 10 MHz。
+# 对照组额外传 --define SD_BENCH_CACHE=3，开启 CPU I/D cache；SD 时钟默认 25 MHz。
 nix develop --command python scripts/mini.py board sd-suite --benchmark --build <gateware-result.json> --payload <benchmark-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG> --timeout 600
 ```
 
 测速模式在 UART 完成标记之前不打开 CPU 调试接口、不暂停 CPU。保存每轮原始 `rdcycle64`、主机单调时钟 START/END 时间及内容校验，结束后才通过 JTAG 核对完成和停止状态。主机时间包含 START/END 行长度差及 USB 调度带来的毫秒级开销；它用于核对 CPU 周期频率，短窗口提频比较采用经长窗口核对的周期计时。无 FatFs 文件缓存或音视频并发。结果见 [10/25/50 MHz 对照](../../../reports/performance/ae350-sd-frequency.md) 与 [初始读取性能](../../../reports/performance/ae350-sd-read.md)。
 
-提频测速构建额外传 `--define SD_BENCH_HZ=50000000`。已知基准内容时可传 `--define SD_BENCH_REFERENCE_CRC=<CRC32>`；本卡同区间使用 `0x1201fe31`。初始化默认仍为 10 MHz，应用显式选择更高速度。
+显式设置测试频率可传 `--define SD_BENCH_HZ=25000000`。已知区间内容时可传 `--define SD_BENCH_REFERENCE_CRC=<CRC32>`；读取区间可能覆盖文件系统元数据，参考 CRC 须匹配当时介质状态。初始化默认 25 MHz；其他频率须由应用显式选择并单独验收。

@@ -15,24 +15,32 @@ from gateware.machines.mega138k_ae350 import address_map as amap
 
 
 def perform(args):
+    if getattr(args,'readback',None):
+        from mini_ops.mega138k_ae350.ae350_audio_readback import perform as readback
+        return readback(args)
     op=Operation('ae350-audio-suite'); hardware=None
     video_future=video_pool=None
     video_cancel=threading.Event()
     video_device=getattr(args,'video_capture_device',None)
     print('Operation logs:',op.path,flush=True)
     try:
+        ffmpeg=shutil.which('ffmpeg') if video_device else None
+        if video_device and not args.dry_run and not ffmpeg:
+            raise ValueError('video capture requires ffmpeg in PATH')
         if not 5<=args.soak_seconds<=3600 or not args.soak_seconds+10<=args.timeout<=4000:
             raise ValueError('audio budget needs 5..3600 seconds and timeout >= soak+10, <=4000')
         if args.qualify_routes and args.capture_device: raise ValueError('route qualification has no analog playback')
         if args.qualify_routes and video_device: raise ValueError('route qualification has no video stress payload')
         root,ref,build_id=candidate(args.build)
         store=Store();manifest=store.get(ref)
-        boot=store.get(manifest['dependencies']['bootloader'])
+        from mini_ops.mega138k_ae350.ae350_upload import installed_provider,wait_provider
+        provider=installed_provider(args,store,ref)
+        build_id=store.get(provider)['config']['build_id']
         abi=hardware_abi(store, ref)
         pref,proot=resolve_payload(store,args.payload,expected_abi=abi);payload=payload_file(proot).read_bytes()
         op.report.update(artifact=ref,fs_sha256=file_hash(root/'gateware/impl/pnr/project.fs'),
                          rom_build_id=build_id,payload_artifact=pref,payload_sha256=file_hash(payload_file(proot)),
-                         flash_written=False,soak_seconds=args.soak_seconds,
+                         flash_written=False,media_written=False,sd_stress=bool(getattr(args,'sd_stress',False)),soak_seconds=args.soak_seconds,
                          realtime_debugger_halts=0,acoustic_stimulus='not-verified',listening='not-verified')
         if args.dry_run:
             op.report.update(passed=True,dry_run=True);op.save();return op
@@ -43,13 +51,11 @@ def perform(args):
         hardware=HardwareSession(op,port=args.port,cpu_jtag_location=args.cpu_jtag_location,location=args.location)
         s=BootSession(hardware.open_serial(),hardware.open_log('uart.log'))
         hardware.program(root/'gateware/impl/pnr/project.fs')
-        op.record('banner',text=wait_loader(s,build_id,30))
+        op.record('banner',text=wait_provider(s,hardware,store,provider,30))
         image=ae350_image.build(payload, abi);(op.path/'image.bin').write_bytes(image)
         s.upload(image,load=ae350_image.LOAD,abi=abi)
         if video_device:
             from mini_ops.mega138k_ae350.ae350_video_suite import capture
-            ffmpeg=shutil.which('ffmpeg')
-            if not ffmpeg:raise ValueError('video capture requires ffmpeg in PATH')
             video_op=Operation('ae350-audio-video-capture')
             video_op.report.update(artifact=ref,payload_artifact=pref,parent_operation=str(op.path),
                 capture_device=video_device,flash_written=False,
@@ -90,11 +96,15 @@ def perform(args):
                 except Exception as error:
                     analog_errors.append(str(error));op.record('analog',passed=False,error=str(error))
             else: op.record('analog',performed=False)
-            chunk=bytearray()
+            chunk=bytearray();sd_progress=[]
             def progress(data):
                 chunk.extend(data)
                 if data==b'\n':
-                    print(chunk.decode(errors='replace').strip(),flush=True);chunk.clear()
+                    line=chunk.decode(errors='replace').strip()
+                    print(line,flush=True);chunk.clear()
+                    if getattr(args,'sd_stress',False) and ' sd=' in line:
+                        count=int(line.rsplit(' sd=',1)[1],16)
+                        sd_progress.append(dict(seconds=time.monotonic()-stream_started,chunks_4k=count))
                     if video_future is not None and video_future.done():video_future.result()
             s.until(b'AE350 AUDIO DONE\r\n',max(1,args.timeout-(time.monotonic()-started)),on_chunk=progress)
             stream_seconds=time.monotonic()-stream_started
@@ -140,6 +150,16 @@ def perform(args):
                 op.record('video-source-rate',frames=delta,uart_window_seconds=stream_seconds,
                     observed_frame_rate_hz=delta/stream_seconds,
                     method='FPGA raster counter delta / host monotonic UART STREAM-to-DONE; includes stop/report overhead')
+        if getattr(args,'sd_stress',False):
+            raw_sd=cpu.read_memory(amap.RESULTS_BASE+128*4,16*4)
+            sd=[int.from_bytes(raw_sd[i:i+4],'little') for i in range(0,len(raw_sd),4)]
+            op.record('sd-stress',words=sd,media_written=False)
+            if sd[0]!=0x53445301 or sd[1]<args.soak_seconds*50 or not sd[2] or sd[3]!=0x3d68bdcc or sd[4]!=25000000 or any(sd[5:8]):
+                errors.append('SD25 file CRC/cleanup stress failed')
+            op.record('sd-progress',samples=sd_progress if marker==b'STREAM' else [])
+            if marker==b'STREAM' and (len(sd_progress)<args.soak_seconds//10 or
+                    any(b['chunks_4k']<=a['chunks_4k'] for a,b in zip(sd_progress,sd_progress[1:]))):
+                errors.append('SD progress missing during the mixed window')
         op.record('results',values=dict(zip(NAMES,words)),elapsed_seconds=elapsed,pc=hex(pc),
                   failures=errors,passed=not errors)
         if marker==b'STREAM' and args.soak_seconds>=30:

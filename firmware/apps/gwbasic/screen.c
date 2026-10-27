@@ -36,6 +36,7 @@ static int       fb_w, fb_h, fb_stride;
 static int       fg_color = 15, bg_color = 0;
 static int       text_col, text_row;
 static int       last_pen_x, last_pen_y;
+static int       frame_dirty;
 
 /* The 5x7 cell font, shared with the firmware canvas. */
 #include "../../common/font5x7.h"
@@ -69,6 +70,7 @@ static void fb_put(int x, int y, uint16_t color)
     if (x < 0 || y < 0 || x >= fb_w || y >= fb_h)
         return;
     fb[y * fb_stride + x] = color;
+    frame_dirty = 1;
 }
 
 static uint16_t fb_get(int x, int y)
@@ -90,12 +92,15 @@ void gfx_cls(int color)
             fb[y * fb_stride + x] = c;
     last_pen_x = 0;
     last_pen_y = 0;
+    frame_dirty = 1;
 }
 
 void gfx_present(void)
 {
-    if (bas_graphics)
+    if (bas_graphics && frame_dirty) {
         bas_plat_present();
+        frame_dirty = 0;
+    }
 }
 
 /* ------------------------------------------------------------- text on panel */

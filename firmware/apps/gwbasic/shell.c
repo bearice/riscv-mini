@@ -481,6 +481,7 @@ int bas_load(const char *name)
 
 static void print_prompt(void)
 {
+    gfx_present();
     con_puts("Ok\r\n");
     con_flush();
 }

@@ -82,7 +82,7 @@ def execute(store, run, args, dry):
         raise ValueError('AE350 --synthesize requires the gateware target')
     if getattr(args, 'source', None) is not None and args.target != 'payload':
         raise ValueError('AE350 --source is only meaningful for the payload target')
-    if args.target not in ('machine-description', 'cpu', 'bootloader', 'system', 'soc-description', 'gateware', 'payload'):
+    if args.target not in ('machine-description', 'cpu', 'bootloader', 'system', 'soc-description', 'gateware', 'payload', 'bios'):
         raise ValueError('AE350 ' + args.target + ' backend is pending P1; cannot use the 20K backend')
     if args.target == 'system' and not dry:
         raise ValueError('AE350 complete system backend is pending P1; build bootloader or gateware for host bring-up')
@@ -117,7 +117,7 @@ def execute(store, run, args, dry):
         if not dry and not cpu:
             cpu = store.publish('cpu', cpu_key, {'cpu.lock.json': canonical(cpu_config)},
                                 config=cpu_config, dependencies={'machine-description': found})
-    if args.target in ('bootloader', 'soc-description', 'gateware', 'payload'):
+    if args.target in ('bootloader', 'soc-description', 'gateware', 'payload', 'bios'):
         if cpu is None and dry:
             run.step(args.target, 'BUILD', reason='requires exact hard CPU configuration')
             run.finish(plan=True, artifact=None, qualification='host-generated-only', hardware_qualified=False)

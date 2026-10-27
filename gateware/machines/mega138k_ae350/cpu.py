@@ -397,17 +397,13 @@ class NativeAE350(LiteXModule):
             self.cpu_params.update(i_EXTS_HREADYIN=1, i_EXTS_HRDATA=Constant(0, 32), i_EXTS_HRESP=0,
                                    i_APB_PREADY=1, i_APB_PSLVERR=1)
 
-    def connect_management(self, flash, i2c):
+    def connect_management(self, i2c):
         if not self.wrapper:
             raise ValueError('board management IO requires the configured SDK wrapper')
-        # Keep the hard-controller digital ports visible. The fabric owns the
-        # physical IO buffers, so no opaque SDK IO-port helper is required.
-        for name,pad in (('CSN',flash.cs_n),('CLK',flash.clk),('MOSI',flash.mosi),
-                         ('MISO',flash.miso),('WPN',flash.wp_n),('HOLDN',flash.hold_n)):
-            value,enable,sense=Signal(),Signal(),Signal()
-            self.specials += Tristate(pad,value,enable,sense)
-            self.cpu_params.update({'i_SPI_'+name+'_IN':sense,'o_SPI_'+name+'_OUT':value,
-                                    'o_SPI_'+name+'_OE':enable})
+        for name in ('CSN', 'CLK', 'MOSI', 'MISO', 'WPN', 'HOLDN'):
+            self.cpu_params.update({'i_SPI_'+name+'_IN': 1,
+                                    'o_SPI_'+name+'_OUT': Open(),
+                                    'o_SPI_'+name+'_OE': Open()})
         for name,pad in (('SCL',i2c.scl),('SDA',i2c.sda)):
             release,sense=Signal(reset=1),Signal()
             self.specials += Tristate(pad,0,~release,sense)

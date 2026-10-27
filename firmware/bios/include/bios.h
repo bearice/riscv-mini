@@ -5,6 +5,7 @@
  * Negative return values are errors. Firmware retains mtvec and device ownership.
  * Payloads must poll; this cooperative interface is not SBI or a security boundary. */
 #define BIOS_ABI_VERSION 1u
+#define BIOS_FEATURE_VIDEO_SHADOW (1u<<6) /* CPU-owned frames copied on PRESENT */
 #define BIOS_ECALL_MAGIC 0x42494f53u
 #define BIOS_PAYLOAD_BASE 0x01000000u
 #define BIOS_PAYLOAD_LIMIT 0x07e00000u

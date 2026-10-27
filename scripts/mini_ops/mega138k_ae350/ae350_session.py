@@ -83,6 +83,12 @@ class HardwareSession:
         if self._cpu is not None:
             self._cpu.resume()
 
+    def close_cpu(self):
+        """Release an already-running CPU transport before a long UART run."""
+        if self._cpu is not None:
+            self._cpu.close(resume=False)
+            self._cpu=None
+
     def restart_rom(self, entry=0x80000000, expected_rom=None):
         cpu = self.halt()
         if expected_rom is not None:

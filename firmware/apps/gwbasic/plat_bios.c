@@ -62,7 +62,15 @@ void bas_plat_flush(void)
 
 void bas_plat_poll(void)
 {
+    static uint32_t last_present;
     (void)ecall(SVC_POLL, 0, 0, 0, 0, 0, 0);
+    if (have_info && (info.features & BIOS_FEATURE_VIDEO_SHADOW) && bas_graphics) {
+        uint32_t now = bas_plat_ms();
+        if ((uint32_t)(now - last_present) >= 50u) {
+            gfx_present();
+            last_present = now;
+        }
+    }
 }
 
 uint32_t bas_plat_ms(void)
@@ -120,7 +128,8 @@ uint16_t *bas_plat_framebuffer(int *width, int *height, int *stride)
 
 void bas_plat_present(void)
 {
-    (void)ecall(SVC_VIDEO_PRESENT, 0, 0, 0, 0, 0, 0);
+    unsigned slot=(info.features&BIOS_FEATURE_VIDEO_SHADOW) && info.framebuffer[1]?1u:0u;
+    (void)ecall(SVC_VIDEO_PRESENT, slot, 0, 0, 0, 0, 0);
 }
 
 /* ---------------------------------------------------------------------- files */

@@ -15,7 +15,10 @@ def perform(args):
     try:
         root,ref,build_id=candidate(args.build)
         store=Store();manifest=store.get(ref)
-        boot=store.get(manifest['dependencies']['bootloader']);abi=hardware_abi(store, ref)
+        abi=hardware_abi(store, ref)
+        from mini_ops.mega138k_ae350.ae350_upload import installed_provider,wait_provider
+        provider=installed_provider(args,store,ref)
+        build_id=store.get(provider)['config']['build_id']
         payload_ref,payload_root=resolve_payload(store,args.payload,expected_abi=abi)
         payload=payload_file(payload_root).read_bytes()
         fs=root/'gateware/impl/pnr/project.fs'
@@ -32,7 +35,7 @@ def perform(args):
         hardware=HardwareSession(op,port=args.port,cpu_jtag_location=args.cpu_jtag_location,location=args.location)
         session=BootSession(hardware.open_serial(),hardware.open_log('uart.log'))
         hardware.program(fs)
-        op.record('banner',text=wait_loader(session,build_id,30))
+        op.record('banner',text=wait_provider(session,hardware,store,provider,30))
         image=ae350_image.build(payload,abi);(op.path/'image.bin').write_bytes(image)
         session.upload(image,load=ae350_image.LOAD,abi=abi)
         # Never halt while SPI/I2C can still be receiving bytes.

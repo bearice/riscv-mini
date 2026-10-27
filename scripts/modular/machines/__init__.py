@@ -57,6 +57,7 @@ def operations(machine):
             'ddr-suite': ae350_ddr_suite.perform,
             'dma-suite': ae350_dma_suite.perform,
             'bus-suite': ae350_bus_suite.perform,
+            'p7-suite': __import__('scripts.mini_ops.mega138k_ae350.ae350_p7_suite', fromlist=['perform']).perform,
             'sd-suite': ae350_sd_suite.perform,
             'io-suite': ae350_io_suite.perform,
             'audio-suite': ae350_audio_suite.perform,

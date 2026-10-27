@@ -34,6 +34,7 @@ from gateware.machines.mega138k_ae350.peripherals.board_io import FabricBoard
 from gateware.machines.mega138k_ae350.peripherals.board_sense import BoardSense
 from gateware.machines.mega138k_ae350.peripherals.audio import FabricAudio
 from gateware.machines.mega138k_ae350.flash_apb import FlashRegisterAdapter
+from gateware.machines.mega138k_ae350.peripherals.qspi import UserQSPI
 
 
 def _onehot(off, offsets):
@@ -166,6 +167,7 @@ class AE350Fabric(LiteXModule):
 
     def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None):
         amap = layout
+        self.qspi = UserQSPI(amap.FABRIC_HZ, amap.USER_FLASH_BYTES)
         self.video = video
         fifo_bus = AHBInterface(data_width=32, address_width=32)
         err_bus = AHBInterface(data_width=32, address_width=32)
@@ -252,6 +254,8 @@ class AE350Fabric(LiteXModule):
                 (dma,amap.DMA_SVC_BASE),(ws,amap.WS2812_BASE),(board,amap.IO_BASE),
                 (sense,amap.SENSE_BASE),(audio,amap.AUDIO_BASE),(mic,amap.MIC_BASE),
                 (sd_page,amap.SD_BASE),(video_page,amap.VIDEO_BASE))]
+        qspi_page = Signal()
+        self.comb += qspi_page.eq(addr_q[12:] == (amap.SPI_BASE >> 12))
         sd_ok = sd.ok if sd is not None else 0
         sd_rdata = sd.rdata if sd is not None else 0
         video_ok = video.ok if video is not None else 0
@@ -312,6 +316,7 @@ class AE350Fabric(LiteXModule):
         # Pages are disjoint. A balanced OR avoids the old priority chain
         # through every device before the registered APB response.
         pages = [
+            (legal & qspi_page & self.qspi.ok, self.qspi.rdata),
             (legal & sd_page & sd_ok,sd_rdata),
             (legal & sysinfo & ~write_q & sys_ro,sys_data),
             (legal & audio & self.audio.tx_ok,self.audio.tx_rdata),
@@ -351,6 +356,9 @@ class AE350Fabric(LiteXModule):
             self.audio.tx_selected.eq(legal & audio),
             self.audio.rx_selected.eq(legal & mic),
         ]
+        self.comb += [self.qspi.off.eq(off), self.qspi.write.eq(write_q),
+                      self.qspi.wdata.eq(wdata_q), self.qspi.commit.eq(commit),
+                      self.qspi.selected.eq(legal & qspi_page)]
         if sd is not None:
             self.comb += [sd.off.eq(off), sd.write.eq(write_q), sd.wdata.eq(wdata_q),
                           sd.commit.eq(commit), sd.selected.eq(legal & sd_page)]

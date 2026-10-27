@@ -30,6 +30,7 @@ def parser():
         ('bus-suite','AE350 board SPI Flash and TWI mux read-only connectivity'),
         ('bootrom','AE350 prepare boot firmware; --install writes its image in the Flash firmware region'),
         ('sd-suite','AE350 native SD: read-only DMAC and sector CRC checks'),
+        ('p7-suite','AE350 FatFs file or BIOS/application acceptance'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
         ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
         ('video-suite','AE350 HDMI: SRAM test card and USB video capture'),
@@ -37,7 +38,7 @@ def parser():
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'p7-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -75,6 +76,14 @@ def parser():
                             help='seconds between completion polls; every poll halts the CPU')
             op.add_argument('--timeout', type=int, default=90,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
+        if name in ('bus-suite', 'sd-suite', 'p7-suite', 'audio-suite'):
+            op.add_argument('--bootrom-install', type=Path, help='Explicit compatible installed bootloader receipt; recheck full device bytes')
+        if name == 'p7-suite':
+            op.add_argument('--payload', required=True)
+            op.add_argument('--cpu-jtag-location', required=True)
+            op.add_argument('--timeout', type=int, default=900)
+            op.add_argument('--filesystem-result', type=Path, help='Passing dedicated-file suite receipt for BIOS command checks')
+            op.add_argument('--bios', action='store_true', help='interactive BIOS and GW-BASIC acceptance instead of filesystem suite')
         if name == 'bus-suite':
             op.add_argument('--payload', required=True)
             op.add_argument('--cpu-jtag-location', required=True)
@@ -97,6 +106,8 @@ def parser():
             op.add_argument('--timeout', type=int, default=60,
                             help='wall-clock budget until the suite completion word (1..3600 s)')
         if name == 'audio-suite':
+            op.add_argument('--readback', type=Path, help='Read completed results from a prior operation without programming or UART upload')
+            op.add_argument('--sd-stress', action='store_true', help='Require file CRC evidence from an AE350_SD_STRESS payload')
             op.add_argument('--qualify-routes', action='store_true', help='judge the gated DMA routing diagnostic payload')
             op.add_argument('--payload', required=True, help='AE350 audio suite payload result')
             op.add_argument('--cpu-jtag-location', required=True,

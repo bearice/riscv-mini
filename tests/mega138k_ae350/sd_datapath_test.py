@@ -30,10 +30,10 @@ def bench():
     yield
     yield d.rx_fifo.source.ready.eq(0)
     # TX convert preserves bytes across consumer stalls.
-    yield d.tx_fifo.sink.data.eq(0x12345678)
-    yield d.tx_fifo.sink.valid.eq(1)
+    yield d.tx_input.data.eq(0x12345678)
+    yield d.tx_input.valid.eq(1)
     yield
-    yield d.tx_fifo.sink.valid.eq(0)
+    yield d.tx_input.valid.eq(0)
     out=[]
     for _ in range(4):
         while not (yield d.source.valid): yield

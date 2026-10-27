@@ -1,6 +1,6 @@
 # AE350 构建与增量 PnR
 
-138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建Flash固件区中的独立XIP启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断。AE350 machine-description 只从仓库内的 `board.json`、`machine.json` 和构建实现生成；`ae350_customized_demo` 仅供开发时查阅，不由构建器打开、扫描或纳入输入闭包。Gowin IP 与 AE350 wrapper 的实际构建输入是仓库内固定并校验哈希的 vendor 文件。构建与板测使用准确产物身份，不消费 20K current。恢复核对所选硬件关联的启动镜像。位流不包含 bootrom 字节；首次使用前须通过独立安装操作写入 U4 官方 0x600000 固件分区，见 [bootloader](bootloader.md)。
+138K/AE350 使用 `--machine mega138k_ae350`：`bootloader` 构建Flash固件区中的独立XIP启动镜像，初始化硬核 ILM/DLM 并进入 UART loader；`gateware` 集成原生 AHB 与 DDR3。`payload` 独立构建应用或内存诊断，`bios` 构建 [AE350 BIOS 与 GW-BASIC](runtime.md)。AE350 machine-description 只从仓库内的 `board.json`、`machine.json` 和构建实现生成；`ae350_customized_demo` 仅供开发时查阅，不由构建器打开、扫描或纳入输入闭包。Gowin IP 与 AE350 wrapper 的实际构建输入是仓库内固定并校验哈希的 vendor 文件。构建与板测使用准确产物身份，不消费 20K current。恢复核对所选硬件关联的启动镜像。位流不包含 bootrom 字节；首次使用前须通过独立安装操作写入 U4 官方 0x600000 固件分区，见 [bootloader](bootloader.md)。
 
 ## 138K/AE350 增量 PnR
 
@@ -15,7 +15,9 @@ python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --pn
 python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --workspace experiment --pnr-mode place
 ```
 
-基线从最近一次成功的不可变产物读取并校验；器件、工具身份、DDR 配置和关键时钟必须兼容，setup/hold 及最小脉宽检查必须通过。种子复制到稳定工作区再通过显式 Tcl 路径传给 Gowin，不使用可能来自失败运行的临时 `.pr`。模式和基线身份/哈希记录在 lock 中，并将基线保留为依赖。相同源码请求先查成功结果缓存，不因成功基线更新而不断重建；实现输入索引可从 store manifest 重建。
+基线从最近一次成功的不可变产物读取并校验；器件、工具身份、DDR 物理参数/几何和关键时钟必须兼容，setup/hold 及最小脉宽检查必须通过。种子复制到稳定工作区再通过显式 Tcl 路径传给 Gowin，不使用可能来自失败运行的临时 `.pr`。模式和基线身份/哈希记录在 lock 中，并将基线保留为依赖。相同源码请求先查成功结果缓存，不因成功基线更新而不断重建；实现输入索引可从 store manifest 重建。
+
+IP 配方摘要变化单独记录；软件/CLI 输入造成的配方变化不等同于 DDR 物理配置变化，仍由 Gowin 对新综合网表检查布局匹配率。匹配率不足时工具可能改跑全量，回执记录实际模式。
 
 增量失败保留失败日志，不静默退回全量。可显式选择 `--pnr-mode full` 重新实现；若完全相同的全量请求已有归档，则直接复用。`auto` 对时钟或工具不兼容的基线自动执行全量。每次实现仍做原有时序检查，不代表板测通过。只运行生成、不加 `--synthesize` 时不会归档工作区残留的旧 PnR 输出。
 

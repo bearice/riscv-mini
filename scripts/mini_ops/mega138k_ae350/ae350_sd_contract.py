@@ -14,7 +14,7 @@ def judge(w,pc,mcause,load,size,trap):
     if any(w[i] for i in (1,2,5,14,17)):failures.append('SD init/read/stop error')
     if w[3]!=w[6]:failures.append('aligned/unaligned sector CRC differs')
     if w[8:10]!=[0xa5,0xa5]:failures.append('guard corruption')
-    if not w[10] or w[11]!=10000000 or w[12]!=4 or w[13]!=9:failures.append('capacity/clock/width/read count')
+    if not w[10] or w[11]!=25000000 or w[12]!=4 or w[13]!=9:failures.append('capacity/clock/width/read count')
     if w[18] or w[19]!=1 or w[20] not in (7,8) or w[21]:failures.append('TX request gate/selector/FIFO/drain')
     if trap and trap[0]:failures.append('CPU trap')
     if not load<=pc<load+size:failures.append('PC outside payload')

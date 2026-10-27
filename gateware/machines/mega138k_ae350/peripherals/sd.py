@@ -9,7 +9,7 @@ from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 from litex.soc.interconnect import stream, wishbone
 from litex.soc.interconnect.csr import CSR, CSRStorage, CSRStatus
-from litesdcard.phy import SDPHY
+from gateware.machines.mega138k_ae350.peripherals.sd_phy import SDPHY
 from gateware.vendor.litesdcard.sdcore import SDCore
 from litex.soc.interconnect.ahb import AHBInterface
 from gateware.machines.mega138k_ae350.peripherals.audio import AudioData
@@ -58,7 +58,7 @@ class SDTransport(LiteXModule):
         self.phy = SDPHY(SimpleNamespace(clk=pads.clk, cmd=pads.cmd, data=pads.data, cd=cd),
                          device, clock_hz, cmd_timeout=.25, data_timeout=.5)
         self.read_requests = ResetInserter()(stream.SyncFIFO([('block_length',10)],depth=2,buffered=True))
-        self.read_buffer = ResetInserter()(stream.Buffer([('block_length',10)],pipe_valid=True,pipe_ready=True))
+        self.read_buffer = ResetInserter()(stream.Buffer([('block_length',10)],pipe_valid=True,pipe_ready=False))
         self.comb += [self.read_requests.source.connect(self.read_buffer.sink),
                       self.read_buffer.source.connect(self.phy.datar.sink)]
         phy = self.phy
@@ -96,10 +96,17 @@ class SDDataPath(LiteXModule):
         self.source = stream.Endpoint([('data',8)])
         self.rx_fifo = WordFIFO()
         self.tx_fifo = WordFIFO()
+        # Register each word before the distributed FIFO's sixteen write
+        # enables. The AHB/byte-converter decode must not fan out to every bit.
+        self.rx_entry = stream.Buffer([('data',32)],pipe_ready=False)
+        self.tx_entry = stream.Buffer([('data',32)],pipe_ready=False)
+        self.tx_input = self.tx_entry.sink
         self.rx_convert = stream.Converter(8,32,reverse=True)
         self.tx_convert = stream.Converter(32,8,reverse=True)
         self.comb += [self.sink.connect(self.rx_convert.sink),
-                      self.rx_convert.source.connect(self.rx_fifo.sink),
+                      self.rx_convert.source.connect(self.rx_entry.sink),
+                      self.rx_entry.source.connect(self.rx_fifo.sink),
+                      self.tx_entry.source.connect(self.tx_fifo.sink),
                       self.tx_fifo.source.connect(self.tx_convert.sink),
                       self.tx_convert.source.connect(self.source)]
 
@@ -122,8 +129,8 @@ class FabricSD(LiteXModule):
         self.sync += [tx_hold.eq(self.tx_ack),rx_hold.eq(self.rx_ack)]
         busy = ~t.core.fsm.ongoing('IDLE')
         self.comb += [t.reset.eq(reset),path.reset.eq(reset),
-            self.tx.valid.eq(path.tx_fifo.sink.ready & ~reset),self.rx.valid.eq(path.rx_fifo.source.valid & ~reset),
-            path.tx_fifo.sink.valid.eq(self.tx.transfer),path.tx_fifo.sink.data.eq(self._swap(self.tx.data)),
+            self.tx.valid.eq(path.tx_input.ready & ~reset),self.rx.valid.eq(path.rx_fifo.source.valid & ~reset),
+            path.tx_input.valid.eq(self.tx.transfer),path.tx_input.data.eq(self._swap(self.tx.data)),
             self.tx.data.eq(self.tx_bus.wdata),path.rx_fifo.source.ready.eq(self.rx.transfer),
             self.rx.data.eq(self._swap(path.rx_fifo.source.data)),
             self.tx_req.eq(enabled & self.tx.valid & ~self.tx_ack & ~tx_hold),

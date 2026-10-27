@@ -21,7 +21,9 @@ def perform(args):
         root, ref, build_id = candidate(args.build)
         store = Store()
         manifest = store.get(ref)
-        boot = store.get(manifest['dependencies']['bootloader'])
+        from mini_ops.mega138k_ae350.ae350_upload import installed_provider,wait_provider
+        provider=installed_provider(args,store,ref)
+        build_id=store.get(provider)['config']['build_id']
         abi = hardware_abi(store, ref)
         payload_ref, payload_root = resolve_payload(store, getattr(args, 'payload', None), expected_abi=abi)
         payload = payload_file(payload_root).read_bytes()
@@ -45,7 +47,7 @@ def perform(args):
                                    location=args.location)
         session = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
         hardware.program(fs)
-        op.record('banner', text=wait_loader(session, build_id, min(args.timeout, 30)))
+        op.record('banner', text=wait_provider(session,hardware,store,provider,min(args.timeout,30)))
         session.upload(image, load=ae350_image.LOAD, abi=abi)
         if getattr(args,'benchmark',False):
             from mini_ops.mega138k_ae350.ae350_sd_benchmark import run

@@ -112,7 +112,11 @@ int audio_tx_dma_start(unsigned channel, const uint32_t *pcm, unsigned count) {
     if (!rc) TX(0x0c)=TX(0x0c)|4u;
     return rc;
 }
-int audio_tx_dma_done(void) { return done(&tx,0); }
+int audio_tx_dma_done(void) {
+    int rc=done(&tx,0);
+    if(!rc)TX(0x0c)=TX(0x0c)&~4u;
+    return rc;
+}
 
 int mic_rx_stop(void) {
     if (!rx_bound) return AE350_DMA_ERR_BIND;

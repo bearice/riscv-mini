@@ -7,6 +7,36 @@
 #ifdef AE350_VIDEO_STRESS
 #include "ae350_video_fixture.h"
 #endif
+#ifdef AE350_SD_STRESS
+#include "ae350_bios.h"
+#include "ae350_sd.h"
+#ifndef AE350_SD_STRESS_PATH
+#define AE350_SD_STRESS_PATH "/P7T000/TEST0.BIN"
+#endif
+static int sd_file=-1;
+static uint8_t sd_data[4098];
+static uint32_t sd_crc=~0u,sd_offset,last_sd_frame;
+static int sd_step(void) {
+    sd_data[0]=sd_data[4097]=0xa5;
+    if(bios_fs_read(sd_file,sd_data+1,4096)!=4096)return 1;
+    for(unsigned i=0;i<4096;i++) {
+        unsigned p=sd_offset+i;
+        if(sd_data[i+1]!=(uint8_t)((p*37u)^(p>>8)^(p>>17)^0xa5u))return 2;
+        sd_crc^=sd_data[i+1];
+        for(unsigned bit=0;bit<8;bit++)sd_crc=(sd_crc>>1)^(0xedb88320u&-(sd_crc&1u));
+    }
+    if(sd_data[0]!=0xa5 || sd_data[4097]!=0xa5)return 3;
+    sd_offset+=4096;
+    volatile uint32_t *r=(volatile uint32_t *)AE350_RESULTS_BASE;
+    r[129]++;
+    if(sd_offset==(1u<<20)) {
+        r[131]=~sd_crc;if(~sd_crc!=0x3d68bdccu)return 4;
+        r[130]++;sd_crc=~0u;sd_offset=0;
+        if(bios_fs_seek(sd_file,0,BIOS_FS_SET))return 5;
+    }
+    return 0;
+}
+#endif
 #ifndef AE350_AUDIO_SECONDS
 #define AE350_AUDIO_SECONDS 5u
 #endif
@@ -70,6 +100,14 @@ static void finish(unsigned error) {
     }
     int tx_rc=audio_tx_stop(), rx_rc=mic_rx_stop();
     if (!error && (tx_rc||rx_rc)) out[ERROR]=0x100u|(uint32_t)(tx_rc?tx_rc:rx_rc);
+#ifdef AE350_SD_STRESS
+    if(sd_file>=0) {out[134]=bios_fs_close(sd_file);sd_file=-1;}
+    out[135]=bios_unmount();
+    struct ae350_sd_info sd;ae350_sd_info(&sd);
+    out[132]=sd.hz;out[133]=sd.error;
+    if(!out[ERROR] && (out[128]!=0x53445301u || !out[130] || out[131]!=0x3d68bdccu ||
+       out[132]!=25000000 || out[133] || out[134] || out[135]))out[ERROR]=0x301u;
+#endif
 #ifdef AE350_VIDEO_STRESS
     struct ae350_video_status video;
     if(ae350_video_status(&video))out[97]=1;
@@ -96,10 +134,21 @@ int main(void) {
     out[64]=PCM_SCHEMA;
     out[VERSION]=SCHEMA; out[SECONDS]=AE350_AUDIO_SECONDS;
     ae350_dma_reset(); /* this standalone suite owns all DMA channels */
+#ifdef AE350_SD_STRESS
+    /* Match the BIOS execution mode: FatFs and CRC must fit the refill budget. */
+    __asm__ volatile("csrw 0x7cc, %0\n\tcsrs 0x7ca, %1"::"r"(23),"r"(3):"memory");
+#else
     __asm__ volatile("csrw 0x7cc, %0\n\tcsrs 0x7ca, %1"::"r"(23),"r"(2):"memory");
+#endif
     uint32_t cache_control;
     __asm__ volatile("csrr %0, 0x7ca":"=r"(cache_control));
     out[R27]=cache_control;
+#ifdef AE350_SD_STRESS
+    for(unsigned i=128;i<144;i++)out[i]=0;
+    out[128]=0x53445301u;
+    sd_file=bios_fs_open(AE350_SD_STRESS_PATH,BIOS_FS_O_READ);
+    if(sd_file<0 || bios_file_size(AE350_SD_STRESS_PATH)!=(1<<20))finish(0x300u);
+#endif
 #ifdef AE350_VIDEO_STRESS
     for(unsigned i=96;i<128;i++)out[i]=0;
     out[96]=0x56490002u;out[97]=(unsigned)video_fixture_init();
@@ -289,7 +338,13 @@ int main(void) {
             int32_t left=(int16_t)word,right=(int16_t)(word>>16);
             if(left>1024||left< -1024||right>1024||right< -1024)out[67]++;
         }
-        if(frames>=next_tick){puts("AE350 AUDIO TICK peak=");hex(window_peak);puts("\r\n");window_peak=0;next_tick+=480000u;}
+        if(frames>=next_tick){
+            puts("AE350 AUDIO TICK peak=");hex(window_peak);
+#ifdef AE350_SD_STRESS
+            puts(" sd=");hex(out[129]);
+#endif
+            puts("\r\n");window_peak=0;next_tick+=480000u;
+        }
         if(frames!=last_frames){last_frames=frames;last_progress=cycles();}
         else if(expired(last_progress))finish(28);
         if(!(out[CPU_WRITES]&255u) && (audio_tx_info(AUDIO_UNDERRUN)||mic_rx_info(MIC_OVERRUN)))finish(30);
@@ -298,6 +353,12 @@ int main(void) {
         CPU_BUF[index]=out[CPU_WRITES]^GUARD;
         if(CPU_BUF[index]!=(out[CPU_WRITES]^GUARD))finish(29);
         out[CPU_WRITES]++;
+#ifdef AE350_SD_STRESS
+        if(frames-last_sd_frame>=480u) {
+            last_sd_frame=frames;
+            unsigned error=(unsigned)sd_step();if(error)finish(0x310u+error);
+        }
+#endif
     }
     if(audio_tx_pause())finish(48); /* freeze paired counters before separate APB reads */
     out[FRAMES]=audio_tx_info(AUDIO_FRAMES);out[PLAYED]=audio_tx_info(AUDIO_PLAYED);

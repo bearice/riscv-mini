@@ -139,6 +139,17 @@ class WorkspaceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'timing failed'):
                 incremental_seed(self.store, {'artifact': ref}, config, board, 'auto')
 
+    def test_ip_recipe_change_keeps_physical_configuration_gate(self):
+        ref, board, config = self.artifact()
+        changed = dict(config, ddr_profile={'ip_identity': {'ddr3': 'new-cli-recipe'}})
+        seed = incremental_seed(self.store, {'artifact': ref}, changed, board, 'place')
+        self.assertEqual(seed['mode'], 'place')
+        self.assertTrue(seed['ip_recipe_changed'])
+        for physical in ({'parameters': {'Memory_Clock': 200}}, {'geometry': {'data_width': 16}},
+                         {'pll_parameters': {'CLKOUT2_FREQ': 200}}):
+            with self.assertRaisesRegex(ValueError, 'No compatible'):
+                incremental_seed(self.store, {'artifact': ref}, dict(changed, ddr_profile=physical), board, 'place')
+
     def test_vendor_fallback_is_reported_as_full_not_incremental_success(self):
         text = ('WARN  (PA2136) : Placement matching(58.68) is less than the threshold value(80) '
                 'needed to run incremental flow, the default placement flow will be run.')

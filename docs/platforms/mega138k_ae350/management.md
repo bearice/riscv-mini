@@ -1,8 +1,8 @@
 # 板载用户 Flash 与 TWI mux
 
-适用机器：`mega138k_ae350`。SPI 使用 AE350 硬核 ATCSPI200（`0xf0f00000`），I2C 使用硬核 ATCIIC100（`0xf0a00000`）。两者启用硬核数字端口，由 fabric 提供 SPI 三态缓冲与 I2C 开漏缓冲；I2C 只驱动低电平或释放，同时将物理 SCL/SDA 回接硬核输入，保留时钟伸展/仲裁所需的电平观察。
+适用机器：`mega138k_ae350`。用户 Flash U7 使用独立 fabric QSPI 控制器（`0xf8050000`），运行于 sys50，SCK 默认 25 MHz。I2C 使用硬核 ATCIIC100（`0xf0a00000`），SCL/SDA 由 fabric 提供开漏缓冲并回接硬核输入。
 
-这里只接入用户 Flash U7 和管理总线。本页的硬 SPI 只连接用户 Flash U7，不提供 program/erase API。配置 Flash U4 使用官方 SPI Flash Instruction Memory 和 FR 接口，bootrom从物理0x600000开始，容量边界为Flash末尾；安装通过显式 host 操作完成，见 [bootloader](bootloader.md)。当前管理总线源时钟为 sys/APB 50 MHz，实际 SPI/I2C 分频以所选硬件导出为准。
+U4 使用官方 SPI Flash Instruction Memory 和 FR 接口，启动固件从物理 `0x600000` 延伸至 Flash 末尾；安装见 [bootloader](bootloader.md)。U7 容量由 Board JSON 的 `user_flash.size_bytes` 导出，BSP 以 JEDEC 密度核对实物。
 
 ## 物理连接
 
@@ -11,8 +11,8 @@
 | 设备信号 | FPGA 引脚 | 说明 |
 | --- | --- | --- |
 | U7 CSn / CLK | L25 / P20 | 3.3 V，SPI mode 0 |
-| U7 DQ0/MOSI / DQ1/MISO | R21 / T22 | 首版使用单线 SPI |
-| U7 DQ2/WPn / DQ3/HOLDn | R22 / R20 | 绑定硬核数字端口，板上上拉 |
+| U7 DQ0/MOSI / DQ1/MISO | R21 / T22 | QSPI IO0 / IO1 |
+| U7 DQ2/WPn / DQ3/HOLDn | R22 / R20 | QSPI IO2 / IO3，板上上拉 |
 | 公共 SYS_TWI SCL / SDA | K25 / K26 | 3.3 V、外部 2.2 kΩ 上拉，开漏 |
 | mux 选择位 0 / 1 / 2 | N19 / P19 / P26 | 分别来自硬 GPIO 位 20 / 21 / 22 |
 
@@ -22,17 +22,28 @@ GPIO 选择输出始终由 DATAOUT 驱动，复位选择 0；BSP 会配置方向
 
 ## 接口与操作
 
-SYSINFO 追加 SPI/I2C 设备项，硬核寄存器保留原布局，设备表 ABI 字段为 0；逻辑设备、物理引脚和 mux 位序参与 image ABI。mux 使用现有硬 GPIO 寄存器，没有第二套 GPIO 或 I2C 软件控制器。
+SYSINFO 的 QSPI 设备项发布控制页、范围和寄存器 ABI 1；引脚、容量、控制器类型和设备表参与硬件 image ABI。I2C 保持原生寄存器布局，mux 使用硬 GPIO 位 20–22。
 
 `board_management.h` 提供：
 
-- `board_flash_init`：配置 1 MHz、8-bit mode 0，读取 JEDEC、状态和 SFDP；支持本次三字节地址范围。
-- `board_flash_read`：只读 `0x03`，最多 512-byte 分块，调用者 buffer 可不对齐，越界在 MMIO 前拒绝。
-- `board_i2c_init`：7-bit、轮询模式，配置保守标准速度时序，初选 EEPROM 分支 2；不是精确测得的 100 kHz 声明。
-- `board_twi_mux_select/get`、`board_i2c_probe`、`board_i2c_read_register`：选择支路、地址 ACK/NACK 和一字节寄存器地址的 repeated-START 读取。
-- `board_management_stop`：等待总线空闲、禁用 I2C 并恢复选择/方向。
+- `board_flash_init`：读取 JEDEC、SR1/SR2 和 SFDP；对已支持的 Winbond `EF4018` 启用四线读取。QE 采用 `50h` 后接 `01h` 的易失状态寄存器写法，保持 SR1 和 SR2 其余位。
+- `board_flash_read`：`6Bh` 的 1-1-4 读取；命令、24-bit 地址和八个 dummy 时钟使用单线，数据使用四线。支持非对齐缓冲，越界在 MMIO 前拒绝。
+- `board_flash_read_single`：`03h` 单线读取，用于同地址比对。
+- `board_i2c_init`、`board_twi_mux_select/get`、`board_i2c_probe`、`board_i2c_read_register`：管理总线初始化、支路选择、ACK/NACK 和 repeated-START 读取。
+- `board_management_stop`：等待 QSPI 完成、恢复原始 QE 状态，禁用 I2C 并恢复 mux 选择和 GPIO 方向。失败时返回错误。
 
-SPI/I2C 轮询和接收循环放在 ILM，避免默认关闭 cache 时的 DDR 取指延迟妨碍 FIFO 服务。接口单线程、单所有者使用；错误和超时显式返回。未验收 SPI DMA/Quad、I2C 10-bit/中断、多主冲突或外部故障注入。
+QSPI 以轮询方式使用，单线程、单所有者；寄存器/接收热循环位于 ILM。阵列 program/erase API 由后续明确的存储用途定义。I2C 时序使用保守标准速度配置。
+
+| QSPI 偏移 | 寄存器 |
+| --- | --- |
+| `0x00 / 0x04 / 0x08` | ID=`0xae350b01`、ABI=1、能力=3（单线/四线） |
+| `0x0c` | CONTROL：bit0 保持 CS，bit1 四线，bit2 接收，bits9:8 为字节数减一 |
+| `0x10` | STATUS：bit0 busy |
+| `0x14` | SCK 半周期分频减一，0–255；SCK=sys/(2×(divider+1)) |
+| `0x18 / 0x1c` | TX DATA / RX DATA，1–4 字节，线上 MSB first；发送数据左对齐 |
+| `0x20 / 0x24` | sys 源时钟 / Board Flash 容量 |
+
+写 TX DATA 提交一次传输，CS 可在多次传输之间保持有效。busy 时修改 CONTROL、divider 或 DATA 返回 APB ERROR；部分写和未知偏移也被拒绝。控制器与总线均在 sys 域。
 
 ```sh
 nix develop --command python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --purpose management
@@ -44,12 +55,9 @@ nix develop --command python scripts/mini.py board bus-suite --build <gateware-r
 
 下游地址响应只说明该选择值下有设备 ACK，不代表已枚举/验收该分支所有功能。RX HDMI 的 EDID slave/HPD、TX DDC、时钟配置和摄像头控制仍需各自实现。
 
-## 寄存器依据
+## 接口依据与验收
 
-- [Linux ATCSPI200 驱动](https://github.com/torvalds/linux/blob/master/drivers/spi/spi-atcspi200.c)：SPI 命令/地址/读计数、FIFO 状态和分频。
-- [Andes ATCIIC100 驱动](https://github.com/andestech/linux/blob/ast-v5_4_0-branch/drivers/i2c/busses/i2c-atciic100.c)：原生模块 ID 与寄存器。
-- [Zephyr ATCIIC100 定义](https://github.com/zephyrproject-rtos/zephyr/blob/main/drivers/i2c/i2c_andes_atciic100.h)：阶段控制、状态、ACK 和时序字段。
+- [Winbond W25Q128JV 数据手册](https://www.winbond-electronics.com/pdf-7d/w25q128jvsjq.pdf)：QE、易失状态更新、`03h` 与 `6Bh` 时序。
+- [Andes ATCIIC100 驱动](https://github.com/andestech/linux/blob/ast-v5_4_0-branch/drivers/i2c/busses/i2c-atciic100.c)和 [Zephyr 寄存器定义](https://github.com/zephyrproject-rtos/zephyr/blob/main/drivers/i2c/i2c_andes_atciic100.h)。
 
-具体通过范围、准确镜像和原始回执见 [管理总线验收](../../../reports/ae350-management.md)。
-
-U7 保持硬 SPI2/ATCSPI200。四根数据线由 MOSI、MISO、WP、HOLD 连接，实际 Quad 能力需读取控制器 CONFIG 与 NOR 配置后单独验收；当前 BSP 使用单线 1 MHz，不因引脚齐全就声称支持 Quad 高速。
+本轮结果见 [P7 验收记录](../../../reports/ae350-p7.md)，历史管理总线记录见 [先前验收](../../../reports/ae350-management.md)。

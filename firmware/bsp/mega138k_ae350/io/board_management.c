@@ -1,5 +1,5 @@
-/* Native ATCSPI200/ATCIIC100 register protocol. Register definitions checked
- * against Linux spi-atcspi200.c and Zephyr i2c_andes_atciic100.h (Andes).
+/* Fabric QSPI / native ATCIIC100. I2C register definitions checked
+ * against Zephyr i2c_andes_atciic100.h (Andes).
  * Board pin ownership and mux GPIO bits are supplied by the hardware ABI. */
 #include "board_management.h"
 #include "ae350_address_map.h"
@@ -8,8 +8,6 @@
 #define IIC(o) W(AE350_I2C_BASE+(o))
 #define GPIO(o) W(AE350_GPIO_BASE+(o))
 #define HOT __attribute__((section(".ilm.text"),noinline))
-#define SPI_ACTIVE 1u
-#define RX_EMPTY (1u<<14)
 #define IIC_LINES 0x6000u
 #define IIC_BUSY (1u<<11)
 #define IIC_CMPL (1u<<9)
@@ -17,70 +15,89 @@
 #define IIC_ARB (1u<<4)
 #define IIC_W1C 0x3f8u
 static uint32_t flash_bytes;
-static unsigned flash_ready,i2c_ready,i2c_claimed,old_mux,old_direction;
+static unsigned flash_ready,flash_sr1,flash_sr2,flash_qe_changed,i2c_ready,i2c_claimed,old_mux,old_direction;
 static HOT uint32_t cycles(void) {uint32_t t;__asm__ volatile("rdcycle %0":"=r"(t));return t;}
 static HOT int expired(uint32_t start) {return (uint32_t)(cycles()-start)>AE350_CPU_HZ/4u;}
 static HOT void delay(void) {uint32_t start=cycles();while((uint32_t)(cycles()-start)<AE350_CPU_HZ/1000u) {}}
-static HOT int wait_spi(unsigned reg,unsigned mask) {
+static HOT int wait_spi(void) {
     uint32_t start=cycles();
-    while(SPI(reg)&mask)if(expired(start))return BUS_TIMEOUT;
+    while(SPI(0x10)&1u)if(expired(start))return BUS_TIMEOUT;
     return 0;
 }
-static HOT int read_command(unsigned command,uint32_t address,unsigned addressed,unsigned dummy,void *buffer,unsigned bytes) {
-    if(!bytes || bytes>512 || !buffer || dummy>1)return BUS_INVALID;
-    if(command!=0x9f && command!=0x05 && command!=0x5a && command!=0x03)return BUS_INVALID;
-    int rc=wait_spi(0x34,SPI_ACTIVE);if(rc)return rc;
-    SPI(0x30)=6; /* FIFO reset only, no flash command. */
-    if(wait_spi(0x30,6))return BUS_TIMEOUT;
-    SPI(0x10)=(7u<<8)|(2u<<16); /* 8-bit data, three-byte address, mode 0. */
-    SPI(0x20)=(1u<<30)|(addressed?(1u<<29):0)|((dummy?9u:2u)<<24)|(bytes-1u);
-    if(addressed)SPI(0x28)=address;
-    SPI(0x24)=command;
-    uint8_t *out=buffer;
-    uint32_t start=cycles();
-    for(unsigned i=0;i<bytes;i++) {
-        while(SPI(0x34)&RX_EMPTY)if(expired(start))goto timeout;
-        out[i]=(uint8_t)SPI(0x2c);
-    }
-    rc=wait_spi(0x34,SPI_ACTIVE);if(rc)goto timeout;
+static HOT int transfer(uint32_t data,unsigned bytes,unsigned flags,uint32_t *value) {
+    int rc=wait_spi();if(rc)return rc;
+    SPI(0xc)=1u|flags|((bytes-1u)<<8);
+    SPI(0x18)=data;
+    rc=wait_spi();if(rc)return rc;
+    if(value)*value=SPI(0x1c);
     return 0;
-timeout:
-    SPI(0x30)=7;flash_ready=0;return BUS_TIMEOUT;
+}
+static HOT void deselect(void) {SPI(0xc)=0;}
+static HOT int read_command(unsigned command,uint32_t address,unsigned addressed,unsigned dummy,void *buffer,unsigned bytes) {
+    if(!bytes || !buffer)return BUS_INVALID;
+    int rc=transfer(command<<24,1,0,0);
+    if(!rc && addressed)rc=transfer(address<<8,3,0,0);
+    if(!rc && dummy)rc=transfer(0,1,0,0);
+    uint8_t *out=buffer;
+    while(!rc && bytes) {
+        unsigned n=bytes>4?4:bytes;uint32_t value;
+        rc=transfer(0xffffffffu,n,command==0x6b?6u:4u,&value);
+        if(!rc)for(unsigned i=0;i<n;i++)out[i]=(uint8_t)(value>>(8*(n-i-1)));
+        out+=n;bytes-=n;
+    }
+    if(!rc)deselect();
+    else flash_ready=0;
+    return rc;
+}
+static HOT int status2_write(unsigned status) {
+    /* W25Q128JV volatile status enable: no array or nonvolatile programming. */
+    int rc=transfer(0x50000000u,1,0,0);if(rc)return rc;deselect();
+    rc=transfer(0x01000000u|(flash_sr1<<16)|(status<<8),3,0,0);if(rc)return rc;deselect();
+    delay();return 0;
 }
 int board_flash_init(struct board_flash_info *out) {
     if(!out)return BUS_INVALID;
-    flash_ready=0;flash_bytes=0;
+    if(flash_ready || flash_qe_changed)return BUS_PROTOCOL;
+    flash_bytes=0;
     if(!(W(AE350_SYSINFO_BASE+8)&AE350_CAP_FLASH))return BUS_DEVICE;
+    if(W(AE350_SYSINFO_BASE+0x160)!=AE350_SPI_ID || W(AE350_SYSINFO_BASE+0x164)!=AE350_SPI_BASE ||
+       W(AE350_SYSINFO_BASE+0x168)!=0x28 || W(AE350_SYSINFO_BASE+0x16c) ||
+       W(AE350_SYSINFO_BASE+0x170) || W(AE350_SYSINFO_BASE+0x174)!=1)return BUS_DEVICE;
     out->controller=SPI(0);
-    if(!out->controller || out->controller==0xffffffffu)return BUS_DEVICE;
-    SPI(0x30)=7;if(wait_spi(0x30,7))return BUS_TIMEOUT;
-    SPI(0x38)=0;
-    unsigned divider=(AE350_FABRIC_HZ+1999999u)/2000000u-1u;
-    SPI(0x40)=divider;
-    out->hz=AE350_FABRIC_HZ/(2*(divider+1));
-    uint8_t id[3],status,sfdp[4];
-    int rc=read_command(0x9f,0,0,0,id,3);if(rc)return rc;
+    if(out->controller!=AE350_SPI_ID || SPI(4)!=1 || SPI(8)!=3)return BUS_DEVICE;
+    int rc=wait_spi();if(rc)return rc;
+    deselect();SPI(0x14)=0;
+    out->hz=SPI(0x20)/2;
+    uint8_t id[3],status,sfdp[4],sr2;
+    rc=read_command(0x9f,0,0,0,id,3);if(rc)return rc;
     out->jedec=((uint32_t)id[0]<<16)|(id[1]<<8)|id[2];
-    if(!id[0] || id[0]==255 || id[2]<16 || id[2]>24)return BUS_DEVICE;
+    if(out->jedec!=0xef4018u)return BUS_DEVICE;
     flash_bytes=1u<<id[2];out->bytes=flash_bytes;
+    if(flash_bytes!=SPI(0x24))return BUS_DEVICE;
     rc=read_command(0x05,0,0,0,&status,1);if(rc)return rc;
-    out->status=status;if(status&1)return BUS_PROTOCOL;
+    out->status=status;if(status&3)return BUS_PROTOCOL;
     rc=read_command(0x5a,0,1,1,sfdp,4);if(rc)return rc;
     out->sfdp=(uint32_t)sfdp[0]|((uint32_t)sfdp[1]<<8)|((uint32_t)sfdp[2]<<16)|((uint32_t)sfdp[3]<<24);
     if(out->sfdp!=0x50444653u)return BUS_PROTOCOL;
+    rc=read_command(0x35,0,0,0,&sr2,1);if(rc)return rc;
+    flash_sr1=status;flash_sr2=sr2;out->status|=(unsigned)sr2<<8;
+    if(!(sr2&2u)) {
+        flash_qe_changed=1;
+        rc=status2_write(sr2|2u);if(rc)return rc;
+        rc=read_command(0x35,0,0,0,&sr2,1);if(rc)return rc;
+        out->status|=(unsigned)sr2<<16;
+        if(sr2!=(flash_sr2|2u))return BUS_PROTOCOL;
+    }
+    out->status=status|(flash_sr2<<8)|((unsigned)sr2<<16);
     flash_ready=1;return 0;
 }
-int board_flash_read(uint32_t offset,void *buffer,unsigned bytes) {
+static int flash_read(uint32_t offset,void *buffer,unsigned bytes,unsigned quad) {
     if(!buffer || !bytes || offset>=flash_bytes || bytes>flash_bytes-offset)return BUS_INVALID;
     if(!flash_ready)return BUS_DEVICE;
-    uint8_t *out=buffer;
-    while(bytes) {
-        unsigned n=bytes>512?512:bytes;
-        int rc=read_command(0x03,offset,1,0,out,n);if(rc)return rc;
-        bytes-=n;offset+=n;out+=n;
-    }
-    return 0;
+    return read_command(quad?0x6b:0x03,offset,1,quad,buffer,bytes);
 }
+int board_flash_read(uint32_t offset,void *buffer,unsigned bytes) {return flash_read(offset,buffer,bytes,1);}
+int board_flash_read_single(uint32_t offset,void *buffer,unsigned bytes) {return flash_read(offset,buffer,bytes,0);}
 unsigned board_twi_mux_get(void) {return (GPIO(0x24)&AE350_TWI_MUX_GPIO_MASK)>>AE350_TWI_MUX_GPIO_SHIFT;}
 int board_twi_mux_select(unsigned selection) {
     if(selection>7)return BUS_INVALID;
@@ -149,7 +166,17 @@ int board_i2c_read_register(unsigned address,uint8_t offset,void *buffer,unsigne
     return rc;
 }
 int board_management_stop(void) {
-    int rc=wait_spi(0x34,SPI_ACTIVE);
+    int rc=wait_spi();
+    if(!rc) {
+        deselect();
+        if(flash_qe_changed) {
+            rc=status2_write(flash_sr2);
+            uint8_t sr2;
+            if(!rc)rc=read_command(0x35,0,0,0,&sr2,1);
+            if(!rc && sr2!=flash_sr2)rc=BUS_PROTOCOL;
+            if(!rc)flash_qe_changed=0;
+        }
+    }
     flash_ready=0;
     if(i2c_claimed) {
         uint32_t start=cycles();

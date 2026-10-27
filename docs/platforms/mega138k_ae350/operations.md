@@ -79,7 +79,7 @@ AE350 平台操作合同见 [当前上板说明](operations.md)。普通工作�
 
 AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独立于内存诊断。普通应用和 DDR suite 都经同一 UART loader 装载；`board jtag-test` 只读核验bootrom、本地内存、硬件ABI和POST，`board recover` 执行显式恢复。
 
-## 原生 SD 只读检查
+## 原生 SD 与文件系统检查
 
 原生 4-bit PHY/Core、硬核 DMAC FIFO、接线与限制见 [SD](sd.md)。`board sd-suite --build <gateware-result.json> --payload <sd-payload-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG>` 执行 SRAM/UART 装载与只读扇区检查，不写卡。独立主机 LBA0 CRC32 可通过 `--expected-sector-crc` 传入；未提供时只记录内部读一致性，不记为主机参考校验通过。
 
@@ -87,3 +87,5 @@ AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独
 ## 用户 Flash 与 TWI 管理总线
 
 接线、硬核 BSP 与边界见 [管理总线](management.md)。`board bus-suite --build <gateware-result.json> --payload <bus-suite-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG>` 只验证用户 Flash 读取与 TWI mux/EEPROM 连通性，UART 完成前不暂停 CPU；不写 Flash 或 EEPROM 数据。
+
+FatFs、BIOS 与应用验收使用 `board p7-suite`，见 [运行环境](runtime.md)。在 SRAM/UART 验证中复用已安装的兼容启动固件时，向 bus/sd/p7/audio 套件显式传 `--bootrom-install <成功安装回执>`，操作会重新核对实物固件字节。

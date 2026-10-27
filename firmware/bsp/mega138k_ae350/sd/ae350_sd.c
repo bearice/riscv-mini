@@ -4,9 +4,9 @@
 #include "ae350_address_map.h"
 #define W(a) (*(volatile uint32_t *)(uintptr_t)(a))
 #define SD(o) W(AE350_SD_BASE+(o))
-enum { SHORT=1,LONG=2,BUSY=3,CRC=4,READ=32 };
+enum { SHORT=1,LONG=2,BUSY=3,CRC=4,READ=32,WRITE=64 };
 static struct ae350_sd_info info;
-static unsigned channel, owned, ready, rca, hc, source_hz, high_speed;
+static unsigned channel, owned, ready, rca, hc, source_hz, high_speed, write_protected;
 static _Alignas(32) uint8_t bounce[4096];
 static uint32_t ticks(void) {uint32_t n;__asm__ volatile("rdcycle %0":"=r"(n));return n;}
 static void delay(unsigned ms) {uint32_t t=ticks();while((uint32_t)(ticks()-t)<(AE350_CPU_HZ/1000u)*ms) {}}
@@ -27,6 +27,7 @@ static int checked(unsigned cmd,uint32_t arg,unsigned flags) {
     return command(cmd,arg,flags) && !(response(0)&0xfff9a008u);
 }
 int ae350_sd_stop(void) {
+    ready=0; /* A failed drain must never leave the card reusable. */
     SD(0xc)=0; /* Stop requesting; retain FIFO data until the channel drains. */
     if(owned) {
         int rc=ae350_dma_abort_drain(channel);
@@ -36,14 +37,16 @@ int ae350_sd_stop(void) {
     SD(0xc)=1;delay(1);SD(0xc)=0;delay(1);ready=0;
     return 0;
 }
-static int start_dma(unsigned bytes) {
+static int start_transfer(unsigned bytes,unsigned writing) {
     int rc=ae350_dma_sync_for_device((uintptr_t)bounce,sizeof(bounce));if(rc)return rc;
     struct ae350_dma_req req={.device=AE350_DMAC_ID,.abi=AE350_ABI_VERSION,
         .csr_base=AE350_DMAC_BASE,.irq_id=AE350_IRQ_ID,.need_cap=AE350_CAP_SD,
-        .channel=channel,.src=AE350_SD_RX_DATA,.dst=(uintptr_t)bounce,.bytes=bytes,
-        .width_bytes=4,.src_mode=2,.dst_mode=0,.handshake=6};
+        .channel=channel,.src=writing?(uintptr_t)bounce:AE350_SD_RX_DATA,
+        .dst=writing?AE350_SD_TX_DATA:(uintptr_t)bounce,.bytes=bytes,
+        .width_bytes=4,.src_mode=writing?0:2,.dst_mode=writing?2:0,.handshake=writing?5:6};
     rc=ae350_dma_submit(&req);if(rc)return rc;owned=1;SD(0xc)=2;return 0;
 }
+static int start_dma(unsigned bytes) {return start_transfer(bytes,0);}
 static int finish_dma(unsigned bytes) {
     uint32_t start=ticks();int rc;
     do {rc=ae350_dma_poll(channel);if(rc!=AE350_DMA_ERR_BUSY)break;}
@@ -84,6 +87,7 @@ int ae350_sd_init(unsigned selected) {
     hc=!!(ocr&0x40000000u);
     if(!command(2,0,LONG|CRC) || !command(3,0,SHORT|CRC) || (response(0)&0xe000))goto fail;
     rca=response(0)>>16;if(!rca || !command(9,rca<<16,LONG|CRC))goto fail;
+    write_protected=bits(12,2);
     unsigned version=bits(126,2);
     if(version==1) {unsigned size=bits(48,22);if(size==0x3fffff)goto fail;info.sectors=(size+1)*1024;}
     else if(version==0) {
@@ -100,7 +104,7 @@ int ae350_sd_init(unsigned selected) {
     if(start_dma(8) || !checked(51,0,SHORT|CRC|READ) || !event(1) || finish_dma(8))goto fail;
     if(!(bounce[1]&4) || !checked(55,rca<<16,SHORT|CRC) || !checked(6,2,SHORT|CRC))goto fail;
     SD(0x48)=1;info.width=4;
-    SD(0x44)=(source_hz+9999999u)/10000000u;delay(1);
+    SD(0x44)=(source_hz+24999999u)/25000000u;delay(1);
     info.hz=source_hz/(2*((SD(0x44)+1)/2));ready=1;return 0;
 fail:
     info.error=1u | ((SD(0x9c)&15u)<<8) | ((SD(0xa0)&15u)<<12) | ((SD(0x10)&1u)<<16);
@@ -131,7 +135,7 @@ fail:
 
 int ae350_sd_read(uint32_t sector,void *buffer,unsigned count) {
     if(!buffer || !count || sector>=info.sectors || count>info.sectors-sector)return -2;
-    if(!ready || !present())return -3;
+    if(!ready || !present() || owned)return -3;
     uint8_t *dst=buffer;
     while(count) {
         unsigned blocks=count>8?8:count,bytes=blocks*512;
@@ -144,6 +148,36 @@ int ae350_sd_read(uint32_t sector,void *buffer,unsigned count) {
     return 0;
 fail:
     info.error=0x10000000u | ((SD(0x9c)&15u)<<8) | ((SD(0xa0)&15u)<<12) | ((ae350_dma_poll(channel)&255u)<<16);
+    int rc=ae350_sd_stop();return rc?rc:-1;
+}
+int ae350_sd_status(void) {return ready && !owned && present()?0:-3;}
+int ae350_sd_sync(void) {
+    if(ae350_sd_status() || owned)return -3;
+    uint32_t start=ticks();
+    do {
+        if(!checked(13,rca<<16,SHORT|CRC))return -1;
+        uint32_t state=response(0);
+        if((state&(0xfu<<9))==(4u<<9) && (state&(1u<<8)))return 0;
+    }while((uint32_t)(ticks()-start)<AE350_CPU_HZ);
+    return -1;
+}
+int ae350_sd_write(uint32_t sector,const void *buffer,unsigned count) {
+    if(!buffer || !count || sector>=info.sectors || count>info.sectors-sector)return -2;
+    if(ae350_sd_status() || write_protected)return -3;
+    const uint8_t *src=buffer;
+    while(count) {
+        unsigned blocks=count>8?8:count,bytes=blocks*512;
+        for(unsigned i=0;i<bytes;i++)bounce[i]=src[i];
+        SD(0xa4)=512;SD(0xa8)=blocks;
+        if(start_transfer(bytes,1) || !checked(blocks==1?24:25,hc?sector:sector*512,SHORT|CRC|WRITE) ||
+           !event(1) || finish_dma(bytes))goto fail;
+        if(blocks>1 && !checked(12,0,BUSY|CRC))goto fail;
+        if(ae350_sd_sync())goto fail;
+        src+=bytes;sector+=blocks;count-=blocks;
+    }
+    return 0;
+fail:
+    info.error=0x20000000u | ((SD(0x9c)&15u)<<8) | ((SD(0xa0)&15u)<<12) | ((ae350_dma_poll(channel)&255u)<<16);
     int rc=ae350_sd_stop();return rc?rc:-1;
 }
 void ae350_sd_info(struct ae350_sd_info *out) {

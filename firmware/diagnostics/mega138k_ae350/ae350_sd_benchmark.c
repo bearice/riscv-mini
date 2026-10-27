@@ -7,7 +7,7 @@
 #define SD_BENCH_CACHE 0
 #endif
 #ifndef SD_BENCH_HZ
-#define SD_BENCH_HZ 10000000u
+#define SD_BENCH_HZ 25000000u
 #endif
 #ifndef SD_BENCH_REFERENCE_CRC
 #define SD_BENCH_REFERENCE_CRC 0u
