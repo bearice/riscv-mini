@@ -313,9 +313,11 @@ def perform(args):
             op.record('payload-execution', pc=hex(pc), mcause=hex(mcause), trap=trap.hex())
             if any(trap) or mcause or not amap.DDR_CODE <= pc < amap.DDR_CODE + len(payload_data):
                 raise RuntimeError('video payload trap/PC execution check failed')
-            raw_csr=cpu.read_memory(amap.VIDEO_BASE,0x7c)
+            # MODE_CONFIG is write-only; do not issue a debug read across it.
+            raw_csr=(cpu.read_memory(amap.VIDEO_BASE,0x84)+bytes(4)+
+                     cpu.read_memory(amap.VIDEO_BASE+0x88,0x0c))
             csr_words=[int.from_bytes(raw_csr[i:i+4],'little') for i in range(0,len(raw_csr),4)]
-            csr={name:csr_words[off//4] for name,off in amap.VIDEO_REGS.items()}
+            csr={name:csr_words[off//4] for name,off in amap.VIDEO_REGS.items() if off<0x94 and name!='MODE_CONFIG'}
             op.record('video-csr',values=csr,id=hex(csr_words[0]),abi=hex(csr_words[1]))
             if csr_words[:3]!=[amap.VIDEO_ID,amap.ABI_VERSION,amap.VIDEO_CAP] or not (csr['STATUS']&1):
                 raise RuntimeError('video identity/active status check failed')

@@ -44,11 +44,16 @@ begin
   end
   tick;change;memory_rd_data_valid=0;
 end endtask
+task await_command;
+integer n;
+begin n=0;#1;
+ while(!memory_cmd_en)begin tick;n=n+1;if(n>12)$fatal(1,"grant timeout");end
+end endtask
 integer i;
 initial begin
   repeat(3)tick;change;sys_rst=0;
   cpu_pending=1;video_pending=1;cpu_cmd_en=1;video_cmd_en=1;
-  memory_cmd_ready=1;memory_wr_data_rdy=1;#1;
+  memory_cmd_ready=1;memory_wr_data_rdy=1;await_command;#1;
   if(!cpu_cmd_ready || video_cmd_ready || memory_addr!==cpu_addr)$fatal(1,"initial grant");
   tick;if(!read_pending)$fatal(1,"read ownership not retained");
   change;cpu_pending=0;cpu_cmd_en=0;
@@ -75,13 +80,22 @@ initial begin
   // Saturated clients must alternate; read latency cannot change ownership.
   cpu_pending=1;video_pending=1;cpu_cmd=1;cpu_cmd_en=1;video_cmd_en=1;
   for(i=0;i<10;i=i+1)begin
-    #1;
+    await_command;#1;
     if(video_cmd_ready !== (i%2==0) || cpu_cmd_ready !== (i%2==1))$fatal(1,"round robin %0d",i);
     tick;repeat(3)tick;
     response(i%2==0,256'h1000+i);
   end
   cpu_pending=0;video_pending=0;cpu_cmd_en=0;video_cmd_en=0;
-  #1;if(cpu_commands!=7 || video_commands!=6)$fatal(1,"command counters %0d/%0d",cpu_commands,video_commands);
+  // A reserved request can withdraw before acceptance; it cannot wedge
+  // the other client or turn into a later command after ready rises.
+  change;memory_cmd_ready=0;cpu_pending=1;cpu_cmd_en=1;cpu_cmd=1;
+  repeat(3)tick;change;cpu_pending=0;cpu_cmd_en=0;
+  repeat(2)tick;change;memory_cmd_ready=1;video_pending=1;video_cmd_en=1;
+  await_command;
+  if(!video_cmd_ready || cpu_cmd_ready)$fatal(1,"withdrawn reservation blocked video");
+  tick;change;video_pending=0;video_cmd_en=0;
+  response(1,256'hfaded);
+  #1;if(cpu_commands!=7 || video_commands!=7)$fatal(1,"command counters %0d/%0d",cpu_commands,video_commands);
   if(max_video_wait<12)$fatal(1,"wait interval was not observed");
   memory_rd_data_valid=1;#1;
   if(cpu_rd_data_valid || video_rd_data_valid)$fatal(1,"unsolicited response delivered");

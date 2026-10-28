@@ -24,13 +24,19 @@ class VideoMemoryArbiter(LiteXModule):
         owner = Signal()  # 0 CPU, 1 video
         last = Signal(reset=1)
         choose_video = Signal()
+        grant_valid = Signal()
+        grant_owner = Signal()
+        next_video = Signal()
+        selected_pending = Signal()
         active = Signal()
         selected_read = Signal()
         command = Signal()
         waited = Signal(24)
         self.comb += [
-            choose_video.eq(self.video_pending & (~self.cpu_pending | ~last)),
-            active.eq(~busy & (self.cpu_pending | self.video_pending)),
+            next_video.eq(self.video_pending & (~self.cpu_pending | ~last)),
+            choose_video.eq(grant_owner),
+            selected_pending.eq(Mux(grant_owner,self.video_pending,self.cpu_pending)),
+            active.eq(grant_valid & ~busy),
             selected_read.eq(choose_video | (cpu.cmd == 1)),
             memory.addr.eq(Mux(choose_video, video.addr, cpu.addr)),
             memory.cmd.eq(Mux(choose_video, 1, cpu.cmd)),
@@ -54,8 +60,17 @@ class VideoMemoryArbiter(LiteXModule):
             cpu.rd_data_valid.eq(memory.rd_data_valid & busy & ~owner),
             video.rd_data_valid.eq(memory.rd_data_valid & busy & owner),
         ]
+        # Grants can be reserved while a previous read waits for its beat.
+        # They are independent of this cycle's client enables, cutting the
+        # client -> arbitration -> ready -> client state combinational loop.
+        video.cmd_ready.attr.add(('syn_keep',1))
+        cpu.cmd_ready.attr.add(('syn_keep',1))
         self.sync += [
+            If(~grant_valid & (self.cpu_pending | self.video_pending),
+                grant_valid.eq(1),grant_owner.eq(next_video)),
+            If(grant_valid & ~selected_pending,grant_valid.eq(0)),
             If(command,
+                grant_valid.eq(0),
                 last.eq(choose_video),
                 If(choose_video, self.video_commands.eq(self.video_commands + 1))
                 .Else(self.cpu_commands.eq(self.cpu_commands + 1)),
@@ -81,14 +96,26 @@ class VideoFrameReader(LiteXModule):
     Backpressure may stop prefetch indefinitely without sending extra commands.
     """
     def __init__(self, ui, width=640, height=480, min_base=0x100000,
-                 ram_bytes=1 << 30, response_timeout=1 << 18):
+                 ram_bytes=1 << 30, response_timeout=1 << 18, runtime=False):
         if width <= 0 or width % 16 or height <= 0:
             raise ValueError('RGB565 frame width must be a positive multiple of 16')
-        blocks_per_row = width // 16
-        blocks = blocks_per_row * height
+        if runtime:
+            self.row_bytes = Signal(16, reset=width * 2)
+            self.rows = Signal(12, reset=height)
+            row_bytes, height = self.row_bytes, self.rows
+            blocks_per_row = Signal(11)
+            blocks = Signal(23)
+            self.sync += [blocks_per_row.eq(self.row_bytes >> 5),
+                          blocks.eq(blocks_per_row * self.rows)]
+        else:
+            row_bytes = width * 2
+            blocks_per_row = width // 16
+        if not runtime:
+            blocks = blocks_per_row * height
         self.request = request = stream.Endpoint([('base', 32), ('stride', 32), ('epoch', 32), ('run', 1)])
         self.source = source = stream.Endpoint([('data', 256), ('block', 32), ('epoch', 32)])
         self.pending = Signal()
+        self.reserve_next = Signal()
         self.address_error = Signal()
         self.timeout_error = Signal()
         self.frames = Signal(32)
@@ -100,8 +127,8 @@ class VideoFrameReader(LiteXModule):
         epoch = Signal(32)
         address = Signal(32)
         row_base = Signal(32)
-        column = Signal(max=max(2, blocks_per_row))
-        index = Signal(32)
+        column = Signal(11) if runtime else Signal(max=max(2, blocks_per_row))
+        index = Signal(23 if runtime else 32)
         data = Signal(256)
         elapsed = Signal(max=response_timeout + 1)
         end = Signal(33)
@@ -124,12 +151,15 @@ class VideoFrameReader(LiteXModule):
         fsm.act('IDLE', request.ready.eq(1), If(request.valid, *accept()))
         # Bound calculation is once per frame, away from the FIFO admission
         # and invalid-address state transition. It adds no per-block latency.
-        fsm.act('EXTENT',
-            NextValue(end, base + (height - 1) * stride + width * 2),
-            NextState('CHECK'))
+        if runtime:
+            row_span = Signal(32)
+            fsm.act('EXTENT',NextValue(row_span,(height-1)*stride[:16]),NextState('BOUND'))
+            fsm.act('BOUND',NextValue(end,base+row_span+row_bytes),NextState('CHECK'))
+        else:
+            fsm.act('EXTENT',NextValue(end,base+(height-1)*stride+row_bytes),NextState('CHECK'))
         fsm.act('CHECK',
             If(~self.enabled, NextState('IDLE'))
-            .Elif((base < min_base) | (base[:5] != 0) | (stride < width * 2) |
+            .Elif((base < min_base) | (base[:5] != 0) | (stride < row_bytes) |
                (stride[:5] != 0) | (stride >= 65536) | (end > ram_bytes),
                 NextValue(self.address_error, 1), NextState('IDLE'),
             ).Else(NextState('SEND')),
@@ -155,6 +185,10 @@ class VideoFrameReader(LiteXModule):
             ).Else(NextValue(elapsed, elapsed + 1)),
         )
         fsm.act('DRAIN', If(ui.rd_data_valid, NextState('IDLE')))
+        last_block = Signal()
+        self.sync += last_block.eq(index == blocks - 1)
+        self.comb += self.reserve_next.eq(fsm.ongoing('PUSH') & source.ready &
+                                         ~request.valid & ~last_block)
         fsm.act('PUSH',
             request.ready.eq(1),
             If(request.valid,

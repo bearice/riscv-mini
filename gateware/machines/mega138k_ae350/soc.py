@@ -38,6 +38,7 @@ from gateware.machines.mega138k_ae350.clock import ClockReset, PLLStatusSynchron
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
 from gateware.machines.mega138k_ae350.video_memory import VideoMemoryArbiter
 from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
+from gateware.devices.video.hdmi.phy import GowinHDMIPHY
 from gateware.machines.mega138k_ae350.peripherals.sd import FabricSD
 from gateware.machines.mega138k_ae350.sd_cdc import SDClockCrossing
 
@@ -151,10 +152,11 @@ class DDRSoC(LiteXModule):
                     platform.add_verilog_include_path(str(source.parent))
             platform.add_verilog_include_path(str(directory))
             platform.add_verilog_include_path(str((directory / artifact['primary']).parent))
-        video_dir = Path(__file__).resolve().parents[2] / 'devices' / 'video' / 'hdmi'
-        for name in ('ae350_hdmi_phy.v', 'svo_tmds.v'):
-            platform.add_source(str(video_dir / name))
-        platform.add_verilog_include_path(str(video_dir))
+        # Keep each release flop local to its serializer. The selected sites
+        # are machine inputs, not a recovery/removal timing exception.
+        for lane,site in enumerate(config.rtl.hdmi_reset_sites or ()):
+            platform.toolchain.additional_cst_commands.append(
+                'INS_LOC "hdmi_lane_resetn_ff%d_0" %s;'%(lane,site))
         # SUG1220: the 80/100 MHz fabric paths close by tens of picoseconds.
         options = dict(config.rtl.implementation_options())
         if implementation_options is not None and implementation_options != options:
@@ -301,29 +303,35 @@ class DDRSoC(LiteXModule):
             0x44: self.data_cdc.o[112:144], 0x48: self.data_cdc.o[144:176],
             **{32 + 4*i: word for i, word in enumerate(snapshot)}}
         # Not self.platform: that attribute is the Gowin board platform.
-        video = FabricVideo()
+        video = FabricVideo(runtime=True, hpd_supported=True,
+                            hpd_debounce_cycles=ae350_map.FABRIC_HZ//500)
+        self.comb += video.hpd_input.eq(platform.request('hdmi_hpd'))
         self.sd_native = ClockDomainsRenamer('mem')(FabricSD(platform.request('sdcard'),platform.device,ae350_map.DATA_HZ,ae350_map.DDR_SIZE))
         self.sd = SDClockCrossing(self.sd_native)
         self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
                                flash=self.cpu.flash_apb)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
             VideoMemoryArbiter(self.ddr.ui, cpu_ui, video.ui))
-        self.comb += [arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),
-                      arbiter.video_pending.eq(video.reader.pending),
+        self.comb += [self.crg.hdmi_pll.mode.eq(video.mode),
+                      self.crg.video_clock_reset.eq(video.clock_reset),
+                      video.clock_locked.eq(self.crg.hdmi_pll.locked),
+                      arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),
+                      arbiter.video_pending.eq(video.reader.pending | video.reader.reserve_next),
                       video.cpu_commands.eq(arbiter.cpu_commands),
                       video.video_commands.eq(arbiter.video_commands),
                       video.max_wait.eq(arbiter.max_video_wait),
                       video.memory_fault.eq(arbiter.unexpected_response),
                       video.reset.eq(ResetSignal('sys') | ~self.ddr.init_calib_complete |
                                      ~self.crg.hdmi_pll.locked)]
-        self.specials += Instance('ae350_hdmi_phy',
-            i_resetn=~ResetSignal('sys'), i_locked=self.crg.hdmi_pll.locked,
-            i_clk_pixel=ClockSignal('hdmi_pix'), i_clk_5x_pixel=ClockSignal('hdmi_5x'),
-            i_clk_reset=ClockSignal('hdmi_reset'), i_rgb=video.pixels.rgb,
-            i_de=video.pixels.de, i_hsync=video.pixels.hsync, i_vsync=video.pixels.vsync,
-            o_tmds_clk_p=platform.request('hdmi_clk_p'), o_tmds_clk_n=platform.request('hdmi_clk_n'),
-            o_tmds_d_p=Cat(*[platform.request('hdmi_data_p', i) for i in range(3)]),
-            o_tmds_d_n=Cat(*[platform.request('hdmi_data_n', i) for i in range(3)]))
+        self.hdmi_phy = phy = GowinHDMIPHY(
+            ClockSignal('hdmi_pix'), ClockSignal('hdmi_5x'), ClockSignal('hdmi_reset'),
+            platform.request('hdmi_clk_p'), platform.request('hdmi_clk_n'),
+            Cat(*[platform.request('hdmi_data_p', i) for i in range(3)]),
+            Cat(*[platform.request('hdmi_data_n', i) for i in range(3)]))
+        self.comb += [phy.resetn.eq(~ResetSignal('sys') & ~video.mode_busy & video.video_enable),
+                     phy.locked.eq(self.crg.hdmi_pll.locked), phy.rgb.eq(video.pixels.rgb),
+                     phy.de.eq(video.pixels.de), phy.hsync.eq(video.pixels.hsync),
+                     phy.vsync.eq(video.pixels.vsync)]
         tx_pad = platform.request('audio')
         rx_pad = platform.request('microphone')
         for name in ('bck', 'ws', 'din', 'pa_en'):
@@ -401,8 +409,8 @@ class DDRSoC(LiteXModule):
                 'create_clock -name ddr_clk_ref -period 20 -waveform {0 10} [get_nets {ddr3_clk_ref}]',
                 'set_clock_groups -asynchronous '
                 '-group [get_clocks {sys_clk}] -group [get_clocks {cpu_clk}] '
-                '-group [get_clocks {mem_clk}] '
-                '-group [get_clocks {hdmi_pix_clk hdmi_5x_clk hdmi_reset_clk}] '
+                '-group [get_clocks {mem_clk}] ' +
+                ('-group [get_clocks {%s}] ' % self.crg.hdmi_pll.clock_names) +
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '
                 '-group [get_clocks {ddr_clk_ref}]',
             ]

@@ -235,7 +235,7 @@ class AE350Fabric(LiteXModule):
                               sd.tx_req if sd is not None else 0, sd.rx_req if sd is not None else 0, Constant(0, 2))),
             cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 1),
                                  self.audio.tx_irq, self.audio.rx_irq, Constant(0, 3),
-                                 self.board.irq, Constant(0, 8))),
+                                 self.board.irq, video.irq if video is not None else 0, Constant(0, 7))),
             self.audio.off.eq(off), self.audio.write.eq(write_q), self.audio.wdata.eq(wdata_q),
             self.audio.commit.eq(commit),
             self.board.off.eq(off),

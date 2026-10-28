@@ -2,7 +2,7 @@
 from migen import ClockDomain, Constant, Signal, If, Instance
 from migen.genlib.resetsync import AsyncResetSynchronizer
 from litex.gen import LiteXModule
-from litex.soc.cores.clock.gowin_gw5a import GW5APLL
+from gateware.machines.mega138k_ae350.video_clock import VideoPLL
 
 
 class PLLStatusSynchronizer(LiteXModule):
@@ -105,28 +105,14 @@ class ClockReset(LiteXModule):
             data_clock.attr.add(('syn_keep', 1))
             platform.add_platform_command('CLOCK_LOC "{clock}" BUFG = CLK;', clock=data_clock)
 
-        # The 640x480 TMDS mode uses the nearest 50MHz-input integer solution.
-        # The 1% tolerance admits 125/25MHz while preserving the exact 5:1
-        # serializer-to-pixel relationship. Reset release uses a 10ns shift,
-        # midway between the 125MHz clock's edges at 8ns and 12ns;
-        # recovery/removal analysis includes the reset net's propagation delay.
-        # Keep fabric reset synchronizers off the fast I/O clock network.
-        self.hdmi_pll = hdmi_pll = GW5APLL(platform.devicename, platform.device, name='ae350_hdmi_pll')
-        hdmi_pll.register_clkin(clk, input_hz)
-        hdmi_pll.create_clkout(self.cd_hdmi_pix, pixel_hz, margin=1e-2)
-        hdmi_pll.create_clkout(self.cd_hdmi_5x, pixel_hz * 5, margin=1e-2, with_reset=False)
-        hdmi_pll.create_clkout(self.cd_hdmi_reset, pixel_hz, phase=90, margin=1e-2, with_reset=False)
-        self.comb += hdmi_pll.reset.eq(reset_key | (count != 0))
-        # The backend generated-clock helper has no phase argument. Emit all
-        # HDMI clocks together with their actual PLL ratios and phase instead.
-        hdmi_config = hdmi_pll.compute_config()
-        self.hdmi_clock_constraints = [
-            'create_generated_clock -name %s_clk -source [get_ports {clk50}] '
-            '-divide_by %d -multiply_by %d -phase %g [get_pins {ae350_hdmi_pll/CLKOUT%d}]'
-            % (cd.name, hdmi_config['idiv'] * hdmi_config['odiv%d' % n],
-               hdmi_config['fdiv'] * hdmi_config['mdiv'], hdmi_pll.clkouts[n].phase, n)
-            for n, cd in hdmi_pll.clkout_cds.items()
-        ]
+        from gateware.machines.mega138k_ae350.video_modes import MODES
+        if int(pixel_hz) != MODES[0].pixel_hz:
+            raise ValueError('AE350 boot video clock must match runtime mode zero')
+        self.hdmi_pll = hdmi_pll = VideoPLL(clk,
+            (self.cd_hdmi_pix,self.cd_hdmi_5x,self.cd_hdmi_reset),input_hz)
+        self.video_clock_reset = Signal()
+        self.comb += hdmi_pll.reset.eq(reset_key | (count != 0) | self.video_clock_reset)
+        self.hdmi_clock_constraints = hdmi_pll.constraints
         self.rtc = Signal()
         phase = Signal(32)
         self.sync.input += phase.eq(phase + round(32768 * 2**32 / input_hz))

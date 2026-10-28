@@ -119,6 +119,7 @@ class IOBindings:
         clk = signals['clk']
         pairs = tuple(signals['data_' + str(i)].pins for i in range(3))
         return dict(port=ref.removeprefix('video_'), clock_pair=clk.pins, data_pairs=pairs,
+            hpd=signals['hpd'].pins if 'hpd' in signals else (),
             pins=clk.pins + tuple(pin for pair in pairs for pin in pair),
             io_standard=clk.io_standard, bank_vccio=clk.bank_vccio or 3.3, drive=clk.drive_ma or 8)
 

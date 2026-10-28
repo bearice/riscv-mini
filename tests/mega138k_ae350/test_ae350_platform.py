@@ -74,11 +74,31 @@ def main():
 
     cpu = Cpu()
     diag = Signal(32, reset=0xA3500300)
-    dut = AE350Fabric(cpu, {0: diag, 4: Signal(32, reset=7)}, io=_io, layout=amap)
+    # A minimal video endpoint keeps this test focused on the interrupt
+    # routing and SYSINFO contract; the real endpoint is covered in RTL tests.
+    class VideoEndpoint:
+        def __init__(self):
+            for name,bits in (('irq',1),('ok',1),('rdata',32),('off',12),
+                              ('write',1),('wdata',32),('commit',1),('selected',1)):
+                setattr(self,name,Signal(bits))
+    video=VideoEndpoint()
+    dut = AE350Fabric(cpu, {0: diag, 4: Signal(32, reset=7)}, io=_io, layout=amap, video=video)
     bus = cpu.ahb_exts
 
     def tb():
         check('address contract', amap.check() == [], amap.check())
+        yield video.irq.eq(1)
+        yield
+        yield
+        check('video IRQ EXT_INT routing', (yield cpu.interrupt)==(1<<amap.EXT_INT_VIDEO))
+        yield video.irq.eq(0)
+        yield
+        yield
+        check('video IRQ level deassertion', (yield cpu.interrupt)==0)
+        err, descriptor, _ = yield from apb(cpu, False, amap.SYSINFO_BASE+0x138)
+        check('video IRQ discovery', not err and descriptor==amap.VIDEO_EP[6] and
+              (descriptor&255)==amap.EXT_INT_VIDEO and (descriptor>>16)&amap.FLAG_IRQ)
+
         err, value, ready = yield from apb(cpu, False, amap.SYSINFO_BASE)
         check('sysinfo id', err == 0 and ready == 1 and value == amap.SYSINFO_ID, hex(value))
         for addr, expected in ((amap.BOOT_CONTRACT_ADDR, 1), (amap.BOOT_CLOCK_ADDR, amap.FABRIC_HZ),

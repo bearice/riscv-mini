@@ -8,12 +8,12 @@
 | DMA | 硬 DMAC 的 DDR/loopback、音频和 SD FIFO 通路；缓存与通道所有权见 [DMA](dma.md) |
 | 板级 I/O | 板级 LED、按键/事件、WS2812、硬 GPIO 输入和 PLIC→CPU IRQ；风扇调速未交付，见 [I/O](io.md) |
 | 音频与麦克风 | PT8211 TX、单路 I2S RX、硬 DMA 与并发诊断；数字链路与声学确认分开，见 [音频](audio.md) |
-| HDMI | DVI 兼容 TMDS、640×480 RGB565、双缓冲及共享 VT 文字终端；见 [视频](video.md) |
+| HDMI | DVI 兼容 TMDS、运行时多分辨率/刷新率、RGB565/RGB888/XRGB8888、双缓冲及共享 VT 文字终端；新增 TX EDID 读取、HPD轮询与可屏蔽事件中断，实板验收范围见 [视频](video.md) |
 | SD / FatFs / BIOS | [原生 SD25](sd.md) 的 4-bit、硬 DMAC 读写、FatFs、文件命令及 ABI v1 服务；[原生 BIOS / GW-BASIC](runtime.md) 已通过专项功能验收，组合稳定性以 [P7 回执](../../../reports/ae350-p7.md) 为准 |
 | 网络 / USB Host / Linux | 未交付；芯片或板上具备相关资源不等于已有驱动和完整运行环境 |
 | 用户 Flash / TWI | 独立四线 QSPI 接 U7，硬 I2C 接 TWI mux；只读识别/访问见 [管理总线](management.md)，不含持久启动或下游设备配置 |
 | XIP / Flash 安装 | U4 官方 0x600000 至器件末尾的固件区 boot XIP 与显式安装操作；容量由 Board JSON 导出，板测/安装状态见 [bootloader](bootloader.md) |
 
-HDMI 的 INDEX8、720p、HDMI 音频、DDC/EDID、CEC 与热插拔恢复不随 RGB565 视频验收自动成立。共享外设核心也不表示继承 20K 地址、缓存规则、频率或二进制兼容性。
+HDMI 的新模式、DDC/EDID 与 HPD 实板验收不随原640×480 RGB565 视频验收自动成立；INDEX8、HDMI 音频、CEC 与自动热插拔恢复未交付。共享外设核心也不表示继承 20K 地址、缓存规则、频率或二进制兼容性。
 
 验收依据见 [内存](../../../reports/ae350-p2.md)、[DMA](../../../reports/ae350-dma.md)、[板级 I/O](../../../reports/performance/ae350-board-io.md)、[音频](../../../reports/ae350-audio.md) 与 [视频](../../../reports/ae350-video.md)。

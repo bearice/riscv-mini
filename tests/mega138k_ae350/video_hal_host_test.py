@@ -8,7 +8,8 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT))
-from gateware.machines.mega138k_ae350.address_map import c_header
+from gateware.machines.mega138k_ae350.address_map import AddressMap
+from gateware.description import resolve_machine
 
 
 class VideoHALTest(unittest.TestCase):
@@ -20,7 +21,7 @@ class VideoHALTest(unittest.TestCase):
         fixture.parent.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='ae350-video-hal-') as directory:
             directory=Path(directory)
-            (directory/'ae350_address_map.h').write_text(c_header())
+            (directory/'ae350_address_map.h').write_text(AddressMap(resolve_machine('mega138k_ae350',ROOT)).c_header())
             executable=directory/'test'
             command=[cc,'-std=c11','-O2','-Wall','-Wextra','-Werror',
                 '-DAE350_VIDEO_HOST_TEST','-DVT_COLS=80','-DVT_ROWS=30',

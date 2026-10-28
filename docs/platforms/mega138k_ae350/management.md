@@ -53,7 +53,7 @@ nix develop --command python scripts/mini.py board bus-suite --build <gateware-r
 
 始终复用原 workspace（本轮为 default）。诊断通过 SRAM/UART 装载，UART 完成标记前不暂停 CPU。验证 JEDEC/SFDP、重复读取 CRC、guard、越界拒绝、EEPROM repeated-START 读取、未命中地址 NACK、八种选择读回及支路地址响应。EEPROM 只发送读指针，不写数据；不配置支路上的时钟芯片或其他设备。
 
-下游地址响应只说明该选择值下有设备 ACK，不代表已枚举/验收该分支所有功能。RX HDMI 的 EDID slave/HPD、TX DDC、时钟配置和摄像头控制仍需各自实现。
+下游地址响应只说明该选择值下有设备 ACK，不代表已枚举/验收该分支所有功能。TX DDC 的 EDID 读取与 HPD 查询现由 [video BSP](video.md#edid-与-hpd) 提供；实板读取、RX EDID slave/HPD、时钟配置和摄像头控制需分别验收。
 
 ## 接口依据与验收
 

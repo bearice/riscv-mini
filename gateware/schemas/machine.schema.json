@@ -1366,6 +1366,16 @@
             1,
             2
           ]
+        },
+        "hdmi_reset_sites": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^R[1-9][0-9]*C[1-9][0-9]*\\[[0-3]\\]\\[[AB]\\]$"
+          }
         }
       },
       "required": [

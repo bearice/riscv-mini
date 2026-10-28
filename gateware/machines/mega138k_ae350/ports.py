@@ -34,6 +34,8 @@ def bind_ports(machine):
         io.differential_port('ddr3_dqs%d' % index, 'ddr3_dqs%d_n' % index,
                              (signals['dqs_' + str(index)],))
     video = io.board.resources[d.video].signals
+    if 'hpd' in video:
+        io.pad('hdmi_hpd', d.video, 'hpd')
     io.differential_port('hdmi_clk_p', 'hdmi_clk_n', (video['clk'],))
     io.differential_port('hdmi_data_p', 'hdmi_data_n', tuple(video['data_' + str(i)] for i in range(3)))
     return io

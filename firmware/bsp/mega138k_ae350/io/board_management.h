@@ -10,6 +10,10 @@ int board_flash_read_single(uint32_t offset,void *buffer,unsigned bytes);
 int board_i2c_init(void);
 int board_i2c_probe(unsigned address);
 int board_i2c_read_register(unsigned address,uint8_t offset,void *buffer,unsigned bytes);
+/* Initialized bus, single owner. E-DDC segment + offset + repeated START.
+ * Reads exactly 128 bytes, selects TX DDC (raw mux 3), restores old mux.
+ * No segment-pointer write for blocks 0/1 (legacy DDC compatibility). */
+int board_hdmi_edid_read_block(unsigned block,void *buffer);
 int board_twi_mux_select(unsigned selection);
 unsigned board_twi_mux_get(void);
 int board_management_stop(void);

@@ -108,6 +108,33 @@ class DDR3UI:
         self.burst          = Signal()
 
 
+class _ReadBufferedFIFO(LiteXModule):
+    """Two read slots isolate raw Gray flags and consumer backpressure.
+
+    A raw pop only depends on registered free space; consumer retirement
+    changes the two-bit count and head, never a wide data-register enable.
+    """
+    def __init__(self, raw):
+        self.submodules.raw = raw
+        self.din, self.we, self.writable = raw.din, raw.we, raw.writable
+        self.dout = Signal(len(raw.dout))
+        self.re = Signal()
+        self.readable = Signal()
+        self.queued = Signal()
+        count=Signal(2)
+        head,tail=Signal(),Signal()
+        head.attr.add(('syn_maxfan',8))
+        words=[Signal(len(raw.dout)),Signal(len(raw.dout))]
+        push,pop=Signal(),Signal()
+        self.comb += [self.readable.eq(count!=0),self.queued.eq((count!=0)|raw.readable),
+            push.eq(raw.readable & (count<2)),pop.eq(self.re & self.readable),
+            raw.re.eq(push),self.dout.eq(Mux(head,words[1],words[0]))]
+        self.sync.readbuffer += [
+            If(push,tail.eq(~tail),If(tail,words[1].eq(raw.dout)).Else(words[0].eq(raw.dout))),
+            If(pop,head.eq(~head)),
+            If(push & ~pop,count.eq(count+1)).Elif(pop & ~push,count.eq(count-1))]
+
+
 class DDR3AHB(LiteXModule):
     """AHB-Lite slave with transaction-scoped 256-bit read width conversion.
 
@@ -165,8 +192,10 @@ class DDR3AHB(LiteXModule):
         fifo_cls = fifo_cls or AsyncFIFO
         # This engine has one transaction in flight. Two slots allow the
         # Gray-pointer round trip without a fictitious eight-entry pipeline.
-        req = ClockDomainsRenamer({"write": "sys", "read": "ddr"})(fifo_cls(REQ_WIDTH, 2))
-        resp = ClockDomainsRenamer({"write": "ddr", "read": "sys"})(fifo_cls(RESP_WIDTH, 2))
+        req_raw = ClockDomainsRenamer({"write": "sys", "read": "ddr"})(fifo_cls(REQ_WIDTH, 2))
+        resp_raw = ClockDomainsRenamer({"write": "ddr", "read": "sys"})(fifo_cls(RESP_WIDTH, 2))
+        req = ClockDomainsRenamer({"readbuffer":"ddr"})(_ReadBufferedFIFO(req_raw))
+        resp = ClockDomainsRenamer({"readbuffer":"sys"})(_ReadBufferedFIFO(resp_raw))
         self.submodules.req = req
         self.submodules.resp = resp
 
@@ -260,6 +289,11 @@ class DDR3AHB(LiteXModule):
             self.sync += [peek_trans.eq(lookahead.trans), peek_addr.eq(lookahead.addr),
                           peek_write.eq(lookahead.write), peek_burst.eq(lookahead.burst),
                           peek_size.eq(lookahead.size), peek_prot.eq(lookahead.prot)]
+        peek_expected = Signal()
+        peek_same_line = Signal()
+        peek_same_buffer = Signal()
+        for predicate in (peek_expected,peek_same_line,peek_same_buffer):
+            predicate.attr.update({('syn_keep',1),('syn_preserve',1)})
         wbuf_data = Signal(256)
         wbuf_strb = Signal(32)
         wbuf_block = Signal(27)
@@ -285,6 +319,16 @@ class DDR3AHB(LiteXModule):
             self.sync += same_control.eq(_equal(
                 Cat(lookahead.burst, lookahead.size, lookahead.prot),
                 Cat(burst_type, burst_size, burst_prot)))
+        if lookahead is None:
+            self.comb += [peek_expected.eq(_equal(peek_addr,expected)),
+                peek_same_line.eq(_equal(peek_rel[5:32],rel[5:32])),
+                peek_same_buffer.eq(_equal(peek_rel[5:32],wbuf_block))]
+        else:
+            live_rel=Signal(32)
+            self.comb += live_rel.eq(lookahead.addr-self.base)
+            self.sync += [peek_expected.eq(_equal(lookahead.addr,expected)),
+                peek_same_line.eq(_equal(live_rel[5:32],rel[5:32])),
+                peek_same_buffer.eq(_equal(live_rel[5:32],wbuf_block))]
         # An aligned beat fits in one data-bus lane of the 32-byte line.
         # Shift only inside that lane; a 32-bit barrel fans out across the buffer.
         lane_bytes = bus.data_width // 8
@@ -302,12 +346,12 @@ class DDR3AHB(LiteXModule):
             beat_lane.eq(rel[lane_shift:lane_shift + (nlanes - 1).bit_length()]),
             same_line.eq(self.wbuf_valid & _equal(wbuf_block, rel[5:32])),
             write_merge.eq(is_write & chain & (peek_trans == 3) & peek_write
-                & _equal(peek_addr, expected) & same_control
-                & _equal(peek_rel[5:32], rel[5:32])),
+                & peek_expected & same_control
+                & peek_same_line),
             write_busy.eq(is_write & chain & (peek_trans == 1)),
             must_flush.eq(self.wbuf_valid
-                & ~((peek_trans == 3) & peek_write & chain & _equal(peek_addr, expected)
-                    & same_control & _equal(peek_rel[5:32], wbuf_block))
+                & ~((peek_trans == 3) & peek_write & chain & peek_expected
+                    & same_control & peek_same_buffer)
                 & ~((peek_trans == 1) & chain)),
             commit_addr.eq(self.base + Cat(Constant(0, 5), wbuf_block)),
         ]
@@ -387,6 +431,10 @@ class DDR3AHB(LiteXModule):
                    | ~ready_i | self.recovering | self.recovery_failed),
         ]
 
+        hit_event,hit_count_event=Signal(),Signal()
+        self.sync += [hit_count_event.eq(hit_event),
+                      If(hit_count_event,self.n_rline_hit.eq(self.n_rline_hit+1))]
+
         def accept(src_trans, src_addr, src_write, src_size, src_burst, src_prot,
                    src_bad, src_in_range, src_aligned, src_sequential, src_next,
                    src_continue, save_data):
@@ -413,7 +461,7 @@ class DDR3AHB(LiteXModule):
                 ),
                 NextValue(rline_hit, read_hit),
                 If(read_hit,
-                    NextValue(self.n_rline_hit, self.n_rline_hit + 1),
+                    hit_event.eq(1),
                 ).Else(
                     NextValue(rline_valid, 0),
                 ),
@@ -920,7 +968,7 @@ class _UIEngine(LiteXModule):
         self.comb += cmd_fire.eq(ui.cmd_en & ui.cmd_ready)
         self.sync += If(cmd_fire, outstanding.eq(outstanding + 1))
         if idle_out is not None:
-            self.comb += idle_out.eq(uistate.ongoing("IDLE") & ~req.readable & (outstanding == 0))
+            self.comb += idle_out.eq(uistate.ongoing("IDLE") & ~getattr(req,"queued",req.readable) & (outstanding == 0))
         uistate.act("SEND",
             ui.cmd_en.eq(Mux(is_write, write_accept, 1)),
             ui.wr_data_mask.eq(~wr_bytes),

@@ -213,6 +213,14 @@
           "bank_vccio": 3.3,
           "drive_ma": 8,
           "pull": "none"
+        },
+        "hpd": {
+          "pins": [
+            "T15"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "pull": "none"
         }
       }
     },

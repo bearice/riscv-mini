@@ -79,3 +79,18 @@ nix develop --command python scripts/mini.py board sd-suite --benchmark --build 
 测速模式在 UART 完成标记之前不打开 CPU 调试接口、不暂停 CPU。保存每轮原始 `rdcycle64`、主机单调时钟 START/END 时间及内容校验，结束后才通过 JTAG 核对完成和停止状态。主机时间包含 START/END 行长度差及 USB 调度带来的毫秒级开销；它用于核对 CPU 周期频率，短窗口提频比较采用经长窗口核对的周期计时。无 FatFs 文件缓存或音视频并发。结果见 [10/25/50 MHz 对照](../../../reports/performance/ae350-sd-frequency.md) 与 [初始读取性能](../../../reports/performance/ae350-sd-read.md)。
 
 显式设置测试频率可传 `--define SD_BENCH_HZ=25000000`。已知区间内容时可传 `--define SD_BENCH_REFERENCE_CRC=<CRC32>`；读取区间可能覆盖文件系统元数据，参考 CRC 须匹配当时介质状态。初始化默认 25 MHz；其他频率须由应用显式选择并单独验收。
+
+### 多模式视频布局下的接收流水线
+
+PHY 数据响应在进入 Core 的64字节 FIFO 前经过 valid/ready 弹性缓冲，
+隔离 timeout、CRC/last 判断至 FIFO 使能的长组合路径。Core 回到 IDLE 时
+同时清空该缓冲，避免超时或复位后留下上一请求的字节、status 或 drop 标记。
+有界 Core 的已完成块计数与原有四位块数 CSR 保持同宽。
+
+`sd_core_buffer_test.py` 覆盖普通/缓冲 FIFO、接收弹性缓冲、两块读取、
+输出停顿、命令 CRC、数据 CRC 与超时状态。此处不替代新产物的实板验收。
+
+本地数据接收器从锁定的 LiteSDCard 版本保留采样、CRC 和停钟逻辑，
+在请求开始锁存长度终点，并按实际字节接受事件寄存下一字节的 last/drop 标记。
+`sd_data_receiver_test.py` 与上游接收器逐周期比较 1/4/8 位、正常/错误 CRC、
+背压、512 字节块和超时，另外核对独立生成的引脚数据与 CRC。

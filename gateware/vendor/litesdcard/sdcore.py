@@ -81,7 +81,7 @@ class SDCore(LiteXModule):
         cmd_crc      = Signal()
 
         data_type    = Signal(2)
-        data_count   = Signal(32)
+        data_count   = Signal(4 if bounded else 32)
         data_read_count = Signal(4 if bounded else 32)
         data_done    = Signal()
         data_error   = Signal()

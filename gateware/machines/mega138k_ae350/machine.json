@@ -60,7 +60,12 @@
   },
   "rtl": {
     "place_option": 2,
-    "route_option": 2
+    "route_option": 2,
+    "hdmi_reset_sites": [
+      "R40C181[1][A]",
+      "R47C181[0][A]",
+      "R36C181[0][B]"
+    ]
   },
   "ip": {
     "cpu": {

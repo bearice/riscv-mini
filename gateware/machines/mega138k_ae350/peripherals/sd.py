@@ -65,10 +65,14 @@ class SDTransport(LiteXModule):
         self.responses = CommandResponsePipe(phy.cmdr)
         self.command_pipe = stream.SyncFIFO(phy.cmdw.sink.description,depth=2,buffered=True)
         self.comb += self.command_pipe.source.connect(phy.cmdw.sink)
+        self.receive_pipe = ResetInserter()(stream.Buffer(
+            phy.datar.source.description,pipe_valid=True,pipe_ready=True))
+        self.comb += phy.datar.source.connect(self.receive_pipe.sink)
         self.core = SDCore(SimpleNamespace(cmdw=SimpleNamespace(sink=self.command_pipe.sink),cmdr=SimpleNamespace(sink=self.responses.sink,source=self.responses.source),dataw=phy.dataw,
-            datar=SimpleNamespace(sink=self.read_requests.sink,source=phy.datar.source)),buffered_data=True)
+            datar=SimpleNamespace(sink=self.read_requests.sink,source=self.receive_pipe.source)),buffered_data=True)
         self.comb += [self.read_requests.reset.eq(self.core.fsm.ongoing('IDLE')),
-                      self.read_buffer.reset.eq(self.core.fsm.ongoing('IDLE'))]
+                      self.read_buffer.reset.eq(self.core.fsm.ongoing('IDLE')),
+                      self.receive_pipe.reset.eq(self.core.fsm.ongoing('IDLE'))]
 
 
 class WordFIFO(LiteXModule):

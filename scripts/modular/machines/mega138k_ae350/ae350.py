@@ -34,8 +34,8 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/peripherals/qspi.py',
     'gateware/machines/mega138k_ae350/sd_cdc.py',
     'gateware/devices/audio/clock.py',
-    'gateware/devices/video/hdmi/ae350_hdmi_phy.v',
-    'gateware/devices/video/hdmi/svo_tmds.v',
+    'gateware/devices/video/hdmi/phy.py',
+    'gateware/devices/video/hdmi/tmds.py',
     'gateware/devices/microphone/__init__.py',
     'gateware/devices/microphone/core.py',
     'gateware/machines/mega138k_ae350/__init__.py',
@@ -47,6 +47,8 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/cpu.py',
     'gateware/machines/mega138k_ae350/ddr3_ahb.py',
     'gateware/machines/mega138k_ae350/video_memory.py',
+    'gateware/machines/mega138k_ae350/video_modes.py',
+    'gateware/machines/mega138k_ae350/video_clock.py',
     'gateware/machines/mega138k_ae350/interconnect.py',
     'gateware/machines/mega138k_ae350/machine.json',
     'gateware/machines/mega138k_ae350/peripherals/board_io.py',
@@ -303,9 +305,9 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
                               dlm=dict(base=ae350_map.DLM_BASE, size=ae350_map.DLM_SIZE)),
                 ddr=False, fabric_peripherals=False, fr_apb_base=0xf8000000))
         else:
-            video_pll = soc.crg.hdmi_pll.compute_config()
-            video_actual = {name: video_pll['vco'] / video_pll['odiv%d' % index]
-                            for index, name in ((0, 'pixel_hz'), (1, 'serializer_hz'))}
+            from gateware.machines.mega138k_ae350.video_modes import MODES, pll_config
+            video_actual = dict(pixel_hz=pll_config(MODES[0].pixel_hz)['actual_hz'])
+            video_actual['serializer_hz'] = video_actual['pixel_hz'] * 5
             write(work / 'memory-map.json', dict(
                 clocks=dict(requested=dict(pixel_hz=machine_config.clocks.video,
                                            serializer_hz=machine_config.clocks.video * 5),

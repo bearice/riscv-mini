@@ -699,6 +699,21 @@
                         }
                       }
                     ]
+                  },
+                  "hpd": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
                   }
                 },
                 "required": [

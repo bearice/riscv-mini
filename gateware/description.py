@@ -286,6 +286,7 @@ class RTLDescription:
     place_option: int
     route_option: int
     timing_probe: bool = False
+    hdmi_reset_sites: Optional[Tuple[str, ...]] = None
     features: Optional[Mapping[str, bool]] = None
     cpu_variant: Optional[str] = None
     cpu_verilog: Optional[str] = None
@@ -358,6 +359,8 @@ def from_data(board, config, artifacts=None):
     devices = {**config['devices'], 'microphones': tuple(config['devices']['microphones'])}
     gpio = {**config['gpio'], **{key: tuple(config['gpio'][key]) for key in ('leds', 'buttons', 'switches')}}
     rtl = dict(config['rtl'])
+    if 'hdmi_reset_sites' in rtl:
+        rtl['hdmi_reset_sites'] = tuple(rtl['hdmi_reset_sites'])
     if 'features' in rtl:
         rtl['features'] = MappingProxyType(rtl['features'])
     if config['cpu']['kind'] == 'soft':

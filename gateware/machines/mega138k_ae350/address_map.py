@@ -1,5 +1,7 @@
 """AE350 register definitions and pure, explicitly instantiated machine layout."""
 from gateware.io import IOBindings
+from dataclasses import asdict
+from gateware.machines.mega138k_ae350.video_modes import MODES, pll_config
 
 ROM_BASE = 2147483648
 
@@ -85,9 +87,9 @@ VIDEO_BASE = 4160946176
 
 VIDEO_ID = 2922710273
 
-VIDEO_CAP = 15
+VIDEO_CAP = 15 | 0x1f0  # RGB888, XRGB8888, runtime modes, HPD, HPD IRQ
 
-VIDEO_REGS = dict(CONTROL=12, STATUS=16, IRQ_STATUS=20, IRQ_ENABLE=24, LAST_ERROR=28, BASE0=32, BASE1=36, STRIDE=40, COMMIT=44, FRAMES=48, UNDERFLOWS=52, ADDRESS_ERROR=56, TIMEOUT_ERROR=60, ACTIVE_BASE=64, PIXEL_HZ=68, GEOMETRY=72, EPOCH=76, FIFO_MIN=80, MAX_WAIT=84, READS=88, CPU_COMMANDS=92, MISSING=96, SEQUENCE=100, ACTIVE_SEQUENCE=104, CANCELLED=108, ERRORS=112, CLEAR_ERRORS=116, REQUEST_OVERFLOW=120)
+VIDEO_REGS = dict(CONTROL=12, STATUS=16, IRQ_STATUS=20, IRQ_ENABLE=24, LAST_ERROR=28, BASE0=32, BASE1=36, STRIDE=40, COMMIT=44, FRAMES=48, UNDERFLOWS=52, ADDRESS_ERROR=56, TIMEOUT_ERROR=60, ACTIVE_BASE=64, PIXEL_HZ=68, GEOMETRY=72, EPOCH=76, FIFO_MIN=80, MAX_WAIT=84, READS=88, CPU_COMMANDS=92, MISSING=96, SEQUENCE=100, ACTIVE_SEQUENCE=104, CANCELLED=108, ERRORS=112, CLEAR_ERRORS=116, REQUEST_OVERFLOW=120, MODE=124, FORMAT=128, MODE_CONFIG=132, MODE_STATUS=136, MODE_COUNT=140, ENABLE=144, HPD=148, MODE_INFO_BASE=256)
 
 AUDIO_DATA = 3892314112
 
@@ -104,6 +106,8 @@ MIC_DMA_SEL = 10
 EXT_INT_AUDIO = 2
 
 EXT_INT_MIC = 3
+
+EXT_INT_VIDEO = 8
 
 AUDIO_ID = 2922710017
 
@@ -227,7 +231,7 @@ AUDIO_EP = (AUDIO_ID, AUDIO_BASE, 4096, AUDIO_DATA, 4, ABI_VERSION, EXT_INT_AUDI
 
 MIC_EP = (MIC_ID, MIC_BASE, 4096, MIC_DATA, 4, ABI_VERSION, EXT_INT_MIC | MIC_REQ << 8 | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16, MIC_DMA_SEL)
 
-VIDEO_EP = (VIDEO_ID, VIDEO_BASE, 4096, 0, 0, ABI_VERSION, FLAG_PRESENT << 16, 0)
+VIDEO_EP = (VIDEO_ID, VIDEO_BASE, 4096, 0, 0, ABI_VERSION, EXT_INT_VIDEO | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
 
 SD_EP = (SD_ID, SD_BASE, 4096, SD_TX_DATA, 8, ABI_VERSION, (FLAG_PRESENT | FLAG_DATA | FLAG_DMA) << 16, SD_TX_DMA_SEL | (SD_RX_DMA_SEL << 8))
 
@@ -300,7 +304,7 @@ class AddressMap:
 
     def interface(self):
         binding = self.io.gpio_binding()
-        return dict(cpu='ae350-rv32imac', image_version=1, load=self.DDR_CODE, management=dict(spi=dict(csr=self.SPI_BASE,backend='fabric-QSPI',register_abi=1,data_width=4,clock_hz=self.FABRIC_HZ//2,size_bytes=self.USER_FLASH_BYTES,flash='user-U7',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.flash].signals.items()}),i2c=dict(csr=self.I2C_BASE,backend='ATCIIC100',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.i2c].signals.items()},mux=dict(pins=list(self.machine.board.resources[self.machine.devices.twi_mux].signals['sel'].pins),gpio_shift=self.TWI_MUX_GPIO_SHIFT,reset=0))), sd=dict(csr=self.SD_BASE, abi=self.ABI_VERSION, transport='litesdcard-native-4bit', clock_domain='mem', default_hz=25000000, clock_hz=self.DATA_HZ, cdc='retained-APB-AHB-REQ-ACK', dma='hard-DMAC-AHB-FIFO', tx=dict(data=self.SD_TX_DATA,request=self.SD_TX_REQ,selector=self.SD_TX_DMA_SEL), rx=dict(data=self.SD_RX_DATA,request=self.SD_RX_REQ,selector=self.SD_RX_DMA_SEL), pins={name:list(sig.pins) for name,sig in self.machine.board.resources[self.machine.devices.sd].signals.items()}), video=dict(csr=self.VIDEO_BASE, width=640, height=480, format='RGB565', pixel_requested_hz=self.machine.clocks.video, serializer_requested_hz=self.machine.clocks.video * 5, pins=self.io.video_binding(), commit='vblank-snapshot', memory='round-robin-single-outstanding-DDR3-UI', abi=self.ABI_VERSION, registers=self.VIDEO_REGS), audio=dict(pins=self.io.audio_binding(), sample_rate=48000, tx=dict(csr=self.AUDIO_BASE, data=self.AUDIO_DATA, irq=self.EXT_INT_AUDIO, request=self.AUDIO_REQ, selector=self.AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=self.ABI_VERSION), rx=dict(csr=self.MIC_BASE, data=self.MIC_DATA, irq=self.EXT_INT_MIC, request=self.MIC_REQ, selector=self.MIC_DMA_SEL, pcm='mono-s24-in-s32-le', abi=self.ABI_VERSION)), memories=self.WINDOWS, reserved=self.SUBRANGES, registers=dict(ddr_status=self.STATUS_ADDR, calib_cycles=self.CALIB_CYCLES_ADDR, reads=self.READ_COUNT_ADDR, writes=self.WRITE_COUNT_ADDR, write_trace=self.WRITE_TRACE_ADDR, read_trace=self.READ_TRACE_ADDR, gpio=self.GPIO_BASE, ws2812=self.WS2812_BASE, board_io=self.IO_BASE, sense=self.SENSE_BASE, plic=self.PLIC_BASE), gpio=dict(leds=list(binding['led_bits']), buttons=list(binding['button_bits']), inject=binding['inject_bit'], irq_mask=binding['irq_mask'], led_active_low=[int(item) for item in binding['led_active_low']], button_active_low=[int(item) for item in binding['button_active_low']]), loader=dict(max_bytes=self.DDR_CODE_MAX, stack_top=self.PAYLOAD_STACK_TOP), uart=dict(base=4029677568, baud=115200), capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1', dmac='exported-unproven', ext_ahb='loopback', fabric_reader='RGB565-scanout', board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core', fan='pwm-percent-25khz', temperature='die-quarter-degree'))
+        return dict(cpu='ae350-rv32imac', image_version=1, load=self.DDR_CODE, management=dict(spi=dict(csr=self.SPI_BASE,backend='fabric-QSPI',register_abi=1,data_width=4,clock_hz=self.FABRIC_HZ//2,size_bytes=self.USER_FLASH_BYTES,flash='user-U7',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.flash].signals.items()}),i2c=dict(csr=self.I2C_BASE,backend='ATCIIC100',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.i2c].signals.items()},mux=dict(pins=list(self.machine.board.resources[self.machine.devices.twi_mux].signals['sel'].pins),gpio_shift=self.TWI_MUX_GPIO_SHIFT,reset=0))), sd=dict(csr=self.SD_BASE, abi=self.ABI_VERSION, transport='litesdcard-native-4bit', clock_domain='mem', default_hz=25000000, clock_hz=self.DATA_HZ, cdc='retained-APB-AHB-REQ-ACK', dma='hard-DMAC-AHB-FIFO', tx=dict(data=self.SD_TX_DATA,request=self.SD_TX_REQ,selector=self.SD_TX_DMA_SEL), rx=dict(data=self.SD_RX_DATA,request=self.SD_RX_REQ,selector=self.SD_RX_DMA_SEL), pins={name:list(sig.pins) for name,sig in self.machine.board.resources[self.machine.devices.sd].signals.items()}), video=dict(csr=self.VIDEO_BASE, width=640, height=480, format='RGB565', formats=['RGB565','RGB888','XRGB8888'], modes=[dict(id=i,**asdict(m),actual_pixel_hz=pll_config(m.pixel_hz)['actual_hz']) for i,m in enumerate(MODES)], runtime_modes=True, irq=self.EXT_INT_VIDEO, hpd_irq='sticky-W1C-connect-disconnect', pixel_requested_hz=self.machine.clocks.video, serializer_requested_hz=self.machine.clocks.video * 5, pins=self.io.video_binding(), commit='vblank-snapshot', memory='round-robin-single-outstanding-DDR3-UI', abi=self.ABI_VERSION, registers=self.VIDEO_REGS), audio=dict(pins=self.io.audio_binding(), sample_rate=48000, tx=dict(csr=self.AUDIO_BASE, data=self.AUDIO_DATA, irq=self.EXT_INT_AUDIO, request=self.AUDIO_REQ, selector=self.AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=self.ABI_VERSION), rx=dict(csr=self.MIC_BASE, data=self.MIC_DATA, irq=self.EXT_INT_MIC, request=self.MIC_REQ, selector=self.MIC_DMA_SEL, pcm='mono-s24-in-s32-le', abi=self.ABI_VERSION)), memories=self.WINDOWS, reserved=self.SUBRANGES, registers=dict(ddr_status=self.STATUS_ADDR, calib_cycles=self.CALIB_CYCLES_ADDR, reads=self.READ_COUNT_ADDR, writes=self.WRITE_COUNT_ADDR, write_trace=self.WRITE_TRACE_ADDR, read_trace=self.READ_TRACE_ADDR, gpio=self.GPIO_BASE, ws2812=self.WS2812_BASE, board_io=self.IO_BASE, sense=self.SENSE_BASE, plic=self.PLIC_BASE), gpio=dict(leds=list(binding['led_bits']), buttons=list(binding['button_bits']), inject=binding['inject_bit'], irq_mask=binding['irq_mask'], led_active_low=[int(item) for item in binding['led_active_low']], button_active_low=[int(item) for item in binding['button_active_low']]), loader=dict(max_bytes=self.DDR_CODE_MAX, stack_top=self.PAYLOAD_STACK_TOP), uart=dict(base=4029677568, baud=115200), capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1', dmac='exported-unproven', ext_ahb='loopback', fabric_reader='RGB565-scanout', board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core', fan='pwm-percent-25khz', temperature='die-quarter-degree'))
 
     def image_abi(self):
         import json

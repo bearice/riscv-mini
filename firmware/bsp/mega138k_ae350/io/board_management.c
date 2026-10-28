@@ -3,7 +3,14 @@
  * Board pin ownership and mux GPIO bits are supplied by the hardware ABI. */
 #include "board_management.h"
 #include "ae350_address_map.h"
+#ifdef AE350_MANAGEMENT_HOST_TEST
+volatile uint32_t *board_management_test_reg(uint32_t address);
+uint32_t board_management_test_cycle(void);
+int board_management_test_phase(unsigned addr,const uint8_t *tx,uint8_t *rx,unsigned bytes,unsigned stop);
+#define W(a) (*board_management_test_reg(a))
+#else
 #define W(a) (*(volatile uint32_t *)(uintptr_t)(a))
+#endif
 #define SPI(o) W(AE350_SPI_BASE+(o))
 #define IIC(o) W(AE350_I2C_BASE+(o))
 #define GPIO(o) W(AE350_GPIO_BASE+(o))
@@ -16,7 +23,13 @@
 #define IIC_W1C 0x3f8u
 static uint32_t flash_bytes;
 static unsigned flash_ready,flash_sr1,flash_sr2,flash_qe_changed,i2c_ready,i2c_claimed,old_mux,old_direction;
-static HOT uint32_t cycles(void) {uint32_t t;__asm__ volatile("rdcycle %0":"=r"(t));return t;}
+static HOT uint32_t cycles(void) {
+#ifdef AE350_MANAGEMENT_HOST_TEST
+    return board_management_test_cycle();
+#else
+    uint32_t t;__asm__ volatile("rdcycle %0":"=r"(t));return t;
+#endif
+}
 static HOT int expired(uint32_t start) {return (uint32_t)(cycles()-start)>AE350_CPU_HZ/4u;}
 static HOT void delay(void) {uint32_t start=cycles();while((uint32_t)(cycles()-start)<AE350_CPU_HZ/1000u) {}}
 static HOT int wait_spi(void) {
@@ -127,6 +140,9 @@ int board_i2c_init(void) {
     return board_twi_mux_select(2);
 }
 static HOT int i2c_phase(unsigned addr,const uint8_t *tx,uint8_t *rx,unsigned bytes,unsigned stop) {
+#ifdef AE350_MANAGEMENT_HOST_TEST
+    return board_management_test_phase(addr,tx,rx,bytes,stop);
+#else
     unsigned reading=rx!=0;
     IIC(0x28)=4;IIC(0x18)=IIC_W1C;IIC(0x1c)=addr;
     IIC(0x24)=(1u<<12)|(1u<<11)|(bytes?(1u<<10):0)|(stop?(1u<<9):0)|(reading?(1u<<8):0)|bytes;
@@ -149,6 +165,7 @@ static HOT int i2c_phase(unsigned addr,const uint8_t *tx,uint8_t *rx,unsigned by
         }
         if(expired(start))return BUS_TIMEOUT;
     }
+#endif
 }
 int board_i2c_probe(unsigned address) {
     if(!i2c_ready)return BUS_DEVICE;
@@ -164,6 +181,21 @@ int board_i2c_read_register(unsigned address,uint8_t offset,void *buffer,unsigne
     if(!rc)rc=i2c_phase(address,0,buffer,bytes,1);
     if(rc) {IIC(0x28)=5;delay();i2c_ready=0;}
     return rc;
+}
+int board_hdmi_edid_read_block(unsigned block,void *buffer) {
+    if(block>255 || !buffer)return BUS_INVALID;
+    if(!i2c_ready)return BUS_DEVICE;
+    unsigned saved=board_twi_mux_get();
+    int rc=board_twi_mux_select(3);
+    if(rc) {board_twi_mux_select(saved);return rc;}
+    uint8_t segment=(uint8_t)(block/2),offset=(uint8_t)((block&1u)*128u);
+    /* Segment write has no STOP: a sink may reset its segment on STOP. */
+    if(segment)rc=i2c_phase(0x30,&segment,0,1,0);
+    if(!rc)rc=i2c_phase(0x50,&offset,0,1,0);
+    if(!rc)rc=i2c_phase(0x50,0,buffer,128,1);
+    if(rc) {IIC(0x28)=5;delay();i2c_ready=0;}
+    int restore=board_twi_mux_select(saved);
+    return rc?rc:restore;
 }
 int board_management_stop(void) {
     int rc=wait_spi();

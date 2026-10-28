@@ -19,12 +19,19 @@ def crc7(data):
  return c*2+1
 assert crc7([0x40,0,0,0,0])==0x95
 
-def check(buffered,corrupt=False):
+def check(buffered,corrupt=False,elastic=False,stream_status=0,blocks=1):
  p=SimpleNamespace(cmdw=SimpleNamespace(sink=stream.Endpoint([('data',8),('cmd_type',2)])),
   cmdr=SimpleNamespace(sink=stream.Endpoint([('cmd_type',2),('data_type',2),('length',8)]),source=stream.Endpoint([('data',8),('status',3)])),
   dataw=SimpleNamespace(sink=stream.Endpoint([('data',8),('last_block',1)]),source=stream.Endpoint([('status',3)])),
   datar=SimpleNamespace(sink=stream.Endpoint([('block_length',10)]),source=stream.Endpoint([('data',8),('status',3),('drop',1)])))
- m=Module();m.submodules.core=core=SDCore(p,buffered_data=buffered)
+ m=Module();receiver=p
+ if elastic:
+  m.submodules.receive_pipe=pipe=ResetInserter()(stream.Buffer(p.datar.source.description,pipe_valid=True,pipe_ready=True))
+  m.comb += p.datar.source.connect(pipe.sink)
+  receiver=SimpleNamespace(**vars(p))
+  receiver.datar=SimpleNamespace(sink=p.datar.sink,source=pipe.source)
+ m.submodules.core=core=SDCore(receiver,buffered_data=buffered)
+ if elastic:m.comb += pipe.reset.eq(core.fsm.ongoing('IDLE'))
  off,data,go=Signal(12),Signal(32),Signal()
  for n,reg in enumerate((core.cmd_argument,core.cmd_command,core.cmd_send,core.cmd_event,core.data_event,core.block_length,core.block_count)):
   bind_csr(m,reg,n*4,go,off,data)
@@ -45,7 +52,7 @@ def check(buffered,corrupt=False):
   yield
  def bench():
   yield [p.cmdw.sink.ready.eq(1),p.datar.sink.ready.eq(1)]
-  yield from write(20,32);yield from write(24,1)
+  yield from write(20,32);yield from write(24,blocks)
   yield from write(4,(17<<8)|1|4|32);yield from write(8,1)
   for _ in range(100):
    yield
@@ -57,8 +64,15 @@ def check(buffered,corrupt=False):
    for _ in range(20):yield
    assert (yield core.cmd_event.status)&10==10
    return
-  values=[(i*7+3)&255 for i in range(32)]
-  yield from send(p.datar.source,values)
+  yield p.datar.source.status.eq(stream_status)
+  if stream_status==1:
+   yield from send(p.datar.source,[0])
+   for _ in range(30):yield
+   assert (yield core.data_event.status)&4
+   assert not (yield core.source.valid)
+   return
+  values=[(i*7+3)&255 for i in range(32*blocks)]
+  for block in range(blocks):yield from send(p.datar.source,values[block*32:(block+1)*32])
   for value in values:
    yield core.source.ready.eq(0)
    for _ in range(100):
@@ -75,7 +89,7 @@ def check(buffered,corrupt=False):
    yield
   for _ in range(10):yield
   assert (yield core.cmd_event.status)&15==1
-  assert (yield core.data_event.status)&15==1
+  assert (yield core.data_event.status)&15==(9 if stream_status==5 else 1)
  fragment=m.get_fragment()
  for memory in fragment.specials:
   if isinstance(memory,Memory):
@@ -83,5 +97,10 @@ def check(buffered,corrupt=False):
     if port.dat_r is None:port.dat_r=Signal(memory.width)
  run_simulation(fragment,bench())
 for buffered in (False,True):
- check(buffered);check(buffered,True)
+ for elastic in (False,True):
+  check(buffered,elastic=elastic)
+  check(buffered,True,elastic=elastic)
+  check(buffered,elastic=elastic,stream_status=5)
+  check(buffered,elastic=elastic,stream_status=1)
+  check(buffered,elastic=elastic,blocks=2)
 print('PASS SDCore buffered/default FIFO modes preserve read bytes, stalls and command CRC errors')

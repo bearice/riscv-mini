@@ -35,10 +35,43 @@ enum {
     VIDEO_CANCELLED=AE350_VIDEO_CANCELLED,
     VIDEO_ERRORS=AE350_VIDEO_ERRORS,
     VIDEO_CLEAR_ERRORS=AE350_VIDEO_CLEAR_ERRORS,
+    VIDEO_ENABLE=AE350_VIDEO_ENABLE,
+    VIDEO_HPD=AE350_VIDEO_HPD,
+    VIDEO_MODE=AE350_VIDEO_MODE,
+    VIDEO_FORMAT=AE350_VIDEO_FORMAT,
+    VIDEO_MODE_CONFIG=AE350_VIDEO_MODE_CONFIG,
+    VIDEO_MODE_STATUS=AE350_VIDEO_MODE_STATUS,
+    VIDEO_MODE_COUNT=AE350_VIDEO_MODE_COUNT,
+    VIDEO_MODE_INFO_BASE=AE350_VIDEO_MODE_INFO_BASE,
     VIDEO_REQUEST_OVERFLOW=AE350_VIDEO_REQUEST_OVERFLOW
 };
 
+enum ae350_video_format {
+    AE350_VIDEO_RGB565=0, AE350_VIDEO_RGB888=1, AE350_VIDEO_XRGB8888=2
+};
+/* HPD is synchronized and filtered for 2ms. DEVICE on older gateware. */
+int ae350_video_get_hpd(unsigned *connected);
+/* RGB888 and XRGB8888 store B,G,R[,X] in increasing byte addresses.
+ * X is ignored. RGB565 uses little-endian R[15:11],G[10:5],B[4:0]. */
+struct ae350_video_mode {
+    uint32_t width,height,pixel_hz,nominal_pixel_hz,refresh_millihz;
+    uint32_t h_total,v_total,h_front,h_sync,h_back,v_front,v_sync,v_back;
+    uint32_t h_positive,v_positive;
+};
+unsigned ae350_video_mode_count(void);
+int ae350_video_get_mode(unsigned mode,struct ae350_video_mode *info);
+/* Stops/drains scanout, changes PLL/timing/format and invalidates software
+ * buffer configuration. Call init_buffers() and present() afterwards.
+ * A timeout keeps ownership conservative and requires recovery. */
+int ae350_video_set_mode(unsigned mode,enum ae350_video_format format);
+/* Disabling drains scanout first. Enabling is permitted only while stopped
+ * and mode-ready; present() enables output automatically before starting. */
+int ae350_video_enable(unsigned enable);
+int ae350_video_init_buffers(void *first,void *second,uint32_t stride);
+void *ae350_video_frame_data(unsigned slot);
+
 struct ae350_video_status {
+    uint32_t mode,format,mode_busy,output_enabled;
     uint32_t width,height,stride,pixel_hz,enabled,active,pending,stopped,active_base;
     uint32_t frames,underflows,missing,address_error,timeout_error,errors;
     uint32_t fifo_min,max_wait,reads,cpu_commands,request_overflow;
@@ -53,3 +86,11 @@ int ae350_video_present(unsigned slot);
 int ae350_video_stop(void);
 uint16_t *ae350_video_frame(unsigned slot);
 int ae350_video_status(struct ae350_video_status *status);
+
+/* HPD event bits, independent of the current connection level. Events latch
+ * while masked. W1C acknowledges only bits observed by the caller. */
+enum { AE350_VIDEO_HPD_CONNECTED=1, AE350_VIDEO_HPD_DISCONNECTED=2,
+       AE350_VIDEO_HPD_EVENTS=3 };
+int ae350_video_hpd_events(unsigned *events);
+int ae350_video_hpd_irq_enable(unsigned mask);
+int ae350_video_hpd_ack(unsigned events);
