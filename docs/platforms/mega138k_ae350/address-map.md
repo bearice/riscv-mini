@@ -46,12 +46,13 @@ ROM 保持0x80000000是本项目的启动选择，并非硬核复位向量不可
 | 0xf8020000 | 64KiB | mic RX：采样格式、FIFO状态、溢出、DMA握手 |
 | 0xf8030000 | 64KiB | HDMI：模式、像素格式、framebuffer、stride、换帧和欠载 |
 | 0xf8040000 | 64KiB | SD：软控制器CSR、数据/DMA状态 |
-| 0xf8050000 | 64KiB | Ethernet：MAC/MDIO/队列与错误；第三方IP私有寄存器在本槽内定义 |
+| 0xf8050000 | 64KiB | 用户 Flash U7：fabric QSPI 控制器 |
 | 0xf8060000 | 64KiB | USB：host/设备控制、队列与错误，按实际后端定义 |
 | 0xf8070000 | 64KiB | WS2812 控制器，前 4KiB；数字时序通过，物理观察单独留证 |
 | 0xf8080000 | 64KiB | 板级 LED 输出、按键事件与诊断边沿，前 4KiB；按键电平接硬 GPIO 输入 |
 | 0xf8090000 | 64KiB | Flash/XIP管理：能力、忙状态、地址模式、写擦命令及错误；不作为程序取指地址 |
-| 0xf80a0000–0xfbffffff | 其余空间 | 后续外设保留，不映射为RAM或重复别名 |
+| 0xf80a0000 | 4KiB | Ethernet：PHY 管理、MAC 状态与 DDR DMA 描述符环；实板 RX CRC 尚未解决 |
+| 0xf80a1000–0xfbffffff | 其余空间 | 后续外设保留 |
 
 HDMI CSR控制帧地址，但像素流由fabric专用DDR reader读取；它不要求像素数据每帧经过APB，也不默认长期占用硬DMAC通道。LCD相关槽不建立。
 

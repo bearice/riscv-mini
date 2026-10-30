@@ -36,7 +36,7 @@ from gateware.machines.mega138k_ae350.ports import bind_ports
 from gateware.machines.mega138k_ae350.address_map import AddressMap
 from gateware.machines.mega138k_ae350.clock import ClockReset, PLLStatusSynchronizer
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
-from gateware.machines.mega138k_ae350.video_memory import VideoMemoryArbiter
+from gateware.machines.mega138k_ae350.video_memory import DDRMemoryArbiter
 from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
 from gateware.devices.video.hdmi.phy import GowinHDMIPHY
 from gateware.machines.mega138k_ae350.peripherals.sd import FabricSD
@@ -244,11 +244,13 @@ class DDRSoC(LiteXModule):
         err_bus = AHBInterface(data_width=64, address_width=32)
 
         # The hard macro resolves ILM/DLM internally. This port owns only DDR.
+        end_memory_burst=Signal()
+        self.sync.mem += end_memory_burst.eq(self.cpu.ahb_ram.readyout & (self.cpu.ahb_ram.trans==0))
         cpu_ui = DDR3UI()
         self.ddr_port = ClockDomainsRenamer({'sys': 'mem'})(DDR3AHB(ddr_bus, cpu_ui,
                                 ready_i=calib_mem,
                                 accepted_i=ddr_bus.trans[1],
-                                end_burst_i=self.cpu.ahb_ram.readyout & (self.cpu.ahb_ram.trans == 0),
+                                end_burst_i=end_memory_burst,
                                 lookahead=self.cpu.ahb_ram,
                                 base=ae350_map.DDR_BASE, size=ae350_map.DDR_SIZE))
         self.err = ClockDomainsRenamer({'sys': 'mem'})(ErrorSlave(err_bus))
@@ -258,7 +260,7 @@ class DDRSoC(LiteXModule):
         self.ic = ClockDomainsRenamer({'sys': 'mem'})(MemInterconnect(self.cpu.ahb_ram, [
             (ae350_map.DDR_BASE, ae350_map.DDR_SIZE, ddr_bus),
             (0, 1 << 32, err_bus),
-        ], registered=True))
+        ], registered=True, registered_response=True))
         self.submodules += self.ddr_port, self.err, self.ic
 
         # Status is on the platform APB extension, not in boot memory.
@@ -308,10 +310,27 @@ class DDRSoC(LiteXModule):
         self.comb += video.hpd_input.eq(platform.request('hdmi_hpd'))
         self.sd_native = ClockDomainsRenamer('mem')(FabricSD(platform.request('sdcard'),platform.device,ae350_map.DATA_HZ,ae350_map.DDR_SIZE))
         self.sd = SDClockCrossing(self.sd_native)
+        from gateware.machines.mega138k_ae350.peripherals.usb import SoftUSBHost, USBRegisterBridge, USBClock
+        self.usb_clock = USBClock(platform, platform.lookup_request('clk50'), ResetSignal('sys'), config.clocks.usb)
+        self.usb = SoftUSBHost(platform, clock_hz=config.clocks.usb)
+        self.usb_registers = USBRegisterBridge(self.usb.bus, config.clocks.usb)
+        self.specials += MultiReg(Cat(self.usb.rx_dp, self.usb.rx_dn, self.usb.tx_oe, self.usb_clock.locked),
+                                  self.usb_registers.raw_status, 'sys')
+        usb_pads = platform.request('soft_usb')
+        for name, output in (('tx_dp', self.usb.tx_dp), ('tx_dn', self.usb.tx_dn)):
+            self.specials += Tristate(getattr(usb_pads, name), output, self.usb.tx_oe)
+        for name in ('pullup', 'term_dp', 'term_dn'):
+            self.specials += Tristate(getattr(usb_pads, name), 0, 0)
+        for name, target in (('rx_dp', self.usb.rx_dp), ('rx_dn', self.usb.rx_dn)):
+            pair = getattr(usb_pads, name)
+            self.specials += Instance('TLVDS_IBUF', i_I=pair[0], i_IB=pair[1], o_O=target)
+        from gateware.machines.mega138k_ae350.peripherals.ethernet_dma import EthernetDMA
+        self.ethernet_dma = EthernetDMA()
         self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
-                               flash=self.cpu.flash_apb)
+                               flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
-            VideoMemoryArbiter(self.ddr.ui, cpu_ui, video.ui))
+            DDRMemoryArbiter(self.ddr.ui,cpu_ui,video.ui,self.ethernet_dma.memory.ui))
+        self.comb += arbiter.network_pending.eq(self.ethernet_dma.memory.pending)
         self.comb += [self.crg.hdmi_pll.mode.eq(video.mode),
                       self.crg.video_clock_reset.eq(video.clock_reset),
                       video.clock_locked.eq(self.crg.hdmi_pll.locked),
@@ -366,6 +385,27 @@ class DDRSoC(LiteXModule):
         platform.add_verilog_include_path(str(soc_sources_dir))
         self.cpu.connect_jtag(platform.request('cpu_jtag'))
         self.cpu.connect_management(platform.request('system_i2c'))
+        eth_pads = platform.request('ethernet_management')
+        eth = self.ext.ethernet_management
+        self.comb += [eth_pads.reset_n.eq(eth.reset_n),eth_pads.mdc.eq(eth.mdc),
+                      eth_pads.refclk.eq(eth.refclk)]
+        self.specials += Tristate(eth_pads.mdio, 0, eth.mdio_low, eth.mdio_i)
+        from gateware.machines.mega138k_ae350.peripherals.ethernet_rgmii import EthernetRGMII, add_mac_timing_buffers
+        from liteeth.mac.core import LiteEthMACCore
+        self.ethernet_phy = EthernetRGMII(platform,eth_pads,platform.lookup_request('clk50'),
+                                         eth.reset_n,config.clocks.ethernet_tx,config.rtl.ethernet_rx_delay_ps)
+        self.ethernet_mac = ResetInserter(['sys'])(LiteEthMACCore(self.ethernet_phy,32,with_sys_datapath=True,with_store_and_forward=True,tx_cdc_depth=8))
+        self.comb += self.ethernet_mac.reset_sys.eq(~eth.reset_n)
+        add_mac_timing_buffers(self.ethernet_mac,platform)
+        self.comb += [self.ethernet_dma.sink.connect(self.ethernet_mac.sink),
+            self.ethernet_mac.source.connect(self.ethernet_dma.source),
+            self.ethernet_dma.rx_clock_events.eq(self.ethernet_phy.rx_clock_events),
+            self.ethernet_dma.phy_rx_frames.eq(self.ethernet_phy.phy_rx_frames),
+            self.ethernet_dma.phy_tx_frames.eq(self.ethernet_phy.phy_tx_frames),
+            self.ethernet_dma.mac_crc_errors.eq(self.ethernet_mac.rx_datapath.crc_errors.status),
+            self.ethernet_dma.mac_rx_drops.eq(self.ethernet_mac.rx_datapath.drops.status),
+            self.ethernet_dma.mac_preamble_errors.eq(self.ethernet_mac.rx_datapath.preamble_errors.status)]
+        self.specials += MultiReg(Cat(self.ethernet_phy.locked,eth.reset_n),self.ethernet_dma.phy_status,'sys')
         user_flash = platform.request('user_flash')
         self.comb += [user_flash.cs_n.eq(self.ext.qspi.cs_n), user_flash.clk.eq(self.ext.qspi.clk)]
         for bit, name in enumerate(('mosi', 'miso', 'wp_n', 'hold_n')):
@@ -385,12 +425,14 @@ class DDRSoC(LiteXModule):
         def build_timing_constraints(vns):
             name, ext = _orig_sdc(vns)
             extra = [
+                'create_generated_clock -name eth_ref_clk -source [get_ports {clk50}] -divide_by 2 [get_ports {ethernet_management_refclk}]',
                 # PLL LOCK is asynchronous even when its initialization FSM
                 # uses clk50. Only the metastability catcher is exempt; the
                 # second stage and every status consumer remain timed.
                 'set_false_path -to [get_pins {%s}]' % self.lock_status.first_stage_pin,
                 *self.crg.pll.extra_constraints,
                 *self.crg.hdmi_clock_constraints,
+                *self.ethernet_phy.constraints,
                 # SDK example/Flash defines the slave/input/pad clocks
                 # separately. Bound them by the fastest source (AHB/APB sys)
                 # rather than reusing its example's 50-MHz period. Only these
@@ -409,7 +451,8 @@ class DDRSoC(LiteXModule):
                 'create_clock -name ddr_clk_ref -period 20 -waveform {0 10} [get_nets {ddr3_clk_ref}]',
                 'set_clock_groups -asynchronous '
                 '-group [get_clocks {sys_clk}] -group [get_clocks {cpu_clk}] '
-                '-group [get_clocks {mem_clk}] ' +
+                '-group [get_clocks {mem_clk}] -group [get_clocks {usb_clk}] '
+                '-group [get_clocks {eth_tx_clk}] -group [get_clocks {eth_rx_clk}] ' +
                 ('-group [get_clocks {%s}] ' % self.crg.hdmi_pll.clock_names) +
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '
                 '-group [get_clocks {ddr_clk_ref}]',

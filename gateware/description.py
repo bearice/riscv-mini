@@ -76,7 +76,7 @@ def validate_pair(board, config):
         for name, signal in resource['signals'].items():
             standard = signal['io_standard']
             nominal = {'LVCMOS15': 1.5, 'SSTL15': 1.5, 'SSTL15D': 1.5,
-                       'LVCMOS18': 1.8, 'LVCMOS25': 2.5, 'LVCMOS33': 3.3, 'LVCMOS33D': 3.3}[standard]
+                       'LVDS25': 3.3, 'LVCMOS18': 1.8, 'LVCMOS25': 2.5, 'LVCMOS33': 3.3, 'LVCMOS33D': 3.3}[standard]
             if 'bank_vccio' in signal and signal['bank_vccio'] != nominal:
                 raise ValueError('I/O standard and bank voltage disagree: ' + ref + '.' + name)
             if 'active_low' in signal and not (resource['kind'] in ('reset', 'led', 'button', 'switch') or
@@ -235,6 +235,8 @@ class ClockDescription:
     video: int
     cpu: Optional[int] = None
     data_memory_bus: Optional[int] = None
+    usb: Optional[int] = None
+    ethernet_tx: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -287,6 +289,7 @@ class RTLDescription:
     route_option: int
     timing_probe: bool = False
     hdmi_reset_sites: Optional[Tuple[str, ...]] = None
+    ethernet_rx_delay_ps: int = 0
     features: Optional[Mapping[str, bool]] = None
     cpu_variant: Optional[str] = None
     cpu_verilog: Optional[str] = None

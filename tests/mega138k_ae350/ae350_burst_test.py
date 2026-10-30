@@ -21,14 +21,16 @@ class RegisteredDUT(Module):
         ddr, error = AHBInterface(data_width=64), AHBInterface(data_width=64)
         self.ui = DDR3UI()
         self.ready = Signal(reset=1)
+        end_burst=Signal()
+        self.sync += end_burst.eq(self.bus.readyout & (self.bus.trans==0))
         self.submodules.ddr = DDR3AHB(ddr, self.ui, self.ready, base=0x2000,
             response_timeout=response_timeout, ui_timeout=ui_timeout,
             accepted_i=ddr.trans[1],
-            end_burst_i=self.bus.readyout & (self.bus.trans == 0),
+            end_burst_i=end_burst,
             lookahead=self.bus)
         self.submodules.error = ErrorSlave(error)
         self.submodules.ic = MemInterconnect(self.bus, [(0x2000, 1 << 30, ddr),
-                                                       (0, 1 << 32, error)], registered=True)
+                                                       (0, 1 << 32, error)], registered=True, registered_response=True)
         self.submodules.mon = ClockDomainsRenamer({'sys': 'ddr'})(Mon(self.ui))
 
 
@@ -966,6 +968,30 @@ class ReadLineTests(unittest.TestCase):
             self.assertEqual((yield dut.ddr.n_rline_hit), 0)
 
         run_dut(dut, process, model, False)
+
+
+class RegisteredResponseTests(unittest.TestCase):
+    def test_error_keeps_two_ahb_response_phases(self):
+        top=Module();master=AHBInterface(data_width=64);slave=AHBInterface(data_width=64)
+        top.submodules.error=ErrorSlave(slave)
+        top.submodules.ic=MemInterconnect(master,[(0,1<<32,slave)],
+                                         registered=True,registered_response=True)
+        def process():
+            yield master.addr.eq(0x1000);yield master.trans.eq(2)
+            yield
+            yield master.trans.eq(0)
+            phases=[];waited=False
+            for _ in range(30):
+                ready=(yield master.readyout);error=(yield master.resp)
+                if not ready:waited=True
+                if error:phases.append((error,ready))
+                if waited and ready:break
+                yield
+            else:self.fail('Registered ERROR response stalled')
+            self.assertEqual(phases,[(1,0),(1,1)])
+            yield
+            self.assertEqual((yield master.resp),0)
+        run_simulation(top,process())
 
 
 if __name__ == '__main__':

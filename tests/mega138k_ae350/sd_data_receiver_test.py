@@ -32,13 +32,13 @@ def pad_words(data,lanes,corrupt):
 
 
 class ReceiverTest(unittest.TestCase):
-    def check_case(self,speed,size,corrupt=False,timeout_case=False):
+    def check_case(self,speed,size,corrupt=False,timeout_case=False,timeout_override=None):
         print('RX case',speed,size,corrupt,timeout_case,flush=True)
         m=Module();m.clock_domains.cd_sys=ClockDomain('sys')
         mode=Signal(2,reset=speed);length=Signal(10,reset=size)
         valid,ready,pad_valid=Signal(),Signal(),Signal()
         pad_data=Signal(8,reset=255)
-        timeout=64 if timeout_case else 30000
+        timeout=(64 if timeout_case else 30000) if timeout_override is None else timeout_override
         receivers=[]
         for name,cls in (('local',SDPHYDATAR),('reference',Reference)):
             receiver=cls(_sdpads_layout(8),mode,100000000,.01)
@@ -81,7 +81,9 @@ class ReceiverTest(unittest.TestCase):
             yield m.cd_sys.rst.eq(1)
             for _ in range(6):yield from step(check=False)
             yield [m.cd_sys.rst.eq(0),valid.eq(1)]
-            for _ in range(6):yield from step()
+            for _ in range(6):
+                yield from step()
+                if timeout_case and (yield local.sink.ready):yield valid.eq(0)
             if not timeout_case:
                 for word in pad_words(data,(1,4,8)[speed],corrupt):
                     # Stop the card clock while a completed byte waits for
@@ -107,6 +109,10 @@ class ReceiverTest(unittest.TestCase):
                         details=[(sig.backtrace,self.evaluator.signal_values[sig]) for sig in modified]
                         raise AssertionError(('comb loop',cycles[0],details))
         with BoundedSimulator(m,bench(),clocks={'sys':10}) as sim:sim.run()
+
+    def test_timeout_zero_and_one_equivalence(self):
+        for value in (0,1,2):
+            self.check_case(1,8,timeout_case=True,timeout_override=value)
 
     def test_pins_crc_stalls_and_timeout(self):
         # Migen's native evaluator settles whole combinational transactions;

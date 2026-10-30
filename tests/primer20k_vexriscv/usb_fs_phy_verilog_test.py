@@ -26,7 +26,7 @@ def main():
                             str(ROOT / 'tests/primer20k_vexriscv/usb_fs_phy_tb.v'),
                             str(ROOT / 'gateware/vendor/usb_fs_phy/usb_fs_phy.v')],
                            env=env, check=True)
-            result = subprocess.run([str(compiler.with_name('vvp.exe')), str(executable)],
+            result = subprocess.run([str(compiler.with_name('vvp' + compiler.suffix)), str(executable)],
                                     env=env, capture_output=True, text=True)
             (output / f'{name}.log').write_text(result.stdout + result.stderr, encoding='utf-8')
             print(result.stdout, end='')

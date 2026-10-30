@@ -22,7 +22,7 @@ from litex.gen import LiteXModule
 
 
 class MemInterconnect(LiteXModule):
-    def __init__(self, master, slaves, registered=False, require_sel=False):
+    def __init__(self, master, slaves, registered=False, require_sel=False, registered_response=False):
         """slaves: list of (base, size, bus) with disjoint windows."""
         self.master = master
         self.slaves = slaves
@@ -63,8 +63,16 @@ class MemInterconnect(LiteXModule):
             # The data phase always belongs to the slave captured at acceptance;
             # the live address only affects the *next* acceptance.
             self.sel.eq(sel_lat),
-            master.readyout.eq(Mux(state, ready & (dispatched if registered else 1), 1)),
         ]
+        if registered_response:
+            assert registered, 'Registered response requires an owned address stage'
+            response_ready=Signal(reset=1)
+            response_error=Signal()
+            response_data=Signal(master.data_width)
+            self.comb += [master.readyout.eq(response_ready),master.resp.eq(response_error),
+                          master.rdata.eq(response_data)]
+        else:
+            self.comb += master.readyout.eq(Mux(state,ready & (dispatched if registered else 1),1))
         accept_now = Signal()
         selected = master.sel if require_sel else 1
         self.comb += accept_now.eq(master.trans[1] & reduce(or_, [sel_hit[i] for i in range(nslaves)])
@@ -72,12 +80,19 @@ class MemInterconnect(LiteXModule):
         # ready of the selected slave, for the data phase
         self.comb += ready.eq(reduce(or_, [Mux(sel_lat[i], slaves[i][2].readyout, 0)
                                           for i in range(nslaves)]))
-        self.comb += [
-            master.rdata.eq(reduce(or_, [Mux(sel_lat[i], slaves[i][2].rdata, 0)
-                                         for i in range(nslaves)])),
-            master.resp.eq(reduce(or_, [Mux(sel_lat[i], slaves[i][2].resp, 0)
-                                        for i in range(nslaves)])),
-        ]
+        selected_data=reduce(or_, [Mux(sel_lat[i],slaves[i][2].rdata,0) for i in range(nslaves)])
+        selected_error=reduce(or_, [Mux(sel_lat[i],slaves[i][2].resp,0) for i in range(nslaves)])
+        if registered_response:
+            # The hard macro sees only flop outputs, not a decode/ready mux.
+            # Retain the first ERROR cycle with HREADY low, then capture the
+            # final response. No new slave is dispatched until CPU acceptance.
+            self.sync += If(accept_now,response_ready.eq(0),response_error.eq(0)).Elif(
+                state & dispatched & ~response_ready,
+                response_error.eq(selected_error),
+                If(ready,response_data.eq(selected_data),response_ready.eq(1))
+            ).Elif(state & response_ready,response_error.eq(0))
+        else:
+            self.comb += [master.rdata.eq(selected_data),master.resp.eq(selected_error)]
         # Slave-side wiring: the accepted address is held for the whole data
         # phase; during an acceptance cycle the live address is presented.
         slave_addr = Signal(32)

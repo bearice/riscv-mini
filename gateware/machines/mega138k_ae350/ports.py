@@ -38,4 +38,6 @@ def bind_ports(machine):
         io.pad('hdmi_hpd', d.video, 'hpd')
     io.differential_port('hdmi_clk_p', 'hdmi_clk_n', (video['clk'],))
     io.differential_port('hdmi_data_p', 'hdmi_data_n', tuple(video['data_' + str(i)] for i in range(3)))
+    io.resource('soft_usb', 'soft_usb')
+    io.resource('ethernet_management', 'ethernet_management')
     return io

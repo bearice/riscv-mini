@@ -32,6 +32,17 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/peripherals/sd.py',
     'gateware/machines/mega138k_ae350/peripherals/sd_phy.py',
     'gateware/machines/mega138k_ae350/peripherals/qspi.py',
+    'gateware/machines/mega138k_ae350/peripherals/usb.py',
+    'gateware/machines/mega138k_ae350/peripherals/ethernet.py',
+    'gateware/machines/mega138k_ae350/peripherals/ethernet_dma.py',
+    'gateware/machines/mega138k_ae350/peripherals/ethernet_rgmii.py',
+    'gateware/vendor/usb_fs_phy/usb_fs_phy.v',
+    'gateware/vendor/usb_host/src_v/usbh_host.v',
+    'gateware/vendor/usb_host/src_v/usbh_host_defs.v',
+    'gateware/vendor/usb_host/src_v/usbh_sie.v',
+    'gateware/vendor/usb_host/src_v/usbh_fifo.v',
+    'gateware/vendor/usb_host/src_v/usbh_crc5.v',
+    'gateware/vendor/usb_host/src_v/usbh_crc16.v',
     'gateware/machines/mega138k_ae350/sd_cdc.py',
     'gateware/devices/audio/clock.py',
     'gateware/devices/video/hdmi/phy.py',
@@ -78,6 +89,7 @@ AE350_SCRIPTS = (
     'scripts/modular/machines/mega138k_ae350/__init__.py',
     'scripts/modular/machines/mega138k_ae350/ae350.py',
     'scripts/modular/machines/mega138k_ae350/bootloader.py',
+    'scripts/modular/machines/mega138k_ae350/ethernet_timing.py',
     'scripts/modular/machines/mega138k_ae350/ddr_inputs.py',
     'scripts/modular/machines/mega138k_ae350/description.py',
 )
@@ -113,7 +125,7 @@ def _inputs(store, hardware=False, profile='ddr'):
     if hardware:
         # Preserve installed Python implementation bytes, including the hard
         # macro adapter and bus/PLL logic; package version alone is insufficient.
-        for name in ('migen', 'litex', 'litesdcard'):
+        for name in ('migen', 'litex', 'litesdcard', 'liteeth'):
             base = Path(importlib.import_module(name).__file__).parent
             for path in sorted(base.rglob('*.py')):
                 files['inputs/python/' + name + '/' + path.relative_to(base).as_posix()] = path
@@ -157,6 +169,12 @@ def timing_report(work):
     counts['min_pulse_width_slack_ns'] = min(pulse_slacks)
     if min(pulse_slacks) < 0:
         raise ValueError('AE350 minimum pulse width failed: ' + str(counts))
+    contract=read(work / 'memory-map.json').get('ethernet',{}).get('packets',{}) if (work / 'memory-map.json').is_file() else {}
+    if contract or 'eth_tx_clk' in raw:
+        if contract.get('tx_timing')!='routed-ddr-skew-v1':
+            raise ValueError('Missing mandatory RGMII TX skew contract')
+        from scripts.modular.machines.mega138k_ae350.ethernet_timing import qualify_tx
+        counts['rgmii_tx']=qualify_tx(raw)
     return counts
 
 
@@ -201,10 +219,10 @@ def implementation_flow(text, seed):
                 if 'WARN' in line and ('matching' in line.lower() or 'incremental' in line.lower())]
     if warnings:
         flow['warnings'] = warnings
-    match = re.search(r'Placement matching\(([\d.]+)\).*?threshold value\(([\d.]+)\)', text)
+    match = re.search(r'Placement(?: and routing)? matching\(([\d.]+)%?\).*?threshold value\(([\d.]+)%?\)', text)
     if match:
         flow.update(placement_match_percent=float(match[1]), minimum_match_percent=float(match[2]))
-    if 'the default placement flow will be run' in text:
+    if re.search(r'the default placement(?: and routing)? flow will be run', text):
         flow.update(actual='full', fallback='Gowin rejected incremental placement matching')
     return flow
 
@@ -309,6 +327,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
             video_actual = dict(pixel_hz=pll_config(MODES[0].pixel_hz)['actual_hz'])
             video_actual['serializer_hz'] = video_actual['pixel_hz'] * 5
             write(work / 'memory-map.json', dict(
+                ethernet=ae350_map.interface().get('ethernet_management',{}),
                 clocks=dict(requested=dict(pixel_hz=machine_config.clocks.video,
                                            serializer_hz=machine_config.clocks.video * 5),
                             actual=video_actual),

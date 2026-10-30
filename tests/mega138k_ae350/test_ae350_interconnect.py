@@ -46,7 +46,7 @@ class IndependentCounter(LiteXModule):
 
 
 class DUT(LiteXModule):
-    def __init__(self):
+    def __init__(self, registered=False):
         self.master = AHBInterface(data_width=64, address_width=32)
         self.sram_bus = AHBInterface(data_width=64, address_width=32)
         self.ddr_bus = AHBInterface(data_width=64, address_width=32)
@@ -62,7 +62,7 @@ class DUT(LiteXModule):
             (0x0, 8192, self.sram_bus),
             (0x2000, 1 << 30, self.ddr_bus),
             (0, 1 << 32, self.err_bus),
-        ])
+        ],registered=registered,registered_response=registered)
         self.mon = ClockDomainsRenamer({"sys": "ddr"})(Mon(self.ui))
         self.seen = IndependentCounter(self.master, self.sram_bus, self.ddr_bus, self.err_bus)
 
@@ -116,8 +116,8 @@ def sram_model(bus, mem):
         yield
 
 
-def main():
-    dut = DUT()
+def main(registered=False):
+    dut = DUT(registered)
     model = Model(dut.ui, dut.mon)
     fails = []
 
@@ -221,4 +221,6 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    result=main(False)
+    result |= main(True)
+    sys.exit(result)

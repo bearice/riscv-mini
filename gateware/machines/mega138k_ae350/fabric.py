@@ -35,6 +35,7 @@ from gateware.machines.mega138k_ae350.peripherals.board_sense import BoardSense
 from gateware.machines.mega138k_ae350.peripherals.audio import FabricAudio
 from gateware.machines.mega138k_ae350.flash_apb import FlashRegisterAdapter
 from gateware.machines.mega138k_ae350.peripherals.qspi import UserQSPI
+from gateware.machines.mega138k_ae350.peripherals.ethernet import EthernetManagement
 
 
 def _onehot(off, offsets):
@@ -165,8 +166,9 @@ class LoopbackFifo(LiteXModule):
 class AE350Fabric(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None):
+    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None, usb=None, ethernet=None):
         amap = layout
+        self.ethernet_management = EthernetManagement(amap.FABRIC_HZ)
         self.qspi = UserQSPI(amap.FABRIC_HZ, amap.USER_FLASH_BYTES)
         self.video = video
         fifo_bus = AHBInterface(data_width=32, address_width=32)
@@ -235,7 +237,7 @@ class AE350Fabric(LiteXModule):
                               sd.tx_req if sd is not None else 0, sd.rx_req if sd is not None else 0, Constant(0, 2))),
             cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 1),
                                  self.audio.tx_irq, self.audio.rx_irq, Constant(0, 3),
-                                 self.board.irq, video.irq if video is not None else 0, Constant(0, 7))),
+                                 self.board.irq, video.irq if video is not None else 0, ethernet.irq if ethernet is not None else 0, Constant(0, 6))),
             self.audio.off.eq(off), self.audio.write.eq(write_q), self.audio.wdata.eq(wdata_q),
             self.audio.commit.eq(commit),
             self.board.off.eq(off),
@@ -262,6 +264,22 @@ class AE350Fabric(LiteXModule):
         video_rdata = video.rdata if video is not None else 0
         legal = Signal()
         self.comb += legal.eq((addr_q[:2] == 0) & (~write_q | (strb_q == 0xf)))
+        eth_page = Signal()
+        eth = self.ethernet_management
+        self.comb += [eth_page.eq(addr_q[12:] == (amap.ETH_BASE >> 12)),
+            eth.off.eq(off),eth.wdata.eq(wdata_q),eth.write.eq(write_q),
+            eth.selected.eq(legal & eth_page & (off<0x10)),eth.commit.eq(commit)]
+        if ethernet is not None:
+            self.comb += [ethernet.off.eq(off),ethernet.wdata.eq(wdata_q),ethernet.write.eq(write_q),
+                ethernet.selected.eq(legal & eth_page & (off>=0x10)),ethernet.commit.eq(commit)]
+        eth_ok=eth.ok | (ethernet.ok if ethernet is not None else 0)
+        eth_data=Mux(off<0x10,eth.rdata,ethernet.rdata if ethernet is not None else 0)
+        usb_page = Signal()
+        self.comb += usb_page.eq(addr_q[12:] == (amap.USB_BASE >> 12))
+        if usb is not None:
+            self.comb += [usb.off.eq(off), usb.wdata.eq(wdata_q), usb.write.eq(write_q),
+                          usb.selected.eq(legal & usb_page), usb.commit.eq(commit)]
+        usb_done = usb.complete if usb is not None else 1
         flash_page = Signal()
         self.comb += flash_page.eq(addr_q[12:] == (amap.FLASH_CTRL_BASE >> 12))
         flash_done = self.flash.complete if self.flash is not None else 1
@@ -316,6 +334,7 @@ class AE350Fabric(LiteXModule):
         # Pages are disjoint. A balanced OR avoids the old priority chain
         # through every device before the registered APB response.
         pages = [
+            (legal & eth_page & eth_ok, eth_data),
             (legal & qspi_page & self.qspi.ok, self.qspi.rdata),
             (legal & sd_page & sd_ok,sd_rdata),
             (legal & sysinfo & ~write_q & sys_ro,sys_data),
@@ -379,13 +398,13 @@ class AE350Fabric(LiteXModule):
             ).Elif(wait & ~phase,
                 phase.eq(1),
             ).Elif(wait & (~sd_page | ~legal | (sd.complete if sd is not None else 1)) &
-                    (~flash_page | ~legal | flash_done),
+                    (~flash_page | ~legal | flash_done) & (~usb_page | ~legal | usb_done),
                 wait.eq(0),
                 phase.eq(0),
                 cpu.apb_data.eq(Mux(sd_page & legal,sd.rdata if sd is not None else 0,
-                    Mux(flash_page & legal,flash_data,read_data))),
+                    Mux(flash_page & legal,flash_data, Mux(usb_page & legal, usb.rdata if usb is not None else 0, read_data)))),
                 cpu.apb_slverr.eq(Mux(sd_page & legal,sd.error if sd is not None else 1,
-                    Mux(flash_page & legal,flash_error,error_q))),
+                    Mux(flash_page & legal,flash_error, Mux(usb_page & legal, usb.error if usb is not None else 1, error_q)))),
                 If(control, self.req_enable.eq(wdata_q[1])),
                 If(commit & irq_enable_q,
                    self.irq_enable.eq(wdata_q[0])),

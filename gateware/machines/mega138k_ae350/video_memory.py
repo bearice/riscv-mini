@@ -4,6 +4,58 @@ from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
 
 
+class DDRMemoryArbiter(LiteXModule):
+    """One registered round-robin grant across CPU, video and network.
+
+    A single arbitration level avoids a ready/command/ready cone through
+    cascaded arbiters. An accepted untagged read keeps its owner until its
+    actual response, regardless of a client's subsequent pending level.
+    """
+    def __init__(self,memory,cpu,video,network):
+        from migen import Array, Cat, Case
+        ports=[cpu,video,network]
+        self.cpu_pending,self.video_pending,self.network_pending=[Signal() for _ in ports]
+        pending=[self.cpu_pending,self.video_pending,self.network_pending]
+        self.cpu_commands,self.video_commands,self.network_commands=[Signal(32) for _ in ports]
+        counts=[self.cpu_commands,self.video_commands,self.network_commands]
+        self.max_video_wait=Signal(32);self.unexpected_response=Signal()
+        self.read_pending=busy=Signal()
+        grant,owner,last=Signal(2),Signal(2),Signal(2,reset=2)
+        valid=Signal();chosen=Signal(2)
+        any_pending=Signal();active=Signal();command=Signal()
+        selected_pending=Array(pending)[grant]
+        def select(field):return Array([getattr(p,field) for p in ports])[grant]
+        read=Signal()
+        self.comb += [any_pending.eq(Cat(*pending)!=0),
+            Case(last,{0:chosen.eq(Mux(pending[1],1,Mux(pending[2],2,0))),
+                       1:chosen.eq(Mux(pending[2],2,Mux(pending[0],0,1))),
+                       'default':chosen.eq(Mux(pending[0],0,Mux(pending[1],1,2)))}),
+            active.eq(valid & ~busy & selected_pending),read.eq(select('cmd')==1),
+            memory.addr.eq(select('addr')),memory.cmd.eq(select('cmd')),memory.burst.eq(0),
+            memory.wr_data.eq(select('wr_data')),memory.wr_data_mask.eq(select('wr_data_mask')),
+            memory.wr_data_en.eq(active & ~read & select('cmd_en') & select('wr_data_en') &
+                                memory.cmd_ready & memory.wr_data_rdy),
+            memory.wr_data_end.eq(memory.wr_data_en),
+            memory.cmd_en.eq(active & select('cmd_en') & (read | (select('wr_data_en') & memory.wr_data_rdy))),
+            command.eq(memory.cmd_en & memory.cmd_ready)]
+        for i,p in enumerate(ports):
+            accepted=Signal()
+            self.comb += [p.cmd_ready.eq(active & (grant==i) & memory.cmd_ready & (read|memory.wr_data_rdy)),
+                p.wr_data_rdy.eq(active & (grant==i) & memory.cmd_ready & memory.wr_data_rdy),
+                p.rd_data.eq(memory.rd_data),p.rd_data_valid.eq(memory.rd_data_valid & busy & (owner==i))]
+            self.sync += [accepted.eq(command & (grant==i)),If(accepted,counts[i].eq(counts[i]+1))]
+        waited=Signal(24)
+        self.sync += [
+            If(~valid & any_pending,valid.eq(1),grant.eq(chosen)),
+            If(valid & ~selected_pending,valid.eq(0)),
+            If(command,valid.eq(0),last.eq(grant),If(read,busy.eq(1),owner.eq(grant))),
+            If(busy & memory.rd_data_valid,busy.eq(0)),
+            If(memory.rd_data_valid & ~busy,self.unexpected_response.eq(1)),
+            If(video.rd_data_valid | (~self.video_pending & ~(busy & (owner==1))),waited.eq(0))
+            .Elif(waited!=0xffffff,waited.eq(waited+1)),
+            If(waited>self.max_video_wait,self.max_video_wait.eq(waited))]
+
+
 class VideoMemoryArbiter(LiteXModule):
     """Round-robin CPU transactions and read-only scanout, in the DDR domain.
 
@@ -13,7 +65,7 @@ class VideoMemoryArbiter(LiteXModule):
     by the existing AHB adapter. ``cpu_pending`` is independent of ready: a
     write's enables alone cannot indicate demand because they depend on grant.
     """
-    def __init__(self, memory, cpu, video):
+    def __init__(self, memory, cpu, video, video_read_only=True):
         self.cpu_pending = Signal()
         self.video_pending = Signal()
         self.cpu_commands = Signal(32)
@@ -37,22 +89,26 @@ class VideoMemoryArbiter(LiteXModule):
             choose_video.eq(grant_owner),
             selected_pending.eq(Mux(grant_owner,self.video_pending,self.cpu_pending)),
             active.eq(grant_valid & ~busy),
-            selected_read.eq(choose_video | (cpu.cmd == 1)),
+            selected_read.eq(Mux(choose_video, 1 if video_read_only else video.cmd == 1, cpu.cmd == 1)),
             memory.addr.eq(Mux(choose_video, video.addr, cpu.addr)),
-            memory.cmd.eq(Mux(choose_video, 1, cpu.cmd)),
+            memory.cmd.eq(Mux(choose_video, 1 if video_read_only else video.cmd, cpu.cmd)),
             memory.burst.eq(0),
-            memory.wr_data.eq(cpu.wr_data),
-            memory.wr_data_mask.eq(cpu.wr_data_mask),
-            memory.wr_data_en.eq(active & ~choose_video & cpu.wr_data_en &
-                                   cpu.cmd_en & memory.cmd_ready & memory.wr_data_rdy),
+            memory.wr_data.eq(cpu.wr_data if video_read_only else Mux(choose_video,video.wr_data,cpu.wr_data)),
+            memory.wr_data_mask.eq(cpu.wr_data_mask if video_read_only else Mux(choose_video,video.wr_data_mask,cpu.wr_data_mask)),
+            memory.wr_data_en.eq(active & ~selected_read &
+                Mux(choose_video,0 if video_read_only else video.wr_data_en & video.cmd_en,
+                    cpu.wr_data_en & cpu.cmd_en) & memory.cmd_ready & memory.wr_data_rdy),
             memory.wr_data_end.eq(memory.wr_data_en),
-            memory.cmd_en.eq(active & Mux(choose_video, video.cmd_en,
+            memory.cmd_en.eq(active & Mux(choose_video, video.cmd_en if video_read_only else
+                video.cmd_en & ((video.cmd==1)|(video.wr_data_en & memory.wr_data_rdy)),
                 cpu.cmd_en & ((cpu.cmd == 1) | (cpu.wr_data_en & memory.wr_data_rdy)))),
             cpu.cmd_ready.eq(active & ~choose_video & memory.cmd_ready &
                               ((cpu.cmd == 1) | memory.wr_data_rdy)),
             cpu.wr_data_rdy.eq(active & ~choose_video & memory.cmd_ready & memory.wr_data_rdy),
-            video.cmd_ready.eq(active & choose_video & memory.cmd_ready),
-            video.wr_data_rdy.eq(0),
+            video.cmd_ready.eq(active & choose_video & memory.cmd_ready &
+                (1 if video_read_only else ((video.cmd==1)|memory.wr_data_rdy))),
+            video.wr_data_rdy.eq(0 if video_read_only else
+                active & choose_video & memory.cmd_ready & memory.wr_data_rdy),
             command.eq(memory.cmd_en & memory.cmd_ready),
             cpu.rd_data.eq(memory.rd_data), video.rd_data.eq(memory.rd_data),
             # The physical DRAM response has at least one clock of latency;
@@ -65,6 +121,11 @@ class VideoMemoryArbiter(LiteXModule):
         # client -> arbitration -> ready -> client state combinational loop.
         video.cmd_ready.attr.add(('syn_keep',1))
         cpu.cmd_ready.attr.add(('syn_keep',1))
+        cpu_accepted,video_accepted=Signal(),Signal()
+        self.sync += [cpu_accepted.eq(command & ~choose_video),
+                      video_accepted.eq(command & choose_video),
+                      If(cpu_accepted,self.cpu_commands.eq(self.cpu_commands+1)),
+                      If(video_accepted,self.video_commands.eq(self.video_commands+1))]
         self.sync += [
             If(~grant_valid & (self.cpu_pending | self.video_pending),
                 grant_valid.eq(1),grant_owner.eq(next_video)),
@@ -72,8 +133,6 @@ class VideoMemoryArbiter(LiteXModule):
             If(command,
                 grant_valid.eq(0),
                 last.eq(choose_video),
-                If(choose_video, self.video_commands.eq(self.video_commands + 1))
-                .Else(self.cpu_commands.eq(self.cpu_commands + 1)),
                 If(selected_read,
                     busy.eq(1), owner.eq(choose_video)),
             ),
@@ -186,7 +245,11 @@ class VideoFrameReader(LiteXModule):
         )
         fsm.act('DRAIN', If(ui.rd_data_valid, NextState('IDLE')))
         last_block = Signal()
-        self.sync += last_block.eq(index == blocks - 1)
+        last_column = Signal()
+        # Index/column settle in SEND/READ before PUSH. Reuse their
+        # registered terminal flags rather than a subtract/compare CE cone.
+        self.sync += [last_block.eq(index == blocks - 1),
+                      last_column.eq(column == blocks_per_row - 1)]
         self.comb += self.reserve_next.eq(fsm.ongoing('PUSH') & source.ready &
                                          ~request.valid & ~last_block)
         fsm.act('PUSH',
@@ -196,11 +259,11 @@ class VideoFrameReader(LiteXModule):
             ).Else(
                 source.valid.eq(1),
                 If(source.ready,
-                    If(index == blocks - 1,
+                    If(last_block,
                         NextValue(self.frames, self.frames + 1), NextState('IDLE'),
                     ).Else(
                         NextValue(index, index + 1), NextValue(elapsed, 0),
-                        If(column == blocks_per_row - 1,
+                        If(last_column,
                             NextValue(column, 0), NextValue(row_base, row_base + stride),
                             NextValue(address, row_base + stride),
                         ).Else(NextValue(column, column + 1), NextValue(address, address + 32)),

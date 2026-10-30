@@ -28,6 +28,8 @@ def parser():
         ('ddr-suite','AE350 memory: upload DDR diagnostics over UART and observe results'),
         ('dma-suite','AE350 DMA: upload the DMA suite and judge its result contract'),
         ('bus-suite','AE350 board SPI Flash and TWI mux read-only connectivity'),
+        ('usb-suite','AE350 USB FS receiver enumeration and HID report observation'),
+        ('ethernet-suite','AE350 RTL8211 PHY identification and link observation'),
         ('bootrom','AE350 prepare boot firmware; --install writes its image in the Flash firmware region'),
         ('sd-suite','AE350 native SD: read-only DMAC and sector CRC checks'),
         ('p7-suite','AE350 FatFs file or BIOS/application acceptance'),
@@ -38,7 +40,7 @@ def parser():
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'p7-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'p7-suite', 'usb-suite', 'ethernet-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -84,6 +86,15 @@ def parser():
             op.add_argument('--timeout', type=int, default=900)
             op.add_argument('--filesystem-result', type=Path, help='Passing dedicated-file suite receipt for BIOS command checks')
             op.add_argument('--bios', action='store_true', help='interactive BIOS and GW-BASIC acceptance instead of filesystem suite')
+        if name == 'ethernet-suite':
+            op.add_argument('--packets', action='store_true', help='also qualify raw-wire ARP/ICMP/UDP on the direct interface')
+            op.add_argument('--interface', help='explicit direct Ethernet peer interface for packet tests')
+        if name in ('usb-suite', 'ethernet-suite'):
+            op.add_argument('--cable-serial')
+            op.add_argument('--payload', required=True)
+            op.add_argument('--cpu-jtag-location', default=None)
+            op.add_argument('--bootrom-install', type=Path)
+            op.add_argument('--timeout', type=int, default=80)
         if name == 'bus-suite':
             op.add_argument('--payload', required=True)
             op.add_argument('--cpu-jtag-location', required=True)
@@ -126,6 +137,8 @@ def parser():
             op.add_argument('--pattern', choices=('panels', 'console'), default='panels')
             op.add_argument('--expected-frame', type=Path, help='console: renderer-generated raw 640x480 RGB565 frame')
         if name == 'ddr-suite':
+            op.add_argument('--cable-serial')
+            op.add_argument('--bootrom-install', type=Path)
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
             op.add_argument('--cpu-jtag-location', required=True)
             op.add_argument('--seed', type=int, default=0x12345678)

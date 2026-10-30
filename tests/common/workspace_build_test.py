@@ -157,6 +157,13 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(flow['actual'], 'full')
         self.assertEqual(flow['placement_match_percent'], 58.68)
         self.assertEqual(flow['minimum_match_percent'], 80)
+        routing = ('WARN (PA2136) : Placement and routing matching(44.71%) is less than '
+                   'the threshold value(80%) needed to run incremental flow, '
+                   'the default placement and routing flow will be run.')
+        routed = implementation_flow(routing, dict(mode='pnr'))
+        self.assertEqual(routed['actual'], 'full')
+        self.assertEqual(routed['placement_match_percent'], 44.71)
+        self.assertEqual(routed['minimum_match_percent'], 80)
         self.assertEqual(implementation_flow('', None)['actual'], 'full')
 
     def test_success_cache_does_not_depend_on_changing_workspace_seed(self):

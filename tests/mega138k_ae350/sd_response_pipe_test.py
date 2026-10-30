@@ -13,7 +13,11 @@ d=CommandResponsePipe(p)
 def bench():
     yield [d.sink.valid.eq(1),d.sink.cmd_type.eq(1),d.sink.length.eq(6),d.source.ready.eq(0)]
     yield
+    for _ in range(3):
+        if (yield p.sink.valid):break
+        yield
     assert (yield p.sink.valid)
+    assert (yield p.sink.cmd_type)==1 and (yield p.sink.length)==6
     # PHY has finished while Core cannot yet consume the buffered last byte.
     yield [p.source.valid.eq(1),p.source.last.eq(1),p.source.data.eq(0x95),p.sink.ready.eq(1)]
     yield
@@ -33,6 +37,9 @@ def bench():
     yield
     yield d.sink.valid.eq(1)
     yield
+    for _ in range(3):
+        if (yield p.sink.valid):break
+        yield
     assert (yield p.sink.valid)
 fragment=d.get_fragment()
 for memory in fragment.specials:

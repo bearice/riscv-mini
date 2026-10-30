@@ -790,6 +790,136 @@
         }
       },
       "size_bytes": 16777216
+    },
+    "soft_usb": {
+      "kind": "soft_usb",
+      "signals": {
+        "tx_dp": {
+          "pins": [
+            "M21"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "tx_dn": {
+          "pins": [
+            "M22"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "pullup": {
+          "pins": [
+            "M19"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "term_dp": {
+          "pins": [
+            "T19"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "term_dn": {
+          "pins": [
+            "U19"
+          ],
+          "io_standard": "LVCMOS33"
+        },
+        "rx_dp": {
+          "pins": [
+            "U21",
+            "V21"
+          ],
+          "io_standard": "LVDS25"
+        },
+        "rx_dn": {
+          "pins": [
+            "T20",
+            "U20"
+          ],
+          "io_standard": "LVDS25"
+        }
+      }
+    },
+    "ethernet_management": {
+      "kind": "rgmii",
+      "signals": {
+        "reset_n": {
+          "pins": [
+            "E17"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "refclk": {
+          "pins": [
+            "E18"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "mdc": {
+          "pins": [
+            "K23"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "mdio": {
+          "pins": [
+            "K22"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "tx_clk": {
+          "pins": [
+            "H24"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "tx_ctl": {
+          "pins": [
+            "J24"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "tx_data": {
+          "pins": [
+            "K21",
+            "J21",
+            "L19",
+            "K18"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "rx_clk": {
+          "pins": [
+            "C23"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "rx_ctl": {
+          "pins": [
+            "C22"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "rx_data": {
+          "pins": [
+            "B26",
+            "C26",
+            "D26",
+            "E26"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        }
+      }
     }
   },
   "reserved_pins": [

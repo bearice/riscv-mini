@@ -308,27 +308,14 @@ class DDR3AHB(LiteXModule):
         commit_addr = Signal(32)
         same_control = Signal()
         same_control.attr.add(('syn_keep', 1))
-        if lookahead is None:
-            self.comb += same_control.eq(_equal(Cat(peek_burst, peek_size, peek_prot),
-                                               Cat(burst_type, burst_size, burst_prot)))
-        else:
-            # Compare in parallel with the lookahead capture, rather than
-            # after it on the HREADY/state/owned-address enable chain. Burst
-            # context changes in DECODE; these predicates are not consumed
-            # there or in DATA, so they are refreshed before WBUF/ADDRESS.
-            self.sync += same_control.eq(_equal(
-                Cat(lookahead.burst, lookahead.size, lookahead.prot),
-                Cat(burst_type, burst_size, burst_prot)))
-        if lookahead is None:
-            self.comb += [peek_expected.eq(_equal(peek_addr,expected)),
-                peek_same_line.eq(_equal(peek_rel[5:32],rel[5:32])),
-                peek_same_buffer.eq(_equal(peek_rel[5:32],wbuf_block))]
-        else:
-            live_rel=Signal(32)
-            self.comb += live_rel.eq(lookahead.addr-self.base)
-            self.sync += [peek_expected.eq(_equal(lookahead.addr,expected)),
-                peek_same_line.eq(_equal(live_rel[5:32],rel[5:32])),
-                peek_same_buffer.eq(_equal(live_rel[5:32],wbuf_block))]
+        # Compare only registered lookahead fields. Context is refreshed in
+        # DECODE, before these predicates are consumed in WBUF/ADDRESS.
+        # This removes hard-macro address -> compare -> flop timing paths.
+        self.comb += [same_control.eq(_equal(Cat(peek_burst,peek_size,peek_prot),
+                                             Cat(burst_type,burst_size,burst_prot))),
+            peek_expected.eq(_equal(peek_addr,expected)),
+            peek_same_line.eq(_equal(peek_rel[5:32],rel[5:32])),
+            peek_same_buffer.eq(_equal(peek_rel[5:32],wbuf_block))]
         # An aligned beat fits in one data-bus lane of the 32-byte line.
         # Shift only inside that lane; a 32-bit barrel fans out across the buffer.
         lane_bytes = bus.data_width // 8
@@ -681,9 +668,12 @@ class DDR3AHB(LiteXModule):
                 If(lifetime == response_timeout, *note_fault()),
             ),
         )
+        # HRDATA is sampled only on read completion. Keep the registered
+        # response on the bus during wait/write cycles too, so FSM decode
+        # does not sit on all 64 hard-macro data inputs.
+        self.comb += bus.rdata.eq(resp_data[:bus.data_width])
         fsm.act("EARLY",
             bus.resp.eq(0),
-            bus.rdata.eq(0),
             If(bus.trans[1],
                 *accept_bus(),
                 ready_d.eq(0),
@@ -747,7 +737,6 @@ class DDR3AHB(LiteXModule):
         # One completion cycle: HREADY high and data valid. A valid address
         # presented in this cycle is accepted here.
         fsm.act("COMPLETE",
-            bus.rdata.eq(resp_data[:bus.data_width]),
             bus.resp.eq(resp_error),
             NextValue(self.error_sticky, self.error_sticky | resp_error),
             # A line hit never pushed a response. Popping here would steal

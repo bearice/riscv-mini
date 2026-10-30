@@ -5,7 +5,7 @@
 
 Assembly follows locked LiteSDCard 17718d9258ac2dd62ac23e2eecd7ac613a050986.
 Command/data-write engines remain upstream; the local data reader registers
-its byte delimiters. The input enable selects the registered
+its byte delimiters and timeout terminal flag. The input enable selects the registered
 pad sample one mem100 cycle later than the upstream receive-enable phase.
 """
 from migen import *
@@ -20,8 +20,9 @@ from litesdcard.phy import (_sdpads_layout, SDPHYClocker, SDPHYInit, SDPHYCMDW,
 
 
 # From locked LiteSDCard 17718d9258ac2dd62ac23e2eecd7ac613a050986.
-# Only byte delimiters are retimed: snapshot limits on request, then compute
-# next-byte flags on retirement. Sampling, CRC and clock-stop logic remain.
+# Snapshot byte limits and register byte/timeout terminal flags. The timeout
+# flag follows the loaded/decremented count without changing its expiry cycle.
+# Sampling, CRC and clock-stop logic remain.
 class SDPHYDATAR(LiteXModule):
     def __init__(self, sdpads_layout, data_width, sys_clk_freq, data_timeout):
         self.pads_in  = pads_in  = stream.Endpoint(sdpads_layout)
@@ -35,6 +36,7 @@ class SDPHYDATAR(LiteXModule):
         # # #
 
         timeout     = Signal(32)
+        timeout_zero = Signal(reset=1)
         count       = Signal(11)
         last_count  = Signal(11)
         drop_limit  = Signal((11,True))
@@ -123,6 +125,7 @@ class SDPHYDATAR(LiteXModule):
             If(sink.valid & pads_out.ready,
                 pads_out.clk.eq(1),
                 NextValue(timeout, self.timeout.storage),
+                NextValue(timeout_zero, self.timeout.storage == 0),
                 NextValue(last_count,sink.block_length+crc_len-1),
                 NextValue(drop_limit,sink.block_length-1),
                 NextValue(last_byte,0),NextValue(drop_byte,sink.block_length==0),
@@ -138,7 +141,8 @@ class SDPHYDATAR(LiteXModule):
                 NextState("DATA")
             ),
             NextValue(timeout, timeout - 1),
-            If(timeout == 0,
+            NextValue(timeout_zero, timeout == 1),
+            If(timeout_zero,
                 sink.ready.eq(1),
                 NextState("TIMEOUT")
             )
@@ -177,7 +181,8 @@ class SDPHYDATAR(LiteXModule):
                 )
             ),
             NextValue(timeout, timeout - 1),
-            If(timeout == 0,
+            NextValue(timeout_zero, timeout == 1),
+            If(timeout_zero,
                 sink.ready.eq(1),
                 NextState("TIMEOUT")
             )

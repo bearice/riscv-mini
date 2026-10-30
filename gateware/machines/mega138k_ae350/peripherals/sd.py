@@ -44,11 +44,17 @@ class CommandResponsePipe(LiteXModule):
         self.sink=stream.Endpoint(phy.sink.description)
         self.fifo=stream.SyncFIFO(phy.source.description,depth=2,buffered=True)
         self.source=self.fifo.source
-        completed=Signal()
-        self.comb += [self.sink.connect(phy.sink,omit={'valid'}),
-                      phy.sink.valid.eq(self.sink.valid & ~completed),
+        completed,armed=Signal(),Signal()
+        fields=('cmd_type','data_type','length','first','last')
+        held={name:Signal.like(getattr(self.sink,name)) for name in fields}
+        self.comb += [getattr(phy.sink,name).eq(held[name]) for name in fields]
+        self.comb += [self.sink.ready.eq(phy.sink.ready),
+                      phy.sink.valid.eq(self.sink.valid & armed & ~completed),
                       phy.source.connect(self.fifo.sink)]
-        self.sync += If(~self.sink.valid,completed.eq(0)).Elif(phy.sink.valid & phy.sink.ready,completed.eq(1))
+        self.sync += If(~self.sink.valid,completed.eq(0),armed.eq(0)).Elif(
+            phy.sink.valid & phy.sink.ready,completed.eq(1),armed.eq(0)).Elif(
+            ~armed & ~completed,armed.eq(1),
+            *[held[name].eq(getattr(self.sink,name)) for name in fields])
 
 
 class SDTransport(LiteXModule):

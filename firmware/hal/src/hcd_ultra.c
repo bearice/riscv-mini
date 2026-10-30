@@ -1,8 +1,12 @@
 /* TinyUSB HCD for the Ultraembedded PIO full-speed host. No DMA or heap. */
+#ifdef AE350_USB_HOST
+#include "usb_platform.h"
+#else
 #include <hal/hal.h>
 #include <hal/usb_ultra.h>
 #include <generated/mem.h>
 #include <generated/soc.h>
+#endif
 #include "host/hcd.h"
 #include "host/usbh.h"
 #include <string.h>

@@ -83,6 +83,7 @@
             "LVCMOS25",
             "LVCMOS33",
             "LVCMOS33D",
+            "LVDS25",
             "SSTL15",
             "SSTL15D"
           ]
@@ -165,7 +166,9 @@
             "sd",
             "spi",
             "rmii",
+            "rgmii",
             "ulpi",
+            "soft_usb",
             "spi_lcd",
             "i2c",
             "twi_mux"
