@@ -173,6 +173,56 @@ def bench():
     assert (yield from rd(0x84))==0
     yield from wr(0x80,2)
     assert (yield from rd(0x84))==0
+    # Dynamic IODELAY tap updates require DMA stopped & drained and tap <= 240.
+    assert ((yield from rd(0x68)) & 0xff) == 200
+    yield from wr(0x68, 0x80000090)
+    assert ((yield from rd(0x68)) & 0xff) == 0x90
+    assert (yield from rd(0x6c)) == 0x90909090
+    yield from wr(0x6c, 0x78563412)
+    assert (yield from rd(0x6c)) == 0x78563412
+    yield dut.off.eq(0x68);yield dut.wdata.eq(241);yield dut.write.eq(1);yield dut.selected.eq(1)
+    yield;yield
+    assert not (yield dut.ok),'tap > 240 accepted'
+    yield dut.selected.eq(0);yield
+    # Re-enable DMA and verify bounded first-bad-frame capture + RX_ER vs FCS separation.
+    desc(BASE+0x100,BASE+0x4000,0)
+    yield from wr(0x80,1)
+    yield dut.off.eq(0x68);yield dut.wdata.eq(100);yield dut.write.eq(1);yield dut.selected.eq(1)
+    yield;yield
+    assert not (yield dut.ok),'tap update while enabled accepted'
+    yield dut.selected.eq(0);yield
+    # Inject a bad frame with RX_ER on byte 5 (word 1 lane 1) and FCS error:
+    # must lock diag buffer, increment rx_errors/rx_fcs_errors/rx_er_frames, and NOT advance rxprod.
+    yield from wr(0x70,3)
+    bad_words = [0x11223344, 0x55667788, 0x99aabbcc]
+    for idx, w in enumerate(bad_words):
+        yield dut.source.valid.eq(1);yield dut.source.data.eq(w);yield dut.source.be.eq(15)
+        yield dut.rx_word_rx_er.eq(0b0010 if idx == 1 else 0)
+        yield dut.source.error.eq(1 if idx == 2 else 0)
+        yield dut.rx_frame_fcs_error.eq(1 if idx == 2 else 0)
+        yield dut.rx_fcs_rx_er.eq(0b0100 if idx == 2 else 0)
+        yield dut.source.last.eq(idx == 2);yield
+    yield dut.source.valid.eq(0);yield dut.source.last.eq(0);yield dut.source.error.eq(0)
+    yield dut.rx_word_rx_er.eq(0);yield dut.rx_frame_fcs_error.eq(0);yield dut.rx_fcs_rx_er.eq(0);yield
+    for _ in range(10):yield
+    assert (yield from rd(0x9c)) == 0,'bad frame leaked into RX ring'
+    assert (yield from rd(0x44)) == 1 and (yield from rd(0x48)) == 1 and (yield from rd(0x64)) == 1
+    diag_status = yield from rd(0x70)
+    assert (diag_status & 0x3) == 0x3 and ((diag_status >> 8) & 0xf) == 0x3 and (diag_status >> 16) == 12, hex(diag_status)
+    for idx, expected_w in enumerate(bad_words):
+        yield from wr(0x78, idx)
+        assert (yield from rd(0x7c)) == expected_w
+        err_info = yield from rd(0x74)
+        assert (err_info & 0x7ff) == 5 and ((err_info >> 16) & 0xf) == 0x4, hex(err_info)
+        assert ((err_info >> 24) & 0xf) == (0x2 if idx == 1 else 0), hex(err_info)
+    # Second bad frame while locked must not overwrite the first bad frame capture.
+    yield dut.source.valid.eq(1);yield dut.source.data.eq(0xdeadbeef);yield dut.source.be.eq(15)
+    yield dut.source.error.eq(1);yield dut.rx_frame_fcs_error.eq(1);yield dut.source.last.eq(1);yield
+    yield dut.source.valid.eq(0);yield dut.source.last.eq(0);yield dut.source.error.eq(0);yield dut.rx_frame_fcs_error.eq(0);yield
+    assert (yield from rd(0x44)) == 2 and (yield from rd(0x48)) == 2 and (yield from rd(0x64)) == 1
+    yield from wr(0x78, 0)
+    assert (yield from rd(0x7c)) == 0x11223344,'locked first bad frame overwritten'
+    yield from wr(0x80,0)
 
 put(BASE+0xc00,b'\x3c'*32)
 fragment=top.get_fragment()

@@ -72,8 +72,13 @@ def working(store, run, machine, target, key, fresh=False, path=None):
         run.save()
         try:
             yield workspace
-        finally:
+        except (KeyboardInterrupt, SystemExit):
             if not workspace.completed:
+                workspace.state['status'] = 'interrupted'
+                write(path / 'workspace.json', workspace.state)
+            raise
+        finally:
+            if not workspace.completed and workspace.state.get('status') != 'interrupted':
                 workspace.state['status'] = 'failed'
                 write(path / 'workspace.json', workspace.state)
 
@@ -129,7 +134,8 @@ def invalidate_pnr(work):
     """Old final outputs must never satisfy this attempt's acceptance checks."""
     pnr = Path(work) / 'gateware/impl/pnr'
     for path in pnr.glob('*'):
-        if path.is_file() and path.suffix.lower() in ('.fs', '.tr', '.txt', '.html', '.p', '.pr'):
+        if path.is_file() and path.suffix.lower() in (
+                '.fs', '.bin', '.binx', '.tr', '.timing_paths', '.txt', '.html', '.p', '.pr', '.posp'):
             remove_file(path)
     for path in (Path(work) / 'gateware').glob('*.fs'):
         remove_file(path)

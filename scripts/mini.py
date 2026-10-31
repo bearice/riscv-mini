@@ -89,6 +89,9 @@ def parser():
         if name == 'ethernet-suite':
             op.add_argument('--packets', action='store_true', help='also qualify raw-wire ARP/ICMP/UDP on the direct interface')
             op.add_argument('--interface', help='explicit direct Ethernet peer interface for packet tests')
+            op.add_argument('--rx-delay-sweep', action='store_true', help='run dynamic GW5A IODELAY coarse/fine RX tap sweep before qualification')
+            op.add_argument('--per-lane-sweep', action='store_true', help='also sweep each of the 5 RX lanes individually around the common center')
+            op.add_argument('--sustained-frames', type=int, default=0, help='run sustained full-length (1472B payload) UDP echo burst at selected tap')
         if name in ('usb-suite', 'ethernet-suite'):
             op.add_argument('--cable-serial')
             op.add_argument('--payload', required=True)

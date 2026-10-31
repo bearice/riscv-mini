@@ -325,7 +325,7 @@ class DDRSoC(LiteXModule):
             pair = getattr(usb_pads, name)
             self.specials += Instance('TLVDS_IBUF', i_I=pair[0], i_IB=pair[1], o_O=target)
         from gateware.machines.mega138k_ae350.peripherals.ethernet_dma import EthernetDMA
-        self.ethernet_dma = EthernetDMA()
+        self.ethernet_dma = EthernetDMA(default_rx_taps=int(round(config.rtl.ethernet_rx_delay_ps / 12.5)))
         self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
                                flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
@@ -402,9 +402,15 @@ class DDRSoC(LiteXModule):
             self.ethernet_dma.rx_clock_events.eq(self.ethernet_phy.rx_clock_events),
             self.ethernet_dma.phy_rx_frames.eq(self.ethernet_phy.phy_rx_frames),
             self.ethernet_dma.phy_tx_frames.eq(self.ethernet_phy.phy_tx_frames),
+            self.ethernet_dma.phy_rx_er_frames.eq(self.ethernet_phy.phy_rx_er_frames),
             self.ethernet_dma.mac_crc_errors.eq(self.ethernet_mac.rx_datapath.crc_errors.status),
             self.ethernet_dma.mac_rx_drops.eq(self.ethernet_mac.rx_datapath.drops.status),
-            self.ethernet_dma.mac_preamble_errors.eq(self.ethernet_mac.rx_datapath.preamble_errors.status)]
+            self.ethernet_dma.mac_preamble_errors.eq(self.ethernet_mac.rx_datapath.preamble_errors.status),
+            self.ethernet_dma.rx_word_rx_er.eq(self.ethernet_mac.rx_word_rx_er),
+            self.ethernet_dma.rx_fcs_rx_er.eq(self.ethernet_mac.rx_fcs_rx_er),
+            self.ethernet_dma.rx_frame_fcs_error.eq(self.ethernet_mac.rx_frame_fcs_error),
+            *[self.ethernet_phy.rx_delay_taps[i].eq(self.ethernet_dma.rx_delay_taps[i]) for i in range(5)],
+            self.ethernet_phy.rx_delay_load.eq(self.ethernet_dma.rx_delay_load)]
         self.specials += MultiReg(Cat(self.ethernet_phy.locked,eth.reset_n),self.ethernet_dma.phy_status,'sys')
         user_flash = platform.request('user_flash')
         self.comb += [user_flash.cs_n.eq(self.ext.qspi.cs_n), user_flash.clk.eq(self.ext.qspi.clk)]

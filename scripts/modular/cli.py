@@ -194,6 +194,9 @@ def perform(args, p):
             run.finish(executed=args.execute)
         print('Result:', run.path / 'result.json', flush=True)
         return 0
+    except (KeyboardInterrupt, SystemExit) as error:
+        run.result.update(passed=False, interrupted=True, error=str(error) or type(error).__name__); run.save()
+        raise
     except (ValueError, OSError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         run.result.update(passed=False,error=str(error)); run.save()
         print(str(error), file=sys.stderr)

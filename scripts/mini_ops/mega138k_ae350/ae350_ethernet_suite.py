@@ -53,7 +53,8 @@ def judge_packets(words,wire):
     if (words[128]&3)!=3 or words[129] or words[130]:failures.append('DMA ring IRQ/drain/fault')
     if words[5] or (words[15]&3)!=3:failures.append('PHY/MAC initialization')
     if not 120000000<=words[113]<=130000000:failures.append('RX clock is not gigabit')
-    if any(words[i] for i in (12,13,14,114,115)):failures.append('packet loss/error/guard/DMA error')
+    if any(words[i] for i in (12,13,14,114,115,135,136,137)):failures.append('packet loss/error/guard/DMA/RX_ER/FCS error')
+    if words[140]&2:failures.append('diagnostic first-bad-frame buffer locked during clean qualification')
     if words[11]!=wire.get('bad_checksum_cases',2):failures.append('invalid checksum packets were not observed/rejected exactly')
     if words[6]<wire.get('checks',49):failures.append('RX packet evidence incomplete')
     if words[8]<1 or words[9]<wire.get('icmp_cases',1) or words[10]<wire.get('udp_cases',1):
@@ -86,9 +87,26 @@ def perform(args):
         session.upload(image,load=ae350_image.LOAD,abi=abi)
         uploaded=True
         line=bytearray()
+        uart_words=[]
+        in_words=False
+        def handle_line(text_line):
+            nonlocal in_words
+            stripped=text_line.strip()
+            if stripped=='ETH WORDS BEGIN':
+                in_words=True;return
+            if stripped=='ETH WORDS END':
+                in_words=False;return
+            if in_words:
+                for token in stripped.split():
+                    try:uart_words.append(int(token,16))
+                    except ValueError:pass
         def progress(chunk):
             line.extend(chunk)
-            if chunk==b'\n':print(line.decode(errors='replace').strip(),flush=True);line.clear()
+            if chunk==b'\n':
+                decoded=line.decode(errors='replace')
+                print(decoded.strip(),flush=True)
+                handle_line(decoded)
+                line.clear()
         wire={}
         if packets:
             deadline=time.monotonic()+args.timeout;ready=False;ended=False
@@ -98,25 +116,57 @@ def perform(args):
                 if b'ETH PACKET READY' in text:ready=True;break
                 if b'ETH DONE' in text:ended=True;break
             if ready:
-                from mini_ops.mega138k_ae350.ae350_ethernet_packets import exercise
+                from mini_ops.mega138k_ae350.ae350_ethernet_packets import (
+                    exercise, sweep_rx_delay, exercise_sustained_long_frames
+                )
                 try:
                     peer_ready=wait_peer_link(args.interface)
                     op.record('peer-link-ready',**peer_ready)
                     if not peer_ready['passed']:
                         raise RuntimeError('Direct peer did not reach stable gigabit/full carrier')
+                    if getattr(args,'rx_delay_sweep',False):
+                        sweep=sweep_rx_delay(args.interface,session,op.path,per_lane=getattr(args,'per_lane_sweep',False))
+                        op.record('rx-delay-sweep',**sweep)
+                        if not sweep.get('passed'):
+                            raise RuntimeError('RX IODELAY sweep did not find a valid common window')
+                    sustained_n=getattr(args,'sustained_frames',0) or 0
+                    if sustained_n>0:
+                        sustained=exercise_sustained_long_frames(args.interface,session,op.path,frame_count=sustained_n)
+                        op.record('sustained-long-frames',**sustained)
                     wire=exercise(args.interface,op.path)
                 except Exception as error:wire=dict(passed=False,error=str(error))
-                if not ended:session.until(b'ETH DONE\r\n',args.timeout,on_chunk=progress)
+                if not ended:
+                    session.port.write(b'Q\n');session.port.flush()
+                    session.until(b'ETH DONE\r\n',args.timeout,on_chunk=progress)
             else:wire=dict(passed=False,error='packet initialization did not reach READY')
             op.record('wire',**wire)
         else:session.until(b'ETH DONE\r\n',args.timeout,on_chunk=progress)
-        cpu=hardware.halt();raw=cpu.read_memory(amap.RESULTS_BASE,160*4)
-        words=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
-        raw=cpu.read_memory(amap.RESULTS_BASE+amap.TRAP_RECORD*4,amap.TRAP_RECORD_WORDS*4)
-        trap=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
+        if hardware.cpu_location is not None:
+            cpu=hardware.halt();raw=cpu.read_memory(amap.RESULTS_BASE,160*4)
+            words=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
+            raw=cpu.read_memory(amap.RESULTS_BASE+amap.TRAP_RECORD*4,amap.TRAP_RECORD_WORDS*4)
+            trap=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)]
+        elif len(uart_words)>=165:
+            words=uart_words[:160]
+            trap=uart_words[160:165]
+        else:
+            raise RuntimeError('Missing completion words: JTAG not configured and only %d words received over UART'%len(uart_words))
         result=judge_mdio(words)
         if packets:
             result['failures']+=judge_packets(words,wire)
+            result['rx_diagnostics']=dict(
+                phy_rx_er_frames=words[135],
+                dma_rx_er_frames=words[136],
+                dma_fcs_errors=words[137],
+                mac_crc_errors=words[116],
+                mac_preamble_errors=words[117],
+                rx_delay_ctrl=hex(words[138]),
+                rx_delay_data=hex(words[139]),
+                diag_ctrl_status=hex(words[140]),
+                diag_err_info=hex(words[141]),
+                phy_reg10=hex(words[132]),
+                phy_idle_errors=words[132]&0xff,
+            )
             peer=Path('/sys/class/net')/args.interface
             try:
                 status=dict(interface=args.interface,carrier=(peer/'carrier').read_text().strip(),speed=(peer/'speed').read_text().strip(),duplex=(peer/'duplex').read_text().strip())
@@ -129,11 +179,13 @@ def perform(args):
         if result['failures']:raise RuntimeError('Ethernet PHY suite failed: '+repr(result['failures']))
         op.report.update(passed=True);op.save();return op
     except Exception as error:
-        if uploaded and hardware is not None:
+        if uploaded and hardware is not None and hardware.cpu_location is not None:
             try:
                 cpu=hardware.halt();raw=cpu.read_memory(amap.RESULTS_BASE,165*4)
                 op.record('failure-diagnostics',words=[int.from_bytes(raw[i:i+4],'little') for i in range(0,len(raw),4)],pc=hex(cpu.register(0x7b1)))
             except Exception as diagnostic:op.record('failure-diagnostics-error',error=str(diagnostic))
+        elif uploaded and len(uart_words)>=165:
+            op.record('failure-diagnostics',words=uart_words[:165],source='uart')
         op.report.update(passed=False,error=str(error));op.save();raise
     finally:
         try:

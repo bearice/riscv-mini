@@ -1,5 +1,6 @@
 """Bounded retries for transient Gowin license-server failures."""
 import re
+import signal
 import time
 from pathlib import Path
 
@@ -8,6 +9,13 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).res
 from scripts.modular.storage import write
 
 RETRY_DELAYS = (5, 15, 30)
+
+
+def _last_log_line(log):
+    if not log.is_file():
+        return None
+    lines = [line.strip() for line in log.read_text(encoding='utf-8', errors='replace').splitlines() if line.strip()]
+    return lines[-1] if lines else None
 
 
 def license_connection_failure(text):
@@ -42,35 +50,48 @@ def run_with_license_retry(attempt, directory, prefix='gowin', delays=RETRY_DELA
     directory.mkdir(parents=True, exist_ok=True)
     records = []
     summary = directory / (prefix + '-attempts.json')
-    for index in range(len(delays) + 1):
-        log = directory / ('%s-attempt-%d.log' % (prefix, index + 1))
-        record = dict(attempt=index + 1, log=log.name)
-        records.append(record)
-        write(summary, dict(status='running', attempts=records))
-        try:
-            code = attempt(log)
-        except BaseException as error:
-            interrupted = isinstance(error, (KeyboardInterrupt, SystemExit))
-            record.update(interrupted=interrupted, error=str(error))
-            write(summary, dict(status='interrupted' if interrupted else 'failed', attempts=records))
-            raise
-        evidence = license_connection_failure(log.read_text(encoding='utf-8', errors='replace'))
-        record.update(returncode=code, license_connection_failure=evidence)
-        if not code and not evidence:
-            write(summary, dict(status='succeeded', attempts=records))
-            return 0, log
-        if evidence and index < len(delays):
-            delay = delays[index]
-            record['retry_delay_seconds'] = delay
-            write(summary, dict(status='retrying', attempts=records))
-            print('Gowin license server connection failed; retry %d/%d in %s seconds. Log: %s' %
-                  (index + 1, len(delays), delay, log), flush=True)
+    previous_handlers = {}
+    def _handle_term(signum, _frame):
+        raise KeyboardInterrupt('Terminated by signal %d' % signum)
+    for sig_name in ('SIGTERM', 'SIGHUP'):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            previous_handlers[sig] = signal.getsignal(sig)
+            signal.signal(sig, _handle_term)
+    try:
+        for index in range(len(delays) + 1):
+            log = directory / ('%s-attempt-%d.log' % (prefix, index + 1))
+            record = dict(attempt=index + 1, log=log.name)
+            records.append(record)
+            write(summary, dict(status='running', attempts=records))
             try:
-                time.sleep(delay)
-            except BaseException:
-                write(summary, dict(status='interrupted', attempts=records))
+                code = attempt(log)
+            except BaseException as error:
+                interrupted = isinstance(error, (KeyboardInterrupt, SystemExit))
+                record.update(interrupted=interrupted, error=str(error), last_log_line=_last_log_line(log))
+                write(summary, dict(status='interrupted' if interrupted else 'failed', attempts=records))
                 raise
-        else:
-            code = code or 1  # Some vendor failures may incorrectly exit zero.
-            write(summary, dict(status='failed', returncode=code, attempts=records))
-            return code, log
+            text = log.read_text(encoding='utf-8', errors='replace') if log.is_file() else ''
+            evidence = license_connection_failure(text)
+            record.update(returncode=code, license_connection_failure=evidence, last_log_line=_last_log_line(log))
+            if not code and not evidence:
+                write(summary, dict(status='succeeded', attempts=records))
+                return 0, log
+            if evidence and index < len(delays):
+                delay = delays[index]
+                record['retry_delay_seconds'] = delay
+                write(summary, dict(status='retrying', attempts=records))
+                print('Gowin license server connection failed; retry %d/%d in %s seconds. Log: %s' %
+                      (index + 1, len(delays), delay, log), flush=True)
+                try:
+                    time.sleep(delay)
+                except BaseException:
+                    write(summary, dict(status='interrupted', attempts=records))
+                    raise
+            else:
+                code = code or 1  # Some vendor failures may incorrectly exit zero.
+                write(summary, dict(status='failed', returncode=code, attempts=records))
+                return code, log
+    finally:
+        for sig, handler in previous_handlers.items():
+            signal.signal(sig, handler)

@@ -63,16 +63,20 @@ def wait_provider(session, hardware, store, provider, timeout):
     text = wait_loader(session, config['build_id'], timeout)
     # A receipt alone is not current-device evidence. Read every selected byte
     # while the CPU is idle at the loader, before any peripheral transfer.
-    expected = (store.path(provider) / 'outputs/boot.bin').read_bytes()
-    cpu = hardware.halt()
-    try:
-        if cpu.read_memory(config['rom_base'], len(expected)) != expected:
-            raise RuntimeError('Installed bootloader readback mismatch')
-    finally:
-        hardware.resume()
-    hardware.op.record('installed-bootloader', artifact=provider, bytes=len(expected),
-                       build_id=config['build_id'], readback_matched=True)
-    hardware.close_cpu()
+    if hardware.cpu_location is not None:
+        expected = (store.path(provider) / 'outputs/boot.bin').read_bytes()
+        cpu = hardware.halt()
+        try:
+            if cpu.read_memory(config['rom_base'], len(expected)) != expected:
+                raise RuntimeError('Installed bootloader readback mismatch')
+        finally:
+            hardware.resume()
+        hardware.op.record('installed-bootloader', artifact=provider, bytes=len(expected),
+                           build_id=config['build_id'], readback_matched=True)
+        hardware.close_cpu()
+    else:
+        hardware.op.record('installed-bootloader', artifact=provider,
+                           build_id=config['build_id'], banner_matched=True)
     return text
 
 

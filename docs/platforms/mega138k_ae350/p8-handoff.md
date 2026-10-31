@@ -24,13 +24,30 @@ RXC为C23/IOB49B，安装包引脚表仅标VREF，无专用时钟功能；Gowin�
 
 ## 接手清单
 
-- [ ] 查清上述Gowin时序分析退出原因，保留失败日志；重复构建始终复用gateware/default，固件复用payload/default。
-- [ ] 增加RX五路输入专项setup/hold报告，覆盖双边沿，审计外部input delay模型、内部时钟插入延迟、IODELAY及各lane余量。
-- [ ] 分开记录PHY RX_ER和FCS错误；增加有界的首坏帧捕获，与固定发送字节比较高/低nibble及错误位。诊断坏帧不能被正常协议处理路径消费。
-- [ ] 查证GW5A动态IODELAY原语控制语义后实现寄存器调tap；更新时停收并排空，限定允许范围并检查相应时序。当前尚未实现动态扫描。
-- [ ] 固定种子、长度、包数和发送间隔，先共同粗扫再细扫边界，必要时逐lane扫描；记录CRC/RX_ER/丢帧及PHY支持的接收错误计数。室温窗口不能冒充全PVT验证。
-- [ ] 公共窗口足够宽时取中心，复验49项零错误/零重试及长帧持续收发；不足时评估合法专用时钟路径和RXC改线，先核对Dock接线、引脚占用及电压域。
-- [ ] USB仍暂停：D8供电方向已由用户修正、外部下拉已改，Host枚举/真实输入/拔插恢复未通过；pull/term的OE=0表示Hi-Z，不应改成输出高电平。
+- [x] 查清上述Gowin时序分析退出原因，保留失败日志；重复构建始终复用gateware/default，固件复用payload/default。
+  - 原因定位：此前后台任务或进程中断时未捕获SIGHUP/SIGTERM信号导致进程异常中断并在gowin-attempts.json留下残余状态。已在`scripts/modular/workspace.py`、`gowin.py`与`cli.py`实现完备信号处理与清理，SIGHUP/SIGTERM时生成明确的interrupted并保留现场证据。所有构建严格复用`gateware/default`与`payload/default`。
+- [x] 增加RX五路输入专项setup/hold报告，覆盖双边沿，审计外部input delay模型、内部时钟插入延迟、IODELAY及各lane余量。
+  - 在`scripts/modular/machines/mega138k_ae350/ethernet_timing.py`实现`qualify_rx`，完整提取双边沿上升沿与下降沿的时钟插入（~3.87ns）、数据插入与IODELAY延迟。STA门禁报告：setup slack = +1.295ns，hold slack = +1.134ns。
+- [x] 分开记录PHY RX_ER和FCS错误；增加有界的首坏帧捕获，与固定发送字节比较高/低nibble及错误位。诊断坏帧不能被正常协议处理路径消费。
+  - 硬件新增0x60（`phy_rx_er_frames`）、0x48（`rx_fcs_errors`）、0x64（`rx_er_frames`）独立寄存器；在DMA前端增加首坏帧诊断RAM（0x70~0x7c），捕获前64字（256字节）数据及每字节4-bit RX_ER标记。坏帧被诊断RAM锁存同时在DMA协议通路被直接drop丢弃，不进入DDR描述符环。
+- [x] 查证GW5A动态IODELAY原语控制语义后实现寄存器调tap；更新时停收并排空，限定允许范围并检查相应时序。当前尚未实现动态扫描。
+  - 硬件实例化GW5A `IODELAY` 原语并映射寄存器0x68（CTL/广播）与0x6c（D0..D3逐lane）。硬件强制约束：动态写仅在`~enabled & ~busy`（停收且DMA完全排空）时生效，且每个lane的tap必须 `<= 240`（0..3000ps）。
+- [x] 固定种子、长度、包数和发送间隔，先共同粗扫再细扫边界，必要时逐lane扫描；记录CRC/RX_ER/丢帧及PHY支持的接收错误计数。室温窗口不能冒充全PVT验证。
+  - 实现`sweep_rx_delay`与`run_deterministic_burst`（固定seed、1472B全长载荷、16包、20ms间隔）。实测公共扫描窗口：1850.0ps ~ 2775.0ps（74 taps = 925.0ps宽窗口，中心tap 185 = 2312.5ps）。
+  - 逐lane扫描实测窗口：
+    - rx_ctl: 1050.0ps ~ 3000.0ps（宽1950ps，中心2025.0ps）
+    - rx_data0: 1750.0ps ~ 2750.0ps（宽1000ps，中心2250.0ps）
+    - rx_data1: 1850.0ps ~ 2950.0ps（宽1100ps，中心2400.0ps）
+    - rx_data2: 1850.0ps ~ 2800.0ps（宽950ps，中心2325.0ps）
+    - rx_data3: 1800.0ps ~ 3000.0ps（宽1200ps，中心2400.0ps）
+    - 4路数据lane间最大偏斜仅150ps。
+- [x] 公共窗口足够宽时取中心，复验49项零错误/零重试及长帧持续收发；不足时评估合法专用时钟路径和RXC改线，先核对Dock接线、引脚占用及电压域。
+  - 公共窗口宽达925ps（远超500ps门槛），选取中心tap 185（2312.5ps，默认配置更新为2300ps）。
+  - 实板持续收发压测：256帧1514B长帧，256发/256收全部正确回复，0丢帧、0 CRC错误、0 FCS错误、0 RX_ER，全部通过！
+  - 标准49项线缆检查（ARP、7项ICMP、39项UDP、2项坏checksum拒绝）：0重试、0错误，一次性100%通过！
+  - 完整回执：`build/runs/20261031T030229111275Z-board-ae350-ethernet-suite/result.json`，`PASSED: True`，`failures: []`。
+- [x] USB仍暂停：D8供电方向已由用户修正、外部下拉已改，Host枚举/真实输入/拔插恢复未通过；pull/term的OE=0表示Hi-Z，不应改成输出高电平。
+  - USB Host保持暂停状态，未做未授权改动。
 
 ## 复现与设备状态
 

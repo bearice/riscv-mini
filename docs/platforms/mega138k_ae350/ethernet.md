@@ -62,6 +62,13 @@ flags：OWN=bit31、DONE=bit30、ERROR=bit29。软件同步数据/描述符后�
 | --- | --- |
 | 0x10 | 后端 ID `0xae350e03` |
 | 0x14 | MTU 1530 |
+| 0x48 | RX FCS 错误帧计数（仅硬件FCS校验不匹配） |
+| 0x60 / 0x64 | PHY RX_ER 帧计数 / DMA RX_ER 帧计数（仅线路RX_ER有效） |
+| 0x68 | RX IODELAY CTL与广播控制（bit0..7: tap，bit31: 广播写全部5路） |
+| 0x6c | RX IODELAY D0..D3逐lane控制（每字节一个lane tap，0..240） |
+| 0x70 | 首坏帧捕获控制/状态（bit0: arm，bit1: locked，bit8..11: flags，bit16..26: length） |
+| 0x74 | 首坏帧诊断信息（bit0..10: 首错字节偏移，bit16..19: FCS阶段RX_ER掩码，bit24..27: 错误字节掩码） |
+| 0x78 / 0x7c | 首坏帧捕获RAM读地址（0..63） / 32位读数据 |
 | 0x80 | control：bit0 enable；bit1 idle reset |
 | 0x84 | status：bit0 busy、bit1 RX pending、bit8 fault |
 | 0x88 / 0x8c | TX / RX 描述符基址，仅禁用并排空后可改 |
@@ -98,3 +105,22 @@ AHB 地址和返回均由寄存级持有，错误响应保持两阶段 ERROR；A
 
 
 RX2500 的 place3/route1 候选 `build/runs/20261030T045204899280Z-build-ethernet-dma-rx2500-route1-26a4e2/result.json` 完成布线但时序失败（setup66、hold0），主要为DDR仲裁握手到AHB写计数/超时计数，以及硬核HWDATA到请求FIFO的路径；未编程该候选。后续在同一 `gateware/default` 工作区使用 place4/route2 重建，回执 `build/runs/20261030T051451418221Z-build-ethernet-dma-rx2500-place4-38cd6b/result.json`。匹配的网络诊断载荷为 `build/runs/20261030T050425316508Z-build-ethernet-dma-rx2500-phy-status-d87df1/result.json`（`eb3d83b7bb53`）；新位流未通过完整时序前不得上板。
+
+## P8 RX 动态 IODELAY 调校与实板验收（2026-10-31）
+
+在合格门禁位流 `build/runs/20261031T021721139602Z-build-ethernet-p8-rx-diag-dyn-iodelay-8c34e8/result.json`（setup/hold 0/0，最小脉宽余量 +0.098ns，TX双边沿偏斜 margin 0.448ns，RX setup/hold slack 分别为 +1.295ns / +1.134ns）和诊断固件 `build/runs/20261031T024932665618Z-build-ethernet-p8-rx-diag-dyn-iodelay-a9bb0d/result.json` 上完成实板眼图扫描与协议全量验收：
+
+1. **动态扫描窗口（固定种子、1472B载荷、16包、20ms间隔）**：
+   - 公共窗口：1850.0ps ~ 2775.0ps（74 taps = 925.0ps 宽窗口，中心 tap 185 = 2312.5ps）。
+   - 逐 lane 扫描实测窗口：
+     - `rx_ctl`: 1050.0ps ~ 3000.0ps（中心 2025.0ps）
+     - `rx_data0`: 1750.0ps ~ 2750.0ps（中心 2250.0ps）
+     - `rx_data1`: 1850.0ps ~ 2950.0ps（中心 2400.0ps）
+     - `rx_data2`: 1850.0ps ~ 2800.0ps（中心 2325.0ps）
+     - `rx_data3`: 1800.0ps ~ 3000.0ps（中心 2400.0ps）
+   - 数据 lane 间最大偏斜仅 150ps。默认配置更新为 2300ps（tap 184）。
+
+2. **实板压测与协议检查验证（回执 `build/runs/20261031T030229111275Z-board-ae350-ethernet-suite/result.json`）**：
+   - 持续 256 帧 1514B 全长帧收发流：256 发 / 256 收，0 丢帧、0 CRC 错误、0 FCS 错误、0 RX_ER，全部通过。
+   - 标准 49 项线缆检查（ARP、7 项 ICMP、39 项 UDP、2 项校验和拒绝）：0 重试、0 错误，一次性 100% 通过。
+   - 结果核验：`failures: []`，`packets_verified: True`，`PASSED: True`。

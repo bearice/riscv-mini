@@ -173,8 +173,12 @@ def timing_report(work):
     if contract or 'eth_tx_clk' in raw:
         if contract.get('tx_timing')!='routed-ddr-skew-v1':
             raise ValueError('Missing mandatory RGMII TX skew contract')
-        from scripts.modular.machines.mega138k_ae350.ethernet_timing import qualify_tx
+        from scripts.modular.machines.mega138k_ae350.ethernet_timing import qualify_tx, qualify_rx
         counts['rgmii_tx']=qualify_tx(raw)
+        if contract.get('rx_timing')=='routed-ddr-input-v1' or 'set_multicycle_path -from [get_ports {ethernet_management_rx_' in raw:
+            if contract.get('rx_timing')!='routed-ddr-input-v1':
+                raise ValueError('Missing mandatory RGMII RX input timing contract')
+            counts['rgmii_rx']=qualify_rx(raw, contract.get('rx_data_delay_ps'))
     return counts
 
 
@@ -371,7 +375,7 @@ def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, p
             configuration = work / 'gateware/impl/pnr/project.bin'
             if not configuration.is_file() or configuration.stat().st_size >= FLASH_OFFSET:
                 raise ValueError('FPGA configuration image is missing or exceeds the reserved 6 MiB partition')
-            for report in ('project_tr_content.html', 'project.tr', 'project.timing_paths'):
+            for report in ('project_tr_content.html', 'project.tr', 'project.timing_paths', 'project.rpt.txt'):
                 source = work / 'gateware/impl/pnr' / report
                 if source.is_file():
                     shutil.copyfile(source, run.path / report)

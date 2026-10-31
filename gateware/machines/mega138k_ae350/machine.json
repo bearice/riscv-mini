@@ -61,14 +61,14 @@
     "debounce_ms": 5
   },
   "rtl": {
-    "place_option": 4,
-    "route_option": 2,
+    "place_option": 3,
+    "route_option": 1,
     "hdmi_reset_sites": [
       "R40C181[1][A]",
       "R47C181[0][A]",
       "R36C181[0][B]"
     ],
-    "ethernet_rx_delay_ps": 2500
+    "ethernet_rx_delay_ps": 2300
   },
   "ip": {
     "cpu": {

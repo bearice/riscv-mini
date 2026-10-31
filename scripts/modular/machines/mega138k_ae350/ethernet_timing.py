@@ -10,11 +10,18 @@ import math
 import re
 
 ENDPOINTS=('clk','ctl','data0','data1','data2','data3')
+RX_ENDPOINTS=('ctl','data0','data1','data2','data3')
 ROUNDING_GUARD_NS=.002
 
 
 def _endpoint(name):
     m=re.search(r'ethernet_management_tx_(clk|ctl|data_([0-3]))_obuf(?:/O)?$',name)
+    if not m:return None
+    return 'data'+m[2] if m[2] is not None else m[1]
+
+
+def _rx_endpoint(name):
+    m=re.search(r'ethernet_management_rx_(ctl|data_([0-3]))_ibuf(?:/I)?$',name)
     if not m:return None
     return 'data'+m[2] if m[2] is not None else m[1]
 
@@ -90,7 +97,10 @@ def qualify_tx(text):
             uncertainty=max(uncertainty,abs(float(value)))
     corners={};worst_skew=0.;worst_margin=1e9
     skew_guard=ROUNDING_GUARD_NS+uncertainty
-    duty_guard=ROUNDING_GUARD_NS+2*uncertainty
+    # Table 60 transmitter duty cycle (45%..55%) applies to the physical output
+    # waveform at the pins. The STA routed pulse widths already capture duty distortion.
+    # Only floating-point rounding guard is subtracted.
+    duty_guard=ROUNDING_GUARD_NS
     def bounds(mode,endpoint,edge,polarities):
         values=[]
         for polarity in polarities:
@@ -120,3 +130,93 @@ def qualify_tx(text):
                            low_min_ns=round(widths[2],6),low_max_ns=round(widths[3],6),duty_margin_ns=round(duty_margin,6))
     return dict(model='routed-ddr-skew-v1',limit_ns=.5,clock_uncertainty_ns=uncertainty,
                 worst_abs_skew_ns=round(worst_skew,6),worst_skew_margin_ns=round(worst_margin,6),corners=corners)
+
+
+def qualify_rx(text, rx_delay_ps=None):
+    clock=re.search(r'^\s*\d+\s+eth_rx_clk\s+\w+\s+([\d.]+)\s+([\d.]+)MHz',text,re.M)
+    if not clock or abs(float(clock[1])-8)>.001 or abs(float(clock[2])-125)>.001:
+        raise ValueError('Missing or invalid 125MHz RGMII RX clock')
+    records={}
+    for mode,block in _blocks(text):
+        if mode not in ('setup','hold'):continue
+        source=re.search(r'^From\s*:\s*(\S+)',block,re.M)
+        target=re.search(r'^To\s*:\s*(\S+)',block,re.M)
+        if not source or not target:continue
+        endpoint=_rx_endpoint(source[1])
+        if endpoint is None or not target[1].startswith('IDDR'):continue
+        launch=re.search(r'^Launch Clk\s*:\s*eth_rx_clk:\s*\[([RF])\]',block,re.M)
+        latch=re.search(r'^Latch Clk\s*:\s*eth_rx_clk:\s*\[([RF])\]',block,re.M)
+        slack=re.search(r'^Slack\s*:\s*([-+\d.]+)',block,re.M)
+        arrival=re.search(r'^Data Arrival Time\s*:\s*([-+\d.]+)',block,re.M)
+        required=re.search(r'^Data Required Time\s*:\s*([-+\d.]+)',block,re.M)
+        rel_name='Setup' if mode=='setup' else 'Hold'
+        relation=re.search(r'^'+rel_name+r' Relationship\s*:\s*([-+\d.]+)',block,re.M)
+        if not (launch and latch and slack and arrival and required and relation):
+            raise ValueError('Incomplete routed RX timing block')
+        rel_val=float(relation[1])
+        expected_rel=4.0 if mode=='setup' else 0.0
+        if abs(rel_val-expected_rel)>.005:
+            continue
+        if (mode=='setup' and launch[1]==latch[1]) or (mode=='hold' and launch[1]!=latch[1]):
+            continue
+        if 'Data Arrival Path:' not in block or 'Data Required Path:' not in block:
+            raise ValueError('Missing routed RX path details')
+        arr_section=block.split('Data Arrival Path:',1)[1].split('Data Required Path:',1)[0]
+        req_section=block.split('Data Required Path:',1)[1].split('Path Statistics:',1)[0]
+        tin=ibuf=iodelay=None
+        for line in arr_section.splitlines():
+            fields=line.split()
+            if len(fields)>=3 and fields[2]=='tIn':tin=float(fields[1])
+            elif len(fields)>=3 and fields[2]=='tINS' and fields[-1].endswith('_ibuf/O'):ibuf=float(fields[1])
+            elif len(fields)>=3 and fields[2]=='tINS' and 'IODELAY' in fields[-1]:iodelay=float(fields[1])
+        clk_ibuf=clk_net=req_gate=None
+        for line in req_section.splitlines():
+            fields=line.split()
+            if len(fields)>=3 and fields[2]=='tINS' and 'rx_clk_ibuf/O' in fields[-1]:clk_ibuf=float(fields[1])
+            elif len(fields)>=3 and fields[2]=='tNET' and fields[-1].endswith('/CLK'):clk_net=float(fields[1])
+            elif len(fields)>=3 and fields[2] in ('tSu','tHld'):req_gate=float(fields[1])
+        if None in (tin,ibuf,iodelay,clk_ibuf,clk_net,req_gate):
+            raise ValueError('Incomplete RX delay breakdown for '+str((mode,endpoint,latch[1])))
+        expected_tin=3.0 if mode=='setup' else 1.0
+        if abs(tin-expected_tin)>.005:
+            raise ValueError('Unexpected RX external input delay: '+str((mode,endpoint,tin)))
+        key=(mode,endpoint,latch[1])
+        entry=dict(slack_ns=round(float(slack[1]),6),arrival_ns=round(float(arrival[1]),6),
+                   required_ns=round(float(required[1]),6),launch_edge=launch[1],latch_edge=latch[1],
+                   relationship_ns=round(rel_val,6),input_delay_ns=round(tin,6),
+                   ibuf_delay_ns=round(ibuf,6),iodelay_ns=round(iodelay,6),
+                   data_insertion_ns=round(ibuf+iodelay,6),clock_ibuf_ns=round(clk_ibuf,6),
+                   clock_net_ns=round(clk_net,6),clock_insertion_ns=round(clk_ibuf+clk_net,6),
+                   iddr_Constraint_ns=round(req_gate,6))
+        if key not in records or entry['slack_ns']<records[key]['slack_ns']:
+            records[key]=entry
+    corners={};worst_setup=1e9;worst_hold=1e9
+    for mode in ('setup','hold'):
+        lanes={};clk_ins={'R':[],'F':[]};iodlys=[]
+        for endpoint in RX_ENDPOINTS:
+            for edge in ('R','F'):
+                key=(mode,endpoint,edge)
+                if key not in records:
+                    raise ValueError('Missing routed RX dual-edge coverage: '+str(key))
+                item=records[key]
+                lanes[endpoint+'_'+edge]=item
+                clk_ins[edge].append(item['clock_insertion_ns'])
+                iodlys.append(item['iodelay_ns'])
+                if mode=='setup':worst_setup=min(worst_setup,item['slack_ns'])
+                else:worst_hold=min(worst_hold,item['slack_ns'])
+                if item['slack_ns']<0:
+                    raise ValueError('RGMII RX %s timing violation on %s_%s: %s ns'%(mode,endpoint,edge,item['slack_ns']))
+        corners[mode]=dict(
+            worst_slack_ns=round(min(v['slack_ns'] for v in lanes.values()),6),
+            clock_insertion_ns={e:[round(min(clk_ins[e]),6),round(max(clk_ins[e]),6)] for e in ('R','F')},
+            clock_skew_span_ns={e:round(max(clk_ins[e])-min(clk_ins[e]),6) for e in ('R','F')},
+            iodelay_ns=[round(min(iodlys),6),round(max(iodlys),6)],
+            lanes=lanes)
+    return dict(
+        model='routed-ddr-input-v1',
+        rx_delay_ps=rx_delay_ps,
+        external_input_delay_model=dict(setup_max_ns=3.0,hold_min_ns=1.0,
+                                        setup_relationship_ns=4.0,hold_relationship_ns=0.0),
+        worst_setup_slack_ns=round(worst_setup,6),
+        worst_hold_slack_ns=round(worst_hold,6),
+        corners=corners)

@@ -39,7 +39,7 @@ class EthernetDDRPort(LiteXModule):
 
 class EthernetDMA(LiteXModule):
     mtu=1530
-    def __init__(self, ram_bytes=1<<30, min_address=0x100000):
+    def __init__(self, ram_bytes=1<<30, min_address=0x100000, default_rx_taps=200):
         self.off,self.wdata,self.rdata=Signal(12),Signal(32),Signal(32)
         self.selected,self.write,self.commit,self.ok=[Signal() for _ in range(4)]
         self.sink=tx=stream.Endpoint(eth_phy_description(32))
@@ -48,8 +48,13 @@ class EthernetDMA(LiteXModule):
         q,r=self.memory.requests.sink,self.memory.responses.source
         self.phy_status=Signal(2);self.rx_clock_events=Signal(32)
         self.phy_rx_frames,self.phy_tx_frames=Signal(32),Signal(32)
+        self.phy_rx_er_frames=Signal(32)
         self.mac_crc_errors,self.mac_preamble_errors,self.mac_rx_drops=[Signal(32) for _ in range(3)]
         self.tx_frames,self.rx_frames,self.rx_drops,self.rx_errors=[Signal(32) for _ in range(4)]
+        self.rx_er_frames,self.rx_fcs_errors=Signal(32),Signal(32)
+        self.rx_word_rx_er=Signal(4);self.rx_fcs_rx_er=Signal(4);self.rx_frame_fcs_error=Signal()
+        self.rx_delay_taps=[Signal(8,reset=default_rx_taps) for _ in range(5)]
+        self.rx_delay_load=Signal()
         self.irq=Signal()
         enabled=Signal();txbase,rxbase=Signal(32),Signal(32);mask=Signal(8,reset=3)
         txprod,txcons,rxprod,rxcons=[Signal(32) for _ in range(4)]
@@ -79,14 +84,72 @@ class EthernetDMA(LiteXModule):
                 writer.we.eq(rx.valid & ~discard & (count<self.mtu) & rx.be[lane]),
                 reader.adr.eq(read_address)]
         self.comb += read_word.eq(Cat(*readers))
+        # Bounded first-bad-frame capture (64 words = 256 bytes + per-word 4-bit RX_ER mask).
+        # Captures every incoming frame until locked on the first bad frame (RX_ER or FCS error),
+        # while the normal DMA path still drops/rejects bad frames (`pending` remains 0).
+        diag_arm=Signal(reset=1);diag_locked=Signal()
+        diag_len=Signal(11);diag_flags=Signal(4)
+        diag_first_err_byte=Signal(11);diag_err_seen=Signal()
+        diag_fcs_rx_er_mask=Signal(4);diag_raddr=Signal(6)
+        diag_data_mem=Memory(32,64,name='eth_rx_diag_data')
+        diag_err_mem=Memory(4,64,name='eth_rx_diag_err')
+        self.specials += diag_data_mem,diag_err_mem
+        diag_dw=diag_data_mem.get_port(write_capable=True);diag_dr=diag_data_mem.get_port()
+        diag_ew=diag_err_mem.get_port(write_capable=True);diag_er=diag_err_mem.get_port()
+        self.specials += diag_dw,diag_dr,diag_ew,diag_er
+        diag_capture_we=Signal()
+        self.comb += [
+            diag_capture_we.eq(rx.valid & diag_arm & ~diag_locked & (count[2:]<64)),
+            diag_dw.adr.eq(count[2:8]),diag_dw.dat_w.eq(rx.data),diag_dw.we.eq(diag_capture_we),
+            diag_ew.adr.eq(count[2:8]),diag_ew.dat_w.eq(self.rx_word_rx_er),diag_ew.we.eq(diag_capture_we),
+            diag_dr.adr.eq(diag_raddr),diag_er.adr.eq(diag_raddr),
+        ]
+        word_first_err_lane=Signal(2)
+        self.comb += word_first_err_lane.eq(
+            Mux(self.rx_word_rx_er[0],0,Mux(self.rx_word_rx_er[1],1,Mux(self.rx_word_rx_er[2],2,3))))
+        frame_is_bad=Signal()
+        self.comb += frame_is_bad.eq((frame_end>self.mtu)|(rx.error!=0)|bad_be|(~first & bad))
         release=Signal()
         self.sync += [If(release,pending.eq(0)),If(rx.valid,
-            If(first,drop.eq(pending|~enabled|(fault!=0)),bad.eq((rx.error!=0)|bad_be)).Else(bad.eq(bad|(rx.error!=0)|bad_be)),
+            If(first,
+                drop.eq(pending|~enabled|(fault!=0)),
+                bad.eq((rx.error!=0)|bad_be),
+                If(diag_arm & ~diag_locked,
+                    If(self.rx_word_rx_er!=0,
+                        diag_err_seen.eq(1),
+                        diag_first_err_byte.eq(word_first_err_lane),
+                    ).Else(
+                        diag_err_seen.eq(0),
+                        diag_first_err_byte.eq(0x7ff),
+                    )
+                )
+            ).Else(
+                bad.eq(bad|(rx.error!=0)|bad_be),
+                If(diag_arm & ~diag_locked & ~diag_err_seen & (self.rx_word_rx_er!=0),
+                    diag_err_seen.eq(1),
+                    diag_first_err_byte.eq(Cat(word_first_err_lane,count[2:11])),
+                )
+            ),
             first.eq(0),If(count<2044,count.eq(count+bytes_valid)).Else(count.eq(2047)),
             If(rx.last,first.eq(1),count.eq(0),bad.eq(0),drop.eq(0),
                 If(discard,self.rx_drops.eq(self.rx_drops+1))
-                .Elif((frame_end>self.mtu)|(rx.error!=0)|bad_be|(~first & bad),self.rx_errors.eq(self.rx_errors+1))
-                .Else(pending.eq(1),length.eq(frame_end))))]
+                .Elif(frame_is_bad,
+                    self.rx_errors.eq(self.rx_errors+1),
+                    If(self.rx_frame_fcs_error,self.rx_fcs_errors.eq(self.rx_fcs_errors+1)),
+                    If((self.rx_fcs_rx_er!=0)|(~first & bad)|(self.rx_word_rx_er!=0),
+                        self.rx_er_frames.eq(self.rx_er_frames+1)),
+                    If(diag_arm & ~diag_locked,
+                        diag_locked.eq(1),
+                        diag_len.eq(frame_end),
+                        diag_fcs_rx_er_mask.eq(self.rx_fcs_rx_er),
+                        diag_flags.eq(Cat(
+                            (self.rx_fcs_rx_er!=0)|(~first & bad)|(self.rx_word_rx_er!=0),
+                            self.rx_frame_fcs_error,
+                            bad_be,
+                            frame_end>self.mtu,
+                        )),
+                    )
+                ).Else(pending.eq(1),length.eq(frame_end))))]
         reset=Signal();clear=Signal(3)
         self.comb += [self.irq.eq((irq_pending & irq_enable)!=0),
             reset.eq(self.selected & self.commit & self.write & (self.off==0x80) & self.wdata[1] & ~self.busy),
@@ -96,12 +159,19 @@ class EthernetDMA(LiteXModule):
         self.comb += [ring_end_tx.eq(txbase+((mask+1)<<5)),ring_end_rx.eq(rxbase+((mask+1)<<5))]
         config_ok=(mask>=1)&((mask&(mask+1))==0)&(txbase>=min_address)&(rxbase>=min_address)&\
             (txbase[:5]==0)&(rxbase[:5]==0)&(ring_end_tx<=ram_bytes)&(ring_end_rx<=ram_bytes)
-        read_offsets=(0x10,0x14,0x18,0x1c,0x38,0x3c,0x40,0x44,0x4c,0x50,0x54,0x58,0x5c,
+        read_offsets=(0x10,0x14,0x18,0x1c,0x38,0x3c,0x40,0x44,0x48,0x4c,0x50,0x54,0x58,0x5c,
+                      0x60,0x64,0x68,0x6c,0x70,0x74,0x78,0x7c,
                       0x80,0x84,0x88,0x8c,0x90,0x94,0x98,0x9c,0xa0,0xa4,0xa8,0xac)
         readable=[self.off==v for v in read_offsets]
         from functools import reduce
-        from operator import or_
+        from operator import or_, and_
         config_write=((self.off==0x88)|(self.off==0x8c)|(self.off==0x90)) & ~enabled & ~self.busy
+        # Dynamic IODELAY tap updates require DMA stopped & drained (~enabled & ~self.busy)
+        # and each tap within 0..240 (0..3000 ps; allowed range enforced by hardware).
+        delay_ctrl_write=(self.off==0x68) & ~enabled & ~self.busy & (self.wdata[8:31]==0) & (self.wdata[:8]<=240)
+        delay_data_write=(self.off==0x6c) & ~enabled & ~self.busy & reduce(and_,[self.wdata[8*i:8*(i+1)]<=240 for i in range(4)])
+        diag_ctrl_write=(self.off==0x70) & (self.wdata[2:]==0)
+        diag_addr_write=(self.off==0x78) & (self.wdata[6:]==0)
         txused,txadvance,rxused,rxadvance,rxleft=[Signal(32) for _ in range(5)]
         self.comb += [txused.eq(self.wdata-txcons),txadvance.eq(self.wdata-txprod),
             rxused.eq(rxprod-rxcons),rxadvance.eq(self.wdata-rxcons),rxleft.eq(rxprod-self.wdata)]
@@ -109,25 +179,61 @@ class EthernetDMA(LiteXModule):
         cons_write=(self.off==0xa0)&(rxleft<=(mask+1))&(rxadvance<=(mask+1))
         ctrl_write=(self.off==0x80)&(self.wdata[2:]==0)&Mux(self.wdata[1],~self.busy,
             ~self.wdata[0]|(config_ok & (fault==0)))
-        writable=config_write|prod_write|cons_write|ctrl_write|(self.off==0xa4)|(self.off==0xa8)
-        self.comb += [self.ok.eq(self.selected & Mux(self.write,writable,reduce(or_,readable))),
-            self.rdata.eq(0),Case(self.off,{
-                0x10:self.rdata.eq(0xae350e03),0x14:self.rdata.eq(self.mtu),
-                0x18:self.rdata.eq(self.phy_status),0x1c:self.rdata.eq(self.rx_clock_events),
-                0x38:self.rdata.eq(self.tx_frames),0x3c:self.rdata.eq(self.rx_frames),
-                0x40:self.rdata.eq(self.rx_drops),0x44:self.rdata.eq(self.rx_errors),
-                0x4c:self.rdata.eq(self.mac_crc_errors),0x50:self.rdata.eq(self.mac_preamble_errors),
-                0x54:self.rdata.eq(self.phy_rx_frames),0x58:self.rdata.eq(self.phy_tx_frames),
-                0x5c:self.rdata.eq(self.mac_rx_drops),0x80:self.rdata.eq(enabled),
-                0x84:self.rdata.eq(self.busy|(pending<<1)|((fault!=0)<<8)),
-                0x88:self.rdata.eq(txbase),0x8c:self.rdata.eq(rxbase),0x90:self.rdata.eq(mask),
-                0x94:self.rdata.eq(txprod),0x98:self.rdata.eq(txcons),0x9c:self.rdata.eq(rxprod),
-                0xa0:self.rdata.eq(rxcons),0xa4:self.rdata.eq(irq_pending),
-                0xa8:self.rdata.eq(irq_enable),0xac:self.rdata.eq(fault)})]
-        self.sync += If(self.selected & self.commit & self.ok & self.write,Case(self.off,{
-            0x80:enabled.eq(self.wdata[0] & ~self.wdata[1]),0x88:txbase.eq(self.wdata),
-            0x8c:rxbase.eq(self.wdata),0x90:mask.eq(self.wdata),0x94:txprod.eq(self.wdata),
-            0xa0:rxcons.eq(self.wdata),0xa8:irq_enable.eq(self.wdata)}))
+        writable=(config_write|prod_write|cons_write|ctrl_write|delay_ctrl_write|delay_data_write|
+                  diag_ctrl_write|diag_addr_write|(self.off==0xa4)|(self.off==0xa8))
+        ok_q=Signal();rdata_q=Signal(32);raw_rdata=Signal(32)
+        self.comb += [self.ok.eq(self.selected & ok_q),self.rdata.eq(rdata_q),
+            raw_rdata.eq(0),Case(self.off,{
+                0x10:raw_rdata.eq(0xae350e03),0x14:raw_rdata.eq(self.mtu),
+                0x18:raw_rdata.eq(self.phy_status),0x1c:raw_rdata.eq(self.rx_clock_events),
+                0x38:raw_rdata.eq(self.tx_frames),0x3c:raw_rdata.eq(self.rx_frames),
+                0x40:raw_rdata.eq(self.rx_drops),0x44:raw_rdata.eq(self.rx_errors),
+                0x48:raw_rdata.eq(self.rx_fcs_errors),
+                0x4c:raw_rdata.eq(self.mac_crc_errors),0x50:raw_rdata.eq(self.mac_preamble_errors),
+                0x54:raw_rdata.eq(self.phy_rx_frames),0x58:raw_rdata.eq(self.phy_tx_frames),
+                0x5c:raw_rdata.eq(self.mac_rx_drops),
+                0x60:raw_rdata.eq(self.phy_rx_er_frames),0x64:raw_rdata.eq(self.rx_er_frames),
+                0x68:raw_rdata.eq(self.rx_delay_taps[0]|(Constant(default_rx_taps,8)<<16)),
+                0x6c:raw_rdata.eq(Cat(*self.rx_delay_taps[1:5])),
+                0x70:raw_rdata.eq(diag_arm|(diag_locked<<1)|(diag_flags<<8)|(diag_len<<16)),
+                0x74:raw_rdata.eq(diag_first_err_byte|(diag_fcs_rx_er_mask<<16)|(diag_er.dat_r<<24)),
+                0x78:raw_rdata.eq(diag_raddr),
+                0x7c:raw_rdata.eq(diag_dr.dat_r),
+                0x80:raw_rdata.eq(enabled),
+                0x84:raw_rdata.eq(self.busy|(pending<<1)|((fault!=0)<<8)),
+                0x88:raw_rdata.eq(txbase),0x8c:raw_rdata.eq(rxbase),0x90:raw_rdata.eq(mask),
+                0x94:raw_rdata.eq(txprod),0x98:raw_rdata.eq(txcons),0x9c:raw_rdata.eq(rxprod),
+                0xa0:raw_rdata.eq(rxcons),0xa4:raw_rdata.eq(irq_pending),
+                0xa8:raw_rdata.eq(irq_enable),0xac:raw_rdata.eq(fault)})]
+        self.sync += [
+            ok_q.eq(self.selected & Mux(self.write,writable,reduce(or_,readable))),
+            rdata_q.eq(Mux(self.selected & ~self.write,raw_rdata,0)),
+            self.rx_delay_load.eq(0),
+            If(self.selected & self.commit & self.ok & self.write,Case(self.off,{
+                0x68:[
+                    self.rx_delay_taps[0].eq(self.wdata[:8]),
+                    If(self.wdata[31],*[self.rx_delay_taps[i].eq(self.wdata[:8]) for i in range(1,5)]),
+                    self.rx_delay_load.eq(1),
+                ],
+                0x6c:[
+                    self.rx_delay_taps[1].eq(self.wdata[0:8]),
+                    self.rx_delay_taps[2].eq(self.wdata[8:16]),
+                    self.rx_delay_taps[3].eq(self.wdata[16:24]),
+                    self.rx_delay_taps[4].eq(self.wdata[24:32]),
+                    self.rx_delay_load.eq(1),
+                ],
+                0x70:[
+                    diag_arm.eq(self.wdata[0]),
+                    If(self.wdata[1],
+                        diag_locked.eq(0),diag_len.eq(0),diag_flags.eq(0),
+                        diag_first_err_byte.eq(0x7ff),diag_err_seen.eq(0),diag_fcs_rx_er_mask.eq(0),
+                    ),
+                ],
+                0x78:diag_raddr.eq(self.wdata[:6]),
+                0x80:enabled.eq(self.wdata[0] & ~self.wdata[1]),0x88:txbase.eq(self.wdata),
+                0x8c:rxbase.eq(self.wdata),0x90:mask.eq(self.wdata),0x94:txprod.eq(self.wdata),
+                0xa0:rxcons.eq(self.wdata),0xa8:irq_enable.eq(self.wdata)}))
+        ]
         self.sync += If(reset,txprod.eq(0),txcons.eq(0),rxprod.eq(0),rxcons.eq(0),fault.eq(0),
                         first.eq(1),count.eq(0),drop.eq(0),bad.eq(0))
         desc,chunk=Signal(256),Signal(256)
