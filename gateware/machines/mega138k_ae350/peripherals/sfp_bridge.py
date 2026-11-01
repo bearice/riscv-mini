@@ -229,3 +229,219 @@ class SFP10GDMABridge(LiteXModule):
                 ]
             })
         ]
+
+
+class SFP1GDMABridge(LiteXModule):
+    """Bridge between 32-bit LiteEth DMA (50 MHz sys) and 8-bit Gowin 1G MAC (125 MHz)."""
+    def __init__(self, depth=512):
+        # DMA Interface (50 MHz sys domain)
+        self.dma_sink = stream.Endpoint(eth_phy_description(32))   # TX from DMA
+        self.dma_source = stream.Endpoint(eth_phy_description(32)) # RX to DMA
+
+        # 1G MAC Interface (125 MHz eth_sfp1_tx / eth_sfp1_rx domains)
+        self.tx_mac_valid = Signal()
+        self.tx_mac_data = Signal(8)
+        self.tx_mac_last = Signal()
+        self.tx_mac_error = Signal()
+        self.tx_mac_ready = Signal()
+
+        self.rx_mac_valid = Signal()
+        self.rx_mac_data = Signal(8)
+        self.rx_mac_last = Signal()
+        self.rx_mac_error = Signal()
+
+        # =====================================================================
+        # TX PATH: DMA (50 MHz sys) -> Async FIFO -> 1G MAC (125 MHz)
+        # =====================================================================
+        # Format in FIFO: {tx_error(1), tx_last(1), tx_be(4), tx_data(32)} = 38 bits
+        tx_fifo = ClockDomainsRenamer({"write": "sys", "read": "eth_sfp1_tx"})(
+            AsyncFIFO(width=38, depth=depth)
+        )
+        self.submodules.tx_fifo = tx_fifo
+
+        self.comb += [
+            tx_fifo.din.eq(Cat(self.dma_sink.data, self.dma_sink.be, self.dma_sink.last, self.dma_sink.error)),
+            tx_fifo.we.eq(self.dma_sink.valid & tx_fifo.writable),
+            self.dma_sink.ready.eq(tx_fifo.writable),
+        ]
+
+        # Store-and-Forward TX Commit Tracking
+        tx_frames_in_sys = Signal(8)
+        self.sync += [
+            If(self.dma_sink.valid & self.dma_sink.ready & self.dma_sink.last,
+                tx_frames_in_sys.eq(tx_frames_in_sys + 1)
+            )
+        ]
+
+        tx_frames_gray_sys = Signal(8)
+        self.comb += tx_frames_gray_sys.eq(tx_frames_in_sys ^ (tx_frames_in_sys >> 1))
+
+        tx_frames_gray_tx = Signal(8)
+        self.specials += MultiReg(tx_frames_gray_sys, tx_frames_gray_tx, "eth_sfp1_tx")
+
+        bin_bits = []
+        for i in range(8):
+            bit_val = 0
+            for j in range(i, 8):
+                bit_val = bit_val ^ tx_frames_gray_tx[j]
+            bin_bits.append(bit_val)
+        tx_frames_in_bin = Signal(8)
+        self.comb += tx_frames_in_bin.eq(Cat(*bin_bits))
+
+        tx_frames_drained = Signal(8)
+        has_frame = Signal()
+        self.comb += has_frame.eq(tx_frames_in_bin != tx_frames_drained)
+
+        # 32-bit to 8-bit stream unpacking in eth_sfp1_tx domain
+        w_data = Signal(32)
+        w_last_byte = Signal(2)
+        w_last = Signal()
+        w_error = Signal()
+        byte_idx = Signal(2)
+
+        TX_S_IDLE = 0
+        TX_S_SEND = 1
+        tx_state = Signal(reset=TX_S_IDLE)
+
+        tx_mac_last_reg = Signal()
+        tx_mac_error_reg = Signal()
+
+        next_last_byte = Signal(2)
+        self.comb += Case(tx_fifo.dout[32:36], {
+            0b0001: next_last_byte.eq(0),
+            0b0011: next_last_byte.eq(1),
+            0b0111: next_last_byte.eq(2),
+            "default": next_last_byte.eq(3),
+        })
+
+        curr_byte = Signal(8)
+        self.comb += Case(byte_idx, {
+            0: curr_byte.eq(w_data[0:8]),
+            1: curr_byte.eq(w_data[8:16]),
+            2: curr_byte.eq(w_data[16:24]),
+            3: curr_byte.eq(w_data[24:32]),
+        })
+
+        is_word_end = Signal()
+        self.comb += is_word_end.eq(byte_idx == w_last_byte)
+
+        self.comb += [
+            If(tx_state == TX_S_SEND,
+                self.tx_mac_valid.eq(1),
+                self.tx_mac_data.eq(curr_byte),
+                self.tx_mac_last.eq(tx_mac_last_reg),
+                self.tx_mac_error.eq(tx_mac_error_reg),
+            ).Else(
+                self.tx_mac_valid.eq(0),
+                self.tx_mac_data.eq(0),
+                self.tx_mac_last.eq(0),
+                self.tx_mac_error.eq(0),
+            )
+        ]
+
+        self.sync.eth_sfp1_tx += [
+            If(tx_state == TX_S_IDLE,
+                If(has_frame & tx_fifo.readable,
+                    tx_fifo.re.eq(1),
+                    w_data.eq(tx_fifo.dout[0:32]),
+                    w_last_byte.eq(next_last_byte),
+                    w_last.eq(tx_fifo.dout[36]),
+                    w_error.eq(tx_fifo.dout[37]),
+                    tx_mac_last_reg.eq(tx_fifo.dout[36] & (next_last_byte == 0)),
+                    tx_mac_error_reg.eq(tx_fifo.dout[37] & (tx_fifo.dout[36] & (next_last_byte == 0))),
+                    byte_idx.eq(0),
+                    tx_state.eq(TX_S_SEND),
+                ).Else(
+                    tx_fifo.re.eq(0),
+                    tx_mac_last_reg.eq(0),
+                    tx_mac_error_reg.eq(0),
+                )
+            ).Elif(tx_state == TX_S_SEND,
+                tx_fifo.re.eq(0),
+                If(self.tx_mac_ready,
+                    If(is_word_end,
+                        If(w_last,
+                            tx_frames_drained.eq(tx_frames_drained + 1),
+                            tx_mac_last_reg.eq(0),
+                            tx_mac_error_reg.eq(0),
+                            tx_state.eq(TX_S_IDLE),
+                        ).Else(
+                            If(tx_fifo.readable,
+                                tx_fifo.re.eq(1),
+                                w_data.eq(tx_fifo.dout[0:32]),
+                                w_last_byte.eq(next_last_byte),
+                                w_last.eq(tx_fifo.dout[36]),
+                                w_error.eq(tx_fifo.dout[37]),
+                                tx_mac_last_reg.eq(tx_fifo.dout[36] & (next_last_byte == 0)),
+                                tx_mac_error_reg.eq(tx_fifo.dout[37] & (tx_fifo.dout[36] & (next_last_byte == 0))),
+                                byte_idx.eq(0),
+                            )
+                        )
+                    ).Else(
+                        byte_idx.eq(byte_idx + 1),
+                        tx_mac_last_reg.eq(w_last & ((byte_idx + 1) == w_last_byte)),
+                        tx_mac_error_reg.eq(w_error & (w_last & ((byte_idx + 1) == w_last_byte))),
+                    )
+                )
+            )
+        ]
+
+        # =====================================================================
+        # RX PATH: 1G MAC (125 MHz) -> RX Async FIFO -> DMA (50 MHz sys)
+        # =====================================================================
+        rx_fifo = ClockDomainsRenamer({"write": "eth_sfp1_rx", "read": "sys"})(
+            AsyncFIFO(width=38, depth=depth)
+        )
+        self.submodules.rx_fifo = rx_fifo
+
+        rx_byte_cnt = Signal(2)
+        rx_word_data = Signal(32)
+
+        assembled_word = Signal(32)
+        self.comb += [
+            assembled_word.eq(rx_word_data),
+            Case(rx_byte_cnt, {
+                0: assembled_word[0:8].eq(self.rx_mac_data),
+                1: assembled_word[8:16].eq(self.rx_mac_data),
+                2: assembled_word[16:24].eq(self.rx_mac_data),
+                3: assembled_word[24:32].eq(self.rx_mac_data),
+            })
+        ]
+
+        rx_word_be = Signal(4)
+        self.comb += Case(rx_byte_cnt, {
+            0: rx_word_be.eq(0b0001),
+            1: rx_word_be.eq(0b0011),
+            2: rx_word_be.eq(0b0111),
+            3: rx_word_be.eq(0b1111),
+        })
+
+        rx_push = Signal()
+        self.comb += rx_push.eq(self.rx_mac_valid & ((rx_byte_cnt == 3) | self.rx_mac_last))
+
+        self.comb += [
+            rx_fifo.din.eq(Cat(assembled_word, rx_word_be, self.rx_mac_last, self.rx_mac_error)),
+            rx_fifo.we.eq(rx_push & rx_fifo.writable),
+        ]
+
+        self.sync.eth_sfp1_rx += [
+            If(self.rx_mac_valid,
+                If(self.rx_mac_last | (rx_byte_cnt == 3),
+                    rx_byte_cnt.eq(0),
+                    rx_word_data.eq(0),
+                ).Else(
+                    rx_byte_cnt.eq(rx_byte_cnt + 1),
+                    rx_word_data.eq(assembled_word),
+                )
+            )
+        ]
+
+        # Drain RX FIFO into DMA in sys domain (50 MHz)
+        self.comb += [
+            self.dma_source.valid.eq(rx_fifo.readable),
+            self.dma_source.data.eq(rx_fifo.dout[0:32]),
+            self.dma_source.be.eq(rx_fifo.dout[32:36]),
+            self.dma_source.last.eq(rx_fifo.dout[36]),
+            self.dma_source.error.eq(rx_fifo.dout[37]),
+            rx_fifo.re.eq(self.dma_source.valid & self.dma_source.ready),
+        ]

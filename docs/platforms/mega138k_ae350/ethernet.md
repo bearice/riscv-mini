@@ -124,3 +124,18 @@ RX2500 的 place3/route1 候选 `build/runs/20261030T045204899280Z-build-etherne
    - 持续 256 帧 1514B 全长帧收发流：256 发 / 256 收，0 丢帧、0 CRC 错误、0 FCS 错误、0 RX_ER，全部通过。
    - 标准 49 项线缆检查（ARP、7 项 ICMP、39 项 UDP、2 项校验和拒绝）：0 重试、0 错误，一次性 100% 通过。
    - 结果核验：`failures: []`，`packets_verified: True`，`PASSED: True`。
+
+## SFP+ 双模异构 (10GBASE-R + 1G SGMII/1000BASE-X) 与 SerDes CSR 机制
+
+Tang Mega 138K Pro 开发板通过 Gowin GW5AST GTR12 SerDes Quad 1 的 Lane 0 和 Lane 1 引出两路 SFP+ 接口：
+- **SFP0（Lane 0）**：运行 10GBASE-R 光口协议（10.3125 Gbps 线速率，156.25 MHz MAC 时钟，64-bit PMA 数据流，161.13 MHz 内部 PCS 时钟）；
+- **SFP1（Lane 1）**：运行 1G 1000BASE-X（光口）/ SGMII（电口）双模协议（1.25 Gbps 线速率，125 MHz 内部 PCS/MAC，10-bit PMA 数据流）；
+- **三路动态仲裁**：板载 RTL8211F RGMII、SFP0 10G MAC、SFP1 1G MAC 通过系统 CSR 控制的多路复用器动态接入 LiteEth `EthernetDMA`，共享 256-bit DDR3 内存仲裁器。
+
+### SerDes CSR 底层机制与 UPAR 初始化
+
+高云 GTR12 原语（`GTR12_QUAD`）不开放全套静态 Verilog 参数，而是依赖上电时运行的 UPAR（User Peripheral Access Register）状态机将数百条寄存器写指令（`upar_write_driver(addr, data)`）按序列写入硬件：
+- 初始化指令序列存储于 [`gateware/vendor/gowin_gw5ast/sfp_serdes/serdes.csr`](file:///home/bearice/workspace/fpga/riscv-mini/gateware/vendor/gowin_gw5ast/sfp_serdes/serdes.csr) 中，并在 Gowin 综合阶段由 `set_csr "serdes.csr"` 加载。
+- **官方黑盒与参数字典**：高云官方公开文档（IPUG1024）不对外公开寄存器手册，但工具链内部在 `IDE/share/device/GW5AST-138B/serdes_param_idx.txt` 维护了 89,943 行底层参数字典，并通过 `serdes_toml_to_csr_138k.bin` 生成 CSR。
+- **异构双速率实现**：由于官方 GUI 向导无法在同一 Quad 勾选混合速率，本工程通过分析 10G 与 1.25G 的 CSR 输出差异，将 Quad 1 Lane 1 的 CPLL 寄存器（`0x908620`、`0x908628`）单独配置为 1.25G 分频，使 Lane 0 (10G) 与 Lane 1 (1G) 独立稳定运行。
+- 详细设计与寄存器地址偏移表参见 [`gateware/vendor/gowin_gw5ast/sfp_serdes/README.md`](file:///home/bearice/workspace/fpga/riscv-mini/gateware/vendor/gowin_gw5ast/sfp_serdes/README.md)。

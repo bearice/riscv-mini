@@ -7,7 +7,50 @@
 //Device Version: B
 //Created Time: Thu Oct 17 12:51:52 2024
 
-module SerDes_Top (Ten_Giga_Serial_Ethernet_Top_xgmii_rxc_o, Ten_Giga_Serial_Ethernet_Top_xgmii_rxd_o, Ten_Giga_Serial_Ethernet_Top_ref_clk_o, Ten_Giga_Serial_Ethernet_Top_clk_out0_o, Ten_Giga_Serial_Ethernet_Top_clk_out1_o, Ten_Giga_Serial_Ethernet_Top_block_lock_o, Ten_Giga_Serial_Ethernet_Top_hi_ber_o, Ten_Giga_Serial_Ethernet_Top_pcs_status_o, Ten_Giga_Serial_Ethernet_Top_ber_count_o, Ten_Giga_Serial_Ethernet_Top_errored_block_count_o, Ten_Giga_Serial_Ethernet_Top_debug_vector_o, Ten_Giga_Serial_Ethernet_Top_1_xgmii_rxc_o, Ten_Giga_Serial_Ethernet_Top_1_xgmii_rxd_o, Ten_Giga_Serial_Ethernet_Top_1_ref_clk_o, Ten_Giga_Serial_Ethernet_Top_1_clk_out0_o, Ten_Giga_Serial_Ethernet_Top_1_clk_out1_o, Ten_Giga_Serial_Ethernet_Top_1_block_lock_o, Ten_Giga_Serial_Ethernet_Top_1_hi_ber_o, Ten_Giga_Serial_Ethernet_Top_1_pcs_status_o, Ten_Giga_Serial_Ethernet_Top_1_ber_count_o, Ten_Giga_Serial_Ethernet_Top_1_errored_block_count_o, Ten_Giga_Serial_Ethernet_Top_1_debug_vector_o, Ten_Giga_Serial_Ethernet_Top_rx_rstn_i, Ten_Giga_Serial_Ethernet_Top_tx_rstn_i, Ten_Giga_Serial_Ethernet_Top_signal_detect_i, Ten_Giga_Serial_Ethernet_Top_xgmii_rx_clk_i, Ten_Giga_Serial_Ethernet_Top_xgmii_tx_clk_i, Ten_Giga_Serial_Ethernet_Top_xgmii_rx_clk_ready_i, Ten_Giga_Serial_Ethernet_Top_xgmii_tx_clk_ready_i, Ten_Giga_Serial_Ethernet_Top_xgmii_txc_i, Ten_Giga_Serial_Ethernet_Top_xgmii_txd_i, Ten_Giga_Serial_Ethernet_Top_clear_ber_count_i, Ten_Giga_Serial_Ethernet_Top_clear_errored_block_count_i, Ten_Giga_Serial_Ethernet_Top_1_rx_rstn_i, Ten_Giga_Serial_Ethernet_Top_1_tx_rstn_i, Ten_Giga_Serial_Ethernet_Top_1_signal_detect_i, Ten_Giga_Serial_Ethernet_Top_1_xgmii_rx_clk_i, Ten_Giga_Serial_Ethernet_Top_1_xgmii_tx_clk_i, Ten_Giga_Serial_Ethernet_Top_1_xgmii_rx_clk_ready_i, Ten_Giga_Serial_Ethernet_Top_1_xgmii_tx_clk_ready_i, Ten_Giga_Serial_Ethernet_Top_1_xgmii_txc_i, Ten_Giga_Serial_Ethernet_Top_1_xgmii_txd_i, Ten_Giga_Serial_Ethernet_Top_1_clear_ber_count_i, Ten_Giga_Serial_Ethernet_Top_1_clear_errored_block_count_i);
+module SerDes_Top (
+    Ten_Giga_Serial_Ethernet_Top_xgmii_rxc_o,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_rxd_o,
+    Ten_Giga_Serial_Ethernet_Top_ref_clk_o,
+    Ten_Giga_Serial_Ethernet_Top_clk_out0_o,
+    Ten_Giga_Serial_Ethernet_Top_clk_out1_o,
+    Ten_Giga_Serial_Ethernet_Top_block_lock_o,
+    Ten_Giga_Serial_Ethernet_Top_hi_ber_o,
+    Ten_Giga_Serial_Ethernet_Top_pcs_status_o,
+    Ten_Giga_Serial_Ethernet_Top_ber_count_o,
+    Ten_Giga_Serial_Ethernet_Top_errored_block_count_o,
+    Ten_Giga_Serial_Ethernet_Top_debug_vector_o,
+    Ten_Giga_Serial_Ethernet_Top_rx_rstn_i,
+    Ten_Giga_Serial_Ethernet_Top_tx_rstn_i,
+    Ten_Giga_Serial_Ethernet_Top_signal_detect_i,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_rx_clk_i,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_tx_clk_i,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_rx_clk_ready_i,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_tx_clk_ready_i,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_txc_i,
+    Ten_Giga_Serial_Ethernet_Top_xgmii_txd_i,
+    Ten_Giga_Serial_Ethernet_Top_clear_ber_count_i,
+    Ten_Giga_Serial_Ethernet_Top_clear_errored_block_count_i,
+    sfp1_clk_125m_i,
+    sfp1_rstn_i,
+    sfp1_signal_detect_i,
+    sfp1_basex_link_timer_i,
+    sfp1_sgmii_link_timer_i,
+    sfp1_basex_or_sgmii_i,
+    sfp1_sgmii_mode_i,
+    sfp1_rx_mac_clk_o,
+    sfp1_rx_mac_valid_o,
+    sfp1_rx_mac_data_o,
+    sfp1_rx_mac_last_o,
+    sfp1_rx_mac_error_o,
+    sfp1_tx_mac_clk_o,
+    sfp1_tx_mac_valid_i,
+    sfp1_tx_mac_data_i,
+    sfp1_tx_mac_last_i,
+    sfp1_tx_mac_error_i,
+    sfp1_tx_mac_ready_o,
+    sfp1_status_vector_o,
+    sfp1_link_partner_ability_o
+);
 
 output [7:0] Ten_Giga_Serial_Ethernet_Top_xgmii_rxc_o;
 output [63:0] Ten_Giga_Serial_Ethernet_Top_xgmii_rxd_o;
@@ -20,17 +63,26 @@ output Ten_Giga_Serial_Ethernet_Top_pcs_status_o;
 output [5:0] Ten_Giga_Serial_Ethernet_Top_ber_count_o;
 output [7:0] Ten_Giga_Serial_Ethernet_Top_errored_block_count_o;
 output [15:0] Ten_Giga_Serial_Ethernet_Top_debug_vector_o;
-output [7:0] Ten_Giga_Serial_Ethernet_Top_1_xgmii_rxc_o;
-output [63:0] Ten_Giga_Serial_Ethernet_Top_1_xgmii_rxd_o;
-output Ten_Giga_Serial_Ethernet_Top_1_ref_clk_o;
-output Ten_Giga_Serial_Ethernet_Top_1_clk_out0_o;
-output Ten_Giga_Serial_Ethernet_Top_1_clk_out1_o;
-output Ten_Giga_Serial_Ethernet_Top_1_block_lock_o;
-output Ten_Giga_Serial_Ethernet_Top_1_hi_ber_o;
-output Ten_Giga_Serial_Ethernet_Top_1_pcs_status_o;
-output [5:0] Ten_Giga_Serial_Ethernet_Top_1_ber_count_o;
-output [7:0] Ten_Giga_Serial_Ethernet_Top_1_errored_block_count_o;
-output [15:0] Ten_Giga_Serial_Ethernet_Top_1_debug_vector_o;
+input sfp1_clk_125m_i;
+input sfp1_rstn_i;
+input sfp1_signal_detect_i;
+input [8:0] sfp1_basex_link_timer_i;
+input [8:0] sfp1_sgmii_link_timer_i;
+input sfp1_basex_or_sgmii_i;
+input sfp1_sgmii_mode_i;
+output sfp1_rx_mac_clk_o;
+output sfp1_rx_mac_valid_o;
+output [7:0] sfp1_rx_mac_data_o;
+output sfp1_rx_mac_last_o;
+output sfp1_rx_mac_error_o;
+output sfp1_tx_mac_clk_o;
+input sfp1_tx_mac_valid_i;
+input [7:0] sfp1_tx_mac_data_i;
+input sfp1_tx_mac_last_i;
+input sfp1_tx_mac_error_i;
+output sfp1_tx_mac_ready_o;
+output [10:0] sfp1_status_vector_o;
+output [15:0] sfp1_link_partner_ability_o;
 input Ten_Giga_Serial_Ethernet_Top_rx_rstn_i;
 input Ten_Giga_Serial_Ethernet_Top_tx_rstn_i;
 input Ten_Giga_Serial_Ethernet_Top_signal_detect_i;
@@ -42,22 +94,15 @@ input [7:0] Ten_Giga_Serial_Ethernet_Top_xgmii_txc_i;
 input [63:0] Ten_Giga_Serial_Ethernet_Top_xgmii_txd_i;
 input Ten_Giga_Serial_Ethernet_Top_clear_ber_count_i;
 input Ten_Giga_Serial_Ethernet_Top_clear_errored_block_count_i;
-input Ten_Giga_Serial_Ethernet_Top_1_rx_rstn_i;
-input Ten_Giga_Serial_Ethernet_Top_1_tx_rstn_i;
-input Ten_Giga_Serial_Ethernet_Top_1_signal_detect_i;
-input Ten_Giga_Serial_Ethernet_Top_1_xgmii_rx_clk_i;
-input Ten_Giga_Serial_Ethernet_Top_1_xgmii_tx_clk_i;
-input Ten_Giga_Serial_Ethernet_Top_1_xgmii_rx_clk_ready_i;
-input Ten_Giga_Serial_Ethernet_Top_1_xgmii_tx_clk_ready_i;
-input [7:0] Ten_Giga_Serial_Ethernet_Top_1_xgmii_txc_i;
-input [63:0] Ten_Giga_Serial_Ethernet_Top_1_xgmii_txd_i;
-input Ten_Giga_Serial_Ethernet_Top_1_clear_ber_count_i;
-input Ten_Giga_Serial_Ethernet_Top_1_clear_errored_block_count_i;
 
 wire q1_fabric_ln0_rstn_i;
 wire [79:0] q1_fabric_ln0_txdata_i;
 wire q1_fabric_ln1_rstn_i;
 wire [79:0] q1_fabric_ln1_txdata_i;
+wire [42:0] q1_fabric_ln1_ctrl_i;
+wire [42:0] q1_fabric_ln1_ctrl_i_h;
+wire [9:0] sfp1_serdes_txdata;
+assign q1_fabric_ln1_txdata_i = {70'b0, sfp1_serdes_txdata};
 wire q1_lane0_pcs_rx_rst;
 wire q1_lane1_pcs_rx_rst;
 wire q1_lane0_pcs_tx_rst;
@@ -365,7 +410,7 @@ GTR12_QUAD gtr12_quad_inst1 (
     .FABRIC_LN0_RATE_I({gw_gnd,gw_gnd}),
     .FABRIC_LN0_RSTN_I(q1_fabric_ln0_rstn_i),
     .FABRIC_LN0_TXDATA_I(q1_fabric_ln0_txdata_i),
-    .FABRIC_LN1_CTRL_I({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
+    .FABRIC_LN1_CTRL_I(q1_fabric_ln1_ctrl_i),
     .FABRIC_LN1_IDDQ_I(gw_gnd),
     .FABRIC_LN1_PD_I({gw_gnd,gw_gnd,gw_gnd}),
     .FABRIC_LN1_RATE_I({gw_gnd,gw_gnd}),
@@ -441,7 +486,7 @@ GTR12_QUAD gtr12_quad_inst1 (
     .FABRIC_LN0_PD_I_H({gw_gnd,gw_gnd,gw_gnd}),
     .FABRIC_LN0_RATE_I_H({gw_gnd,gw_gnd}),
     .FABRIC_LN0_TX_VLD_IN(q1_fabric_ln0_tx_vld_in),
-    .FABRIC_LN1_CTRL_I_H({gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd,gw_gnd}),
+    .FABRIC_LN1_CTRL_I_H(q1_fabric_ln1_ctrl_i_h),
     .FABRIC_LN1_PD_I_H({gw_gnd,gw_gnd,gw_gnd}),
     .FABRIC_LN1_RATE_I_H({gw_gnd,gw_gnd}),
     .FABRIC_LN1_TX_VLD_IN(q1_fabric_ln1_tx_vld_in),
@@ -511,49 +556,78 @@ Ten_Giga_Serial_Ethernet_Top Ten_Giga_Serial_Ethernet_Top_inst (
     .serdes_astat_i(q1_fabric_ln0_astat_o)
 );
 
-Ten_Giga_Serial_Ethernet_Top_1 Ten_Giga_Serial_Ethernet_Top_1_inst (
-    .xgmii_rxc_o(Ten_Giga_Serial_Ethernet_Top_1_xgmii_rxc_o),
-    .xgmii_rxd_o(Ten_Giga_Serial_Ethernet_Top_1_xgmii_rxd_o),
-    .ref_clk_o(Ten_Giga_Serial_Ethernet_Top_1_ref_clk_o),
-    .clk_out0_o(Ten_Giga_Serial_Ethernet_Top_1_clk_out0_o),
-    .clk_out1_o(Ten_Giga_Serial_Ethernet_Top_1_clk_out1_o),
-    .block_lock_o(Ten_Giga_Serial_Ethernet_Top_1_block_lock_o),
-    .hi_ber_o(Ten_Giga_Serial_Ethernet_Top_1_hi_ber_o),
-    .pcs_status_o(Ten_Giga_Serial_Ethernet_Top_1_pcs_status_o),
-    .ber_count_o(Ten_Giga_Serial_Ethernet_Top_1_ber_count_o),
-    .errored_block_count_o(Ten_Giga_Serial_Ethernet_Top_1_errored_block_count_o),
-    .debug_vector_o(Ten_Giga_Serial_Ethernet_Top_1_debug_vector_o),
-    .serdes_pcs_tx_clk_o(q1_lane1_fabric_tx_clk),
-    .serdes_txdata_o(q1_fabric_ln1_txdata_i),
-    .serdes_pcs_rx_clk_o(q1_lane1_fabric_rx_clk),
-    .serdes_pma_rstn_o(q1_fabric_ln1_rstn_i),
-    .serdes_pcs_tx_rst_o(q1_lane1_pcs_tx_rst),
-    .serdes_pcs_rx_rst_o(q1_lane1_pcs_rx_rst),
-    .serdes_pcs_rx_rden_o(q1_lane1_rx_if_fifo_rden),
-    .serdes_pcs_tx_wren_o(q1_fabric_ln1_tx_vld_in),
-    .rx_rstn_i(Ten_Giga_Serial_Ethernet_Top_1_rx_rstn_i),
-    .tx_rstn_i(Ten_Giga_Serial_Ethernet_Top_1_tx_rstn_i),
-    .signal_detect_i(Ten_Giga_Serial_Ethernet_Top_1_signal_detect_i),
-    .xgmii_rx_clk_i(Ten_Giga_Serial_Ethernet_Top_1_xgmii_rx_clk_i),
-    .xgmii_tx_clk_i(Ten_Giga_Serial_Ethernet_Top_1_xgmii_tx_clk_i),
-    .xgmii_rx_clk_ready_i(Ten_Giga_Serial_Ethernet_Top_1_xgmii_rx_clk_ready_i),
-    .xgmii_tx_clk_ready_i(Ten_Giga_Serial_Ethernet_Top_1_xgmii_tx_clk_ready_i),
-    .xgmii_txc_i(Ten_Giga_Serial_Ethernet_Top_1_xgmii_txc_i),
-    .xgmii_txd_i(Ten_Giga_Serial_Ethernet_Top_1_xgmii_txd_i),
-    .clear_ber_count_i(Ten_Giga_Serial_Ethernet_Top_1_clear_ber_count_i),
-    .clear_errored_block_count_i(Ten_Giga_Serial_Ethernet_Top_1_clear_errored_block_count_i),
-    .serdes_pma_rx_lock_i(q1_fabric_ln1_pma_rx_lock_o),
-    .serdes_qpll0_pll_lock_i(q1_fabric_cmu_ok_o),
-    .serdes_qpll1_pll_lock_i(q1_fabric_cmu1_ok_o),
-    .serdes_cpll_pll_lock_i(q1_fabric_lane1_cmu_ok_o),
+Giga_Serial_Ethernet_Top Giga_Serial_Ethernet_Top_inst (
+    .clk_in_i(sfp1_clk_125m_i),
+    .rstn_i(sfp1_rstn_i),
     .serdes_pcs_tx_clk_i(q1_lane1_pcs_tx_o_fabric_clk),
     .serdes_pcs_rx_clk_i(q1_lane1_pcs_rx_o_fabric_clk),
-    .serdes_rxdata_i(q1_fabric_ln1_rxdata_o),
-    .serdes_refclk0_i(q1_fabric_cmu_ck_ref_o),
-    .serdes_refclk1_i(q1_fabric_cmu1_ck_ref_o),
-    .serdes_pcs_rx_aempty_i(q1_lane1_rx_if_fifo_aempty),
-    .serdes_pcs_tx_afull_i(q1_lane1_tx_if_fifo_afull),
-    .serdes_astat_i(q1_fabric_ln1_astat_o)
+    .serdes_qpll1_ok_i(q1_fabric_cmu1_ok_o),
+    .serdes_qpll0_ok_i(q1_fabric_cmu_ok_o),
+    .serdes_cpll_ok_i(q1_fabric_lane1_cmu_ok_o),
+    .serdes_align_link_i(q1_lane1_align_link),
+    .serdes_tx_fifo_afull_i(q1_lane1_tx_if_fifo_afull),
+    .serdes_fabric_ctrl_o(q1_fabric_ln1_ctrl_i),
+    .serdes_fabric_ctrl_h_o(q1_fabric_ln1_ctrl_i_h),
+    .serdes_fabric_rstn_o(q1_fabric_ln1_rstn_i),
+    .serdes_fabric_tx_clk_o(q1_lane1_fabric_tx_clk),
+    .serdes_fabric_rx_clk_o(q1_lane1_fabric_rx_clk),
+    .serdes_pcs_tx_rst_o(q1_lane1_pcs_tx_rst),
+    .serdes_pcs_rx_rst_o(q1_lane1_pcs_rx_rst),
+    .serdes_fabric_tx_vld_o(q1_fabric_ln1_tx_vld_in),
+    .serdes_rxfifo_aempty_i(q1_lane1_rx_if_fifo_aempty),
+    .serdes_rxfifo_rd_en_o(q1_lane1_rx_if_fifo_rden),
+    .serdes_rxdata_i(q1_fabric_ln1_rxdata_o[10:0]),
+    .serdes_txdata_o(sfp1_serdes_txdata),
+    .signal_detect_i(sfp1_signal_detect_i),
+    .basex_link_timer_i(sfp1_basex_link_timer_i),
+    .sgmii_link_timer_i(sfp1_sgmii_link_timer_i),
+    .basex_or_sgmii_i(sfp1_basex_or_sgmii_i),
+    .sgmii_mode_i(sfp1_sgmii_mode_i),
+    .repeater_mode_i(1'b0),
+    .rx_mac_clk_o(sfp1_rx_mac_clk_o),
+    .rx_mac_valid_o(sfp1_rx_mac_valid_o),
+    .rx_mac_data_o(sfp1_rx_mac_data_o),
+    .rx_mac_last_o(sfp1_rx_mac_last_o),
+    .rx_mac_error_o(sfp1_rx_mac_error_o),
+    .tx_mac_clk_o(sfp1_tx_mac_clk_o),
+    .tx_mac_valid_i(sfp1_tx_mac_valid_i),
+    .tx_mac_data_i(sfp1_tx_mac_data_i),
+    .tx_mac_last_i(sfp1_tx_mac_last_i),
+    .tx_mac_error_i(sfp1_tx_mac_error_i),
+    .tx_mac_ready_o(sfp1_tx_mac_ready_o),
+    .tx_collision_o(),
+    .tx_retransmit_o(),
+    .rx_fcs_fwd_ena_i(1'b0),
+    .rx_jumbo_ena_i(1'b1),
+    .rx_statistics_valid_o(),
+    .rx_statistics_vector_o(),
+    .rx_pause_req_o(),
+    .rx_pause_val_o(),
+    .tx_pause_req_i(1'b0),
+    .tx_pause_val_i(16'b0),
+    .tx_pause_source_addr_i(48'b0),
+    .tx_ifg_delay_ena_i(1'b0),
+    .tx_ifg_delay_i(8'b0),
+    .tx_fcs_fwd_ena_i(1'b0),
+    .tx_statistics_valid_o(),
+    .tx_statistics_vector_o(),
+    .miim_hs_clk_i(1'b0),
+    .miim_rstn_i(1'b0),
+    .miim_phyad_i(5'b0),
+    .miim_regad_i(5'b0),
+    .miim_wrdata_i(16'b0),
+    .miim_wren_i(1'b0),
+    .miim_rden_i(1'b0),
+    .miim_rddata_o(),
+    .miim_rddata_valid_o(),
+    .miim_busy_o(),
+    .mdc_o(),
+    .mdio_in_i(1'b1),
+    .mdio_out_o(),
+    .mdio_oen_o(),
+    .configuration_vector_i(15'b0),
+    .status_vector_o(sfp1_status_vector_o),
+    .link_partner_ability_base_o(sfp1_link_partner_ability_o)
 );
 
 endmodule //SerDes_Top

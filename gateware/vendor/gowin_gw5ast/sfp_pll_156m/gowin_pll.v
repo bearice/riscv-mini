@@ -8,13 +8,13 @@
 //Device Version: B
 //Created Time: Sat Oct 31 18:31:36 2026
 
-module Xge_pll (lock, clkout0, clkin);
+module Xge_pll (lock, clkout0, clkout1, clkin);
 
 output lock;
 output clkout0;
+output clkout1;
 input clkin;
 
-wire clkout1;
 wire clkout2;
 wire clkout3;
 wire clkout4;
@@ -82,7 +82,7 @@ defparam PLL_inst.FCLKIN = "125";
 defparam PLL_inst.IDIV_SEL = 2;
 defparam PLL_inst.FBDIV_SEL = 1;
 defparam PLL_inst.ODIV0_SEL = 8;
-defparam PLL_inst.ODIV1_SEL = 8;
+defparam PLL_inst.ODIV1_SEL = 10;
 defparam PLL_inst.ODIV2_SEL = 8;
 defparam PLL_inst.ODIV3_SEL = 8;
 defparam PLL_inst.ODIV4_SEL = 8;
@@ -92,7 +92,7 @@ defparam PLL_inst.MDIV_SEL = 20;
 defparam PLL_inst.MDIV_FRAC_SEL = 0;
 defparam PLL_inst.ODIV0_FRAC_SEL = 0;
 defparam PLL_inst.CLKOUT0_EN = "TRUE";
-defparam PLL_inst.CLKOUT1_EN = "FALSE";
+defparam PLL_inst.CLKOUT1_EN = "TRUE";
 defparam PLL_inst.CLKOUT2_EN = "FALSE";
 defparam PLL_inst.CLKOUT3_EN = "FALSE";
 defparam PLL_inst.CLKOUT4_EN = "FALSE";

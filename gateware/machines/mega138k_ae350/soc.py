@@ -404,36 +404,66 @@ class DDRSoC(LiteXModule):
         add_mac_timing_buffers(self.ethernet_mac,platform)
         if self.sfp is not None:
             self.comb += [
-                If(self.sfp.dma_en,
+                If(self.sfp.dma_sel == 1,
+                    # Route to SFP0 (10GBASE-R)
                     self.sfp.dma_sink.valid.eq(self.ethernet_dma.sink.valid),
                     self.sfp.dma_sink.data.eq(self.ethernet_dma.sink.data),
                     self.sfp.dma_sink.be.eq(self.ethernet_dma.sink.be),
                     self.sfp.dma_sink.last.eq(self.ethernet_dma.sink.last),
                     self.sfp.dma_sink.error.eq(self.ethernet_dma.sink.error),
-                    self.ethernet_mac.sink.valid.eq(0),
                     self.ethernet_dma.sink.ready.eq(self.sfp.dma_sink.ready),
+
                     self.ethernet_dma.source.valid.eq(self.sfp.dma_source.valid),
                     self.ethernet_dma.source.data.eq(self.sfp.dma_source.data),
                     self.ethernet_dma.source.be.eq(self.sfp.dma_source.be),
                     self.ethernet_dma.source.last.eq(self.sfp.dma_source.last),
                     self.ethernet_dma.source.error.eq(self.sfp.dma_source.error),
                     self.sfp.dma_source.ready.eq(self.ethernet_dma.source.ready),
+
+                    self.sfp.sfp1_dma_sink.valid.eq(0),
+                    self.sfp.sfp1_dma_source.ready.eq(0),
+                    self.ethernet_mac.sink.valid.eq(0),
+                    self.ethernet_mac.source.ready.eq(0),
+                ).Elif(self.sfp.dma_sel == 2,
+                    # Route to SFP1 (1G BASE-X / SGMII)
+                    self.sfp.sfp1_dma_sink.valid.eq(self.ethernet_dma.sink.valid),
+                    self.sfp.sfp1_dma_sink.data.eq(self.ethernet_dma.sink.data),
+                    self.sfp.sfp1_dma_sink.be.eq(self.ethernet_dma.sink.be),
+                    self.sfp.sfp1_dma_sink.last.eq(self.ethernet_dma.sink.last),
+                    self.sfp.sfp1_dma_sink.error.eq(self.ethernet_dma.sink.error),
+                    self.ethernet_dma.sink.ready.eq(self.sfp.sfp1_dma_sink.ready),
+
+                    self.ethernet_dma.source.valid.eq(self.sfp.sfp1_dma_source.valid),
+                    self.ethernet_dma.source.data.eq(self.sfp.sfp1_dma_source.data),
+                    self.ethernet_dma.source.be.eq(self.sfp.sfp1_dma_source.be),
+                    self.ethernet_dma.source.last.eq(self.sfp.sfp1_dma_source.last),
+                    self.ethernet_dma.source.error.eq(self.sfp.sfp1_dma_source.error),
+                    self.sfp.sfp1_dma_source.ready.eq(self.ethernet_dma.source.ready),
+
+                    self.sfp.dma_sink.valid.eq(0),
+                    self.sfp.dma_source.ready.eq(0),
+                    self.ethernet_mac.sink.valid.eq(0),
                     self.ethernet_mac.source.ready.eq(0),
                 ).Else(
+                    # Route to RGMII PHY
                     self.ethernet_mac.sink.valid.eq(self.ethernet_dma.sink.valid),
                     self.ethernet_mac.sink.data.eq(self.ethernet_dma.sink.data),
                     self.ethernet_mac.sink.be.eq(self.ethernet_dma.sink.be),
                     self.ethernet_mac.sink.last.eq(self.ethernet_dma.sink.last),
                     self.ethernet_mac.sink.error.eq(self.ethernet_dma.sink.error),
-                    self.sfp.dma_sink.valid.eq(0),
                     self.ethernet_dma.sink.ready.eq(self.ethernet_mac.sink.ready),
+
                     self.ethernet_dma.source.valid.eq(self.ethernet_mac.source.valid),
                     self.ethernet_dma.source.data.eq(self.ethernet_mac.source.data),
                     self.ethernet_dma.source.be.eq(self.ethernet_mac.source.be),
                     self.ethernet_dma.source.last.eq(self.ethernet_mac.source.last),
                     self.ethernet_dma.source.error.eq(self.ethernet_mac.source.error),
                     self.ethernet_mac.source.ready.eq(self.ethernet_dma.source.ready),
+
+                    self.sfp.dma_sink.valid.eq(0),
                     self.sfp.dma_source.ready.eq(0),
+                    self.sfp.sfp1_dma_sink.valid.eq(0),
+                    self.sfp.sfp1_dma_source.ready.eq(0),
                 )
             ]
         else:
@@ -457,11 +487,11 @@ class DDRSoC(LiteXModule):
         phy_status_rgmii = Signal(2)
         self.specials += MultiReg(Cat(self.ethernet_phy.locked,eth.reset_n), phy_status_rgmii, 'sys')
         if self.sfp is not None:
-            self.comb += self.ethernet_dma.phy_status.eq(
-                Mux(self.sfp.dma_en,
-                    Cat(self.sfp.pcs_status_sys, ~self.sfp.sfp0_los_synced),
-                    phy_status_rgmii)
-            )
+            self.comb += Case(self.sfp.dma_sel, {
+                1: self.ethernet_dma.phy_status.eq(Cat(self.sfp.pcs_status_sys, ~self.sfp.sfp0_los_synced)),
+                2: self.ethernet_dma.phy_status.eq(Cat(self.sfp.sfp1_link_status_sys, ~self.sfp.sfp1_los_synced)),
+                "default": self.ethernet_dma.phy_status.eq(phy_status_rgmii),
+            })
         else:
             self.comb += self.ethernet_dma.phy_status.eq(phy_status_rgmii)
         user_flash = platform.request('user_flash')
@@ -515,7 +545,7 @@ class DDRSoC(LiteXModule):
                 ('-group [get_clocks {%s}] ' % self.crg.hdmi_pll.clock_names) +
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '
                 '-group [get_clocks {ddr_clk_ref}]' +
-                (' -group [get_clocks {xgmii_clk}] -group [get_clocks {serdes1_tx_clk}] -group [get_clocks {serdes1_rx_clk}] -group [get_clocks {serdes2_tx_clk}] -group [get_clocks {serdes2_rx_clk}]'
+                (' -group [get_clocks {xgmii_clk}] -group [get_clocks {ge_clk}] -group [get_clocks {serdes1_tx_clk}] -group [get_clocks {serdes1_rx_clk}] -group [get_clocks {serdes2_tx_clk}] -group [get_clocks {serdes2_rx_clk}]'
                  if self.sfp is not None else ''),
             ]
             with open(name, 'a') as f:
