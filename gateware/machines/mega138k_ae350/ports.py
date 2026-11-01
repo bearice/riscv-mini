@@ -40,4 +40,8 @@ def bind_ports(machine):
     io.differential_port('hdmi_data_p', 'hdmi_data_n', tuple(video['data_' + str(i)] for i in range(3)))
     io.resource('soft_usb', 'soft_usb')
     io.resource('ethernet_management', 'ethernet_management')
+    if getattr(d, 'sfp0', None):
+        io.resource('sfp0', d.sfp0)
+    if getattr(d, 'sfp1', None):
+        io.resource('sfp1', d.sfp1)
     return io

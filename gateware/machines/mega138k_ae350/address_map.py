@@ -71,6 +71,7 @@ TWI_MUX_GPIO_SHIFT = 20
 TWI_MUX_GPIO_MASK = 7 << TWI_MUX_GPIO_SHIFT
 
 ETH_BASE = 0xf80a0000
+SFP_BASE = 0xf80b0000
 
 USB_BASE = 0xf8060000
 
@@ -295,7 +296,7 @@ class AddressMap:
         self.GPIO_BUTTON_MASK = gpio['button_mask']
         self.GPIO_IRQ_MASK = gpio['irq_mask']
         self.ROM_CODE_BYTES = self.ROM_SIZE
-        self.WINDOWS = (('ddr', self.DDR_BASE, self.DDR_SIZE, 'implemented'), ('boot-xip', self.ROM_BASE, self.ROM_SIZE, 'SDK-Flash-U4-offset-0x600000'), ('flash-control', self.FLASH_CTRL_BASE, 4096, 'SDK-FR-APB'), ('sdk-flash-rest', self.ROM_BASE + self.ROM_SIZE, self.XIP_SIZE - self.ROM_SIZE, 'SDK-aperture-capacity-bounds-unqualified'), ('ilm', self.ILM_BASE, self.ILM_SIZE, 'hard-local-memory'), ('dlm', self.DLM_BASE, self.DLM_SIZE, 'hard-local-memory'), ('platform-csr', self.CSR_BASE, self.CSR_SIZE, 'implemented'), ('periph-csr', 4160815104, 524288, 'audio-mic-video-ws2812-board-io'), ('ethernet-csr', self.ETH_BASE, 4096, 'PHY-management-and-DDR-DMA-ring'), ('ext-ahb', self.EXT_AHB_BASE, self.EXT_AHB_SIZE, 'audio-mic-loopback-data'))
+        self.WINDOWS = (('ddr', self.DDR_BASE, self.DDR_SIZE, 'implemented'), ('boot-xip', self.ROM_BASE, self.ROM_SIZE, 'SDK-Flash-U4-offset-0x600000'), ('flash-control', self.FLASH_CTRL_BASE, 4096, 'SDK-FR-APB'), ('sdk-flash-rest', self.ROM_BASE + self.ROM_SIZE, self.XIP_SIZE - self.ROM_SIZE, 'SDK-aperture-capacity-bounds-unqualified'), ('ilm', self.ILM_BASE, self.ILM_SIZE, 'hard-local-memory'), ('dlm', self.DLM_BASE, self.DLM_SIZE, 'hard-local-memory'), ('platform-csr', self.CSR_BASE, self.CSR_SIZE, 'implemented'), ('periph-csr', 4160815104, 524288, 'audio-mic-video-ws2812-board-io'), ('ethernet-csr', self.ETH_BASE, 4096, 'PHY-management-and-DDR-DMA-ring'), ('sfp-csr', self.SFP_BASE, 4096, 'SFP-10GBASE-R-controller'), ('ext-ahb', self.EXT_AHB_BASE, self.EXT_AHB_SIZE, 'audio-mic-loopback-data'))
 
     def __getattr__(self, name):
         if name.isupper() and name in globals():

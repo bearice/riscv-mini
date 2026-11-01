@@ -38,7 +38,9 @@
     "flash": "user_flash",
     "i2c": "system_i2c",
     "twi_mux": "twi_mux",
-    "boot_flash": "config_flash"
+    "boot_flash": "config_flash",
+    "sfp0": "sfp_0",
+    "sfp1": "sfp_1"
   },
   "gpio": {
     "leds": [
@@ -62,7 +64,7 @@
   },
   "rtl": {
     "place_option": 3,
-    "route_option": 1,
+    "route_option": 2,
     "hdmi_reset_sites": [
       "R40C181[1][A]",
       "R47C181[0][A]",

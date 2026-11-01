@@ -920,6 +920,46 @@
           "pull": "none"
         }
       }
+    },
+    "sfp_0": {
+      "kind": "sfp",
+      "signals": {
+        "tx_disable": {
+          "pins": [
+            "R18"
+          ],
+          "io_standard": "LVCMOS33",
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "los": {
+          "pins": [
+            "V18"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        }
+      }
+    },
+    "sfp_1": {
+      "kind": "sfp",
+      "signals": {
+        "tx_disable": {
+          "pins": [
+            "M20"
+          ],
+          "io_standard": "LVCMOS33",
+          "drive_ma": 8,
+          "pull": "none"
+        },
+        "los": {
+          "pins": [
+            "W18"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        }
+      }
     }
   },
   "reserved_pins": [

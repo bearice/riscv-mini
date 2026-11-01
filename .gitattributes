@@ -6,3 +6,4 @@ firmware/apps/doom/** -whitespace
 
 # CPU 出厂物保持入库字节；文本来源哈希另外按 hash_normalization=lf 归一化 EOL。
 gateware/vendor/vexriscv/** -text
+gateware/vendor/gowin_gw5ast/** -whitespace

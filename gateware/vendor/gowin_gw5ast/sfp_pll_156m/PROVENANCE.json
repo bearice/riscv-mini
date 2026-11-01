@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "vendor": "Gowin Semiconductor",
+  "component": "156.25 MHz XGMII PLL",
+  "source": {
+    "ip": "TangPrimer-138K/example/sfp+/10G_Serial_Ethernet/XGbE_UDP/src/gowin_pll",
+    "reference_projects": [
+      "TangPrimer-138K/example/sfp+/10G_Serial_Ethernet/XGbE_UDP"
+    ],
+    "note": "Standard Gowin PLL primitive multiplying 125 MHz SerDes refclk with IDIV=2, MDIV=20, ODIV=8 (PFD=62.5MHz, VCO=1250MHz) to generate 156.25 MHz XGMII fabric clock within Gowin 1.9.12.04 Arora V PFD range (19-81.25 MHz)."
+  },
+  "device": {
+    "target_device": "gw5ast138b-007",
+    "part": "GW5AST-138B (Tang Mega 138K Pro)",
+    "tool_version_generated": "Gowin EDA 1.9.12.04",
+    "tool_version_used_for_synthesis": "1.9.12.04"
+  },
+  "files": {
+    "gowin_pll.v": {
+      "sha256": "107991a41a86b38a265a2cef348f0eeacb6c66aa56a1245db9364442dedd2bbf",
+      "module": "Xge_pll"
+    }
+  }
+}

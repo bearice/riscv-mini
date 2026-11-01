@@ -325,9 +325,14 @@ class DDRSoC(LiteXModule):
             pair = getattr(usb_pads, name)
             self.specials += Instance('TLVDS_IBUF', i_I=pair[0], i_IB=pair[1], o_O=target)
         from gateware.machines.mega138k_ae350.peripherals.ethernet_dma import EthernetDMA
+        from gateware.machines.mega138k_ae350.peripherals.ethernet_sfp_10g import EthernetSFP10G
         self.ethernet_dma = EthernetDMA(default_rx_taps=int(round(config.rtl.ethernet_rx_delay_ps / 12.5)))
+        sfp0_pads = platform.request('sfp0')
+        sfp1_pads = platform.request('sfp1')
+        self.sfp = EthernetSFP10G(platform, sfp0_pads, sfp1_pads)
         self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
-                               flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma)
+                               flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma,
+                               sfp=self.sfp)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
             DDRMemoryArbiter(self.ddr.ui,cpu_ui,video.ui,self.ethernet_dma.memory.ui))
         self.comb += arbiter.network_pending.eq(self.ethernet_dma.memory.pending)
@@ -397,8 +402,46 @@ class DDRSoC(LiteXModule):
         self.ethernet_mac = ResetInserter(['sys'])(LiteEthMACCore(self.ethernet_phy,32,with_sys_datapath=True,with_store_and_forward=True,tx_cdc_depth=8))
         self.comb += self.ethernet_mac.reset_sys.eq(~eth.reset_n)
         add_mac_timing_buffers(self.ethernet_mac,platform)
-        self.comb += [self.ethernet_dma.sink.connect(self.ethernet_mac.sink),
-            self.ethernet_mac.source.connect(self.ethernet_dma.source),
+        if self.sfp is not None:
+            self.comb += [
+                If(self.sfp.dma_en,
+                    self.sfp.dma_sink.valid.eq(self.ethernet_dma.sink.valid),
+                    self.sfp.dma_sink.data.eq(self.ethernet_dma.sink.data),
+                    self.sfp.dma_sink.be.eq(self.ethernet_dma.sink.be),
+                    self.sfp.dma_sink.last.eq(self.ethernet_dma.sink.last),
+                    self.sfp.dma_sink.error.eq(self.ethernet_dma.sink.error),
+                    self.ethernet_mac.sink.valid.eq(0),
+                    self.ethernet_dma.sink.ready.eq(self.sfp.dma_sink.ready),
+                    self.ethernet_dma.source.valid.eq(self.sfp.dma_source.valid),
+                    self.ethernet_dma.source.data.eq(self.sfp.dma_source.data),
+                    self.ethernet_dma.source.be.eq(self.sfp.dma_source.be),
+                    self.ethernet_dma.source.last.eq(self.sfp.dma_source.last),
+                    self.ethernet_dma.source.error.eq(self.sfp.dma_source.error),
+                    self.sfp.dma_source.ready.eq(self.ethernet_dma.source.ready),
+                    self.ethernet_mac.source.ready.eq(0),
+                ).Else(
+                    self.ethernet_mac.sink.valid.eq(self.ethernet_dma.sink.valid),
+                    self.ethernet_mac.sink.data.eq(self.ethernet_dma.sink.data),
+                    self.ethernet_mac.sink.be.eq(self.ethernet_dma.sink.be),
+                    self.ethernet_mac.sink.last.eq(self.ethernet_dma.sink.last),
+                    self.ethernet_mac.sink.error.eq(self.ethernet_dma.sink.error),
+                    self.sfp.dma_sink.valid.eq(0),
+                    self.ethernet_dma.sink.ready.eq(self.ethernet_mac.sink.ready),
+                    self.ethernet_dma.source.valid.eq(self.ethernet_mac.source.valid),
+                    self.ethernet_dma.source.data.eq(self.ethernet_mac.source.data),
+                    self.ethernet_dma.source.be.eq(self.ethernet_mac.source.be),
+                    self.ethernet_dma.source.last.eq(self.ethernet_mac.source.last),
+                    self.ethernet_dma.source.error.eq(self.ethernet_mac.source.error),
+                    self.ethernet_mac.source.ready.eq(self.ethernet_dma.source.ready),
+                    self.sfp.dma_source.ready.eq(0),
+                )
+            ]
+        else:
+            self.comb += [
+                self.ethernet_dma.sink.connect(self.ethernet_mac.sink),
+                self.ethernet_mac.source.connect(self.ethernet_dma.source),
+            ]
+        self.comb += [
             self.ethernet_dma.rx_clock_events.eq(self.ethernet_phy.rx_clock_events),
             self.ethernet_dma.phy_rx_frames.eq(self.ethernet_phy.phy_rx_frames),
             self.ethernet_dma.phy_tx_frames.eq(self.ethernet_phy.phy_tx_frames),
@@ -411,7 +454,16 @@ class DDRSoC(LiteXModule):
             self.ethernet_dma.rx_frame_fcs_error.eq(self.ethernet_mac.rx_frame_fcs_error),
             *[self.ethernet_phy.rx_delay_taps[i].eq(self.ethernet_dma.rx_delay_taps[i]) for i in range(5)],
             self.ethernet_phy.rx_delay_load.eq(self.ethernet_dma.rx_delay_load)]
-        self.specials += MultiReg(Cat(self.ethernet_phy.locked,eth.reset_n),self.ethernet_dma.phy_status,'sys')
+        phy_status_rgmii = Signal(2)
+        self.specials += MultiReg(Cat(self.ethernet_phy.locked,eth.reset_n), phy_status_rgmii, 'sys')
+        if self.sfp is not None:
+            self.comb += self.ethernet_dma.phy_status.eq(
+                Mux(self.sfp.dma_en,
+                    Cat(self.sfp.pcs_status_sys, ~self.sfp.sfp0_los_synced),
+                    phy_status_rgmii)
+            )
+        else:
+            self.comb += self.ethernet_dma.phy_status.eq(phy_status_rgmii)
         user_flash = platform.request('user_flash')
         self.comb += [user_flash.cs_n.eq(self.ext.qspi.cs_n), user_flash.clk.eq(self.ext.qspi.clk)]
         for bit, name in enumerate(('mosi', 'miso', 'wp_n', 'hold_n')):
@@ -439,6 +491,7 @@ class DDRSoC(LiteXModule):
                 *self.crg.pll.extra_constraints,
                 *self.crg.hdmi_clock_constraints,
                 *self.ethernet_phy.constraints,
+                *(self.sfp.constraints if self.sfp is not None else []),
                 # SDK example/Flash defines the slave/input/pad clocks
                 # separately. Bound them by the fastest source (AHB/APB sys)
                 # rather than reusing its example's 50-MHz period. Only these
@@ -461,7 +514,9 @@ class DDRSoC(LiteXModule):
                 '-group [get_clocks {eth_tx_clk}] -group [get_clocks {eth_rx_clk}] ' +
                 ('-group [get_clocks {%s}] ' % self.crg.hdmi_pll.clock_names) +
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '
-                '-group [get_clocks {ddr_clk_ref}]',
+                '-group [get_clocks {ddr_clk_ref}]' +
+                (' -group [get_clocks {xgmii_clk}] -group [get_clocks {serdes1_tx_clk}] -group [get_clocks {serdes1_rx_clk}] -group [get_clocks {serdes2_tx_clk}] -group [get_clocks {serdes2_rx_clk}]'
+                 if self.sfp is not None else ''),
             ]
             with open(name, 'a') as f:
                 f.write('\n' + '\n'.join(extra) + '\n')

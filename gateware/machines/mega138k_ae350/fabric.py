@@ -166,7 +166,7 @@ class LoopbackFifo(LiteXModule):
 class AE350Fabric(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None, usb=None, ethernet=None):
+    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None, usb=None, ethernet=None, sfp=None):
         amap = layout
         self.ethernet_management = EthernetManagement(amap.FABRIC_HZ)
         self.qspi = UserQSPI(amap.FABRIC_HZ, amap.USER_FLASH_BYTES)
@@ -274,6 +274,15 @@ class AE350Fabric(LiteXModule):
                 ethernet.selected.eq(legal & eth_page & (off>=0x10)),ethernet.commit.eq(commit)]
         eth_ok=eth.ok | (ethernet.ok if ethernet is not None else 0)
         eth_data=Mux(off<0x10,eth.rdata,ethernet.rdata if ethernet is not None else 0)
+        sfp_page = Signal()
+        self.comb += sfp_page.eq(addr_q[12:] == (amap.SFP_BASE >> 12))
+        if sfp is not None:
+            self.comb += [
+                sfp.off.eq(off), sfp.wdata.eq(wdata_q), sfp.write.eq(write_q),
+                sfp.selected.eq(legal & sfp_page), sfp.commit.eq(commit),
+            ]
+        sfp_ok = sfp.ok if sfp is not None else 0
+        sfp_data = sfp.rdata if sfp is not None else 0
         usb_page = Signal()
         self.comb += usb_page.eq(addr_q[12:] == (amap.USB_BASE >> 12))
         if usb is not None:
@@ -335,6 +344,7 @@ class AE350Fabric(LiteXModule):
         # through every device before the registered APB response.
         pages = [
             (legal & eth_page & eth_ok, eth_data),
+            (legal & sfp_page & sfp_ok, sfp_data),
             (legal & qspi_page & self.qspi.ok, self.qspi.rdata),
             (legal & sd_page & sd_ok,sd_rdata),
             (legal & sysinfo & ~write_q & sys_ro,sys_data),

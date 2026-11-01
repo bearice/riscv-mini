@@ -94,7 +94,8 @@ def validate_pair(board, config):
     kinds = dict(video=('hdmi', 'rgb_lcd'), audio=('audio',), ws2812=('ws2812',),
                  i2c=('i2c',), twi_mux=('twi_mux',), sd=('sd',), fan=('fan',), cpu_jtag=('jtag',), flash=('spi',), boot_flash=('spi',),
                  ethernet=('rmii',), ethernet_clock=('clock',), usb=('ulpi',),
-                 spi_lcd=('spi_lcd',), phy_reset=('reset',))
+                 spi_lcd=('spi_lcd',), phy_reset=('reset',),
+                 sfp0=('sfp',), sfp1=('sfp',))
     for name, ref in config['devices'].items():
         if name == 'microphones':
             required.update({item: 'microphone' for item in ref})
@@ -271,6 +272,8 @@ class DeviceDescription:
     usb: Optional[str] = None
     spi_lcd: Optional[str] = None
     phy_reset: Optional[str] = None
+    sfp0: Optional[str] = None
+    sfp1: Optional[str] = None
 
 
 @dataclass(frozen=True)

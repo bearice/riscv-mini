@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "vendor": "Gowin Semiconductor",
+  "component": "GW5AST SerDes Quad 1 (10GBASE-R / 10.3125 Gbps)",
+  "source": {
+    "ip": "TangPrimer-138K/example/sfp+/10G_Serial_Ethernet/XGbE_UDP/src/serdes",
+    "reference_projects": [
+      "TangPrimer-138K/example/sfp+/10G_Serial_Ethernet/XGbE_UDP (Tang Mega 138K Pro 10G UDP reference)"
+    ],
+    "note": "Encrypted Gowin SerDes IP + 10G PCS (Ten_Giga_Serial_Ethernet_Top). Uses dedicated SerDes Quad 1 Lane 0 and Lane 1 with external 125 MHz reference clock from MS5351."
+  },
+  "device": {
+    "target_device": "gw5ast138b-002",
+    "part": "GW5AST-138B (Tang Mega 138K Pro)",
+    "tool_version_generated": "Gowin EDA 1.9.10.01",
+    "tool_version_used_for_synthesis": "1.9.12.04"
+  },
+  "files": {
+    "serdes.v": {
+      "sha256": "64d19c7206b1861975ed15f8a7af586b4bee32b7edc485b26c39a65ee1b2be33",
+      "module": "SerDes_Top"
+    },
+    "serdes.csr": {
+      "sha256": "ba23f2ffccd1c9a9f472ebf9c436025259349c5ed3457a428d1e86da8cd4da4f"
+    },
+    "ten_giga_serial_ethernet/ten_giga_serial_ethernet.v": {
+      "sha256": "7cae027c9be01c6e0966a82c9e058389d6eaa8b8ad28965dc7e3c83939611744",
+      "module": "Ten_Giga_Serial_Ethernet_Top",
+      "protected": true
+    },
+    "ten_giga_serial_ethernet_1/ten_giga_serial_ethernet_1.v": {
+      "sha256": "6c0fc7abfe0198c7464e3742fe4fab21521aa4a416f1ce4ef96f0892ab6dc4fe",
+      "module": "Ten_Giga_Serial_Ethernet_Top_1",
+      "protected": true
+    }
+  }
+}

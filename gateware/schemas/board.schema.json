@@ -171,7 +171,8 @@
             "soft_usb",
             "spi_lcd",
             "i2c",
-            "twi_mux"
+            "twi_mux",
+            "sfp"
           ]
         },
         "signals": {
@@ -2301,6 +2302,59 @@
                 },
                 "required": [
                   "sel"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sfp"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signals": {
+                "type": "object",
+                "properties": {
+                  "tx_disable": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "los": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/signal"
+                      },
+                      {
+                        "properties": {
+                          "pins": {
+                            "minItems": 1,
+                            "maxItems": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "tx_disable",
+                  "los"
                 ],
                 "additionalProperties": false
               }

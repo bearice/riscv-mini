@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "vendor": "Gowin Semiconductor",
+  "component": "Gowin 10G Ethernet MAC IP",
+  "source": {
+    "ip": "TangPrimer-138K/example/sfp+/10G_Serial_Ethernet/XGbE_UDP/src/Ten_Giga_Ethernet_MAC",
+    "reference_projects": [
+      "TangPrimer-138K/example/sfp+/10G_Serial_Ethernet/XGbE_UDP (Tang Mega 138K Pro 10G UDP reference)"
+    ],
+    "note": "Encrypted Gowin 10G MAC IP (Ten_Giga_Ethernet_MAC_Top). 64-bit AXI-Stream like user interface @ 156.25 MHz, XGMII to SerDes 10G PCS."
+  },
+  "device": {
+    "target_device": "gw5ast138b-002",
+    "part": "GW5AST-138B (Tang Mega 138K Pro)",
+    "tool_version_generated": "Gowin EDA 1.9.9.01",
+    "tool_version_used_for_synthesis": "1.9.12.04"
+  },
+  "files": {
+    "Ten_Giga_Ethernet_MAC.v": {
+      "sha256": "56c35cd0f3e1dceabc6658b3a436484e53fac3b9aa512039e461801f26052b16",
+      "module": "Ten_Giga_Ethernet_MAC_Top",
+      "protected": true
+    }
+  }
+}

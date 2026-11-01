@@ -216,6 +216,14 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
         },
+        "sfp0": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "sfp1": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
         "boot_flash": {
           "type": "string",
           "minLength": 1
@@ -671,6 +679,14 @@
               "boot_flash": {
                 "type": "string",
                 "minLength": 1
+              },
+              "sfp0": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "sfp1": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
               }
             },
             "required": [
