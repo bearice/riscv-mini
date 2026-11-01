@@ -798,45 +798,64 @@
           "pins": [
             "M21"
           ],
-          "io_standard": "LVCMOS33"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         },
         "tx_dn": {
           "pins": [
             "M22"
           ],
-          "io_standard": "LVCMOS33"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         },
         "pullup": {
           "pins": [
             "M19"
           ],
-          "io_standard": "LVCMOS33"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         },
         "term_dp": {
           "pins": [
             "T19"
           ],
-          "io_standard": "LVCMOS33"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         },
         "term_dn": {
           "pins": [
             "U19"
           ],
-          "io_standard": "LVCMOS33"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         },
         "rx_dp": {
           "pins": [
-            "U21",
-            "V21"
+            "U21"
           ],
-          "io_standard": "LVDS25"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         },
         "rx_dn": {
           "pins": [
-            "T20",
+            "T20"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "ref_dp": {
+          "pins": [
+            "V21"
+          ],
+          "io_standard": "LVCMOS33",
+          "pull": "none"
+        },
+        "ref_dn": {
+          "pins": [
             "U20"
           ],
-          "io_standard": "LVDS25"
+          "io_standard": "LVCMOS33",
+          "pull": "none"
         }
       }
     },

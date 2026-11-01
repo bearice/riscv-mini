@@ -4,9 +4,9 @@ Dock 唯一 Soft USB 口连接独立 60MHz 全速 PIO Host，APB 控制面保持
 
 ## 板级连接
 
-发送 D+/D− 为 M21/M22，保留 42Ω 串联电阻；差分接收比较器为 U21/V21、T20/U20，使用板上参考电压网络。M19 的 Device 上拉、T19/U19 的零欧 termination 支路保持高阻，Host 下拉使用外接电阻。
+发送 D+/D− 为 M21/M22，保留 42Ω 串联电阻；接收端直接由单端 LVCMOS33 输入引脚采样（U21 为 D+，T20 为 D-）。所有 USB 相关引脚（`M21, M22, U21, T20, V21, U20, M19, T19, U19`）在 `board.json` 中均显式配置 `PULL_MODE=NONE`，防止高云 PnR 对未引出引脚默认使能弱上拉（否则 T20 会对抗外置 15kΩ 下拉将 D- 拉高至非法 SE1 状态）。M19 的 Device 上拉、T19/U19 的零欧 termination 支路以及 V21/U20 均保持高阻，Host 下拉使用实板外接的 15kΩ 电阻。
 
-用户已确认下拉改造完成，最终阻值尚未登记。USB Host 下拉可使用 15kΩ；USB resistor ECN 范围为 14.25–24.8kΩ。此前供电故障由实板 D8 反装引起，用户确认已修复。原理图规定方向是板上 +5V → FB4 → D8 → FU1 → J5 VBUS。
+实板测量：插入 Full-Speed 设备后，D+ 电压约为 2.8V，D- 电压为 0V，符合全速 J 状态要求。此前供电故障由实板 D8 反装引起，已短接修复。原理图规定方向是板上 +5V → FB4 → D8 → FU1 → J5 VBUS。
 
 ## 寄存器
 
@@ -35,3 +35,5 @@ Dock 唯一 Soft USB 口连接独立 60MHz 全速 PIO Host，APB 控制面保持
 首轮实板 `build/runs/20261028T051300276624Z-board-ae350-usb-suite/result.json` 启动镜像完整读回、POST、DDR 初始化和 UART 应用运行完成，但 USB 枚举失败：60秒内 STATUS 低两位持续 SE0，无 VID/PID、HID 或报告。这不能证明设备未连接，也不能单凭它认定电路损坏。原始输入诊断候选 `build/runs/20261028T051955148868Z-build-usb-host-raw-status-93fd6e/result.json`（gateware `3adb8290ab05`）同样通过 setup/hold 0/0、最小脉宽余量 1.119ns。该候选包含完整 USB 源码依赖与 USB image ABI。
 
 第二轮实板 `build/runs/20261028T074721335272Z-board-ae350-usb-suite/result.json` 使用载荷 `build/runs/20261028T052138755328Z-build-usb-host-278844/result.json`，60秒枚举失败。日志持续 `CTRL=0xe8`、`RAW=8`：PLL 锁定、TX 未驱动、两个输入比较器均为低。这排除了 FPGA 主动压低总线的解释，但不能区分外部数据线实际为低与比较器输入问题。接收器插入时的 VBUS/D+/D− 实测电压和实际下拉阻值待用户提供；真实输入、重启重复性和拔插恢复尚未通过。
+
+第三轮实板验证：将接收改为单端 LVCMOS33，并在 `board.json` 将相关 9 个引脚配置为 `PULL_MODE=NONE`，载荷重新编译为当前 ABI（`0x0952cb09`）。上载后实测状态为 `RAW=0x00000009`（J 状态稳定），成功识别并枚举 Logitech Unifying 接收器（`VID:PID 046d:c52b`），正确识别并挂载 3 个 HID 接口，最终打印 `USB ENUM PASS`。

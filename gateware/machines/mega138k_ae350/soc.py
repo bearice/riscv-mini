@@ -317,13 +317,15 @@ class DDRSoC(LiteXModule):
         self.specials += MultiReg(Cat(self.usb.rx_dp, self.usb.rx_dn, self.usb.tx_oe, self.usb_clock.locked),
                                   self.usb_registers.raw_status, 'sys')
         usb_pads = platform.request('soft_usb')
-        for name, output in (('tx_dp', self.usb.tx_dp), ('tx_dn', self.usb.tx_dn)):
+        for name, output in (('tx_dp', self.usb.tx_dp),
+                             ('tx_dn', self.usb.tx_dn)):
             self.specials += Tristate(getattr(usb_pads, name), output, self.usb.tx_oe)
-        for name in ('pullup', 'term_dp', 'term_dn'):
+        for name in ('pullup', 'term_dp', 'term_dn', 'ref_dp', 'ref_dn'):
             self.specials += Tristate(getattr(usb_pads, name), 0, 0)
-        for name, target in (('rx_dp', self.usb.rx_dp), ('rx_dn', self.usb.rx_dn)):
-            pair = getattr(usb_pads, name)
-            self.specials += Instance('TLVDS_IBUF', i_I=pair[0], i_IB=pair[1], o_O=target)
+        self.comb += [
+            self.usb.rx_dp.eq(usb_pads.rx_dp),
+            self.usb.rx_dn.eq(usb_pads.rx_dn),
+        ]
         from gateware.machines.mega138k_ae350.peripherals.ethernet_dma import EthernetDMA
         from gateware.machines.mega138k_ae350.peripherals.ethernet_sfp_10g import EthernetSFP10G
         self.ethernet_dma = EthernetDMA(default_rx_taps=int(round(config.rtl.ethernet_rx_delay_ps / 12.5)))
