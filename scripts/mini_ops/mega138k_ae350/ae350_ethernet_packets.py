@@ -517,3 +517,216 @@ def exercise_sustained_long_frames(interface, session, directory, frame_count=25
         return report
     finally:
         sock.close()
+
+
+def exercise_link_reconnect(interface, session, directory):
+    """Verify carrier down / up link recovery and subsequent packet transmission."""
+    from mini_ops.mega138k_ae350.ae350_ethernet_suite import wait_peer_link
+    root = Path('/sys/class/net') / interface
+    mac = bytes.fromhex((root / 'address').read_text().strip().replace(':', ''))
+
+    snap0_line, _ = uart_exchange(session, 'S', 'ETH SNAP ')
+    snap0 = parse_kv_line(snap0_line, 'ETH SNAP ')
+
+    # Phase 1: Pre-reconnect traffic with socket 1
+    sock1 = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
+    sock1.bind((interface, 0))
+    sock1.settimeout(0.1)
+    try:
+        pre_burst = run_deterministic_burst(sock1, mac, 0xae35050a, 1472, 32, 0.025)
+        if pre_burst['rx_replies'] != 32:
+            raise RuntimeError(f"Pre-reconnect traffic failed: got {pre_burst['rx_replies']}/32")
+    finally:
+        sock1.close()
+
+    # Phase 2: Link disconnect (down) and recovery (up)
+    import subprocess
+    try:
+        subprocess.run(['ip', 'link', 'set', interface, 'down'], check=True)
+        time.sleep(2.0)
+        try:
+            down_carrier = (root / 'carrier').read_text().strip()
+        except OSError:
+            down_carrier = '0'
+    finally:
+        subprocess.run(['ip', 'link', 'set', interface, 'up'], check=True)
+
+    peer_ready = wait_peer_link(interface, timeout=20)
+    if not peer_ready['passed']:
+        raise RuntimeError('Interface did not recover gigabit carrier after being brought up')
+
+    # Flush disconnect transient from PHY status register 10 (clear-on-read)
+    # and establish clean post-reconnect baseline
+    uart_exchange(session, 'S', 'ETH SNAP ')
+    time.sleep(0.1)
+    snap1_line, _ = uart_exchange(session, 'S', 'ETH SNAP ')
+    snap1 = parse_kv_line(snap1_line, 'ETH SNAP ')
+
+    # Phase 3: Post-reconnect traffic with fresh socket 2
+    sock2 = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
+    sock2.bind((interface, 0))
+    sock2.settimeout(0.1)
+    try:
+        post_burst = run_deterministic_burst(sock2, mac, 0xae35050b, 1472, 32, 0.025)
+        snap_line, badframe_line = uart_exchange(session, 'S', 'ETH SNAP ')
+        snap = parse_kv_line(snap_line, 'ETH SNAP ')
+        phy_idle_errors = snap.get('PHY10', 0) & 0xff
+
+        passed = (
+            pre_burst['rx_replies'] == 32
+            and post_burst['rx_replies'] == 32
+            and snap.get('DROP', 0) == snap1.get('DROP', 0)
+            and snap.get('PRXER', 0) == snap1.get('PRXER', 0)
+            and snap.get('DRXER', 0) == snap1.get('DRXER', 0)
+            and snap.get('DFCS', 0) == snap1.get('DFCS', 0)
+            and snap.get('MCRC', 0) == snap1.get('MCRC', 0)
+            and snap.get('MPRE', 0) == snap1.get('MPRE', 0)
+            and snap.get('DERR', 0) == snap1.get('DERR', 0)
+            and phy_idle_errors == 0
+            and badframe_line is None
+        )
+        report = dict(
+            pre_reconnect=dict(
+                tx_sent=pre_burst['tx_sent'],
+                rx_replies=pre_burst['rx_replies'],
+                host_loss=pre_burst['host_loss'],
+            ),
+            down_carrier=down_carrier,
+            peer_ready=peer_ready,
+            post_reconnect=dict(
+                tx_sent=post_burst['tx_sent'],
+                rx_replies=post_burst['rx_replies'],
+                host_loss=post_burst['host_loss'],
+            ),
+            board_snap_initial=snap0,
+            board_snap_final=snap,
+            passed=passed,
+        )
+        (Path(directory) / 'link-reconnect.json').write_text(json.dumps(report, indent=2) + '\n')
+        if not passed:
+            raise RuntimeError('Link reconnect check failed: ' + json.dumps(report))
+        return report
+    finally:
+        sock2.close()
+
+
+def exercise_stress_load(interface, session, directory, duration_s=1800, payload_len=1472, interval_s=0.005):
+    """Run sustained continuous bidirectional packet load for duration_s.
+    Record throughput, CPU load/kpps, packet loss, and verify zero errors / corruption.
+    """
+    root = Path('/sys/class/net') / interface
+    mac = bytes.fromhex((root / 'address').read_text().strip().replace(':', ''))
+    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
+    sock.bind((interface, 0))
+    sock.settimeout(0.05)
+    try:
+        uart_exchange(session, 'S', 'ETH SNAP ')
+        time.sleep(0.05)
+        snap0_line, _ = uart_exchange(session, 'S', 'ETH SNAP ')
+        snap0 = parse_kv_line(snap0_line, 'ETH SNAP ')
+
+        start_time = time.monotonic()
+        end_time = start_time + duration_s
+        total_tx = 0
+        total_rx = 0
+        samples = []
+        last_sample_time = start_time
+        batch_seq = 0
+
+        rng = random.Random(0xae35050c)
+        payload_base = bytes(rng.randrange(256) for _ in range(payload_len))
+
+        print(f"Starting sustained stress test: duration={duration_s}s, payload={payload_len}B...", flush=True)
+
+        while time.monotonic() < end_time:
+            seq = batch_seq & 0xffff
+            batch_seq += 1
+            payload = struct.pack('!I', seq) + payload_base[4:]
+            body = struct.pack('!HHHH', 54321, 32768, 8 + len(payload), 0) + payload
+            pseudo = HOST_IP + BOARD_IP + struct.pack('!BBH', 0, 17, len(body))
+            c = checksum(pseudo + body)
+            body = body[:6] + struct.pack('!H', c or 0xffff) + body[8:]
+            frame = ip_frame(mac, 17, body, seq)
+            sock.send(frame)
+            total_tx += 1
+
+            recv_deadline = time.monotonic() + 0.05
+            while time.monotonic() < recv_deadline:
+                try:
+                    p = sock.recv(4096)
+                    if len(p) >= 34 and p[6:12] == BOARD_MAC and p[12:14] == b'\x08\0':
+                        total_rx += 1
+                        break
+                except (socket.timeout, BlockingIOError):
+                    continue
+
+            if interval_s > 0:
+                time.sleep(interval_s)
+
+            now = time.monotonic()
+            if now - last_sample_time >= 10.0 or now >= end_time:
+                last_sample_time = now
+                snap_line, badframe_line = uart_exchange(session, 'S', 'ETH SNAP ')
+                snap = parse_kv_line(snap_line, 'ETH SNAP ')
+                phy_idle = snap.get('PHY10', 0) & 0xff
+                sample = dict(
+                    elapsed_s=round(now - start_time, 1),
+                    total_tx=total_tx,
+                    total_rx=total_rx,
+                    board_rx_delta=snap.get('RX', 0) - snap0.get('RX', 0),
+                    board_tx_delta=snap.get('TX', 0) - snap0.get('TX', 0),
+                    board_drop=snap.get('DROP', 0) - snap0.get('DROP', 0),
+                    fcs_err=snap.get('DFCS', 0) - snap0.get('DFCS', 0),
+                    mac_crc=snap.get('MCRC', 0) - snap0.get('MCRC', 0),
+                    phy_rx_er=snap.get('PRXER', 0) - snap0.get('PRXER', 0),
+                    dma_rx_er=snap.get('DRXER', 0) - snap0.get('DRXER', 0),
+                    dma_err=snap.get('DERR', 0) - snap0.get('DERR', 0),
+                    phy_idle_errors=phy_idle,
+                )
+                samples.append(sample)
+                throughput_kbps = round((total_rx * (payload_len + 42) * 8) / (1000 * max(0.1, now - start_time)), 1)
+                kpps = round(total_rx / (1000 * max(0.1, now - start_time)), 2)
+                loss_pct = round(((total_tx - total_rx) / max(1, total_tx)) * 100, 3)
+                print(f"[{round(now - start_time, 1)}s / {duration_s}s] RX={total_rx}/{total_tx} ({loss_pct}% loss) | {throughput_kbps} kbps ({kpps} kpps) | errors={snap.get('DROP',0)}/{snap.get('DFCS',0)}/{snap.get('MCRC',0)}", flush=True)
+
+                if badframe_line is not None or (snap.get('DFCS', 0) - snap0.get('DFCS', 0)) > 0 or (snap.get('MCRC', 0) - snap0.get('MCRC', 0)) > 0:
+                    raise RuntimeError(f"Error detected during stress test at {now - start_time}s: {snap_line}")
+
+        total_elapsed = time.monotonic() - start_time
+        final_snap_line, _ = uart_exchange(session, 'S', 'ETH SNAP ')
+        final_snap = parse_kv_line(final_snap_line, 'ETH SNAP ')
+
+        avg_throughput_mbps = round((total_rx * (payload_len + 42) * 8) / (1000000 * total_elapsed), 3)
+        avg_kpps = round(total_rx / (1000 * total_elapsed), 3)
+        loss_pct = round(((total_tx - total_rx) / max(1, total_tx)) * 100, 4)
+
+        passed = (
+            total_rx >= total_tx * 0.99
+            and final_snap.get('DROP', 0) == snap0.get('DROP', 0)
+            and final_snap.get('DFCS', 0) == snap0.get('DFCS', 0)
+            and final_snap.get('MCRC', 0) == snap0.get('MCRC', 0)
+            and final_snap.get('PRXER', 0) == snap0.get('PRXER', 0)
+            and final_snap.get('DRXER', 0) == snap0.get('DRXER', 0)
+            and final_snap.get('DERR', 0) == snap0.get('DERR', 0)
+            and (final_snap.get('PHY10', 0) & 0xff) == 0
+        )
+        report = dict(
+            duration_s=round(total_elapsed, 2),
+            target_duration_s=duration_s,
+            payload_bytes=payload_len,
+            wire_frame_bytes=payload_len + 42,
+            total_tx=total_tx,
+            total_rx=total_rx,
+            packet_loss_percent=loss_pct,
+            avg_throughput_mbps=avg_throughput_mbps,
+            avg_kpps=avg_kpps,
+            samples=samples,
+            final_board_snap=final_snap,
+            passed=passed,
+        )
+        (Path(directory) / 'stress-load.json').write_text(json.dumps(report, indent=2) + '\n')
+        if not passed:
+            raise RuntimeError('Stress load check failed: ' + json.dumps(report))
+        return report
+    finally:
+        sock.close()

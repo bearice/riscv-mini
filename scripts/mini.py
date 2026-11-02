@@ -37,13 +37,33 @@ def parser():
         ('audio-suite','AE350 audio: real-time playback/capture without debugger pauses'),
         ('video-suite','AE350 HDMI: SRAM test card and USB video capture'),
         ('ae350-upload','AE350 memory: autonomous ROM POST then UART image upload and execution'),
+        ('jtag','AE350 CPU JTAG debug: status, halt, resume, step, memory/reg access'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'p7-suite', 'usb-suite', 'ethernet-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag', 'jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'p7-suite', 'usb-suite', 'ethernet-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
+            continue
+        if name=='jtag':
+            import os
+            op.add_argument('--cpu-jtag-location', default='serial:FactoryAIOT ProA' if os.name != 'nt' else None,
+                            help='CPU JTAG location (e.g. serial:FactoryAIOT ProA or Windows index)')
+            op.add_argument('--action', choices=('status', 'halt', 'resume', 'step', 'reset', 'pc', 'read-word', 'write-word', 'read-mem', 'read-reg', 'write-reg'),
+                            default='status', help='JTAG action to perform (default: status)')
+            op.add_argument('--halt', action='store_true', help='halt the CPU')
+            op.add_argument('--resume', action='store_true', help='resume the CPU')
+            op.add_argument('--step', action='store_true', help='single step one instruction')
+            op.add_argument('--reset', action='store_true', help='restart CPU execution at ROM entry (0x80000000)')
+            op.add_argument('--restart', type=lambda x: int(x, 0), help='restart CPU at specified address')
+            op.add_argument('--pc', action='store_true', help='read current PC')
+            op.add_argument('--set-pc', type=lambda x: int(x, 0), help='set PC to address')
+            op.add_argument('--read-word', type=lambda x: int(x, 0), help='read 32-bit word at address')
+            op.add_argument('--write-word', nargs=2, type=lambda x: int(x, 0), metavar=('ADDR', 'VAL'), help='write 32-bit word VAL to ADDR')
+            op.add_argument('--read-mem', nargs=2, type=lambda x: int(x, 0), metavar=('ADDR', 'LEN'), help='read LEN bytes starting at ADDR')
+            op.add_argument('--read-reg', help='read register (name like pc, sp, a0, mstatus, mepc or hex number)')
+            op.add_argument('--write-reg', nargs=2, metavar=('REG', 'VAL'), help='write VAL to REG (name or hex number)')
             continue
         op.add_argument('--build',default='current',help='Catalog ID/reference or artifact directory; default qualified current')
         op.add_argument('--location',default=None,help='Gowin cable location override; default scans the connected JTAG cable before programming')
@@ -65,6 +85,7 @@ def parser():
                             help='repeat SRAM configuration and autonomous calibration/POST')
         if name == 'ae350-upload':
             op.add_argument('--payload', help='AE350 payload build result; explicit payload build result required')
+            op.add_argument('--cable-serial')
             op.add_argument('--cpu-jtag-location', default=None)
             op.add_argument('--timeout', type=int, default=30)
             op.add_argument('--self-test', action='store_true',
@@ -92,6 +113,8 @@ def parser():
             op.add_argument('--rx-delay-sweep', action='store_true', help='run dynamic GW5A IODELAY coarse/fine RX tap sweep before qualification')
             op.add_argument('--per-lane-sweep', action='store_true', help='also sweep each of the 5 RX lanes individually around the common center')
             op.add_argument('--sustained-frames', type=int, default=0, help='run sustained full-length (1472B payload) UDP echo burst at selected tap')
+            op.add_argument('--reconnect-check', action='store_true', help='verify carrier drop/recovery and link reconnect packet resumption')
+            op.add_argument('--stress-duration', type=int, default=0, help='run continuous bidirectional stress load for N seconds (e.g. 1800 for 30 mins)')
         if name in ('usb-suite', 'ethernet-suite'):
             op.add_argument('--cable-serial')
             op.add_argument('--payload', required=True)

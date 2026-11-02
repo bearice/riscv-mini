@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device Tree Source for Tang Mega 138K Pro (Andes AE350 SoC)
+ */
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	model = "Tang Mega 138K Pro AE350";
+	compatible = "andestech,ae350", "riscv-mini,mega138k_ae350";
+
+	aliases {
+		serial0 = &serial0;
+		ethernet0 = &ethernet0;
+	};
+
+	chosen {
+		bootargs = "earlycon console=ttyS0,115200 rdinit=/init";
+		stdout-path = "serial0:115200n8";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <80000000>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "okay";
+			compatible = "andestech,a25", "riscv";
+			riscv,isa = "rv32imafdc";
+			riscv,isa-base = "rv32i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "zicsr", "zifencei";
+			riscv,priv-major = <1>;
+			riscv,priv-minor = <10>;
+			mmu-type = "riscv,sv32";
+			clock-frequency = <80000000>;
+			i-cache-size = <0x8000>;
+			i-cache-line-size = <64>;
+			d-cache-size = <0x8000>;
+			d-cache-line-size = <64>;
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x10000000>; /* 256 MB DDR3 aperture */
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		opensbi@1000000 {
+			reg = <0x01000000 0x00100000>;
+			no-map;
+		};
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "andestech,riscv-ae350-soc", "simple-bus";
+		ranges;
+
+		plic0: interrupt-controller@e4000000 {
+			compatible = "andestech,nceplic100", "riscv,plic0";
+			reg = <0xe4000000 0x02000000>;
+			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			riscv,ndev = <64>;
+		};
+
+		plicsw: interrupt-controller@e6400000 {
+			compatible = "andestech,plicsw";
+			reg = <0xe6400000 0x00400000>;
+			interrupts-extended = <&cpu0_intc 3>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		plmt0: plmt0@e6000000 {
+			compatible = "andestech,plmt0";
+			reg = <0xe6000000 0x00100000>;
+			interrupts-extended = <&cpu0_intc 7>;
+		};
+
+		serial0: serial@f0300000 {
+			compatible = "andestech,uart16550", "ns16550a";
+			reg = <0xf0300000 0x1000>;
+			interrupts = <9 4>;
+			interrupt-parent = <&plic0>;
+			clock-frequency = <50000000>;
+			current-speed = <115200>;
+			reg-shift = <2>;
+			reg-offset = <32>;
+			reg-io-width = <4>;
+			no-loopback-test = <1>;
+		};
+
+		ethernet0: ethernet@f80a0000 {
+			compatible = "riscv-mini,liteeth-ring";
+			reg = <0xf80a0000 0x1000>, <0xf80a1000 0x10>;
+			reg-names = "dma", "phy";
+			interrupt-parent = <&plic0>;
+			interrupts = <26 1>;
+			dma-coherent;
+			status = "disabled";
+			local-mac-address = [20 12 03 14 05 06];
+		};
+
+		mmc0: mmc@f8040000 {
+			compatible = "riscv-mini,litesd";
+			reg = <0xf8040000 0x1000>;
+			interrupt-parent = <&plic0>;
+			dma-coherent;
+			status = "disabled";
+		};
+
+		video0: lcd@f8030000 {
+			compatible = "riscv-mini,rgb-lcd";
+			reg = <0xf8030000 0x1000>;
+			interrupt-parent = <&plic0>;
+			interrupts = <25 1>;
+			dma-coherent;
+			status = "disabled";
+		};
+
+		audio0: audio@f8010000 {
+			compatible = "riscv-mini,audio";
+			reg = <0xf8010000 0x1000>;
+			interrupt-parent = <&plic0>;
+			interrupts = <19 1>;
+			dma-coherent;
+			status = "disabled";
+		};
+
+		board_io0: board_io@f8080000 {
+			compatible = "riscv-mini,board-io";
+			reg = <0xf8080000 0x100>;
+			interrupt-parent = <&plic0>;
+			interrupts = <24 1>;
+			status = "disabled";
+		};
+	};
+};

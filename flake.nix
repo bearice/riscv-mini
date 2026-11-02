@@ -48,12 +48,20 @@
     in
     {
       devShells.${system}.default = pkgs.mkShell {
+        hardeningDisable = [ "all" ];
         packages = [
           pkgs.coreutils
           pkgs.git
           pkgs.gnumake
           pkgs.openfpgaloader
           pkgs.uv
+          pkgs.dtc
+          pkgs.flex
+          pkgs.bison
+          pkgs.bc
+          pkgs.llvmPackages.clang
+          pkgs.llvmPackages.bintools
+          pkgs.lld
           jdk8
           sbtLauncher
           gowin

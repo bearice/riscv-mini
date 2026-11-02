@@ -1,7 +1,63 @@
 """AE350 D2XX/JTAG using the installed Windows or Linux FTDI library."""
 import ctypes as c
+import json
 import os
+import subprocess
 import time
+from contextlib import contextmanager
+from pathlib import Path
+
+import sys
+sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parents[3] / 'scripts')]
+from scripts.tools.build_records import ROOT
+from mini_ops.common import Operation
+
+REG_NAMES = {
+    'pc': 0x7b1, 'dpc': 0x7b1, 'dcsr': 0x7b0,
+    'mstatus': 0x300, 'misa': 0x301, 'mie': 0x304, 'mtvec': 0x305,
+    'mscratch': 0x340, 'mepc': 0x341, 'mcause': 0x342, 'mtval': 0x343, 'mip': 0x344,
+    'milmb': 0x7c0, 'mdlmb': 0x7c1, 'micm_cfg': 0xfc0, 'mdcm_cfg': 0xfc1,
+    'zero': 0x1000, 'ra': 0x1001, 'sp': 0x1002, 'gp': 0x1003, 'tp': 0x1004,
+    't0': 0x1005, 't1': 0x1006, 't2': 0x1007, 's0': 0x1008, 'fp': 0x1008, 's1': 0x1009,
+    'a0': 0x100a, 'a1': 0x100b, 'a2': 0x100c, 'a3': 0x100d, 'a4': 0x100e, 'a5': 0x100f,
+    'a6': 0x1010, 'a7': 0x1011, 's2': 0x1012, 's3': 0x1013, 's4': 0x1014, 's5': 0x1015,
+    's6': 0x1016, 's7': 0x1017, 's8': 0x1018, 's9': 0x1019, 's10': 0x101a, 's11': 0x101b,
+    't3': 0x101c, 't4': 0x101d, 't5': 0x101e, 't6': 0x101f
+}
+for i in range(32):
+    REG_NAMES[f'x{i}'] = 0x1000 + i
+
+
+def resolve_reg(name):
+    s = str(name).strip().lower()
+    if s in REG_NAMES:
+        return REG_NAMES[s]
+    return int(s, 0)
+
+
+@contextmanager
+def ensure_unbound(device='1-4:1.0'):
+    unbound = False
+    if os.name != 'nt' and Path(f'/sys/bus/usb/drivers/ftdi_sio/{device}').exists():
+        try:
+            with open('/sys/bus/usb/drivers/ftdi_sio/unbind', 'w') as f:
+                f.write(device)
+            unbound = True
+        except PermissionError:
+            subprocess.run(['sudo', '-n', 'tee', '/sys/bus/usb/drivers/ftdi_sio/unbind'],
+                           input=device.encode(), check=True, stdout=subprocess.DEVNULL)
+            unbound = True
+        time.sleep(0.05)
+    try:
+        yield
+    finally:
+        if unbound:
+            try:
+                with open('/sys/bus/usb/drivers/ftdi_sio/bind', 'w') as f:
+                    f.write(device)
+            except Exception:
+                subprocess.run(['sudo', '-n', 'tee', '/sys/bus/usb/drivers/ftdi_sio/bind'],
+                               input=device.encode(), stdout=subprocess.DEVNULL)
 
 
 class CPUJTAG:
@@ -114,13 +170,11 @@ class CPUJTAG:
             time.sleep(.005)
         raise RuntimeError(f'AE350 DMSTATUS timeout: {status:08x}')
 
+    def is_halted(self):
+        return bool(self.read(0x11) & (1 << 9))
+
     def halt(self):
-        # Keep haltreq asserted while the core is halted.  The measured DM
-        # sequence shows that clearing haltreq alone does NOT resume the hart
-        # (dmstatus stays allhalted=1), so this is a bookkeeping choice, not a
-        # workaround for a hardware quirk.  Abstract memory access returns
-        # cmderr=4 (08000404) whenever the hart is *running*, so callers must
-        # halt again before any memory access after a resume.
+        # Keep haltreq asserted while the core is halted.
         self.write(0x10, 0x80000001)
         return self.wait_status(1 << 9)
 
@@ -129,6 +183,17 @@ class CPUJTAG:
         status = self.wait_status(1 << 11)
         self.write(0x10, 1)
         return status
+
+    def step(self):
+        was_running = not self.is_halted()
+        if was_running:
+            self.halt()
+        dcsr = self.register(0x7b0)
+        self.register(0x7b0, dcsr | 4)
+        self.write(0x10, 0x40000001)
+        self.wait_status(1 << 9)
+        self.register(0x7b0, dcsr & ~4)
+        return self.register(0x7b1)
 
     def read_memory(self, address, length):
         data = bytearray()
@@ -177,3 +242,180 @@ def restart(location, dll, expected_rom, before_resume):
                     registers_before=before, restart_pc=0x80000000, dmstatus_resumed=status)
     finally:
         cpu.close()
+
+
+def perform(args):
+    op = Operation('ae350-jtag')
+    print('Operation logs:', op.path, flush=True)
+    tools = json.loads((ROOT / '.tools.local.json').read_text(encoding='utf-8'))
+    library = 'ftd2xx.dll' if os.name == 'nt' else 'libftd2xx.so'
+    dll_path = Path(tools['programmer']).with_name(library)
+    location = getattr(args, 'cpu_jtag_location', None)
+    if not location:
+        location = 'serial:FactoryAIOT ProA' if os.name != 'nt' else '1'
+
+    op.report['cpu_jtag_location'] = location
+    with ensure_unbound():
+        cpu = CPUJTAG(location, dll_path)
+        try:
+            initially_halted = cpu.is_halted()
+            dmstatus = cpu.read(0x11)
+            op.report['idcode'] = f'0x{cpu.idcode:08x}'
+            op.report['dtmcs'] = f'0x{cpu.dtmcs:08x}'
+            op.report['dmstatus'] = f'0x{dmstatus:08x}'
+            op.report['initially_halted'] = initially_halted
+
+            # Determine action
+            action = 'status'
+            if getattr(args, 'halt', False):
+                action = 'halt'
+            elif getattr(args, 'resume', False):
+                action = 'resume'
+            elif getattr(args, 'step', False):
+                action = 'step'
+            elif getattr(args, 'reset', False) or getattr(args, 'restart', None) is not None:
+                action = 'reset'
+            elif getattr(args, 'pc', False):
+                action = 'pc'
+            elif getattr(args, 'set_pc', None) is not None:
+                action = 'set-pc'
+            elif getattr(args, 'read_word', None) is not None:
+                action = 'read-word'
+            elif getattr(args, 'write_word', None) is not None:
+                action = 'write-word'
+            elif getattr(args, 'read_mem', None) is not None:
+                action = 'read-mem'
+            elif getattr(args, 'read_reg', None) is not None:
+                action = 'read-reg'
+            elif getattr(args, 'write_reg', None) is not None:
+                action = 'write-reg'
+            elif hasattr(args, 'action') and args.action != 'status':
+                action = args.action
+
+            op.report['action'] = action
+            print(f'JTAG Target: IDCODE=0x{cpu.idcode:08x} DTMCS=0x{cpu.dtmcs:08x} DMSTATUS=0x{dmstatus:08x} ({"HALTED" if initially_halted else "RUNNING"})')
+
+            if action == 'halt':
+                if not initially_halted:
+                    cpu.halt()
+                pc = cpu.register(0x7b1)
+                print(f'Halted CPU at PC: 0x{pc:08x}')
+                op.report['pc'] = f'0x{pc:08x}'
+                op.report['halted'] = True
+                op.report['passed'] = True
+                return op
+
+            if action == 'resume':
+                if initially_halted:
+                    cpu.resume()
+                print('Resumed CPU execution')
+                op.report['halted'] = False
+                op.report['passed'] = True
+                return op
+
+            if action == 'step':
+                new_pc = cpu.step()
+                print(f'Stepped CPU to PC: 0x{new_pc:08x}')
+                op.report['pc'] = f'0x{new_pc:08x}'
+                op.report['halted'] = True
+                op.report['passed'] = True
+                return op
+
+            if action == 'reset':
+                target_addr = getattr(args, 'restart', None) or 0x80000000
+                cpu.halt()
+                cpu.register(0x7b1, target_addr)
+                cpu.resume()
+                print(f'Restarted CPU at entry 0x{target_addr:08x} and resumed execution')
+                op.report['restart_entry'] = f'0x{target_addr:08x}'
+                op.report['passed'] = True
+                return op
+
+            # For inspecting/modifying registers or memory: halt temporarily if running
+            if not initially_halted:
+                cpu.halt()
+
+            try:
+                if action == 'pc':
+                    pc = cpu.register(0x7b1)
+                    print(f'Current PC: 0x{pc:08x}')
+                    op.report['pc'] = f'0x{pc:08x}'
+
+                elif action == 'set-pc':
+                    target_pc = args.set_pc
+                    cpu.register(0x7b1, target_pc)
+                    verified_pc = cpu.register(0x7b1)
+                    print(f'Set PC to 0x{verified_pc:08x}')
+                    op.report['pc'] = f'0x{verified_pc:08x}'
+
+                elif action == 'read-word':
+                    addr = args.read_word
+                    val = int.from_bytes(cpu.read_memory(addr, 4), 'little')
+                    print(f'Memory [0x{addr:08x}] = 0x{val:08x}')
+                    op.report['read_word'] = dict(address=f'0x{addr:08x}', value=f'0x{val:08x}')
+
+                elif action == 'write-word':
+                    addr, val = args.write_word
+                    cpu.write_word(addr, val)
+                    readback = int.from_bytes(cpu.read_memory(addr, 4), 'little')
+                    print(f'Memory [0x{addr:08x}] <= 0x{val:08x} (readback: 0x{readback:08x})')
+                    op.report['write_word'] = dict(address=f'0x{addr:08x}', value=f'0x{val:08x}', readback=f'0x{readback:08x}')
+
+                elif action == 'read-mem':
+                    addr, length = args.read_mem
+                    raw = cpu.read_memory(addr, length)
+                    print(f'Memory [0x{addr:08x}..+0x{length:x}]:')
+                    for off in range(0, len(raw), 16):
+                        chunk = raw[off:off+16]
+                        hex_str = ' '.join(f'{b:02x}' for b in chunk)
+                        ascii_str = ''.join(chr(b) if 32 <= b < 127 else '.' for b in chunk)
+                        print(f'  {addr+off:08x}: {hex_str:<48}  |{ascii_str}|')
+                    op.report['read_mem'] = dict(address=f'0x{addr:08x}', length=length, hex=raw.hex())
+
+                elif action == 'read-reg':
+                    reg_num = resolve_reg(args.read_reg)
+                    val = cpu.register(reg_num)
+                    print(f'Register {args.read_reg} (0x{reg_num:x}) = 0x{val:08x}')
+                    op.report['read_reg'] = dict(reg=args.read_reg, number=f'0x{reg_num:x}', value=f'0x{val:08x}')
+
+                elif action == 'write-reg':
+                    reg_name, val_str = args.write_reg
+                    reg_num = resolve_reg(reg_name)
+                    val = int(val_str, 0)
+                    cpu.register(reg_num, val)
+                    readback = cpu.register(reg_num)
+                    print(f'Register {reg_name} (0x{reg_num:x}) <= 0x{val:08x} (readback: 0x{readback:08x})')
+                    op.report['write_reg'] = dict(reg=reg_name, number=f'0x{reg_num:x}', value=f'0x{val:08x}', readback=f'0x{readback:08x}')
+
+                elif action == 'status':
+                    pc = cpu.register(0x7b1)
+                    sp = cpu.register(0x1002)
+                    ra = cpu.register(0x1001)
+                    dcsr = cpu.register(0x7b0)
+                    mstatus = cpu.register(0x300)
+                    mepc = cpu.register(0x341)
+                    mcause = cpu.register(0x342)
+                    mtval = cpu.register(0x343)
+                    regs = {
+                        'PC': f'0x{pc:08x}',
+                        'SP': f'0x{sp:08x}',
+                        'RA': f'0x{ra:08x}',
+                        'DCSR': f'0x{dcsr:08x}',
+                        'MSTATUS': f'0x{mstatus:08x}',
+                        'MEPC': f'0x{mepc:08x}',
+                        'MCAUSE': f'0x{mcause:08x}',
+                        'MTVAL': f'0x{mtval:08x}'
+                    }
+                    print('CPU Core Registers:')
+                    for k, v in regs.items():
+                        print(f'  {k:8s}: {v}')
+                    op.report['registers'] = regs
+            finally:
+                if not initially_halted:
+                    cpu.resume()
+
+            op.report['passed'] = True
+            return op
+        finally:
+            cpu.close(resume=not initially_halted and action != 'halt' and action != 'step')
+            op.save()

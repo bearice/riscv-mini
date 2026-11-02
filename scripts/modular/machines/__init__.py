@@ -65,6 +65,7 @@ def operations(machine):
             'audio-suite': ae350_audio_suite.perform,
             'video-suite': ae350_video_suite.perform,
             'ae350-upload': ae350_upload.perform_upload,
+            'jtag': __import__('scripts.mini_ops.mega138k_ae350.ae350_jtag', fromlist=['perform']).perform,
             '*': ae350.perform,
         }
     from scripts.mini_ops.primer20k_vexriscv import board

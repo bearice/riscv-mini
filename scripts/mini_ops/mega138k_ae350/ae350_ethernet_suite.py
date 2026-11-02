@@ -53,7 +53,10 @@ def judge_packets(words,wire):
     if (words[128]&3)!=3 or words[129] or words[130]:failures.append('DMA ring IRQ/drain/fault')
     if words[5] or (words[15]&3)!=3:failures.append('PHY/MAC initialization')
     if not 120000000<=words[113]<=130000000:failures.append('RX clock is not gigabit')
-    if any(words[i] for i in (12,13,14,114,115,135,136,137)):failures.append('packet loss/error/guard/DMA/RX_ER/FCS error')
+    allowed_preamble = 1 if wire.get('link_reconnect', {}).get('passed') else 0
+    clean_r13 = words[13] - min(words[13], allowed_preamble)
+    if any(words[i] for i in (12,14,114,115,135,136,137)) or clean_r13:
+        failures.append('packet loss/error/guard/DMA/RX_ER/FCS error')
     if words[140]&2:failures.append('diagnostic first-bad-frame buffer locked during clean qualification')
     if words[11]!=wire.get('bad_checksum_cases',2):failures.append('invalid checksum packets were not observed/rejected exactly')
     if words[6]<wire.get('checks',49):failures.append('RX packet evidence incomplete')
@@ -109,6 +112,9 @@ def perform(args):
                 line.clear()
         wire={}
         if packets:
+            stress_dur=getattr(args,'stress_duration',0) or 0
+            if stress_dur>0:
+                args.timeout=max(args.timeout,stress_dur+120)
             deadline=time.monotonic()+args.timeout;ready=False;ended=False
             while time.monotonic()<deadline:
                 text=session.until(b'\r\n',max(.1,deadline-time.monotonic()))
@@ -117,7 +123,8 @@ def perform(args):
                 if b'ETH DONE' in text:ended=True;break
             if ready:
                 from mini_ops.mega138k_ae350.ae350_ethernet_packets import (
-                    exercise, sweep_rx_delay, exercise_sustained_long_frames
+                    exercise, sweep_rx_delay, exercise_sustained_long_frames,
+                    exercise_link_reconnect, exercise_stress_load
                 )
                 try:
                     peer_ready=wait_peer_link(args.interface)
@@ -134,6 +141,14 @@ def perform(args):
                         sustained=exercise_sustained_long_frames(args.interface,session,op.path,frame_count=sustained_n)
                         op.record('sustained-long-frames',**sustained)
                     wire=exercise(args.interface,op.path)
+                    if getattr(args,'reconnect_check',False):
+                        reconnect=exercise_link_reconnect(args.interface,session,op.path)
+                        op.record('link-reconnect',**reconnect)
+                        wire['link_reconnect']=reconnect
+                    stress_dur=getattr(args,'stress_duration',0) or 0
+                    if stress_dur>0:
+                        stress=exercise_stress_load(args.interface,session,op.path,duration_s=stress_dur)
+                        op.record('stress-load',**stress)
                 except Exception as error:wire=dict(passed=False,error=str(error))
                 if not ended:
                     session.port.write(b'Q\n');session.port.flush()

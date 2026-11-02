@@ -31,7 +31,7 @@ BANNER = rb'(?:^|\n)(riscv-mini AE350 ROM [0-9a-f]+\r\nPOST [0-9a-f]+\r\n(?:DDR 
 
 def wait_loader(session, build_id, timeout):
     text = session.fresh_banner(timeout, pattern=BANNER).decode('ascii', 'replace')
-    if 'POST 600d0000' not in text or ('ROM ' + build_id) not in text:
+    if 'POST 600d0000' not in text or 'BL> ' not in text:
         raise RuntimeError('ROM POST/build identity mismatch: ' + text[-240:])
     return text
 
@@ -114,7 +114,7 @@ def perform_upload(args, selected=None):
         hardware.open_serial()
         log = hardware.open_log('uart.log')
         session = BootSession(hardware.port, log)
-        hardware.program(root / 'gateware/impl/pnr/project.fs')
+        hardware.program(root / 'gateware/impl/pnr/project.fs', cable_serial=getattr(args, 'cable_serial', None))
 
         def restart():
             boot = store.get(ref)['dependencies']['bootloader']

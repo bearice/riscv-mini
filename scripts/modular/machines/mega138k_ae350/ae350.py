@@ -428,7 +428,7 @@ def payload(store, run, cpu, args, profile, plan=False):
     # subdirectory is staged as its own include root, keeping the bare
     # #include names the sources use today.
     runtime = store.root / 'firmware/bsp/mega138k_ae350'
-    payload_dirs = ('runtime', 'dma', 'io', 'audio', 'video', 'sd')
+    payload_dirs = ('runtime', 'dma', 'io', 'audio', 'video', 'sd', 'network')
     native_bios = args.target == 'bios'
     with_bios = native_bios or 'AE350_WITH_BIOS=1' in getattr(args, 'define', [])
     for sub in payload_dirs:
