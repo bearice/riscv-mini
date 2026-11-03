@@ -3,8 +3,8 @@
 Topology
 --------
 * SDK configuration Flash XIP, hard ILM/DLM and zero-based DDR; no work SRAM.
-* Independent 64-bit data AHB crosses asynchronous FIFOs into
-  the 256-bit DDR user interface (100 MHz for 400 MHz CK).
+* Independent 64-bit data AHB runs on the 256-bit DDR user-interface clock
+  (100 MHz for 400 MHz CK), so the data port needs no clock crossing.
 * CPU reset release uses synchronized calibration status and a bounded
   fabric watchdog; the ROM still boots if calibration fails.
 * Diagnostics cross through a coherent request/acknowledge snapshot.
@@ -35,7 +35,7 @@ from gateware.gowin_platform import create_platform
 from gateware.machines.mega138k_ae350.ports import bind_ports
 from gateware.machines.mega138k_ae350.address_map import AddressMap
 from gateware.machines.mega138k_ae350.clock import ClockReset, PLLStatusSynchronizer
-from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB
+from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB, SameClockFIFO
 from gateware.machines.mega138k_ae350.video_memory import DDRMemoryArbiter
 from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
 from gateware.devices.video.hdmi.phy import GowinHDMIPHY
@@ -186,7 +186,7 @@ class DDRSoC(LiteXModule):
             pads['dqs'][index].name_override = 'ddr3_dqs%d' % index
             pads['dqs_n'][index].name_override = 'ddr3_dqs%d_n' % index
 
-        self.crg = ClockReset(platform, fabric_hz=ae350_map.FABRIC_HZ, data_hz=ae350_map.DATA_HZ,
+        self.crg = ClockReset(platform, fabric_hz=ae350_map.FABRIC_HZ,
             input_hz=board.input_clock_hz, cpu_hz=config.clocks.cpu,
             pixel_hz=config.clocks.video, reset_active_low=resources['core_reset'].signals['reset'].active_low)
         self.cpu = NativeAE350(wrapper=True, data_domain='mem', vendor_flash=True, module=config.artifacts['cpu']['module'])
@@ -200,6 +200,11 @@ class DDRSoC(LiteXModule):
         self.cd_ddr = ClockDomain('ddr')
         self.comb += self.cd_ddr.clk.eq(self.ddr.clk_out)
         self.specials += AsyncResetSynchronizer(self.cd_ddr, ~self.ddr.pll_lock | ResetSignal('sys'))
+        # The CPU data port, its interconnect and SD share the UI clock.
+        if ae350_map.DATA_HZ * 4 != self.ddr_ck_hz:
+            raise ValueError('clocks.data_memory_bus must equal the DDR UI clock (CK/4)')
+        self.cd_mem = ClockDomain('mem')
+        self.comb += [self.cd_mem.clk.eq(self.ddr.clk_out), self.cd_mem.rst.eq(self.cd_ddr.rst)]
         calib_sys = Signal()
         self.lock_status = PLLStatusSynchronizer(self.ddr.pll_lock)
         lock_sys = self.lock_status.o
@@ -252,7 +257,8 @@ class DDRSoC(LiteXModule):
                                 accepted_i=ddr_bus.trans[1],
                                 end_burst_i=end_memory_burst,
                                 lookahead=self.cpu.ahb_ram,
-                                base=ae350_map.DDR_BASE, size=ae350_map.DDR_SIZE))
+                                base=ae350_map.DDR_BASE, size=ae350_map.DDR_SIZE,
+                                fifo_cls=SameClockFIFO))
         self.err = ClockDomainsRenamer({'sys': 'mem'})(ErrorSlave(err_bus))
         # One interconnect, one address-acceptance rule for every slave: the
         # address, direction and selected slave are captured together at the
@@ -542,7 +548,7 @@ class DDRSoC(LiteXModule):
                 'create_clock -name ddr_clk_ref -period 20 -waveform {0 10} [get_nets {ddr3_clk_ref}]',
                 'set_clock_groups -asynchronous '
                 '-group [get_clocks {sys_clk}] -group [get_clocks {cpu_clk}] '
-                '-group [get_clocks {mem_clk}] -group [get_clocks {usb_clk}] '
+                '-group [get_clocks {usb_clk}] '
                 '-group [get_clocks {eth_tx_clk}] -group [get_clocks {eth_rx_clk}] ' +
                 ('-group [get_clocks {%s}] ' % self.crg.hdmi_pll.clock_names) +
                 '-group [get_clocks {ddr_ui_clk}] -group [get_clocks {ddr_memory_clk}] '

@@ -1,4 +1,7 @@
-"""AHB <-> DDR3AHB protocol test with interface stubs (no Memory, no CDC).
+"""AHB <-> DDR3AHB protocol test with interface stubs (no CDC).
+
+It runs once with a 1-entry stub queue and once with ``SameClockFIFO``, the
+queue used when the data port shares the UI clock.
 
 The stubs replace the asynchronous FIFOs with a 1-entry bypass so the AHB front
 end, the DDR user-interface engine and their data layout can be exercised in a
@@ -206,8 +209,8 @@ def ahb_pipelined(bus, xacts, timeout=400):
     return results
 
 
-def main():
-    dut = DUT()
+def main(fifo_cls=StubFIFO):
+    dut = DUT(fifo_cls=fifo_cls)
     model = Model(dut.ui, dut.mon)
     fails = []
 
@@ -374,10 +377,17 @@ def main():
         r, d = yield from ahb(bus, False, 0x2000)
         check('recovered after not-ready', r == 0)
 
-    run_simulation(dut, {'sys': tb(), 'ddr': model.run()}, clocks={'sys': 10, 'ddr': 10})
+    fragment = dut.get_fragment()
+    for memory in fragment.specials:
+        if isinstance(memory, Memory):
+            for port in memory.ports:
+                if port.dat_r is None:
+                    port.dat_r = Signal(memory.width)
+    run_simulation(fragment, {'sys': tb(), 'ddr': model.run()}, clocks={'sys': 10, 'ddr': 10})
     print('RESULT', 'PASS' if not fails else 'FAIL: ' + ','.join(fails))
     return 0 if not fails else 1
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    from gateware.machines.mega138k_ae350.ddr3_ahb import SameClockFIFO
+    sys.exit(main() | main(SameClockFIFO))

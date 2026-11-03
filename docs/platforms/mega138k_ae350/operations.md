@@ -26,11 +26,11 @@ DLM 私有数据为前 32 KiB，结果区起点 0xa0208000、scratch 为 0xa0208
 
 ## 自举与时钟
 
-FPGA SRAM 编程后，Gowin DDR3 IP 自动初始化/校准。状态经同步器进入控制域和数据域，看门狗保证校准失败仍可进入启动恢复。CPU 从官方Flash XIP执行，检查 ILM/DLM 配置，做本地 RAM 双极性地址图案测试、清零和代码/data 装载，然后完成短 POST 并进入 UART loader。ECC 检查目前显式关闭，未宣称验证 ECC 纠错。
+FPGA SRAM 编程后，Gowin DDR3 IP 自动初始化/校准。状态经同步器进入控制域和数据域；校准超时后看门狗仍释放 CPU 从 Flash/ILM 启动。数据口与 DDR UI 同一时钟，DDR 时钟不可用时访问 DDR 可能挂住而不是返回 ERROR，按用户决定不另设兜底。CPU 从官方Flash XIP执行，检查 ILM/DLM 配置，做本地 RAM 双极性地址图案测试、清零和代码/data 装载，然后完成短 POST 并进入 UART loader。ECC 检查目前显式关闭，未宣称验证 ECC 纠错。
 
 外设AHB/APB与Flash、数据AHB、DDR UI/CK的频率由机器 JSON 与生成时钟导出定义。运行点及失败边界见匹配验收报告，不从核心配置目标或某个单域最高频率推断整机通过。实现检查同时覆盖 setup、hold 和 minimum pulse width。
 
-读适配将完整 32 B 通过响应 FIFO 一次返回 mem 域，同一合法 AHB burst 的后续 beat 在 mem 域选择数据，不再逐 beat 跨域；UI 域不保留另一套读行复用状态。NONSEQ 不复用前一次块。WRAP、跨块、BUSY、属性/尺寸及固定 burst 长度均有检查。写方向按实际 cache write-back burst 聚合同一 32 B 块，一次完整 32 B 写回对应一条 UI 写。独立写、提前结束会排空；排空期间到达的请求被保留，失败返回 ERROR。提前完成表示写缓冲已接收，不表示 DDR 已完成；通过 fence/排空后观察状态。错误、超时、迟到响应隔离与 CDC 回归继续适用。
+mem 域由 DDR UI 时钟（CK/4）驱动，CPU 数据口与控制器之间用同时钟请求/响应队列，不再跨时钟域。读适配将完整 32 B 通过响应队列一次返回 mem 域，同一合法 AHB burst 的后续 beat 在 mem 域选择数据；UI 侧不保留另一套读行复用状态。NONSEQ 不复用前一次块。WRAP、跨块、BUSY、属性/尺寸及固定 burst 长度均有检查。写方向按实际 cache write-back burst 聚合同一 32 B 块，一次完整 32 B 写回对应一条 UI 写。独立写、提前结束会排空；排空期间到达的请求被保留，失败返回 ERROR。提前完成表示写缓冲已接收，不表示 DDR 已完成；通过 fence/排空后观察状态。错误、超时与迟到响应隔离继续适用；`test_ddr3_ahb.py` 以同时钟队列运行协议回归。
 
 DDR 状态页新增只读诊断：偏移 `0x44` 为被接收的读行命中数，`0x48` 为适配器 HREADY 低的 mem 周期数，均为自然回绕的 32 位计数，通过一致快照跨域导出，不在读取时清零，也不改变 image ABI。优化后的候选、三轮性能对照与增量验收范围见[读行优化报告](../../../reports/performance/ae350-read-line.md)。baseline 与 current 是独立显式引用，以本地目录的实际选择为准。
 

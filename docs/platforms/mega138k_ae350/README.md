@@ -1,10 +1,10 @@
 # Tang Mega 138K Pro / AE350
 
-机器 `mega138k_ae350`，板卡 `mega138k_pro`。系统通过 U4 官方 Flash XIP 启动，固件区从物理 `0x600000` 延伸至 Flash 末尾。sys/AHB/APB和音频使用50 MHz，CPU800 MHz、mem/DDR UI100 MHz、DDR CK400 MHz。控制面通过APB访问，数据通路使用原生AHB与DDR仲裁；应用和诊断载荷通过UART loader装入DDR。构建与验证状态见[sys50记录](../../../reports/ae350-sys50-simplification.md)，安装方法见[bootloader](bootloader.md)。
+机器 `mega138k_ae350`，板卡 `mega138k_pro`。系统通过 U4 官方 Flash XIP 启动，固件区从物理 `0x600000` 延伸至 Flash 末尾。sys/AHB/APB和音频使用50 MHz，CPU800 MHz、DDR CK400 MHz；CPU数据口、SD与DDR UI共用DDR IP输出的100 MHz时钟（mem域）。控制面通过APB访问，数据通路使用原生AHB与DDR仲裁；应用和诊断载荷通过UART loader装入DDR。构建与验证状态见[sys50记录](../../../reports/ae350-sys50-simplification.md)，安装方法见[bootloader](bootloader.md)。
 
 当前构建参数来自 [Machine JSON](../../../gateware/machines/mega138k_ae350/machine.json) 与 [Board JSON](../../../gateware/boards/mega138k_pro/board.json)。20K 的 BIOS、L2 启动 RAM、XIP 分区与 current 不用于本机器；共享构建入口不表示已支持相同固件和发布套件。
 
-控制寄存器与低带宽外设使用 50 MHz sys。大量数据通过独立 mem/DDR 通路；新增高吞吐外设应接 DDR UI 仲裁和 DMA/队列，使用必要的 CDC 连接控制面，不通过提高全局 sys 或软件反复搬运 CSR 实现带宽。
+控制寄存器与低带宽外设使用 50 MHz sys。大量数据通过与 DDR UI 同时钟的 mem/DDR 通路；新增高吞吐外设应接 DDR UI 仲裁和 DMA/队列，使用必要的 CDC 连接控制面，不通过提高全局 sys 或软件反复搬运 CSR 实现带宽。
 
 | 主题 | 文档 |
 | --- | --- |

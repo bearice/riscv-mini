@@ -13,11 +13,11 @@ P8 的三项（网络、USB、Linux）分别出结果，见 [migration-stages.md
 
 ## 1. 当前已验证组合
 
-最近一次自动启动：`20261102T191321963024Z-board-ae350-autoboot`（PASS：ROM `2ea0b2eda141` → U7 BIOS → SD → OpenSBI → U-Boot → Linux 用户态）。SD 安装与 U-Boot SD 装载：`20261102T191120089044Z-board-ae350-linux`（Image 5714660 B 读 1236 ms，4.4 MiB/s）。U-Boot TFTP：`20261102T184015359623Z-board-ae350-linux`（较早的 U-Boot 构建 `1d4e6a6e…`，网卡驱动此后未改）。USB EOP 修正后：`20261102T200546620663Z`、`20261102T200718150537Z`、`20261102T200859479060Z`（`board linux --devices`，U-Boot TFTP 链，新位流 `7522f3e5…`，0 次重发，YubiKey/接收器/U 盘全部枚举，存储读写恢复通过）。以上自动启动与 SD 回执使用前一位流 `271e113c…`（ABI 相同）。
+当前位流 `24a6adbf…` 上：自动启动 `20261103T043715125462Z-board-ae350-autoboot`（PASS：ROM `2ea0b2eda141` → U7 BIOS → SD → OpenSBI → U-Boot → Linux 用户态，Image 读 4.6 MiB/s）；`board linux --devices` `20261103T043635177186Z`（U-Boot TFTP 链，USB 0 重发，存储读写恢复通过）；ddr-suite `20261103T043433887777Z`（10/10）；dma-suite `20261103T044219538249Z`。SD 安装：`20261102T191120089044Z-board-ae350-linux`（前一位流）。U-Boot TFTP 首次验证：`20261102T184015359623Z-board-ae350-linux`（较早的 U-Boot 构建 `1d4e6a6e…`，网卡驱动此后未改）。USB EOP 修正的 A/B 见第 3 节（位流 `7522f3e5…`）。
 
 | 组件 | 准确身份 |
 |---|---|
-| gateware（SRAM） | `build/runs/20261102T194334412350Z-build-usb-eop-driven-j-bf4108/result.json`（digest `7522f3e5…`，USB PHY EOP 驱动 J；SFP+ 未绑定；setup/hold 0/0，最小脉宽余量 0.1ns；PnR 通过，非板级合格版本；image ABI 1350241324 与前一位流 `271e113c…`（`20261102T180458616948Z…`）相同） |
+| gateware（SRAM） | `build/runs/20261103T041525542162Z-build-mem-on-ddr-ui-clock-hdmi-lane0-site-f0262d/result.json`（digest `24a6adbf…`，mem 域并入 DDR UI 时钟、USB PHY EOP 驱动 J；SFP+ 未绑定；setup/hold 0/0，最小脉宽余量 0.173ns；PnR 通过，非板级合格版本；image ABI 1350241324 与 `7522f3e5…`、`271e113c…` 相同）。合并的取舍与 A/B 见 [sys50 记录后续](../../../reports/ae350-sys50-simplification.md) |
 | ROM bootloader（U4） | 安装回执 `build/runs/20261102T182857671261Z-board-ae350-bootrom/result.json`，build `2ea0b2eda141`。套件需显式 `--bootrom-install` 该回执 |
 | BIOS（U7 启动槽） | `build/runs/20261102T183632903771Z-build-bios-uboot-chain-ea50f5/result.json`（payload `22aee5b0a1d3`，`boot sd` 只装 fw_payload.bin）；安装回执 `20261102T191305726970Z-board-ae350-bios-install`（167152 B，crc `27be722a`） |
 | OpenSBI+U-Boot + DTB | `build/runs/20261102T190946148795Z-build-uboot-sd-volume-order-4f8bf7`，store `backend/uboot/6e7b9472…/outputs/{fw_payload.bin,mega138k_ae350.dtb}`；U-Boot `tree_sha256` `ff627189…`，OpenSBI `5413c912…`，均经干净 tarball 重放 |
@@ -80,7 +80,7 @@ Linux 原生驱动已通过实板（`20261102T162127780295Z`）：拓扑为根�
 - 恢复 BIOS 后启动 Linux（U-Boot 链；`--uboot-load net` 改为 TFTP，`--sd-install` 先替换 SD 文件，`--uboot-command` 在 U-Boot 提示符排查；fw_jump 链把 `--os-image` 换成 `$S/fw_jump.bin`）：
 
 ```sh
-G=build/runs/20261102T194334412350Z-build-usb-eop-driven-j-bf4108/result.json
+G=build/runs/20261103T041525542162Z-build-mem-on-ddr-ui-clock-hdmi-lane0-site-f0262d/result.json
 B=build/runs/20261102T183632903771Z-build-bios-uboot-chain-ea50f5/result.json
 P=/dev/serial/by-id/usb-SIPEED_USB_Debugger_2025030317-if01-port0
 U=build/store/backend/uboot/6e7b9472137def61817480f71321dbffc952efd0e4fd4c29f641d4af48cdffae/outputs
@@ -95,7 +95,7 @@ nix develop -c sudo -n .venv/bin/python scripts/mini.py board verify --machine m
 
 `--devices` 在 shell 中执行 `usb`（要求 `/dev/sda`，会改写并恢复其最后 256 KiB）与 `dmesg`；没有 U 盘时不要加。
 
-- 诊断套件（`ddr-suite`/`dma-suite`/`io-suite` 等）加 `--cable-serial 2025030317 --bootrom-install build/runs/20261102T182857671261Z-board-ae350-bootrom/result.json --cpu-jtag-location 'serial:FactoryAIOT ProA'`。最近通过：`ddr-suite` `20261102T120424479330Z`（13/13，flags 15，遍历 64MiB）、`dma-suite` `20261102T120603117943Z`、`io-suite` `20261102T120739200732Z`。
+- 诊断套件（`ddr-suite`/`dma-suite`/`io-suite` 等）加 `--cable-serial 2025030317 --bootrom-install build/runs/20261102T182857671261Z-board-ae350-bootrom/result.json --cpu-jtag-location 'serial:FactoryAIOT ProA'`。当前位流上通过：`ddr-suite` `20261103T043433887777Z`（默认参数，10/10；载荷 `20261102T120027582830Z-build-diag-contract-memory…`）、`dma-suite` `20261103T044219538249Z`（载荷 `20261102T120033748741Z-build-diag-contract-dma…`）。`io-suite` 最近一次 `20261102T120739200732Z` 在较早位流上。
 - 偶发：CPU JTAG 首次读可能 D2XX 短读（`Short D2XX JTAG read: 0/41`，发生在上传前），重试即可；根因未查。
 - BIOS `crc32` 输出 `==> <hex>\r\n> `，提示符匹配用 `\n> `。
 
@@ -107,7 +107,7 @@ nix develop -c sudo -n .venv/bin/python scripts/mini.py board verify --machine m
 4. **网络验收**：千兆协商/MDIO ID/时钟的正式记录、PIO 对照、包长与随机内容覆盖、环回收、断链重连、30 分钟负载无内存损坏、吞吐/CPU 占用/丢包、中断路径实板验收。
 5. **USB 验收**：PHY EOP 修正与共享驱动的包等待改动未在 20K 复验（20K 同用 `usb_fs_phy`）。真实键鼠输入、拔插恢复、重启重复性；LS/HS 按目标另验；BIOS 键盘集成；Device 方向 SoftPHY。USB host 诊断载荷没有记录的构建配方（需 TinyUSB 源码与头文件目录），应补到 [usb.md](usb.md) 后编译。
 6. **诊断载荷复验**：地址收进 diag.* 后，video、hdmi_tty、audio、sd_benchmark、ethernet/packet、sfp_dual、sfp10g_dma 已构建通过但未上板。
-7. **新位流**：gateware `7522f3e5…`（无 SFP+）只在 SRAM 中通过 `--devices`；自动启动（SD 链）与 `ddr-suite`/`dma-suite`/`io-suite`/`ethernet-suite` 尚未在该位流上复跑。USB 已稳定，写 U4 位流区（`board update`）等用户明确授权。SFP+ 重新启用前需先修 XGMAC TX 时序。
+7. **新位流**：gateware `24a6adbf…`（无 SFP+）在 SRAM 中通过自动启动、`--devices`、`ddr-suite`、`dma-suite`；`io-suite`/`ethernet-suite`/视频/音频尚未在该位流上复跑。DDR 时钟不可用时访问 DDR 可能挂住，用户决定不做兜底。写 U4 位流区（`board update`）等用户明确授权。SFP+ 重新启用前需先修 XGMAC TX 时序。
 8. **过期构建测试**：`machine_build_test` 报 “Missing declared AE350 input: scripts/modular/...”，在 `14bb35d` 上同样失败，未处理。
 9. **过期测试**：`tests/mega138k_ae350/ae350_memory_test.py` 有 10 个错误，调用了已删除的接口（`ae350_image.abi_tag`、模块级 `address_map.DDR_BASE`/`image_abi`），需按现有接口更新。
 10. **SD 卡布局**：MBR 区的旧分区表项与整盘 FAT32 重叠（见第 1 节），是否清除或重新格式化由用户决定。

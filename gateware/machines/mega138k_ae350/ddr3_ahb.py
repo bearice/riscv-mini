@@ -3,7 +3,9 @@
 The vendor IP exposes a 256-bit, 32-byte single-beat user interface clocked by
 its own ``clk_out`` (100 MHz at 400 MHz CK).  The AE350 data-memory port is a
 64-bit AHB-Lite master clocked by the configured fabric ``sys`` clock.  Two
-asynchronous FIFOs cross between the domains. The UI returns one 32-byte
+asynchronous FIFOs cross between the domains; when the port is clocked by the
+UI clock itself, ``SameClockFIFO`` keeps the same queues without the Gray-code
+synchronizers. The UI returns one 32-byte
 block. Later beats of that same validated AHB read burst are served from a
 line buffer in the memory-port clock domain, so they do not cross back to
 the UI. Independent NONSEQ reads refetch DRAM; there is no persistent cache.
@@ -58,9 +60,14 @@ Contracts (verified against the vendor reference):
     Response: rdata[256], error. A write response drives the data bits to 0.
 """
 from migen import *
-from migen.genlib.fifo import AsyncFIFO
+from migen.genlib.fifo import AsyncFIFO, SyncFIFO
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
+
+
+def SameClockFIFO(width, depth):
+    """``fifo_cls`` for a ``sys`` domain that shares the ``ddr`` clock."""
+    return ClockDomainsRenamer('write')(SyncFIFO(width, depth))
 
 
 def _or_tree(nodes):
