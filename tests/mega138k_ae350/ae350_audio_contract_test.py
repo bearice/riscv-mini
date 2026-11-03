@@ -2,6 +2,8 @@
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
+from gateware.machines.mega138k_ae350 import address_map as amap
 from mini_ops.mega138k_ae350.ae350_audio_contract import NAMES,DONE,SCHEMA,judge,judge_routes,judge_video
 
 d=dict.fromkeys(NAMES,0)
@@ -26,7 +28,7 @@ print('PASS audio result rejects incomplete duration, failures, losses and inven
 video=[0]*32
 video[0]=0x56490002;video[2:5]=[640,480,3600]
 video[12]=60*59*19200;video[13]=100000
-video[16:19]=[0x01000000,1,0]
+video[16:19]=[amap.DIAG_VIDEO_FB0,1,0]
 assert judge_video(video,60)==[]
 for index in (0,2,3,4,12,13,16,17):
     bad=video.copy();bad[index]=0;assert judge_video(bad,60),index

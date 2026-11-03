@@ -1,0 +1,12 @@
+--- a/platform/generic/andes/ae350.c
++++ b/platform/generic/andes/ae350.c
+@@ -85,6 +85,9 @@
+ 		/* The boot loader may hand over with the L1 caches disabled. */
+ 		csr_write(CSR_MCCTLCOMMAND, MCCTLCOMMAND_L1D_WBINVAL_ALL);
+ 		ae350_enable_coherency();
++
++		/* S-mode loaders maintain the L1D around DMA through ucctlcommand. */
++		csr_set(CSR_MCACHE_CTL, MCACHE_CTL_CCTL_SUEN_MASK);
+ 	}
+ 
+ 	/*

@@ -50,6 +50,8 @@ Not named in the request but required: `mmsc_cfg 0xfc2` bit 16 = **CCTLCSR** pre
 
 **There is no single "cache enable" master bit.** Enabling the caches = set `IC_EN|DC_EN` (`UB:62-88` uses exactly `csrsi/csrci 0x7ca` masks `0x1`/`0x2`). Bit 19/20 exist only when a coherence manager is present; `OSBI:145-151` and `UB:49-57` both guard with "if DC_COHEN reads back 1, then poll DC_COHSTA" because the bit is hardwired 0 without a CM. This macro is single-core with no documented L2 → never poll `DC_COHSTA` unguarded **[V]**. Read-modify-write only the `MUG`-documented bits: setting bits 9/10/13/15/19 (as `UB:36-39` does) on a core that does not implement them is at best ignored, at worst changes undocumented behaviour **[I]**.
 
+**Atomics and the D-cache [measured]**: on DDR an AMO/LR/SC completes inside L1D only when its line was allocated by a *load*. A missing line, a line only written by a store, or an uncached access turns the AMO into a bus atomic: one single-beat read, then the core waits for an exclusive success that the hard macro's DDR AHB port cannot signal (it has no lock/exclusive pins). The AMO then retries forever and SC always fails. No documented `mcache_ctl`/`mmisc_ctl` bit changes this, and the core has no programmable PMA. Evidence: [P8 handoff](p8-handoff.md#已确认的硬件结论决定当前移植方式).
+
 ## 3. Reset state
 
 `MUG` Table 6-3 gives **Initial Value 0 for `IC_EN` and `DC_EN`** → **both L1 caches are disabled out of reset** and firmware must enable them explicitly **[V]**. `AX45` matches (reset 0 for both). Consequence: at reset every access goes to memory uncached, which is why the cold-boot path works with no maintenance at all.

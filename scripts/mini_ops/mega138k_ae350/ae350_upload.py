@@ -217,7 +217,7 @@ def _negative_cases(session, image, payload, args, op, restart, wait_banner):
                       got=(marker or b'(none)').decode('ascii', 'replace')))
 
     words = list(struct.unpack('<12I', image[:HEADER.size]))
-    words[5] = words[6] = 0x00100000
+    words[5] = words[6] = amap.DDR_CODE + amap.DDR_CODE_MAX
     words[11] = zlib.crc32(struct.pack('<11I', *words[:11]))
     bad2 = bytearray(image); bad2[:HEADER.size] = struct.pack('<12I', *words)
     begin(bytes(bad2[:HEADER.size]))

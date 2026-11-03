@@ -1,0 +1,19 @@
+--- a/arch/riscv/cpu/start.S
++++ b/arch/riscv/cpu/start.S
+@@ -149,11 +149,16 @@
+ 	 * Pick hart to initialize global data and run U-Boot. The other harts
+ 	 * wait for initialization to complete.
+ 	 */
++#if defined(CONFIG_RISCV_ISA_ZAAMO) || CONFIG_IS_ENABLED(SMP)
+ 	la	t0, hart_lottery
+ 	li	t1, 1
+ 	amoswap.w s2, t1, 0(t0)
+ 	bnez	s2, wait_for_gd_init
+ #else
++	/* Without Zaamo and SMP only the boot hart enters U-Boot. */
++	li	s2, 0
++#endif
++#else
+ 	/*
+ 	 * FIXME: gp is set before it is initialized. If an XIP U-Boot ever
+ 	 * encounters a pending IPI on boot it is liable to jump to whatever

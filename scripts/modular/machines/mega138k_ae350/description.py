@@ -76,6 +76,15 @@ def resolve(store, snapshot=None):
 
 def execute(store, run, args, dry):
     """Resolve one source snapshot and dispatch the native AE350 adapters."""
+    if args.target == 'linux':
+        from scripts.modular.machines.mega138k_ae350.linux import build
+        return build(store, run, args, dry)
+    if args.target == 'opensbi':
+        from scripts.modular.machines.mega138k_ae350.opensbi import build
+        return build(store, run, args, dry)
+    if args.target == 'uboot':
+        from scripts.modular.machines.mega138k_ae350.uboot import build
+        return build(store, run, args, dry)
     if getattr(args, 'locked', None):
         raise ValueError('AE350 locked system replay requires a completed system backend')
     if getattr(args, 'synthesize', False) and args.target != 'gateware':
@@ -86,6 +95,16 @@ def execute(store, run, args, dry):
         raise ValueError('AE350 ' + args.target + ' backend is pending P1; cannot use the 20K backend')
     if args.target == 'system' and not dry:
         raise ValueError('AE350 complete system backend is pending P1; build bootloader or gateware for host bring-up')
+    if args.hardware != 'current' and args.target in ('bios', 'payload'):
+        from scripts.mini_ops.mega138k_ae350.ae350 import candidate
+        _, hardware_ref, _ = candidate(args.hardware)
+        manifest = store.get(hardware_ref, recursive=True)
+        cpu = manifest['dependencies']['cpu']
+        from scripts.modular.machines.mega138k_ae350.ae350 import build, machine_for_cpu
+        selected = machine_for_cpu(store, cpu)
+        args.selected_hardware_ref = hardware_ref
+        run.result.update(machine=AE350, selected_hardware=hardware_ref)
+        return build(store, run, args, cpu, selected.board, dry)
     # A P0 description starts from explicit source inputs, never from 20K current.
     if args.hardware != 'current':
         raise ValueError('AE350 P0 describes source inputs; --hardware selection is pending P1')

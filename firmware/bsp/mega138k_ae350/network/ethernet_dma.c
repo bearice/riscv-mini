@@ -10,7 +10,7 @@ uint32_t ethernet_packet_reg(unsigned off) {return W(AE350_ETH_BASE+off);}
 static void reg(unsigned off,uint32_t value) {W(AE350_ETH_BASE+off)=value;}
 static void publish(void) {__asm__ volatile("fence iorw, iorw" ::: "memory");}
 static int range(uintptr_t address,unsigned bytes) {
-    return address>=0x100000u && !(address&31u) && bytes &&
+    return address>=AE350_DDR_CODE+AE350_DDR_CODE_MAX && !(address&31u) && bytes &&
         address<AE350_DDR_SIZE && bytes<=AE350_DDR_SIZE-address;
 }
 static int overlap(uintptr_t a,unsigned an,uintptr_t b,unsigned bn) {return a<b+bn&&b<a+an;}

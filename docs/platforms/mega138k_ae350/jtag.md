@@ -43,4 +43,11 @@ FPGA 配置 TAP 身份为 `0x0001081b`，CPU TAP 身份为 `0x1000563d`。COM �
 
 2026-10-18已将D2XX ROM验证/重启纳入统一板测入口：`mini.py board run --machine mega138k_ae350 --build <准确run> --port COM9 --location <FPGA位置> --cpu-jtag-location <CPU位置>`。recover和verify同样支持该参数。后端为scripts/mini_ops/mega138k_ae350/ae350_jtag.py，使用Programmer目录的ftd2xx.dll，检查CPU TAP身份，暂停并完整读回所选ROM，与boot.bin比较后才设DPC=0x80000000并恢复执行。每次SRAM加载分别记录ROM匹配、重启前异常寄存器和恢复状态；ROM不匹配不会改PC重启。正常UART用于功能验收，已移除额外UART诊断发送器。
 
+交互调试统一用 `mini.py board jtag`（Linux 需 `sudo -n`）。`--script FILE`（`-` 为 stdin）或 `--exec 'cmd; cmd'` 在一次 JTAG 会话中执行命令序列，完整命令表见 `board jtag --help`。脚本在打开电缆前整体解析，语法或参数错误不会触碰硬件。寄存器和内存命令仅在该次访问期间临时暂停运行中的 hart；`halt`、`step`、`resume`、`restart` 显式改变运行状态，脚本结束时保持最后状态。`expect-word`/`expect-reg ... [MASK]` 不匹配时立即停止，回执记为失败并以退出码 1 返回。每条命令及结果按顺序记录在 `build/runs/*-board-ae350-jtag/result.json` 的 `steps` 中。原有 `--halt`、`--read-reg` 等单项参数等价于一行脚本，不能与脚本混用，也不能同时给多个。例：
+
+```bash
+nix develop -c sudo -n .venv/bin/python scripts/mini.py board jtag \
+  --exec 'halt; expect-reg milmb 0xa0000001; read-word 0xe4002080; resume'
+```
+
 板卡断电或重启后必须先通过FPGA配置JTAG重新加载上述J23接线对应的SRAM候选，再扫描CPU TAP。没有该设计时，J23未必连接AE350调试口，读到全1不能判断接线损坏。

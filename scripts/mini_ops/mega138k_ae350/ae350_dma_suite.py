@@ -43,12 +43,13 @@ def perform(args):
             return op
         from mini_ops.mega138k_ae350.ae350_session import HardwareSession
         from tools.boot_session import BootSession
-        from mini_ops.mega138k_ae350.ae350_upload import wait_loader
+        from mini_ops.mega138k_ae350.ae350_upload import installed_provider, wait_provider
+        provider = installed_provider(args, store, ref)
         hardware = HardwareSession(op, port=args.port, cpu_jtag_location=args.cpu_jtag_location,
                                    location=args.location)
         session = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
-        hardware.program(fs)
-        op.record('banner', text=wait_loader(session, build_id, min(args.timeout, 30)))
+        hardware.program(fs, cable_serial=getattr(args, 'cable_serial', None))
+        op.record('banner', text=wait_provider(session, hardware, store, provider, min(args.timeout, 30)))
         session.upload(image, load=ae350_image.LOAD, abi=abi)
         cpu = hardware.open_cpu()
         started = time.monotonic()

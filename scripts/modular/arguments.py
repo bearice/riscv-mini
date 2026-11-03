@@ -56,6 +56,7 @@ def gwbasic(parser):
                    help='build for rv32im/ilp32 instead of the default rv32imaf/ilp32f')
 
 def linux(parser):
+    parser.add_argument('--source', type=Path, help='AE350 configured native kernel source tree')
 
     parser.add_argument('--board-evidence', type=Path, help='Attach a passing board linux operation receipt')
 

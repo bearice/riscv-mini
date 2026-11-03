@@ -12,12 +12,12 @@
 #include "ae350_address_map.h"
 #include "ethernet_dma.h"
 
-#define UART2_BASE   0xf0300000u
+#define UART2_BASE   AE350_UART_BASE
 #define UART_DATA    0x20u
 #define UART_LSR     0x34u
 #define UART_REG(o)  (*(volatile uint32_t *)(UART2_BASE + (o)))
 
-#define SFP_BASE     0xf80b0000u
+#define SFP_BASE     AE350_SFP_BASE
 #define SFP_REG(o)   (*(volatile uint32_t *)(SFP_BASE + (o)))
 
 /* SFP0 (10G) Registers */
@@ -433,11 +433,12 @@ int main(void) {
 
     /* Initialize EthernetDMA descriptor rings in DDR3 */
     puts_uart("Initializing DDR3 EthernetDMA descriptor rings...\r\n");
+    _Static_assert(0x4000u + 4u * 1536u <= AE350_DIAG_ETH_BYTES, "rings outside diag.eth");
     const struct ethernet_ring_config ring = {
-        .tx         = (struct ethernet_descriptor *)0x02000000u,
-        .rx         = (struct ethernet_descriptor *)0x02001000u,
-        .tx_buffers = (uint8_t *)0x02002000u,
-        .rx_buffers = (uint8_t *)0x02004000u,
+        .tx         = (struct ethernet_descriptor *)(AE350_DIAG_ETH_BASE + 0x0000u),
+        .rx         = (struct ethernet_descriptor *)(AE350_DIAG_ETH_BASE + 0x1000u),
+        .tx_buffers = (uint8_t *)(AE350_DIAG_ETH_BASE + 0x2000u),
+        .rx_buffers = (uint8_t *)(AE350_DIAG_ETH_BASE + 0x4000u),
         .count      = 4,
         .stride     = 1536
     };
@@ -517,7 +518,7 @@ int main(void) {
                 puts_uart(verbose_rx ? "[VERBOSE RX ON]\r\n" : "[VERBOSE RX OFF]\r\n");
             } else if (c == 'q' || c == 'Q' || c == '!') {
                 puts_uart("[RESET TO BOOTLOADER]\r\n");
-                asm volatile("fence.i; j 0x00000000");
+                asm volatile("fence.i; jr %0" :: "r"(AE350_ROM_BASE));
             }
         }
     }

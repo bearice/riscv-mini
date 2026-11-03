@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Device Tree Source for Tang Mega 138K Pro (Andes AE350 SoC)
+ *
+ * C-preprocessed with the header generated from address_map.py. Node unit
+ * addresses must match their reg; the build runs dtc with that check as error.
  */
 
 /dts-v1/;
+#include "ae350_dts.h"
+
+#define PLIC_EXT(n) (AE350_PLIC_EXT_INT_SOURCE_BASE + (n))
+#define IRQ_TYPE_EDGE_RISING 1
+#define IRQ_TYPE_LEVEL_HIGH 4
 
 / {
 	#address-cells = <1>;
@@ -53,7 +61,7 @@
 
 	memory@0 {
 		device_type = "memory";
-		reg = <0x00000000 0x10000000>; /* 256 MB DDR3 aperture */
+		reg = <AE350_DDR_BASE AE350_OS_MEMORY_BYTES>;
 	};
 
 	reserved-memory {
@@ -62,7 +70,7 @@
 		ranges;
 
 		opensbi@1000000 {
-			reg = <0x01000000 0x00100000>;
+			reg = <AE350_OS_SBI_BASE AE350_OS_SBI_BYTES>;
 			no-map;
 		};
 	};
@@ -75,7 +83,7 @@
 
 		plic0: interrupt-controller@e4000000 {
 			compatible = "andestech,nceplic100", "riscv,plic0";
-			reg = <0xe4000000 0x02000000>;
+			reg = <AE350_PLIC_BASE AE350_PLIC_SIZE>;
 			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>;
 			interrupt-controller;
 			#interrupt-cells = <2>;
@@ -84,7 +92,7 @@
 
 		plicsw: interrupt-controller@e6400000 {
 			compatible = "andestech,plicsw";
-			reg = <0xe6400000 0x00400000>;
+			reg = <AE350_PLICSW_BASE AE350_PLICSW_SIZE>;
 			interrupts-extended = <&cpu0_intc 3>;
 			interrupt-controller;
 			#interrupt-cells = <1>;
@@ -92,16 +100,16 @@
 
 		plmt0: plmt0@e6000000 {
 			compatible = "andestech,plmt0";
-			reg = <0xe6000000 0x00100000>;
+			reg = <AE350_PLMT_BASE AE350_PLMT_SIZE>;
 			interrupts-extended = <&cpu0_intc 7>;
 		};
 
 		serial0: serial@f0300000 {
 			compatible = "andestech,uart16550", "ns16550a";
-			reg = <0xf0300000 0x1000>;
-			interrupts = <9 4>;
+			reg = <AE350_UART_BASE AE350_UART_SIZE>;
+			interrupts = <AE350_UART_PLIC_SOURCE IRQ_TYPE_LEVEL_HIGH>;
 			interrupt-parent = <&plic0>;
-			clock-frequency = <50000000>;
+			clock-frequency = <AE350_FABRIC_HZ>;
 			current-speed = <115200>;
 			reg-shift = <2>;
 			reg-offset = <32>;
@@ -109,49 +117,65 @@
 			no-loopback-test = <1>;
 		};
 
+		dmac0: dma-controller@f0c00000 {
+			compatible = "andestech,atcdmac300";
+			reg = <AE350_DMAC_BASE AE350_CSR_PAGE_BYTES>;
+			#dma-cells = <2>;	/* channel, request selector */
+			status = "disabled";
+		};
+
+		/* Linux has no driver for the AE350 SD and Ethernet blocks; U-Boot enables them. */
 		ethernet0: ethernet@f80a0000 {
-			compatible = "riscv-mini,liteeth-ring";
-			reg = <0xf80a0000 0x1000>, <0xf80a1000 0x10>;
-			reg-names = "dma", "phy";
+			compatible = "riscv-mini,ae350-eth";
+			reg = <AE350_ETH_BASE AE350_CSR_PAGE_BYTES>;
 			interrupt-parent = <&plic0>;
-			interrupts = <26 1>;
-			dma-coherent;
+			interrupts = <PLIC_EXT(AE350_EXT_INT_ETHERNET) IRQ_TYPE_EDGE_RISING>;
 			status = "disabled";
 			local-mac-address = [20 12 03 14 05 06];
 		};
 
 		mmc0: mmc@f8040000 {
-			compatible = "riscv-mini,litesd";
-			reg = <0xf8040000 0x1000>;
-			interrupt-parent = <&plic0>;
-			dma-coherent;
+			compatible = "riscv-mini,ae350-sd";
+			reg = <AE350_SD_BASE AE350_CSR_PAGE_BYTES>,
+			      <AE350_SD_TX_DATA 4>, <AE350_SD_RX_DATA 4>;
+			reg-names = "core", "tx", "rx";
+			dmas = <&dmac0 AE350_SD_DMA_CHANNEL AE350_SD_TX_DMA_SEL>,
+			       <&dmac0 AE350_SD_DMA_CHANNEL AE350_SD_RX_DMA_SEL>;
+			dma-names = "tx", "rx";
 			status = "disabled";
 		};
 
 		video0: lcd@f8030000 {
 			compatible = "riscv-mini,rgb-lcd";
-			reg = <0xf8030000 0x1000>;
+			reg = <AE350_VIDEO_BASE AE350_CSR_PAGE_BYTES>;
 			interrupt-parent = <&plic0>;
-			interrupts = <25 1>;
+			interrupts = <PLIC_EXT(AE350_EXT_INT_VIDEO) IRQ_TYPE_EDGE_RISING>;
 			dma-coherent;
 			status = "disabled";
 		};
 
 		audio0: audio@f8010000 {
 			compatible = "riscv-mini,audio";
-			reg = <0xf8010000 0x1000>;
+			reg = <AE350_AUDIO_BASE AE350_CSR_PAGE_BYTES>;
 			interrupt-parent = <&plic0>;
-			interrupts = <19 1>;
+			interrupts = <PLIC_EXT(AE350_EXT_INT_AUDIO) IRQ_TYPE_EDGE_RISING>;
 			dma-coherent;
 			status = "disabled";
 		};
 
 		board_io0: board_io@f8080000 {
 			compatible = "riscv-mini,board-io";
-			reg = <0xf8080000 0x100>;
+			reg = <AE350_IO_BASE AE350_CSR_PAGE_BYTES>;
 			interrupt-parent = <&plic0>;
-			interrupts = <24 1>;
+			interrupts = <PLIC_EXT(AE350_EXT_INT_IO) IRQ_TYPE_EDGE_RISING>;
 			status = "disabled";
+		};
+
+		/* Polled full-speed PIO host; the core interrupt is not wired to the PLIC. */
+		usb0: usb@f8060000 {
+			compatible = "riscv-mini,ae350-softusb";
+			reg = <AE350_USB_BASE AE350_CSR_PAGE_BYTES>;
+			status = "okay";
 		};
 	};
 };

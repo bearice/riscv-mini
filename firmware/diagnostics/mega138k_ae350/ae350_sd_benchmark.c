@@ -14,12 +14,13 @@
 #endif
 #define BYTES (1u<<20)
 #define FIRST_LBA 2048u
-#define BASE 0x02000000u
+#define BASE (AE350_DIAG_SD_BASE + 0x1000u)  /* guard words on both sides */
+_Static_assert(BASE + BYTES + 32u <= AE350_DIAG_SD_BASE + AE350_DIAG_SD_BYTES, "SD buffer outside diag.sd");
 #define ILM __attribute__((section(".ilm.text")))
 static volatile uint32_t *const r=(volatile uint32_t *)AE350_RESULTS_BASE;
 static ILM void putc(char c) {
-    while(!(*(volatile uint32_t *)0xf0300034u&0x20u)) {}
-    *(volatile uint32_t *)0xf0300020u=(uint8_t)c;
+    while(!(*(volatile uint32_t *)(AE350_UART_BASE+0x34u)&0x20u)) {}
+    *(volatile uint32_t *)(AE350_UART_BASE+0x20u)=(uint8_t)c;
 }
 static ILM void puts(const char *s) {while(*s)putc(*s++);}
 static ILM void hex(uint32_t value) {for(int n=28;n>=0;n-=4)putc("0123456789abcdef"[(value>>n)&15]);}

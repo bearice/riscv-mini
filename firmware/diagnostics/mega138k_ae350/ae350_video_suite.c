@@ -8,7 +8,7 @@
 #define W(a) (*(volatile uint32_t *)(uintptr_t)(a))
 static volatile uint32_t *const out=(volatile uint32_t *)AE350_RESULTS_BASE;
 static void puts_uart(const char *s) {
-    while(*s){while(!(W(0xf0300034u)&0x20u)){}W(0xf0300020u)=(uint8_t)*s++;}
+    while(*s){while(!(W(AE350_UART_BASE+0x34u)&0x20u)){}W(AE350_UART_BASE+0x20u)=(uint8_t)*s++;}
 }
 static void finish(unsigned error) {
     struct ae350_video_status s;
@@ -46,7 +46,7 @@ int main(void) {
         out[3]++;
     }
     out[0]=3;
-    volatile uint32_t *stress=(volatile uint32_t *)0x00300000u;
+    volatile uint32_t *stress=(volatile uint32_t *)VIDEO_STRESS;
     uint32_t baseline=W(AE350_VIDEO_BASE+VIDEO_FRAMES);
     while(W(AE350_VIDEO_BASE+VIDEO_FRAMES)-baseline<AE350_VIDEO_SECONDS*60u) {
         for(unsigned i=0;i<16384;i++)stress[i]=i^out[5];

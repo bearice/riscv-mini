@@ -14,6 +14,14 @@
 | `0x10` | 实际 sys/APB 时钟 Hz，用于 UART 分频 |
 | `0x14` | 当前硬件 image ABI，用于核对 payload |
 
+设备表（`0x20` 项数、`0x24` 项长 32 B、`0x40` 起逐项 id/base/size/data/width/abi/flags/sel）的位置同样属于启动合同；ROM 只按 id 查找 QSPI 设备项，不写死外设基址。
+
+## 用户 Flash 自动启动
+
+POST 与 DDR 初始化成功后，ROM 打印 `BL> `，等待 3 秒。期间收到任何 UART 字节即取消自动启动，照常进入 UART loader；主机上传在匹配 banner 后立即发送 `u`，不受影响。3 秒内无输入时，ROM 经 SYSINFO 设备表找到 QSPI（id `0xae350b01`、ABI 1、present），以 `03h` 单线读取 U7 启动槽（合同 `USER_FLASH_BOOT_OFFSET`=0，`USER_FLASH_BOOT_BYTES`=512 KiB），打印 `USER FLASH BOOT`。启动槽内容与 UART 上传的格式完全相同（48 B 头 + 载荷），按同一 `check_header` 校验 magic、版本、头 CRC、硬件 ABI 和装载范围，读入 DDR 后再核对载荷 CRC，通过后打印 `SYSTEM READY` 并跳转。任何一步失败都打印错误和 `BL> `，留在 UART loader。
+
+ROM 在 a0 中把来源交给载荷：`BOOT_SOURCE_UART`=0、`BOOT_SOURCE_USER_FLASH`=1（合同常量）。载荷的 `start.S` 在 `call main` 前不改动 a0。BIOS 只在来源为用户 Flash 时自动启动 SD 上的 Linux，见[运行环境](runtime.md#持久启动)。
+
 bootloader 的构建输入为启动源码、启动合同和编译配方/工具。外设与频率参数从稳定的运行时接口读取；启动依赖的寄存器或内存合同变化时显式更新合同。应用 BSP 与诊断载荷分别构建。
 
 ## 构建
@@ -25,6 +33,8 @@ bootloader 的构建输入为启动源码、启动合同和编译配方/工具�
 ## 安装与更新
 
 `mini.py board bootrom --build <gateware-result.json>` 准备实际长度的启动镜像；追加 `--install --cable-serial <FPGA序列号> --port <UART>` 执行安装。安装前校验目标FPGA、JEDEC与容量，按实际镜像长度备份涉及的擦除块及可用邻接保护块，读改写保存首尾块中的原有数据，再独立读回比较。镜像接近Flash末尾时，读写范围截止于器件容量。安装完成后通过SRAM候选确认自主启动。
+
+`board bootrom` 取所选 gateware 产物依赖中的 bootloader，因此 ROM 源码变化后先用 `build gateware --synthesize` 生成引用新 bootloader 的产物，再以它安装。
 
 后续仅在启动镜像变化时重新安装。位流更新使用 `mini.py board update --machine mega138k_ae350 --build <gateware-result.json> --bootrom-install <成功安装回执/result.json> --cable-serial <FPGA序列号> --port <UART>`。相同bootloader的成功回执可复用；每次写配置前重新读取实际启动镜像，按其长度保护固件区域，并在更新后再次比较。最后通过JTAG RELOAD从配置Flash启动。
 

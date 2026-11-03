@@ -68,17 +68,6 @@ echo '{SHA256}  linux-{VERSION}.tar.xz' | sha256sum -c -
 if [ ! -d "$SRC" ]; then tar -xf linux-{VERSION}.tar.xz; fi
 mkdir -p "$OBJ"
 python "$PORT/install.py" "$SRC"
-cp "$PORT/riscv_mini_fb.c" "$SRC/drivers/video/fbdev/riscv_mini_fb.c"
-if ! grep -q '^config FB_RISCV_MINI$' "$SRC/drivers/video/fbdev/Kconfig"; then
-cat >> "$SRC/drivers/video/fbdev/Kconfig" <<'EOF'
-
-config FB_RISCV_MINI
-    bool "riscv-mini coherent RGB LCD framebuffer"
-    depends on FB && OF && RISCV
-    select FB_DMAMEM_HELPERS
-EOF
-echo 'obj-$(CONFIG_FB_RISCV_MINI) += riscv_mini_fb.o' >> "$SRC/drivers/video/fbdev/Makefile"
-fi
 make -C "$SRC" ARCH=riscv O="$OBJ" headers
 mkdir -p "$OBJ/uapi/include"
 cp -a "$OBJ/usr/include/." "$OBJ/uapi/include/"

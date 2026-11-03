@@ -197,9 +197,10 @@ TTY 复用 `firmware/bios/vt.c` 的 VT100/ANSI 状态机，AE350 构建配置为
 TTY 渲染只支持 RGB565；切换模式或重建双缓冲后需重新调用 ae350_tty_init，
 清除旧布局和逐缓冲单元缓存。
 
-诊断使用 0x01000000 与 0x01100000 两块缓冲，避开 P5 的1/2/3MiB audio、
-mic 和 CPU 压力区。使用前先整帧写入、clean/invalidate 后逐像素读回，
-另有相邻 cache-line guard 检查。
+诊断与 HDMI TTY 示例使用地址合同 diag.video 中的 `AE350_DIAG_VIDEO_FB0/FB1`，
+与 diag.audio 等套件区间互不重叠（见[地址合同第 7 节](address-map.md)）。使用前先整帧写入、
+clean/invalidate 后逐像素读回，另有相邻 cache-line guard 检查。驱动拒绝落在 ROM 装载镜像
+（bios.image）内的帧缓冲。
 
 ## NixOS 操作
 

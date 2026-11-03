@@ -1,0 +1,20 @@
+if TARGET_MEGA138K_AE350
+
+config SYS_CPU
+	default "andes"
+
+config SYS_BOARD
+	default "mega138k_ae350"
+
+config SYS_VENDOR
+	default "riscv-mini"
+
+config SYS_CONFIG_NAME
+	default "mega138k_ae350"
+
+config BOARD_SPECIFIC_OPTIONS # dummy
+	def_bool y
+	select RISCV_ANDES
+	imply OF_HAS_PRIOR_STAGE
+
+endif

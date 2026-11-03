@@ -14,8 +14,8 @@
 | 0x40000000–0x7fffffff | 未映射数据窗口 | 有界 ERROR |
 | 0x80000000–0x809fffff | Flash 固件区 | 只读 XIP，对应 U4 物理 0x600000 至器件末尾 |
 | 0x80a00000–0x8fffffff | 官方 Flash 指令窗口的其余部分 | 当前软件不使用，容量之外/回绕行为未验收 |
-| 0xa0000000–0xa000ffff | 硬核 ILM | 启动/应用关键代码，显式复制；DMA 可达性待 P3 |
-| 0xa0200000–0xa020ffff | 硬核 DLM | 工作数据、独立栈与保留诊断结果 |
+| 0xa0000000–0xa000ffff | 硬核 ILM | 启动/应用关键代码，显式复制；DMA 可达性待 P3。不可关闭、不可移动，按虚拟地址匹配，见第 7 节 |
+| 0xa0200000–0xa020ffff | 硬核 DLM | 工作数据、独立栈与保留诊断结果。不可关闭、不可移动，按虚拟地址匹配，见第 7 节 |
 | 0xc0000000、0xe0000000 等 | 厂商 BMC/译码保留区 | 不安排项目外设 |
 | 0xe4000000 | 硬核 PLIC | 沿用厂商定义 |
 | 0xe6000000 / 0xe6400000 / 0xe6800000 | PLMT / PLIC软件中断 / Debug Module | 沿用厂商定义 |
@@ -105,6 +105,40 @@ minor只追加兼容能力/寄存器；移动地址、改变位语义、descript
 CPU复位与固件链接入口为 **0x80000000**，对应U4物理偏移 **0x600000**。固件可增长到Flash末尾，当前16 MiB器件的可用固件容量为10 MiB。采用官方 SPI Flash Instruction Memory + Flash Register R/W Mode。SDK指令孔径为0x80000000–0x8fffffff；软件按实际Flash容量限制镜像，孔径其余地址的回绕/错误行为以专项实测为准。
 
 U4物理分区为配置位流[0,0x600000)、固件[0x600000,Flash容量末尾)。FR管理页位于0xf8090000，内部FR地址按0xf8000000+offset转发；SYSINFO使用独立页。U7接0xf0f00000硬SPI。
+
+## 7. DDR 软件布局与 OS 交接
+
+所有固件、OS 装载和诊断使用的地址都定义在 `address_map.py` 的 `DDR_LAYOUT` 和 `OS_*` 常量中，`check()` 统一检查，不另写常量。生成物：C 头 `ae350_address_map.h`（BIOS、驱动、探针）、DTS 头 `ae350_dts.h`（无 C 整数后缀，供 dtc 预处理）、OpenSBI 的 `FW_TEXT_START/FW_JUMP_ADDR/FW_JUMP_FDT_ADDR`、Linux 配置检查和 `board linux` 的装载地址与 OpenSBI banner 核对。
+
+| 名称 | 范围 | 存活阶段 | 用途 |
+| --- | --- | --- | --- |
+| bios.image | 0x00003000–0x0007ffff | bios, app, diag | ROM 装载镜像（BIOS 或诊断载荷）的代码与数据 |
+| bios.bss | 0x08400000，8MiB | bios, app, diag | 同一镜像的 `.bss`（含 libc 4MiB heap），由生成的 `ae350_map.ld` 的 `bss` 段链接 |
+| bios.net | 0x00100000，64KiB | bios, app, diag | TFTP 以太网描述符与收发缓冲 |
+| bios.app | 0x01000000–0x07dfffff | app | BIOS 装载的应用 |
+| bios.staging | 0x02000000，16MiB | bios | 持久更新暂存 |
+| bios.scanout0/1 | 0x08000000 / 0x08100000，各 1MiB | bios, app, diag | BIOS 私有 scanout 双缓冲 |
+| bios.fb0/fb1 | 0x08200000 / 0x08300000，各 1MiB | bios, app, diag | 应用画布 |
+| diag.memory | 0x00200000，2MiB | diag | DDR 诊断：pattern/perf/stress 工作区、RMW 字、cache 线、观测线、代码替换桩 |
+| diag.dma | 0x00400000，4MiB | diag | DMA 套件缓冲；按 4MiB 对齐以保留套件内跨页/跨线偏移 |
+| diag.io | 0x00800000，1MiB | diag | I/O 套件 DMA/CPU 并发缓冲 |
+| diag.audio | 0x00900000，1MiB | diag | 音频 TX/RX DMA 块（两侧 guard）与 64KiB CPU 并发缓冲 |
+| diag.video | 0x00a00000，3MiB | diag | 视频夹具 FB0/FB1（`DIAG_VIDEO_FB0/FB1`，两侧 guard）与 CPU stress 缓冲 |
+| diag.sd | 0x00d00000，2MiB | diag | SD 读速缓冲（两侧 guard） |
+| diag.eth | 0x00f00000，1MiB | diag | 以太网/SFP 诊断描述符环与收发缓冲 |
+| os.kernel | 0x00400000，12MiB | bios, os | Linux Image（4MiB 对齐） |
+| os.sbi | 0x01000000，1MiB | bios, os | OpenSBI（fw_jump 或 fw_payload 的固件部分），自然对齐 2 的幂 |
+| os.uboot | 0x01100000，4MiB | bios, os | fw_payload 内的 U-Boot（TEXT_BASE、初始栈在区间顶）；BIOS `boot sd` 把 fw_payload.bin 连续装入 os.sbi+os.uboot |
+| os.dtb | 0x03200000，64KiB | bios, os | Linux DTB |
+| os.firmware-fdt | 0x03210000，64KiB | os | OpenSBI 传给 U-Boot 的控制 FDT（`FW_FDT_PATH`，Next Arg1） |
+
+规则：同一阶段存活的区间不得重叠，不同阶段可复用地址（如 bios.app 与 os.sbi）。diag 阶段是 ROM 直接装载的诊断载荷（代替 BIOS 运行；链接 BIOS 服务的载荷同时使用其缓冲），每个套件只用自己的 diag.* 区间，源码以 `AE350_DIAG_*` 加偏移寻址并用 `_Static_assert` 约束在区间内；主机判定（如视频 stress 的活动帧地址）也从同一合同取值。几何、容量和全遍历测试把 DDR 当作被测对象逐字访问，不属于预留。`ae350_software_layout_test` 会拒绝诊断与示例源码中的字面指针常量和合同已定义的外设基址。旧的载荷链接脚本把 `.bss` 硬编码在 0x80000–0x7fffff，未进入合同：BIOS 的 libc heap 因此与 bios.net 重叠，TFTP 装载 os.kernel 也会覆盖 heap 尾部、GW-BASIC 变量表和填充栈；现由 bios.bss 收口并参与重叠检查。OS 内存为 DDR 前 256MiB。`tftp` 只接受这些装载区间。`boot opensbi` / `boot linux` 交接前关闭 MIE、清 mie，并停止以太网 DMA（`ERR NET STOP` 即中止），防止 BIOS 拥有的 DMA 在 OS 运行后继续写内存；交接时关闭 cache。
+
+Linux Sv32 虚拟布局：PAGE_OFFSET=0xc0000000（`CONFIG_PAGE_OFFSET`，构建时检查），线性映射 0xc0000000 起；vmalloc（含 ioremap、模块）为 0xa0000000–0xbfffffff；fixmap、PCI IO 和用户空间都在其下方。
+
+**ILM/DLM 与内核虚拟地址**：A25 的 milmb/mdlmb 使能位和基址只读（实测 0xa0000001/0xa0200001，JTAG 写入不生效），本地存储器无法关闭或移动。它们按**虚拟地址**在地址转换前匹配：PLIC 曾被 ioremap 到 0xa0000000，Linux 写入的 priority/enable/threshold 全部落进 ILM/DLM，物理 PLIC 保持复位值，UART 中断从不触发（JTAG 回执 `20261102T103316896730Z-board-ae350-jtag`）。因此合同定义 `OS_RESERVED_VA` = [ILM 基址, DLM 末端) = 0xa0000000+0x210000，要求它位于 vmalloc 内并完整覆盖两个窗口；Linux 以 `CONFIG_RISCV_RESERVED_VA_START/SIZE`（`firmware/linux/ae350/patches/10-reserved-kernel-va.patch`）在 vmalloc 初始化前把该范围永久占用。线性映射或 vmalloc 以下（用户/fixmap）若与本地存储器窗口相交，检查直接报错，因为那部分无法保留。M 模式（BIOS、OpenSBI）不经转换，仍可按物理地址使用 ILM/DLM。
+
+**PLIC 源号**：EXT_INT[n] 对应 PLIC 源 n+10（`PLIC_EXT_INT_SOURCE_BASE`），由板级 I/O 实测 EXT_INT[7]=17 推出；UART2 为源 9。除 UART 外，DTS 中使用 fabric 中断的节点仍为 disabled，各自的源号启用时逐个实板确认。
 
 ## 实现与验证范围
 

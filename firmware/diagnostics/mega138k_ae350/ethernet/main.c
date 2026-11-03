@@ -3,7 +3,7 @@
 #include "ae350_address_map.h"
 #define W(a) (*(volatile uint32_t *)(uintptr_t)(a))
 static volatile uint32_t *const r=(volatile uint32_t *)AE350_RESULTS_BASE;
-static void out(const char *s) {while(*s) {while(!(W(0xf0300034u)&0x20)){}W(0xf0300020u)=(uint8_t)*s++;}}
+static void out(const char *s) {while(*s) {while(!(W((AE350_UART_BASE+0x34u))&0x20)){}W((AE350_UART_BASE+0x20u))=(uint8_t)*s++;}}
 static void hex(uint32_t v) {for(int n=28;n>=0;n-=4) {char b[2]={"0123456789abcdef"[(v>>n)&15],0};out(b);}}
 static uint32_t cycle(void) {uint32_t v;__asm__ volatile("rdcycle %0":"=r"(v));return v;}
 static void us(unsigned n) {uint32_t t=cycle();while((uint32_t)(cycle()-t)<n*(AE350_CPU_HZ/1000000u)) {}}

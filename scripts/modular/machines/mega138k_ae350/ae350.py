@@ -37,6 +37,7 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/peripherals/ethernet_dma.py',
     'gateware/machines/mega138k_ae350/peripherals/ethernet_rgmii.py',
     'gateware/machines/mega138k_ae350/peripherals/ethernet_sfp_10g.py',
+    'gateware/machines/mega138k_ae350/peripherals/sfp_bridge.py',
     'gateware/vendor/gowin_gw5ast/sfp_pll_156m/gowin_pll.v',
     'gateware/vendor/gowin_gw5ast/sfp_mac_10g/Ten_Giga_Ethernet_MAC.v',
     'gateware/vendor/gowin_gw5ast/sfp_serdes/serdes.v',
@@ -420,6 +421,14 @@ def payload(store, run, cpu, args, profile, plan=False):
     from gateware.machines.mega138k_ae350.address_map import AddressMap
     machine_config = machine_for_cpu(store, cpu)
     ae350_map = AddressMap(machine_config)
+    selected_hardware = getattr(args, 'selected_hardware_ref', None)
+    if selected_hardware:
+        hardware_manifest = store.get(selected_hardware, recursive=True)
+        exported = read(store.path(selected_hardware) / 'memory-map.json')
+        ae350_map.WINDOWS = tuple((w['name'], w['base'], w['size'], w['status'])
+                                 for w in exported['windows'])
+        if ae350_map.image_abi() != hardware_manifest['config']['image_abi']:
+            raise ValueError('Selected hardware interface differs beyond exported memory windows')
     ae350_map.require()
     files = {name: path for name, path in _inputs(store, profile='ddr').items()
              if name.startswith('inputs/source/scripts/')}
@@ -503,18 +512,21 @@ def payload(store, run, cpu, args, profile, plan=False):
     if any(flag.startswith(('-march', '-mabi', '-T', '-Wl', '-I', '-include', '-imacros', '-isystem', '-iquote', '@')) for flag in extra_flags):
         raise ValueError('Use declared source/include options; ISA and linker overrides are unsupported')
     flags = [*[flag for flag in BASE_FLAGS if not flag.startswith('-O')], optimize,
-             '-march=rv32ima_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
+             # No A: DDR atomics only complete in a load-allocated L1D line (capabilities atomics='none').
+             '-march=rv32im_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none',
              '-DVT_COLS=80', '-DVT_ROWS=30',
              *['-D' + value for value in getattr(args, 'define', [])], *extra_flags]
     config = dict(schema=1, storage_policy='outputs-only', fpga=dict(device=machine_config.board.fpga.device, part=machine_config.board.fpga.part), machine='mega138k_ae350', purpose='AE350-memory-diagnostics' if diagnostic else 'AE350-application',
                   binary='outputs/payload.bin', translation_units=units, source_hash_format=SOURCE_HASH_FORMAT, sources=hashes, tools=identity(env), flags=flags,
                   software_role='resident-BIOS-with-GW-BASIC' if native_bios else 'application',
-                  runtime_bss=dict(base=0x80000,size_bytes=0x780000),
+                  runtime_bss=dict(base=ae350_map.BIOS_BSS_BASE,size_bytes=ae350_map.BIOS_BSS_BYTES),
                   entry=ae350_map.DDR_CODE, max_bytes=ae350_map.DDR_CODE_MAX,
                   stack_top=ae350_map.PAYLOAD_STACK_TOP, image_abi=ae350_map.image_abi(),
                   parameters='outputs/parameters.json' if diagnostic else None,
                   qualification='compiled-not-board-tested')
+    if selected_hardware:
+        config['selected_hardware'] = selected_hardware
     key = digest(dict(config=config, cpu=cpu))
     config = dict(config, build_id=key[:12])
     found = store.lookup('payload', key)
@@ -576,7 +588,8 @@ def payload(store, run, cpu, args, profile, plan=False):
                 fields=['stress_seconds', 'seed', 'region_kb', 'flags', 'traversal_mb']))
         snapshot['outputs/elf-attributes.txt'] = attrs.encode()
         snapshot['build.lock.json'] = canonical(config)
-        found = store.publish('payload', key, snapshot, config=config, dependencies={'cpu': cpu})
+        found = store.publish('payload', key, snapshot, config=config,
+                              dependencies={'cpu': cpu, **({'hardware': selected_hardware} if selected_hardware else {})})
         workspace.success(found)
     run.step('payload', 'BUILD', found); return found
 

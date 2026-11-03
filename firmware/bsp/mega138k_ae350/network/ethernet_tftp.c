@@ -1,7 +1,19 @@
 #include "ethernet_tftp.h"
 #include "ethernet_dma.h"
 #include "ethernet_phy.h"
+#include "ae350_address_map.h"
 #include <string.h>
+
+#define NET_RING_COUNT 4u
+#define NET_STRIDE 1536u
+/* Each member starts on its own 64-byte cache line. */
+struct net_area {
+    struct ethernet_descriptor tx[NET_RING_COUNT], rx[NET_RING_COUNT];
+    uint8_t tx_buffers[NET_RING_COUNT * NET_STRIDE], rx_buffers[NET_RING_COUNT * NET_STRIDE];
+};
+_Static_assert(sizeof(struct net_area) <= AE350_BIOS_NET_BYTES, "BIOS net ring exceeds its DDR range");
+_Static_assert(NET_RING_COUNT * sizeof(struct ethernet_descriptor) % 64u == 0 && NET_STRIDE % 64u == 0,
+               "BIOS net ring members must not share cache lines");
 
 extern void bios_putc(char c);
 extern void bios_puts(const char *s);
@@ -152,18 +164,21 @@ int ae350_net_init(const uint8_t *mac, const uint8_t *ip) {
     if (ethernet_phy_init(&phy, &id)) return -1;
     if (ethernet_phy_gigabit(phy)) return -2;
 
-    /* DDR descriptor ring placed safely at 0x01e00000 */
+    struct net_area *area = (struct net_area *)(uintptr_t)AE350_BIOS_NET_BASE;
     const struct ethernet_ring_config ring = {
-        .tx = (void *)0x01e00000u,
-        .rx = (void *)0x01e01000u,
-        .tx_buffers = (void *)0x01e02000u,
-        .rx_buffers = (void *)0x01e04000u,
-        .count = 4,
-        .stride = 1536
+        .tx = area->tx, .rx = area->rx,
+        .tx_buffers = area->tx_buffers, .rx_buffers = area->rx_buffers,
+        .count = NET_RING_COUNT, .stride = NET_STRIDE
     };
     if (ethernet_dma_init(&ring)) return -3;
     net_initialized = 1;
     return 0;
+}
+
+int ae350_net_stop(void) {
+    if (!net_initialized) return 0;
+    net_initialized = 0;
+    return ethernet_dma_stop();
 }
 
 int ae350_tftp_get(const uint8_t server[4], const char *filename, void *dest, unsigned capacity, unsigned *out_len) {
@@ -207,11 +222,8 @@ int ae350_tftp_get(const uint8_t server[4], const char *filename, void *dest, un
     }
     bios_puts(" OK (MAC ");
     for (int i = 0; i < 6; i++) {
-        char h[3];
         static const char hex[] = "0123456789abcdef";
-        h[0] = hex[(host_mac[i] >> 4) & 15];
-        h[1] = hex[host_mac[i] & 15];
-        h[2] = (i == 5) ? 0 : ':';
+        char h[4] = {hex[(host_mac[i] >> 4) & 15], hex[host_mac[i] & 15], (i == 5) ? 0 : ':', 0};
         bios_puts(h);
     }
     bios_puts(")\r\n");
@@ -307,8 +319,8 @@ int ae350_tftp_get(const uint8_t server[4], const char *filename, void *dest, un
     return -8;
 }
 
-uint32_t ae350_crc32(const void *buf, unsigned len) {
-    uint32_t crc = 0xffffffffu;
+uint32_t ae350_crc32_update(uint32_t previous, const void *buf, unsigned len) {
+    uint32_t crc = ~previous;
     const uint8_t *p = (const uint8_t *)buf;
     while (len--) {
         crc ^= *p++;
@@ -317,3 +329,5 @@ uint32_t ae350_crc32(const void *buf, unsigned len) {
     }
     return ~crc;
 }
+
+uint32_t ae350_crc32(const void *buf, unsigned len) { return ae350_crc32_update(0, buf, len); }

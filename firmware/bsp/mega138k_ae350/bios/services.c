@@ -37,17 +37,22 @@ static void audio_feed(void) {
     if(rc) {audio_error=(unsigned)rc;return;}
     audio_active=1;ring_head=(ring_head+n)%ring_size;ring_count-=n;audio_fetched+=n;
 }
+_Static_assert(BIOS_PAYLOAD_BASE==AE350_BIOS_APP_BASE && BIOS_PAYLOAD_LIMIT==AE350_BIOS_APP_LIMIT,
+               "shared BIOS application window differs from the AE350 address contract");
+_Static_assert(480u*1280u<=AE350_BIOS_FB_BYTES,"BIOS framebuffer exceeds its DDR range");
 struct bios_info ae350_bios_info={BIOS_ABI_VERSION,sizeof(struct bios_info),0,AE350_DDR_SIZE,
-    BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{0x08200000u,0x08300000u},640,480,1280,565,0,AE350_CPU_HZ};
+    BIOS_PAYLOAD_BASE,BIOS_PAYLOAD_LIMIT,{AE350_BIOS_FB0,AE350_BIOS_FB1},640,480,1280,565,0,AE350_CPU_HZ};
 uint32_t bios_time_ms(void) {
     uint32_t hi,lo,again;
     do {__asm__ volatile("rdcycleh %0\nrdcycle %1\nrdcycleh %2":"=r"(hi),"=r"(lo),"=r"(again));}while(hi!=again);
     return (uint32_t)((((uint64_t)hi<<32)|lo)/(AE350_CPU_HZ/1000u));
 }
-int bios_getc(void) {return W(0xf0300034u)&1u?(int)(W(0xf0300020u)&255u):-1;}
+#define UART_THR (AE350_UART_BASE+0x20u)
+#define UART_LSR (AE350_UART_BASE+0x34u)
+int bios_getc(void) {return W(UART_LSR)&1u?(int)(W(UART_THR)&255u):-1;}
 void bios_putc(char c) {
-    while(!(W(0xf0300034u)&0x20u)) {}
-    W(0xf0300020u)=(uint8_t)c;
+    while(!(W(UART_LSR)&0x20u)) {}
+    W(UART_THR)=(uint8_t)c;
     if(video_ready && !graphics)ae350_tty_putc(&tty,c);
 }
 void bios_puts(const char *s) {while(*s)bios_putc(*s++);}
@@ -61,7 +66,7 @@ void bios_poll(void) {
 }
 static int pointer(uint32_t p,unsigned bytes) {
     extern char __text_start[],__bss_end[];
-    if(bytes>0x1000000u)return 0;
+    if(bytes>BIOS_PAYLOAD_LIMIT-BIOS_PAYLOAD_BASE)return 0;
     return (p>=(uintptr_t)__text_start && p<=(uintptr_t)__bss_end && bytes<=(uintptr_t)__bss_end-p) ||
         (p>=AE350_PAYLOAD_STACK_BOTTOM && p<=AE350_PAYLOAD_STACK_TOP && bytes<=AE350_PAYLOAD_STACK_TOP-p) ||
         (p>=BIOS_PAYLOAD_BASE && p<=BIOS_PAYLOAD_LIMIT && bytes<=BIOS_PAYLOAD_LIMIT-p);
@@ -160,12 +165,13 @@ void ecall_dispatch(uint32_t *frame) {
     }
     a[0]=(uint32_t)result;
 }
+struct board_flash_info bios_flash;
+int bios_flash_status=BUS_DEVICE;
 void bios_runtime_init(void) {
     __asm__ volatile("csrw 0x7cc,%0\ncsrs 0x7ca,%1"::"r"(23),"r"(3):"memory");
-    struct board_flash_info flash;
-    board_flash_init(&flash);
+    bios_flash_status=board_flash_init(&bios_flash);
     if(!bios_mount())ae350_bios_info.features|=1u;
-    video_ready=!ae350_video_init((uint16_t *)0x08000000u,(uint16_t *)0x08100000u,1280);
+    video_ready=!ae350_video_init((uint16_t *)AE350_BIOS_SCANOUT0,(uint16_t *)AE350_BIOS_SCANOUT1,1280);
     if(video_ready) {ae350_bios_info.features|=2u|BIOS_FEATURE_VIDEO_SHADOW;ae350_tty_init(&tty);}
     if(!audio_tx_init())ae350_bios_info.features|=1u<<4;
 }

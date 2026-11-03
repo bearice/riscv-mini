@@ -67,7 +67,7 @@ int main(int argc,char **argv) {
     assert(ae350_video_init(a,(uint16_t *)((uintptr_t)a+32),1280)==AE350_VIDEO_RANGE);
     assert(ae350_video_init((uint16_t *)((uintptr_t)a+1),b,1280)==AE350_VIDEO_ALIGN);
     assert(ae350_video_init(a,b,1281)==AE350_VIDEO_ALIGN);
-    assert(ae350_video_init((uint16_t *)0x80000u,b,1280)==AE350_VIDEO_RANGE);
+    assert(ae350_video_init((uint16_t *)(AE350_DDR_CODE+AE350_DDR_CODE_MAX-32u),b,1280)==AE350_VIDEO_RANGE);
     assert(ae350_video_init(a,b,0)==0);
     assert(ae350_video_frame(0)==a && ae350_video_frame(1)==b);
     assert(ae350_video_present(0)==0 && clean_base==(uintptr_t)a && clean_bytes==bytes);

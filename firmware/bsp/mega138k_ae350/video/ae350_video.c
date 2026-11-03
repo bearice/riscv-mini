@@ -132,7 +132,8 @@ int ae350_video_init_buffers(void *first,void *second,uint32_t stride) {
     if((stride&31u) || stride<row_bytes || stride>=65536u)return AE350_VIDEO_ALIGN;
     uint32_t bytes=stride*height,a=(uint32_t)(uintptr_t)first,b=(uint32_t)(uintptr_t)second;
     if((a&31u) || (b&31u))return AE350_VIDEO_ALIGN;
-    if(a<0x100000u || b<0x100000u || bytes>AE350_DDR_SIZE ||
+    const uint32_t image_end=AE350_DDR_CODE+AE350_DDR_CODE_MAX;
+    if(a<image_end || b<image_end || bytes>AE350_DDR_SIZE ||
        a>AE350_DDR_SIZE-bytes || b>AE350_DDR_SIZE-bytes ||
        (a<b+bytes && b<a+bytes))return AE350_VIDEO_RANGE;
     int error=ae350_video_stop();

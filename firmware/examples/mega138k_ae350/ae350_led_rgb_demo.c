@@ -7,7 +7,7 @@
 #include "board_io.h"
 #include "board_sense.h"
 
-#define UART2 0xf0300000u
+#define UART2 AE350_UART_BASE
 
 static const uint8_t palette[][3] = {
     {48, 0, 0},

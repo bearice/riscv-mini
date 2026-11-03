@@ -41,10 +41,15 @@ static int sd_step(void) {
 #define AE350_AUDIO_SECONDS 5u
 #endif
 #define W(a) (*(volatile uint32_t *)(uintptr_t)(a))
-#define TXBUF ((uint32_t *)0x00100000u)
-#define RXBUF ((int32_t *)0x00200000u)
-#define CPU_BUF ((volatile uint32_t *)0x00300000u)
+/* diag.audio; TX/RX carry guard words on both sides, CPU_BUF exceeds the D cache. */
+#define TXBUF ((uint32_t *)(AE350_DIAG_AUDIO_BASE + 0x01000u))
+#define RXBUF ((int32_t *)(AE350_DIAG_AUDIO_BASE + 0x04000u))
+#define CPU_BUF ((volatile uint32_t *)(AE350_DIAG_AUDIO_BASE + 0x10000u))
+#define CPU_BUF_BYTES 65536u
 #define BLOCK 1536u
+_Static_assert(AE350_DIAG_AUDIO_BASE + 0x01000u + BLOCK * 4u + 32u <= AE350_DIAG_AUDIO_BASE + 0x04000u &&
+               AE350_DIAG_AUDIO_BASE + 0x04000u + BLOCK * 4u + 32u <= AE350_DIAG_AUDIO_BASE + 0x10000u &&
+               0x10000u + CPU_BUF_BYTES <= AE350_DIAG_AUDIO_BYTES, "audio buffers outside diag.audio");
 #define GUARD 0x51a0c35au
 #define DONE 0xc5100001u
 #define SCHEMA 0x41550001u
@@ -58,8 +63,8 @@ enum {STAGE,ERROR,PIO,PIO_GAPS,RESTARTS,SNAPSHOT,MINIMUM,MAXIMUM,ACTIVITY,
 static const int16_t sine[32]={0,200,392,569,724,851,946,1004,1024,1004,946,851,724,569,392,200,
     0,-200,-392,-569,-724,-851,-946,-1004,-1024,-1004,-946,-851,-724,-569,-392,-200};
 static void putc(char c) {
-    while (!(W(0xf0300034u)&0x20u)) {}
-    W(0xf0300020u)=(uint8_t)c;
+    while (!(W(AE350_UART_BASE+0x34u)&0x20u)) {}
+    W(AE350_UART_BASE+0x20u)=(uint8_t)c;
 }
 static void puts(const char *s) {while (*s) putc(*s++);}
 static void hex(uint32_t word) {

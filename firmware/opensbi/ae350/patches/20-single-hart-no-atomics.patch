@@ -1,0 +1,202 @@
+--- a/firmware/fw_base.S
++++ b/firmware/fw_base.S
+@@ -166,7 +166,10 @@
+ 	bnez	t1, _sc_fail
+ 	bnez	t0, _wait_for_boot_hart
+ #else
+-#error "need a or zalrsc"
++	/* Built without atomics: single hart only (checked in coldboot) */
++	lw	t0, (a6)
++	sw	a7, (a6)
++	bnez	t0, _wait_for_boot_hart
+ #endif
+ 
+ 	/* relocate the global table content */
+--- a/include/sbi/riscv_atomic.h
++++ b/include/sbi/riscv_atomic.h
+@@ -10,6 +10,19 @@
+ #ifndef __RISCV_ATOMIC_H__
+ #define __RISCV_ATOMIC_H__
+ 
++/*
++ * Without Zaamo/Zalrsc the atomic and lock primitives are plain memory
++ * operations. That is only correct with a single hart, because OpenSBI
++ * runs with M-mode interrupts disabled; init_coldboot() enforces it.
++ */
++#if !defined(__riscv_atomic) && !defined(__riscv_zaamo) && !defined(__riscv_zalrsc)
++#define SBI_NO_ATOMICS
++#ifdef __clang__
++/* __atomic builtins become the library calls in riscv_atomic.c. */
++#pragma clang diagnostic ignored "-Watomic-alignment"
++#endif
++#endif
++
+ typedef struct {
+ 	volatile long counter;
+ } atomic_t;
+--- a/lib/sbi/riscv_atomic.c
++++ b/lib/sbi/riscv_atomic.c
+@@ -12,10 +12,6 @@
+ #include <sbi/riscv_atomic.h>
+ #include <sbi/riscv_barrier.h>
+ 
+-#if !defined(__riscv_atomic) && !defined(__riscv_zaamo) && !defined(__riscv_zalrsc)
+-#error "opensbi strongly relies on the Zaamo or Zalrsc extensions of RISC-V"
+-#endif
+-
+ long atomic_read(atomic_t *atom)
+ {
+ 	long ret = atom->counter;
+@@ -64,7 +60,8 @@
+ 			     : "memory");
+ #endif
+ #else
+-#error "need A or Zaamo or Zalrsc"
++	long ret = atom->counter;
++	atom->counter = ret + value;
+ #endif
+ 
+ 	return ret + value;
+@@ -132,7 +129,12 @@
+ 		__ret;								\
+ 	})
+ #else
+-#error "need A or Zaamo or Zalrsc"
++#define __axchg(ptr, new, size)							\
++	({									\
++		__typeof__(*(ptr)) __ret = *(ptr);				\
++		*(ptr) = (new);							\
++		__ret;								\
++	})
+ #endif
+ 
+ #define axchg(ptr, x)								\
+@@ -141,6 +143,45 @@
+ 		(__typeof__(*(ptr))) __axchg((ptr), _x_, sizeof(*(ptr)));	\
+ 	})
+ 
++#ifdef SBI_NO_ATOMICS
++/* Library calls the compiler emits for __atomic/__sync builtins. */
++unsigned int __atomic_fetch_or_4(volatile void *ptr, unsigned int val,
++				 int order)
++{
++	volatile unsigned int *p = ptr;
++	unsigned int old = *p;
++
++	*p = old | val;
++	return old;
++}
++
++unsigned int __atomic_fetch_and_4(volatile void *ptr, unsigned int val,
++				  int order)
++{
++	volatile unsigned int *p = ptr;
++	unsigned int old = *p;
++
++	*p = old & val;
++	return old;
++}
++
++bool __atomic_compare_exchange_4(volatile void *ptr, void *expected,
++				 unsigned int desired, bool weak,
++				 int success, int failure)
++{
++	volatile unsigned int *p = ptr;
++	unsigned int *e = expected;
++	unsigned int old = *p;
++
++	if (old == *e) {
++		*p = desired;
++		return true;
++	}
++	*e = old;
++	return false;
++}
++#endif
++
+ long atomic_cmpxchg(atomic_t *atom, long oldval, long newval)
+ {
+ 	return __sync_val_compare_and_swap(&atom->counter, oldval, newval);
+--- a/lib/sbi/riscv_locks.c
++++ b/lib/sbi/riscv_locks.c
+@@ -5,6 +5,7 @@
+  * Copyright (c) 2021 Christoph Müllner <cmuellner@linux.com>
+  */
+ 
++#include <sbi/riscv_atomic.h>
+ #include <sbi/riscv_barrier.h>
+ #include <sbi/riscv_locks.h>
+ 
+@@ -19,6 +20,21 @@
+ 	return !spin_lock_unlocked(*lock);
+ }
+ 
++#ifdef SBI_NO_ATOMICS
++bool spin_trylock(spinlock_t *lock)
++{
++	if (!spin_lock_unlocked(*lock))
++		return false;
++	lock->next++;
++	return true;
++}
++
++void spin_lock(spinlock_t *lock) NO_THREAD_SAFETY_ANALYSIS
++{
++	/* A single hart with M-mode interrupts off cannot find it held. */
++	lock->next++;
++}
++#else
+ bool spin_trylock(spinlock_t *lock)
+ {
+ 	unsigned long inc = 1u << TICKET_SHIFT;
+@@ -64,8 +80,6 @@
+ #endif
+ 		"	sc.w.aqrl	%1, %1, %3\n"
+ 		"	bnez	%1, 3b\n"
+-#else
+-#error "need A or Zaamo or Zalrsc"
+ #endif
+ 
+ 		/* Did we get the lock? */
+@@ -83,6 +97,7 @@
+ 		: "r"(inc), "r"(mask), "I"(TICKET_SHIFT)
+ 		: "memory");
+ }
++#endif
+ 
+ void spin_unlock(spinlock_t *lock) NO_THREAD_SAFETY_ANALYSIS
+ {
+--- a/lib/sbi/sbi_illegal_atomic.c
++++ b/lib/sbi/sbi_illegal_atomic.c
+@@ -10,12 +10,9 @@
+ #include <sbi/sbi_trap.h>
+ #include <sbi/sbi_illegal_atomic.h>
+ #include <sbi/sbi_illegal_insn.h>
++#include <sbi/riscv_atomic.h>
+ 
+-#if !defined(__riscv_atomic) && !defined(__riscv_zaamo) && !defined(__riscv_zalrsc)
+-#error "opensbi strongly relies on the Zaamo or Zalrsc extension of RISC-V"
+-#endif
+-
+-#if defined(__riscv_atomic) || defined(__riscv_zaamo)
++#if defined(__riscv_atomic) || defined(__riscv_zaamo) || defined(SBI_NO_ATOMICS)
+ 
+ int sbi_illegal_atomic(ulong insn, struct sbi_trap_regs *regs)
+ {
+--- a/lib/sbi/sbi_init.c
++++ b/lib/sbi/sbi_init.c
+@@ -330,6 +330,14 @@
+ 	if (rc)
+ 		sbi_hart_hang();
+ 
++#ifdef SBI_NO_ATOMICS
++	if (sbi_hart_count() != 1) {
++		sbi_printf("%s: built without atomics but %u harts present\n",
++			   __func__, sbi_hart_count());
++		sbi_hart_hang();
++	}
++#endif
++
+ 	sbi_boot_print_banner(scratch);
+ 
+ 	sbi_double_trap_init(scratch);

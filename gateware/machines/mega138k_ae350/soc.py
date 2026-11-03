@@ -327,11 +327,11 @@ class DDRSoC(LiteXModule):
             self.usb.rx_dn.eq(usb_pads.rx_dn),
         ]
         from gateware.machines.mega138k_ae350.peripherals.ethernet_dma import EthernetDMA
-        from gateware.machines.mega138k_ae350.peripherals.ethernet_sfp_10g import EthernetSFP10G
         self.ethernet_dma = EthernetDMA(default_rx_taps=int(round(config.rtl.ethernet_rx_delay_ps / 12.5)))
-        sfp0_pads = platform.request('sfp0')
-        sfp1_pads = platform.request('sfp1')
-        self.sfp = EthernetSFP10G(platform, sfp0_pads, sfp1_pads)
+        self.sfp = None
+        if ae350_map.SFP_PRESENT:
+            from gateware.machines.mega138k_ae350.peripherals.ethernet_sfp_10g import EthernetSFP10G
+            self.sfp = EthernetSFP10G(platform, platform.request('sfp0'), platform.request('sfp1'))
         self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
                                flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma,
                                sfp=self.sfp)

@@ -16,7 +16,7 @@ static uint64_t cycles(void) {
 }
 uint32_t hal_time_ms(void) {return (uint32_t)((cycles()-start)/800000u);}
 uint32_t tusb_time_millis_api(void) {return hal_time_ms();}
-static void out(const char *s) {while(*s) {while(!(W(0xf0300034u)&0x20u)){} W(0xf0300020u)=(uint8_t)*s++;}}
+static void out(const char *s) {while(*s) {while(!(W((AE350_UART_BASE+0x34u))&0x20u)){} W((AE350_UART_BASE+0x20u))=(uint8_t)*s++;}}
 static void hex(uint32_t v) {for(int n=28;n>=0;n-=4) {char b[2]={"0123456789abcdef"[(v>>n)&15],0};out(b);}}
 bool hcd_deinit(uint8_t port) {(void)port;W(USB_PIO_BASE)=0;return true;}
 bool hcd_dcache_clean(const void *p,uint32_t n) {(void)p;(void)n;return true;}

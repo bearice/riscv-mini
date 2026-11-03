@@ -87,6 +87,76 @@ static void fork_test(void)
     }
     text("SELFTEST fork/exec/wait PASS\n");
 }
+#ifdef MINI_LINUX_FPU
+/* F/D context switching. init itself is built without F/D (no compiler FP
+ * register use), so the registers only change inside these asm blocks. */
+#define FP_ON ".option push\n.option arch, +d\n"
+#define FP_OFF "\n.option pop"
+#define FP_REGS "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"
+static void fp_load(const unsigned long long *v, u32 fcsr)
+{
+    __asm__ volatile(FP_ON ".irp n," FP_REGS "\nfld f\\n,(8*\\n)(%0)\n.endr\nfscsr %1" FP_OFF
+                     :: "r"(v), "r"(fcsr) : "memory");
+}
+static u32 fp_store(unsigned long long *v)
+{
+    u32 fcsr;
+    __asm__ volatile(FP_ON ".irp n," FP_REGS "\nfsd f\\n,(8*\\n)(%1)\n.endr\nfrcsr %0" FP_OFF
+                     : "=r"(fcsr) : "r"(v) : "memory");
+    return fcsr;
+}
+static void fp_pattern(unsigned long long *v, u32 seed, u32 round)
+{
+    for (u32 i = 0; i < 32; ++i)
+        v[i] = (unsigned long long)(seed * 0x9e3779b9u ^ round) << 32 | (i * 0x01010101u ^ seed ^ round * 7);
+}
+static u32 fp_csr(u32 seed, u32 round) { return (seed + round) % 5 << 5 | ((seed ^ round) & 0x1f); }
+static int fp_same(const unsigned long long *a, const unsigned long long *b)
+{
+    for (unsigned i = 0; i < 32; ++i) if (a[i] != b[i]) return 0;
+    return 1;
+}
+/* Each round loads a distinct state, gives the CPU away and checks it came back. */
+static int fp_rounds(u32 seed, unsigned rounds)
+{
+    unsigned long long want[32], got[32];
+    long long delay[2] = {0, 2000000};
+    for (unsigned r = 0; r < rounds; ++r) {
+        fp_pattern(want, seed, r);
+        fp_load(want, fp_csr(seed, r));
+        if (r % 16 == 15) call(407, 1, 0, (long)delay, 0, 0, 0);
+        else call(124, 0, 0, 0, 0, 0, 0);
+        if (fp_store(got) != fp_csr(seed, r) || !fp_same(got, want)) return 1;
+    }
+    return 0;
+}
+static void fp_context_test(void)
+{
+    enum { CHILDREN = 3, ROUNDS = 200 };
+    unsigned long long inherited[32], seen[32];
+    long pid[CHILDREN];
+    fp_pattern(inherited, 0xf00d, 0);
+    fp_load(inherited, fp_csr(0xf00d, 0));
+    for (unsigned k = 0; k < CHILDREN; ++k) {
+        pid[k] = call(220, 17, 0, 0, 0, 0, 0); /* fork */
+        if (pid[k] < 0) die("FP fork");
+        if (!pid[k]) {
+            if (fp_store(seen) != fp_csr(0xf00d, 0) || !fp_same(seen, inherited)) call(93, 2, 0, 0, 0, 0, 0);
+            call(93, fp_rounds(0x100 + k, ROUNDS), 0, 0, 0, 0, 0);
+        }
+    }
+    int failed = fp_rounds(0x55, ROUNDS);
+    for (unsigned k = 0; k < CHILDREN; ++k) {
+        int info[32] = {0};
+        if (call(95, 1, pid[k], (long)info, 4, 0, 0) || info[2] != 1 || info[5]) {
+            text("FP child status="); number(info[5]); text("\n");
+            failed = 1;
+        }
+    }
+    if (failed) die("FP context save/restore");
+    text("SELFTEST FP-context fork/yield/sleep PASS\n");
+}
+#endif
 static void pause_frame(void)
 {
     long long delay[2] = {0, 150000000};
@@ -186,6 +256,9 @@ static void selftest(void)
     if (call(215, (long)p, 8192, 0, 0, 0, 0)) die("munmap");
     text("SELFTEST mmap/mprotect/munmap PASS\n");
     fork_test();
+#ifdef MINI_LINUX_FPU
+    fp_context_test();
+#endif
     /* RV32 uses time64: clock_gettime64 and clock_nanosleep_time64. */
     long long before[2], after[2], delay[2] = { 0, 100000000 };
     if (call(403, 1, (long)before, 0, 0, 0, 0) ||
@@ -336,6 +409,98 @@ static void devices_test(void)
     list_dir("/sys/bus/usb/devices");
     text("SELFTEST USB-host/enumeration PASS\nLINUX DEVICES PASS\n");
 }
+enum { USB_REGION=262144, USB_READ=1048576, USB_CHUNK=65536 };
+static unsigned char usb_saved[USB_REGION] __attribute__((aligned(4096)));
+static unsigned char usb_pattern[USB_REGION] __attribute__((aligned(4096)));
+static unsigned char usb_data[USB_READ] __attribute__((aligned(4096)));
+static void kernel_log(void)
+{
+    static char log[65536]; long n=call(116,3,(long)log,sizeof(log),0,0,0);
+    if(n>0) call(64,1,(long)log,n,0,0,0);
+}
+static u32 now_ms(void)
+{
+    long long t[2]; if(call(403,1,(long)t,0,0,0,0)) die("clock_gettime");
+    return (u32)t[0]*1000u+(u32)t[1]/1000000u;
+}
+/* O_DIRECT|O_DSYNC: every transfer reaches the device, none is served by the page cache. */
+static u32 usb_io(long fd,unsigned long long offset,unsigned char *data,unsigned size,int write)
+{
+    long long position; u32 start=now_ms();
+    if(call(62,fd,(long)(offset>>32),(long)(u32)offset,(long)&position,0,0)) die("USB llseek");
+    for(unsigned done=0;done<size;) {
+        long n=call(write?64:63,fd,(long)(data+done),size-done>USB_CHUNK?USB_CHUNK:size-done,0,0,0);
+        if(n<=0) { text("USB I/O errno="); number(-n); text("\n"); kernel_log(); die(write?"USB write":"USB read"); }
+        done+=n;
+    }
+    return now_ms()-start;
+}
+static void usb_rate(const char *what,unsigned size,u32 ms)
+{
+    text(what); number(size>>10); text(" KiB in "); number(ms); text(" ms = ");
+    number(ms?(size>>10)*1000u/ms:0); text(" KiB/s\n");
+}
+static void usb_attribute(const char *device,const char *name)
+{
+    char path[320],data[128]; unsigned n=0;
+    for(const char *s=device;*s && n<200;s++) path[n++]=*s;
+    path[n++]='/'; for(const char *s=name;*s && n+1<sizeof(path);s++) path[n++]=*s; path[n]=0;
+    load_file(path,data,sizeof(data)); text("USB disk "); text(name); text("="); text(data);
+}
+static void usb_storage_test(void)
+{
+    char data[128]; long fd=-1; unsigned long long bytes=0; int sector=0; u32 hash,ms;
+    for(unsigned i=0;i<200 && fd<0;i++) { fd=open_file("/dev/sda",2|0x1000|0x4000); if(fd<0) delay_ms(100); }
+    if(fd<0) { list_dir("/sys/bus/usb/devices"); kernel_log(); die("USB disk /dev/sda absent"); }
+    /* /sys/block/sda -> ../devices/.../usb1/1-1/1-1.1/1-1.1:1.0/host0/...: the USB device
+     * directory is the path before the first interface (":") component. */
+    char link[320],device[256]; long n=call(78,-100,(long)"/sys/block/sda",(long)link,sizeof(link)-1,0,0);
+    if(n<=3) die("USB disk sysfs link"); link[n]=0;
+    unsigned colon=0,end=0; while(link[colon] && link[colon]!=':') colon++;
+    for(unsigned i=0;i<colon;i++) if(link[i]=='/') end=i;
+    if(!link[colon] || end<4 || end>200) die("USB disk sysfs path");
+    device[0]='/'; device[1]='s'; device[2]='y'; device[3]='s';
+    for(unsigned i=2;i<end;i++) device[i+2]=link[i]; device[end+2]=0;
+    text("USB disk at "); text(device+4); text("\n");
+    usb_attribute(device,"idVendor"); usb_attribute(device,"idProduct");
+    usb_attribute(device,"speed");
+    load_file("/sys/block/sda/device/model",data,sizeof(data)); text("SCSI model="); text(data);
+    if(ioctl_file(fd,BLKGETSIZE64,&bytes) || ioctl_file(fd,BLKSSZGET,&sector)) die("USB disk geometry");
+    text("USB disk capacity-MiB="); number(bytes>>20); text(" sector="); number(sector); text("\n");
+    if(bytes<4*USB_READ || sector<512 || USB_REGION%sector) die("USB disk geometry");
+    ms=usb_io(fd,0,usb_data,USB_READ,0); hash=checksum(usb_data,USB_READ); usb_rate("USB read ",USB_READ,ms);
+    text("USB first-1MiB checksum="); number(hash); text(" MBR-signature=");
+    text(usb_data[510]==0x55 && usb_data[511]==0xaa?"yes\n":"no\n");
+    ms=usb_io(fd,0,usb_data,USB_READ,0); usb_rate("USB re-read ",USB_READ,ms);
+    if(checksum(usb_data,USB_READ)!=hash) die("USB repeat read differs");
+    /* The last 256 KiB is saved, overwritten, verified and restored before returning. */
+    unsigned long long tail=bytes-USB_REGION;
+    usb_io(fd,tail,usb_saved,USB_REGION,0); u32 saved=checksum(usb_saved,USB_REGION);
+    for(unsigned i=0;i<USB_REGION;i++) usb_pattern[i]=(unsigned char)(i*131u+(i>>9)*7u+0x5a);
+    ms=usb_io(fd,tail,usb_pattern,USB_REGION,1); usb_rate("USB write ",USB_REGION,ms);
+    usb_io(fd,tail,usb_data,USB_REGION,0);
+    unsigned mismatch=0,first=USB_REGION,stale=0;
+    for(unsigned i=0;i<USB_REGION;i++) if(usb_data[i]!=usb_pattern[i]) {
+        if(!mismatch++) first=i;
+        stale+=usb_data[i]==usb_saved[i];
+    }
+    if(mismatch) {
+        text("USB readback mismatches="); number(mismatch); text(" first="); number(first);
+        text(" still-original="); number(stale); text(" got/want="); number(usb_data[first]);
+        text("/"); number(usb_pattern[first]); text("\n"); load_file("/sys/block/sda/ro",data,sizeof(data));
+        text("USB disk ro="); text(data); kernel_log();
+    }
+    usb_io(fd,tail,usb_saved,USB_REGION,1); usb_io(fd,tail,usb_data,USB_REGION,0);
+    if(checksum(usb_data,USB_REGION)!=saved) die("USB restore of the original tail differs");
+    if(mismatch) die("USB write readback differs");
+    text("USB tail write/readback/restore OK checksum="); number(saved); text("\n");
+    close_file(fd);
+    long ret=call(40,(long)"/dev/sda1",(long)"/mnt",(long)"vfat",1,0,0);
+    if(ret) ret=call(40,(long)"/dev/sda",(long)"/mnt",(long)"vfat",1,0,0);
+    if(ret) { text("USB read-only FAT mount errno="); number(-ret); text("\n"); }
+    else { text("USB FAT root: "); list_dir("/mnt"); if(call(39,(long)"/mnt",0,0,0,0,0)) die("USB unmount"); }
+    text("SELFTEST USB-storage read/write/restore PASS\n");
+}
 static void network_test(const char *host)
 {
     long fd=call(198,2,2,0,0,0,0); if(fd<0) die("IPv4 socket");
@@ -396,8 +561,14 @@ void mini_main(long *stack)
         text(uts); text(" "); text(uts + 130); text(" "); text(uts + 260); text("\n");
     }
     selftest();
+#ifndef MINI_LINUX_HEADLESS
     framebuffer_test();
-    text("Commands: help, uname, mem, cpu, uptime, test, fb, fbstat, devices, network HOST, reboot\n");
+#endif
+#ifdef MINI_LINUX_HEADLESS
+    read_file("/proc/interrupts");
+    read_file("/proc/tty/driver/serial");
+#endif
+    text("Commands: help, uname, mem, cpu, uptime, test, irqs, serial, fb, fbstat, devices, usb, dmesg, network HOST, reboot\n");
     for (;;) {
         char command[64]; unsigned n = 0; char c;
         text("linux-mini> ");
@@ -408,11 +579,15 @@ void mini_main(long *stack)
         command[n] = 0;
         if (equal(command, "mem")) read_file("/proc/meminfo");
         else if (equal(command, "cpu")) read_file("/proc/cpuinfo");
+        else if (equal(command, "irqs")) read_file("/proc/interrupts");
+        else if (equal(command, "serial")) read_file("/proc/tty/driver/serial");
         else if (equal(command, "uptime")) read_file("/proc/uptime");
         else if (equal(command, "test")) selftest();
         else if (equal(command, "fb")) framebuffer_test();
         else if (equal(command, "fbstat")) read_file("/sys/class/graphics/fb0/device/dma_status");
         else if (equal(command,"devices")) devices_test();
+        else if (equal(command,"usb")) usb_storage_test();
+        else if (equal(command,"dmesg")) kernel_log();
         else if (command[0]=='n' && command[1]=='e' && command[2]=='t' && command[3]=='w' && command[4]=='o' && command[5]=='r' && command[6]=='k' && command[7]==' ') network_test(command+8);
         else if (equal(command, "uname")) { text(uts); text(" "); text(uts + 130); text("\n"); }
         else if (equal(command, "reboot")) call(142, 0xfee1dead, 672274793, 0x1234567, 0, 0, 0);

@@ -31,6 +31,7 @@ def parser():
         ('usb-suite','AE350 USB FS receiver enumeration and HID report observation'),
         ('ethernet-suite','AE350 RTL8211 PHY identification and link observation'),
         ('bootrom','AE350 prepare boot firmware; --install writes its image in the Flash firmware region'),
+        ('bios-install','AE350 running BIOS writes a BIOS image to the U7 user-flash boot slot and reads it back'),
         ('sd-suite','AE350 native SD: read-only DMAC and sector CRC checks'),
         ('p7-suite','AE350 FatFs file or BIOS/application acceptance'),
         ('io-suite','AE350 board I/O: upload the I/O suite and judge its digital contract'),
@@ -41,7 +42,7 @@ def parser():
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
         op.add_argument('--machine', choices=MACHINES,
-                        default='mega138k_ae350' if name in ('jtag', 'jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'p7-suite', 'usb-suite', 'ethernet-suite') else 'primer20k_vexriscv')
+                        default='mega138k_ae350' if name in ('jtag', 'jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'bios-install', 'p7-suite', 'usb-suite', 'ethernet-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
         if name=='status':
             op.add_argument('--seconds',type=float,default=2)
@@ -50,8 +51,12 @@ def parser():
             import os
             op.add_argument('--cpu-jtag-location', default='serial:FactoryAIOT ProA' if os.name != 'nt' else None,
                             help='CPU JTAG location (e.g. serial:FactoryAIOT ProA or Windows index)')
-            op.add_argument('--action', choices=('status', 'halt', 'resume', 'step', 'reset', 'pc', 'read-word', 'write-word', 'read-mem', 'read-reg', 'write-reg'),
-                            default='status', help='JTAG action to perform (default: status)')
+            from scripts.mini_ops.mega138k_ae350.ae350_jtag import SCRIPT_HELP
+            op.formatter_class = argparse.RawDescriptionHelpFormatter
+            op.epilog = SCRIPT_HELP
+            op.add_argument('--script', metavar='FILE', help="run a JTAG script file ('-' reads stdin)")
+            op.add_argument('--exec', action='append', metavar='COMMANDS',
+                            help="run inline script commands separated by ';' (repeatable, after --script)")
             op.add_argument('--halt', action='store_true', help='halt the CPU')
             op.add_argument('--resume', action='store_true', help='resume the CPU')
             op.add_argument('--step', action='store_true', help='single step one instruction')
@@ -95,6 +100,8 @@ def parser():
         if name == 'dma-suite':
             op.add_argument('--payload', required=True, help='AE350 DMA suite payload build result')
             op.add_argument('--cpu-jtag-location', required=True)
+            op.add_argument('--cable-serial')
+            op.add_argument('--bootrom-install', type=Path)
             op.add_argument('--poll-interval', type=float, default=0.25,
                             help='seconds between completion polls; every poll halts the CPU')
             op.add_argument('--timeout', type=int, default=90,
@@ -128,6 +135,13 @@ def parser():
         if name == 'bootrom':
             op.add_argument('--install', action='store_true', help='explicitly write only U4 boot slot at 0x600000, then verify and SRAM boot')
             op.add_argument('--cable-serial', help='FPGA FT2232 serial; required for installation')
+        if name == 'bios-install':
+            op.add_argument('--payload', required=True, help='AE350 BIOS payload build result')
+            op.add_argument('--host-ip', default='169.254.25.153')
+            op.add_argument('--board-ip', help='AE350 BIOS address; default .20 (or .21) of the subnet --host-ip has on its NIC')
+            op.add_argument('--tftp-python', default=sys.executable, help='Firewall-allowed Python to run the read-only TFTP server')
+            op.add_argument('--timeout', type=int, default=120)
+            op.add_argument('--replace-other', action='store_true', help='overwrite a boot slot that holds non-image data')
         if name == 'sd-suite':
             op.add_argument('--benchmark', action='store_true', help='read throughput payload; no debugger pauses until UART completion')
             op.add_argument('--payload', required=True)
@@ -138,6 +152,8 @@ def parser():
         if name == 'io-suite':
             op.add_argument('--payload', required=True, help='AE350 I/O suite payload build result')
             op.add_argument('--cpu-jtag-location', required=True)
+            op.add_argument('--cable-serial')
+            op.add_argument('--bootrom-install', type=Path)
             op.add_argument('--poll-interval', type=float, default=0.25,
                             help='seconds between completion polls; every poll halts the CPU')
             op.add_argument('--timeout', type=int, default=60,
@@ -181,13 +197,18 @@ def parser():
                             help='Overall wall-clock budget for the payload (1..3600 s)')
         op.add_argument('--dry-run',action='store_true',help='Validate selected artifacts and show intent; no hardware access')
         if name=='linux':
-            op.add_argument('--os-image',type=Path,required=True,help='Matching OpenSBI/U-Boot OSB1 image')
+            op.add_argument('--dtb',type=Path,help='AE350 flattened device tree')
+            op.add_argument('--os-image',type=Path,required=True,help='20K: matching OpenSBI/U-Boot OSB1 image. AE350: OpenSBI fw_jump.bin (BIOS loads Image and DTB) or OpenSBI+U-Boot fw_payload.bin (U-Boot loads them); --sd-install needs fw_payload.bin')
             op.add_argument('--kernel',type=Path,required=True,help='Uncompressed RV32 Linux Image with embedded /init')
             op.add_argument('--initrd',type=Path,help='External BusyBox initrd.cpio.gz; verifies the shell instead of embedded selftests')
             op.add_argument('--host-ip',default='169.254.25.153')
+            op.add_argument('--board-ip',help='AE350 BIOS address; default .20 (or .21) of the subnet --host-ip has on its NIC')
             op.add_argument('--tftp-python',default=sys.executable,help='Firewall-allowed Python to run the existing read-only TFTP server')
             op.add_argument('--timeout',type=int,default=180)
-            op.add_argument('--devices',action='store_true',help='Also verify native Linux device drivers and UDP echo; SD/Flash reads only')
+            op.add_argument('--devices',action='store_true',help='Also verify native Linux device drivers. 20K: SD/Flash reads and UDP echo. AE350: USB disk reads plus a saved/rewritten/restored 256 KiB tail')
+            op.add_argument('--sd-install',action='store_true',help='AE350: replace Image/fw_payload.bin/mega138k_ae350.dtb in the SD root, then `boot sd`: the BIOS starts fw_payload.bin and U-Boot loads Image and the DTB')
+            op.add_argument('--uboot-load',choices=('sd','net'),default='sd',help='AE350 with fw_payload.bin: U-Boot loads Image and the DTB from the SD card (`run sdboot`) or over TFTP from --host-ip')
+            op.add_argument('--uboot-command',action='append',default=[],metavar='COMMAND',help='AE350 with fw_payload.bin: stop autoboot and run this U-Boot command before loading; repeatable, output kept in the receipt')
         if name == 'build' and 'gateware' in (getattr(op, 'choices', {}) or {}):
             pass
         if name in ('run','update','verify'):
@@ -198,7 +219,9 @@ def parser():
             op.add_argument('--method',choices=('auto','programmer'),default='programmer',
                             help='20K: auto uses DDR SPI, programmer uses direct op8/op31. AE350: programmer writes bounded configuration blocks with readback after a verified bootrom install')
         if name=='verify':
-            op.add_argument('--suite',choices=('firmware','boot','loader','flash','spi','cold'),default='firmware')
+            op.add_argument('--suite',choices=('firmware','boot','loader','flash','spi','cold','autoboot'),default='firmware')
+            op.add_argument('--cable-serial',help='AE350 autoboot: FPGA FT2232 serial for SRAM programming')
+            op.add_argument('--sd-install-result',type=Path,help='AE350 autoboot: board linux --sd-install receipt the loaded SD files must match')
             op.add_argument('--soak-seconds',type=int,default=0)
             op.add_argument('--timeout',type=int,default=300,help='External cold-boot observation timeout')
             op.add_argument('--mic',action='store_true',help='Firmware suite: test connected microphones')

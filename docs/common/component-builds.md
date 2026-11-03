@@ -120,3 +120,19 @@ python scripts/mini.py clean --execute
 正式 release 的可选记录工具 `prepare_commit.py --release --build` 也可接收内容寻址平台的成功板测 `result.json`。它核对实际 bitstream/payload、PnR、执行结果与当前源码闭包，不生成伪造的旧 catalog 身份。性能报告必须指向同一组 artifact。普通提交不要求这些材料，也不自动构建或生成提交快照。
 
 `mini.py builds clean work` 先显示可重建工作缓存的清理计划，`--execute` 才执行。它保留 store、原始 runs/证据、归档、recipes、refs、vendor、已登记工作目录和 Git worktree；单个旧式中间 run 仍用 `builds clean <catalog-id>`。未知历史顶层目录不自动删除。
+
+### Vendor 源码规范
+
+上游源码树（Linux、OpenSBI、U-Boot）统一按以下方式管理：
+
+- `firmware/<component>/<machine>/source.json` 固定上游版本、压缩包 URL 与 SHA256、`installer` 和重建后的 `tree_sha256`；`patches` 必须为空，清单本身不列补丁。
+- 每个源码树有自己的入口 `firmware/<component>/install.py SOURCE --machine <machine>`，按机器条件用 Python 安装：复制按上游目录布局保存的板级文件与驱动，从表格添加 Kconfig/Makefile 接线和板级挂接，最后应用该机器的 `patches/`。
+- 驱动和新增文件不放进补丁。补丁只用于修改上游已有代码，一个目的一个文件，按文件名顺序应用；后一个补丁可以建立在前一个之上。
+- 公用函数在 `firmware/vendor_install.py`：文件复制、补丁序列应用（重复安装先从末尾撤回已安装序列再整体应用，冲突时恢复调用前状态）以及命令行；`--inputs` 列出安装读取的全部仓库文件，构建把它们记入收据并参与 key。
+- 构建入口只从压缩包解出原始树后运行清单中的安装入口，再核对 `tree_sha256`；`build/vendor` 中已有的树只核对哈希，不一致即拒绝构建。修改任何安装输入后，从压缩包重放安装并更新 `tree_sha256`。
+
+### AE350 Linux / OpenSBI / U-Boot
+
+AE350 上游源码（含当前移植修改）位于 `build/vendor/linux-6.12.112`、`build/vendor/opensbi` 和 `build/vendor/u-boot-ae350`，是可丢弃、可重建的上游源码缓存，不能保存唯一的移植修改。准确上游版本、下载校验值、机器配置及移植变更必须保存在仓库；Linux 两台机器统一通过 firmware/linux/install.py 安装公共驱动，再由 --machine 选择平台差异。Linux 与 OpenSBI 默认编译目录分别为 `build/work/mega138k_ae350/linux/default/obj`、`build/work/mega138k_ae350/opensbi/default/obj`；DTB 位于 OpenSBI 同一工作区。`--source` 只选择源码输入，不能决定对象目录；`--workspace` 由公共 location/working 管理。Linux 配置来自仓库中的 firmware/linux/ae350/linux.config，initramfs 清单和 UAPI 头由入口生成，不依赖残留配置。
+
+成功后仅将 Image/init/config 或 fw_jump.bin/DTB 归档到 `build/store/backend/<target>/<digest>/outputs/`，回执的 binary 指向该不可变产物。workspace.json 标记成功并保留上次成功引用；失败保留工作区。日常构建不传 `--output-dir`，该参数仅额外导出交付文件，不改变缓存目录。不要再次创建 `build/opensbi-ae350`、顶层 DTB 或仓库外的 obj-minimal。路径迁移可能使 Kbuild 的绝对路径依赖触发一次重编译，后续始终复用同一工作区。

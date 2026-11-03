@@ -36,7 +36,8 @@
 //                          Generated File
 //-----------------------------------------------------------------
 
-// Local extension: clock parameter; 60MHz uses five samples per bit.
+// Local extensions: clock parameter (60MHz uses five samples per bit);
+// EOP drives J for one bit time before the bus is released.
 module usb_fs_phy #(parameter USB_CLK_FREQ = 48000000)
 (
     // Inputs
@@ -221,6 +222,7 @@ localparam STATE_TX_EOP0        = 4'd10;
 localparam STATE_TX_EOP1        = 4'd11;
 localparam STATE_TX_EOP2        = 4'd12;
 localparam STATE_TX_RST         = 4'd13;
+localparam STATE_TX_EOP3        = 4'd14;
 
 // Current state
 reg [STATE_W-1:0] state_q;
@@ -363,6 +365,14 @@ begin
     // STATE_TX_EOP2
     //-----------------------------------------
     STATE_TX_EOP2 :
+    begin
+        if (sample_w)
+            next_state_r    = STATE_TX_EOP3;
+    end
+    //-----------------------------------------
+    // STATE_TX_EOP3
+    //-----------------------------------------
+    STATE_TX_EOP3 :
     begin
         if (sample_w)
             next_state_r    = STATE_IDLE;
@@ -635,10 +645,12 @@ begin
 end
 else if ((state_q == STATE_TX_EOP2) && sample_w)
 begin
-    // IDLE
+    // J, still driven (USB 2.0 7.1.13.2: one bit time after the SE0)
     out_dp_q <= 1'b1;
     out_dn_q <= 1'b0;
-
+end
+else if ((state_q == STATE_TX_EOP3) && sample_w)
+begin
     // Set bus to input
     rx_en_q <= 1'b1;
 end

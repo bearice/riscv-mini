@@ -6,12 +6,12 @@
 #include <stdint.h>
 #include "ae350_address_map.h"
 
-#define UART2_BASE   0xf0300000u
+#define UART2_BASE   AE350_UART_BASE
 #define UART_DATA    0x20u
 #define UART_LSR     0x34u
 #define UART_REG(o)  (*(volatile uint32_t *)(UART2_BASE + (o)))
 
-#define SFP_BASE     0xf80b0000u
+#define SFP_BASE     AE350_SFP_BASE
 #define SFP_REG(o)   (*(volatile uint32_t *)(SFP_BASE + (o)))
 
 #define SFP_OFF_ID         0x00u

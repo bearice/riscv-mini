@@ -50,6 +50,9 @@ def perform(args):
         return debug_scan(args)
     if args.operation not in ('run', 'recover', 'verify'):
         raise ValueError('AE350 supports SRAM run/recover/verify only')
+    if args.operation == 'verify' and args.suite == 'autoboot':
+        from mini_ops.mega138k_ae350.ae350_persist import autoboot
+        return autoboot(args)
     root, ref, build_id = candidate(args.build)
     if not Store().get(ref, recursive=True)['config'].get('ddr_profile'):
         raise ValueError('Retired fabric ROM/SRAM monitor is unsupported; select current AE350 DDR gateware')

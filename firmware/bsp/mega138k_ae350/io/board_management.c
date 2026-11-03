@@ -111,6 +111,44 @@ static int flash_read(uint32_t offset,void *buffer,unsigned bytes,unsigned quad)
 }
 int board_flash_read(uint32_t offset,void *buffer,unsigned bytes) {return flash_read(offset,buffer,bytes,1);}
 int board_flash_read_single(uint32_t offset,void *buffer,unsigned bytes) {return flash_read(offset,buffer,bytes,0);}
+/* W25Q128JV: tSE <= 400 ms, tPP <= 3 ms. A device that stays busy is dropped. */
+static int flash_wait(uint32_t limit) {
+    uint32_t start=cycles();uint8_t status;
+    for(;;) {
+        int rc=read_command(0x05,0,0,0,&status,1);if(rc)return rc;
+        if(!(status&1u))return 0;
+        if((uint32_t)(cycles()-start)>limit) {flash_ready=0;return BUS_TIMEOUT;}
+    }
+}
+static int write_enable(void) {
+    int rc=transfer(0x06000000u,1,0,0);if(rc)return rc;deselect();
+    uint8_t status;rc=read_command(0x05,0,0,0,&status,1);if(rc)return rc;
+    return status&2u?0:BUS_PROTOCOL;
+}
+int board_flash_erase(uint32_t offset) {
+    if(!flash_ready)return BUS_DEVICE;
+    if(offset%BOARD_FLASH_SECTOR || offset>=flash_bytes)return BUS_INVALID;
+    int rc=write_enable();if(rc)return rc;
+    rc=transfer(0x20000000u|offset,4,0,0);if(rc) {flash_ready=0;return rc;}
+    deselect();
+    return flash_wait(AE350_CPU_HZ);
+}
+int board_flash_program(uint32_t offset,const void *data,unsigned bytes) {
+    if(!flash_ready)return BUS_DEVICE;
+    if(!data || !bytes || offset>=flash_bytes || bytes>flash_bytes-offset ||
+       offset%BOARD_FLASH_PAGE+bytes>BOARD_FLASH_PAGE)return BUS_INVALID;
+    int rc=write_enable();if(rc)return rc;
+    rc=transfer(0x02000000u|offset,4,0,0);
+    const uint8_t *in=data;
+    while(!rc && bytes) {
+        unsigned n=bytes>4?4:bytes;uint32_t value=0;
+        for(unsigned i=0;i<n;i++)value|=(uint32_t)in[i]<<(24-8*i);
+        rc=transfer(value,n,0,0);in+=n;bytes-=n;
+    }
+    if(rc) {flash_ready=0;return rc;}
+    deselect();
+    return flash_wait(AE350_CPU_HZ/100u);
+}
 unsigned board_twi_mux_get(void) {return (GPIO(0x24)&AE350_TWI_MUX_GPIO_MASK)>>AE350_TWI_MUX_GPIO_SHIFT;}
 int board_twi_mux_select(unsigned selection) {
     if(selection>7)return BUS_INVALID;

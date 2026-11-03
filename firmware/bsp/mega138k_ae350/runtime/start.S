@@ -31,6 +31,7 @@ _start:
     addi t1, t1, 4
     j 3b
 4:  fence.i
+    /* a0 still holds the ROM's boot source (AE350_BOOT_SOURCE_*) for main. */
     call main
 5:  wfi
     j 5b

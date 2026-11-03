@@ -1,0 +1,247 @@
+--- a/arch/riscv/Makefile
++++ b/arch/riscv/Makefile
+@@ -65,8 +65,9 @@
+ endif
+ 
+ # ISA string setting
+-riscv-march-$(CONFIG_ARCH_RV32I)	:= rv32ima
++riscv-march-$(CONFIG_ARCH_RV32I)	:= rv32im
+ riscv-march-$(CONFIG_ARCH_RV64I)	:= rv64ima
++riscv-march-$(CONFIG_SMP)		:= $(riscv-march-y)a
+ riscv-march-$(CONFIG_FPU)		:= $(riscv-march-y)fd
+ riscv-march-$(CONFIG_RISCV_ISA_C)	:= $(riscv-march-y)c
+ riscv-march-$(CONFIG_RISCV_ISA_V)	:= $(riscv-march-y)v
+@@ -84,12 +85,12 @@
+ 
+ # Remove F,D,V from isa string for all. Keep extensions between "fd" and "v" by
+ # matching non-v and non-multi-letter extensions out with the filter ([^v_]*)
+-KBUILD_CFLAGS += -march=$(shell echo $(riscv-march-y) | sed -E 's/(rv32ima|rv64ima)fd([^v_]*)v?/\1\2/')
++KBUILD_CFLAGS += -march=$(shell echo $(riscv-march-y) | sed -E 's/(rv32ima?|rv64ima?)fd([^v_]*)v?/\1\2/')
+ 
+ KBUILD_AFLAGS += -march=$(riscv-march-y)
+ 
+ # For C code built with floating-point support, exclude V but keep F and D.
+-CC_FLAGS_FPU  := -march=$(shell echo $(riscv-march-y) | sed -E 's/(rv32ima|rv64ima)([^v_]*)v?/\1\2/')
++CC_FLAGS_FPU  := -march=$(shell echo $(riscv-march-y) | sed -E 's/(rv32ima?|rv64ima?)([^v_]*)v?/\1\2/')
+ 
+ KBUILD_CFLAGS += -mno-save-restore
+ KBUILD_CFLAGS += -DCONFIG_PAGE_OFFSET=$(CONFIG_PAGE_OFFSET)
+--- a/arch/riscv/include/asm/atomic.h
++++ b/arch/riscv/include/asm/atomic.h
+@@ -15,6 +15,19 @@
+ #  error "64-bit atomics require XLEN to be at least 64"
+ # endif
+ #endif
++
++#ifndef CONFIG_SMP
++#include <asm-generic/atomic.h>
++
++#define arch_atomic_add_return_relaxed arch_atomic_add_return
++#define arch_atomic_sub_return_relaxed arch_atomic_sub_return
++#define arch_atomic_fetch_add_relaxed arch_atomic_fetch_add
++#define arch_atomic_fetch_sub_relaxed arch_atomic_fetch_sub
++#define arch_atomic_fetch_and_relaxed arch_atomic_fetch_and
++#define arch_atomic_fetch_or_relaxed arch_atomic_fetch_or
++#define arch_atomic_fetch_xor_relaxed arch_atomic_fetch_xor
++
++#else
+ 
+ #include <asm/cmpxchg.h>
+ 
+@@ -350,4 +363,6 @@
+ #define arch_atomic64_dec_if_positive	arch_atomic64_dec_if_positive
+ #endif
+ 
++#endif /* CONFIG_SMP */
++
+ #endif /* _ASM_RISCV_ATOMIC_H */
+--- a/arch/riscv/include/asm/bitops.h
++++ b/arch/riscv/include/asm/bitops.h
+@@ -185,6 +185,32 @@
+ 
+ #include <asm-generic/bitops/const_hweight.h>
+ 
++#define __OP_CALC_or(old, val)  ((old) | (val))
++#define __OP_CALC_and(old, val) ((old) & (val))
++#define __OP_CALC_xor(old, val) ((old) ^ (val))
++#define __OP_CALC(op, old, val) __OP_CALC_##op(old, val)
++
++#ifndef CONFIG_SMP
++#define __test_and_op_bit_ord(op, mod, nr, addr, ord)		\
++({								\
++	unsigned long __res, __mask, __flags;			\
++	__mask = BIT_MASK(nr);					\
++	raw_local_irq_save(__flags);				\
++	__res = addr[BIT_WORD(nr)];				\
++	addr[BIT_WORD(nr)] = __OP_CALC(op, __res, mod(__mask));	\
++	raw_local_irq_restore(__flags);				\
++	((__res & __mask) != 0);				\
++})
++
++#define __op_bit_ord(op, mod, nr, addr, ord)			\
++do {								\
++	unsigned long __mask, __flags;				\
++	__mask = BIT_MASK(nr);					\
++	raw_local_irq_save(__flags);				\
++	addr[BIT_WORD(nr)] = __OP_CALC(op, addr[BIT_WORD(nr)], mod(__mask)); \
++	raw_local_irq_restore(__flags);				\
++} while (0)
++#else
+ #if (BITS_PER_LONG == 64)
+ #define __AMO(op)	"amo" #op ".d"
+ #elif (BITS_PER_LONG == 32)
+@@ -211,6 +237,7 @@
+ 		: "+A" (addr[BIT_WORD(nr)])			\
+ 		: "r" (mod(BIT_MASK(nr)))			\
+ 		: "memory");
++#endif
+ 
+ #define __test_and_op_bit(op, mod, nr, addr) 			\
+ 	__test_and_op_bit_ord(op, mod, nr, addr, .aqrl)
+@@ -354,6 +381,14 @@
+ static inline bool arch_xor_unlock_is_negative_byte(unsigned long mask,
+ 		volatile unsigned long *addr)
+ {
++#ifndef CONFIG_SMP
++	unsigned long res, flags;
++	raw_local_irq_save(flags);
++	res = *addr;
++	*addr = res ^ mask;
++	raw_local_irq_restore(flags);
++	return (res & BIT(7)) != 0;
++#else
+ 	unsigned long res;
+ 	__asm__ __volatile__ (
+ 		__AMO(xor) ".rl %0, %2, %1"
+@@ -361,6 +396,7 @@
+ 		: "r" (__NOP(mask))
+ 		: "memory");
+ 	return (res & BIT(7)) != 0;
++#endif
+ }
+ 
+ #undef __test_and_op_bit
+--- a/arch/riscv/include/asm/cmpxchg.h
++++ b/arch/riscv/include/asm/cmpxchg.h
+@@ -5,6 +5,26 @@
+ 
+ #ifndef _ASM_RISCV_CMPXCHG_H
+ #define _ASM_RISCV_CMPXCHG_H
++
++#ifndef CONFIG_SMP
++#include <asm-generic/cmpxchg.h>
++
++#define arch_xchg_relaxed(ptr, x) arch_xchg((ptr), (x))
++#define arch_xchg_acquire(ptr, x) arch_xchg((ptr), (x))
++#define arch_xchg_release(ptr, x) arch_xchg((ptr), (x))
++
++#define arch_cmpxchg_relaxed(ptr, o, n) arch_cmpxchg((ptr), (o), (n))
++#define arch_cmpxchg_acquire(ptr, o, n) arch_cmpxchg((ptr), (o), (n))
++#define arch_cmpxchg_release(ptr, o, n) arch_cmpxchg((ptr), (o), (n))
++
++#define arch_cmpxchg64_relaxed(ptr, o, n) arch_cmpxchg64((ptr), (o), (n))
++#define arch_cmpxchg64_acquire(ptr, o, n) arch_cmpxchg64((ptr), (o), (n))
++#define arch_cmpxchg64_release(ptr, o, n) arch_cmpxchg64((ptr), (o), (n))
++
++#define xchg32(ptr, x) arch_xchg((ptr), (x))
++#define xchg64(ptr, x) arch_xchg((ptr), (x))
++
++#else
+ 
+ #include <linux/bug.h>
+ 
+@@ -281,4 +301,6 @@
+ 	__cmpwait((ptr), (unsigned long)(val), sizeof(*(ptr)))
+ #endif
+ 
++#endif /* CONFIG_SMP */
++
+ #endif /* _ASM_RISCV_CMPXCHG_H */
+--- a/arch/riscv/include/asm/futex.h
++++ b/arch/riscv/include/asm/futex.h
+@@ -12,6 +12,66 @@
+ #include <linux/errno.h>
+ #include <asm/asm.h>
+ #include <asm/asm-extable.h>
++
++#ifndef CONFIG_SMP
++#include <linux/irqflags.h>
++
++static inline int
++arch_futex_atomic_op_inuser(int op, int oparg, int *oval, u32 __user *uaddr)
++{
++	int oldval = 0, ret = 0;
++	u32 val;
++	unsigned long flags;
++
++	if (!access_ok(uaddr, sizeof(u32)))
++		return -EFAULT;
++
++	raw_local_irq_save(flags);
++	if (__get_user(oldval, uaddr)) {
++		ret = -EFAULT;
++	} else {
++		switch (op) {
++		case FUTEX_OP_SET:  val = oparg; break;
++		case FUTEX_OP_ADD:  val = oldval + oparg; break;
++		case FUTEX_OP_OR:   val = oldval | oparg; break;
++		case FUTEX_OP_ANDN: val = oldval & ~oparg; break;
++		case FUTEX_OP_XOR:  val = oldval ^ oparg; break;
++		default: ret = -ENOSYS; break;
++		}
++		if (!ret && __put_user(val, uaddr))
++			ret = -EFAULT;
++	}
++	raw_local_irq_restore(flags);
++
++	if (!ret)
++		*oval = oldval;
++	return ret;
++}
++
++static inline int
++futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
++			      u32 oldval, u32 newval)
++{
++	int ret = 0;
++	u32 val;
++	unsigned long flags;
++
++	if (!access_ok(uaddr, sizeof(u32)))
++		return -EFAULT;
++
++	raw_local_irq_save(flags);
++	if (__get_user(val, uaddr)) {
++		ret = -EFAULT;
++	} else if (val == oldval) {
++		if (__put_user(newval, uaddr))
++			ret = -EFAULT;
++	}
++	raw_local_irq_restore(flags);
++
++	*uval = val;
++	return ret;
++}
++#else
+ 
+ /* We don't even really need the extable code, but for now keep it simple */
+ #ifndef CONFIG_MMU
+@@ -100,5 +160,6 @@
+ 	*uval = val;
+ 	return ret;
+ }
++#endif /* CONFIG_SMP */
+ 
+ #endif /* _ASM_RISCV_FUTEX_H */
+--- a/arch/riscv/kernel/entry.S
++++ b/arch/riscv/kernel/entry.S
+@@ -265,7 +265,9 @@
+ 	 * arbitrarily large.
+ 	 */
+ 	REG_L  a2, PT_EPC(sp)
++#ifdef CONFIG_SMP
+ 	REG_SC x0, a2, PT_EPC(sp)
++#endif
+ 
+ 	csrw CSR_STATUS, a0
+ 	csrw CSR_EPC, a2

@@ -70,8 +70,8 @@ JTAG 用于 halt、寄存器/内存观察、身份核对及显式恢复。无 JT
 | --- | --- | --- |
 | 检查 AE350 CPU/启动镜像 | `./mini.ps1 board jtag-test --build <AE350-run/result.json> --cpu-jtag-location <CPU位置> --location <FPGA位置>` | SRAM 重配置；核对bootrom身份及硬件ABI、本地内存配置与自主 POST |
 | AE350 上传与执行 | `./mini.ps1 board run --machine mega138k_ae350 --build <gateware-result.json> --payload <payload-result.json> --port COM9` | 自主 POST 后走统一 UART loader；执行核验/重入需显式 CPU JTAG；`passed` 只表示载荷执行，不表示套件通过 |
-| AE350 DMA 套件 | `./mini.ps1 board dma-suite --machine mega138k_ae350 --build <gateware-result.json> --payload <dma-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --location <FPGA位置>` | 轮询完成字并按结果合同判定；不写 Flash |
-| AE350 I/O 套件 | `./mini.ps1 board io-suite --machine mega138k_ae350 --build <gateware-result.json> --payload <io-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --location <FPGA位置>` | 判定数字合同；灯、按键和 WS2812 颜色仍须单独观察；不写 Flash |
+| AE350 DMA 套件 | `./mini.ps1 board dma-suite --machine mega138k_ae350 --build <gateware-result.json> --payload <dma-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --location <FPGA位置>` 或 `--cable-serial <FPGA序列号>`，可选 `--bootrom-install <安装回执>` | 轮询完成字并按结果合同判定；不写 Flash |
+| AE350 I/O 套件 | `./mini.ps1 board io-suite --machine mega138k_ae350 --build <gateware-result.json> --payload <io-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --location <FPGA位置>` 或 `--cable-serial <FPGA序列号>`，可选 `--bootrom-install <安装回执>` | 判定数字合同；灯、按键和 WS2812 颜色仍须单独观察；不写 Flash |
 | AE350 audio/mic 套件 | `./mini.ps1 board audio-suite --build <gateware-result.json> --payload <audio-suite-result.json> --port COM9 --cpu-jtag-location <CPU位置> --soak-seconds 1800 --timeout 1900` | 实时双 DMA 与 CPU DDR 并发，结束后才 halt 读结果；可追加显式 `--capture-device`，见 [音频合同](audio.md)；不写 Flash |
 
 
@@ -89,3 +89,19 @@ AE350 ROM bootloader 的源目录为 `firmware/bootloader/mega138k_ae350/`，独
 接线、硬核 BSP 与边界见 [管理总线](management.md)。`board bus-suite --build <gateware-result.json> --payload <bus-suite-result.json> --port <UART> --cpu-jtag-location <CPU-JTAG>` 只验证用户 Flash 读取与 TWI mux/EEPROM 连通性，UART 完成前不暂停 CPU；不写 Flash 或 EEPROM 数据。
 
 FatFs、BIOS 与应用验收使用 `board p7-suite`，见 [运行环境](runtime.md)。在 SRAM/UART 验证中复用已安装的兼容启动固件时，向 bus/sd/p7/audio 套件显式传 `--bootrom-install <成功安装回执>`，操作会重新核对实物固件字节。
+
+## 持久启动
+
+启动链：U4 ROM →（3 秒无输入）U7 启动槽中的 BIOS →（3 秒无按键）`boot sd` 把 SD 根目录的 `fw_payload.bin` 装入 os.sbi/os.uboot → OpenSBI → U-Boot（S 模式，3 秒无按键后 `run sdboot`）从同一 SD 卷 `fatload` `Image` 与 `mega138k_ae350.dtb`、各自打印 `CRC32`，再 `booti` → Linux。U-Boot 与 FatFs 选卷规则一致：LBA 0 是 FAT 引导扇区时用整盘（`mmc 0:0`），否则按分区表。机制见 [bootloader](bootloader.md#用户-flash-自动启动) 与 [运行环境](runtime.md#持久启动)。三处写入各有独立入口，均需用户明确授权：
+
+1. U4 ROM：`board bootrom --install`（见 [bootloader](bootloader.md#安装与更新)），只写 `0x600000` 起的固件区。
+2. U7 BIOS：先用 `ae350-upload` 让任一兼容 BIOS 停在提示符，再运行 `board bios-install --build <gateware回执> --payload <bios回执> --port <UART> --host-ip <enp4s0地址>`。主机按所选 gateware 的硬件 ABI 打包镜像，入口先用 `flash` 和 `flash crc` 记录槽位原状态：头为空但待擦除范围不全为 `0xFF`，或头不是镜像时视为外来数据，没有 `--replace-other` 就拒绝。之后 TFTP 到 bios.staging、核对 CRC、执行 `flash install`，并要求读回后的头与镜像一致。
+3. SD 文件：`board linux ... --os-image <fw_payload.bin> --sd-install`。对 `Image`、`fw_payload.bin`、DTB，已存在的先 `rm`（原大小记入回执），再 `fetch` 写入 SD，然后 `boot sd`；BIOS 的 `LOAD OK` 与 U-Boot 的 `CRC32 for` 给出的长度和 CRC 须与主机输入一致。卡的文件系统需健康：长文件名要占用多个连续目录项；不要留下与整盘 FAT 重叠的旧分区表项，否则主机 OS 挂载到的分区与 BIOS 写入的卷不是同一个。
+
+`board verify --machine mega138k_ae350 --suite autoboot --build <gateware回执> --port <UART> --cable-serial <FPGA序列号> [--sd-install-result <回执>]` 只 SRAM 配置 FPGA，不发送任何 UART 字节。它要求按顺序出现以下证据，再执行与 `board linux` 相同的用户态检查：ROM banner（build id 须等于所选 gateware 的 bootloader）、`USER FLASH BOOT`、`SYSTEM READY`、`AE350 BIOS READY`、`AUTOBOOT SD`、`LOAD OK fw_payload.bin`、OpenSBI banner、`U-Boot <source.json 版本>`、`Hit any key to stop autoboot`、`CRC32 for`、`Starting kernel`。给出 `--sd-install-result` 时，装载文件的长度/CRC 须与该回执一致。
+
+gateware 写入 U4 位流区仍使用 `board update`，需另行明确授权。
+
+## AE350 Linux 临时启动
+
+已有 BIOS 提示符时，使用 `board linux --machine mega138k_ae350 --build <明确gateware回执> --port <by-id串口> --kernel <Image> --os-image <fw_jump.bin 或 fw_payload.bin> --dtb <DTB> --host-ip <enp4s0地址>`。该入口不重配置板子；失败后用上文 SRAM/UART 上传流程恢复 BIOS。入口按 `--os-image` 大小区分两条链：不超过 os.sbi 的是 fw_jump.bin，BIOS TFTP 三个文件后 `boot opensbi`；超过的是 OpenSBI+U-Boot fw_payload.bin，BIOS 只 TFTP 它，U-Boot 再按 `--uboot-load` 从 SD（`run sdboot`，默认）或 TFTP（`net`）装载 Image 与 DTB 并逐个核对 CRC。`--uboot-command <命令>`（可重复）先打断 U-Boot 自动启动、执行这些命令并把输出写入回执，再继续装载，用于在 U-Boot 提示符下排查。装载地址都取自地址合同（os.kernel/os.sbi/os.uboot/os.dtb，见[地址合同第 7 节](address-map.md)），不能在命令行覆盖；入口会核对 OpenSBI banner 的 Firmware Base/Size 与 Next Address/Arg1（U-Boot 链为 os.uboot/os.firmware-fdt）。Linux 需以 sudo 运行（TFTP 绑定 69 端口）。`--devices` 另验原生设备驱动：要求 Hub 或根口上有 U 盘（`/dev/sda`），读首 1 MiB 两次比对，保存→改写→回读→恢复其最后 256 KiB，只读挂载 FAT，并把 `dmesg` 存入回执；不得用于存有重要数据的盘。结果与 UART/TFTP 日志保存到 build/runs，具体候选见 [P8 交接](p8-handoff.md)。

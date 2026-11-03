@@ -4,6 +4,9 @@
 # 只关闭空白检查，不改变换行符（不要在这里加 text/eol，那会重写全仓库内容）。
 firmware/apps/doom/** -whitespace
 
+# 补丁的上下文行是上游代码前加一个空格（常见“空格后接 tab”、单空格空行），按格式不能清理。
+*.patch -whitespace
+
 # CPU 出厂物保持入库字节；文本来源哈希另外按 hash_normalization=lf 归一化 EOL。
 gateware/vendor/vexriscv/** -text
 gateware/vendor/gowin_gw5ast/** -whitespace

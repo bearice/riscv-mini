@@ -89,7 +89,9 @@ class HardwareSession:
             self._cpu.close(resume=False)
             self._cpu=None
 
-    def restart_rom(self, entry=0x80000000, expected_rom=None):
+    def restart_rom(self, entry=None, expected_rom=None):
+        from gateware.machines.mega138k_ae350.address_map import ROM_BASE
+        entry = ROM_BASE if entry is None else entry
         cpu = self.halt()
         if expected_rom is not None:
             if cpu.read_memory(entry, len(expected_rom)) != expected_rom:

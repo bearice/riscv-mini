@@ -132,6 +132,8 @@ Tang Mega 138K Pro 开发板通过 Gowin GW5AST GTR12 SerDes Quad 1 的 Lane 0 �
 - **SFP1（Lane 1）**：运行 1G 1000BASE-X（光口）/ SGMII（电口）双模协议（1.25 Gbps 线速率，125 MHz 内部 PCS/MAC，10-bit PMA 数据流）；
 - **三路动态仲裁**：板载 RTL8211F RGMII、SFP0 10G MAC、SFP1 1G MAC 通过系统 CSR 控制的多路复用器动态接入 LiteEth `EthernetDMA`，共享 256-bit DDR3 内存仲裁器。
 
+SFP+ 子系统按机器 JSON 可选：`devices` 同时绑定 `sfp0`/`sfp1` 时才实例化，地址合同才导出 `sfp-csr` 窗口（`AE350_SFP_PRESENT=1`）；否则 `EthernetDMA` 直连 RGMII，SFP 页访问返回总线错误。当前默认机器 JSON 不绑定 SFP：含 SFP+ 的整机构建 setup 违例 1486 条、hold 41 条，最差约 −2.6 ns，全部位于 10G MAC TX 路径（`u_sfp_10g_mac/xgmac`），需流水化后再重新启用。
+
 ### SerDes CSR 底层机制与 UPAR 初始化
 
 高云 GTR12 原语（`GTR12_QUAD`）不开放全套静态 Verilog 参数，而是依赖上电时运行的 UPAR（User Peripheral Access Register）状态机将数百条寄存器写指令（`upar_write_driver(addr, data)`）按序列写入硬件：

@@ -53,6 +53,8 @@ def operations(machine):
         return {
             'update': __import__('scripts.mini_ops.mega138k_ae350.ae350_update', fromlist=['perform']).perform,
             'bootrom': __import__('scripts.mini_ops.mega138k_ae350.ae350_bootrom', fromlist=['perform']).perform,
+            'bios-install': __import__('scripts.mini_ops.mega138k_ae350.ae350_persist', fromlist=['bios_install']).bios_install,
+            'linux': __import__('scripts.mini_ops.mega138k_ae350.linux', fromlist=['perform']).perform,
             'jtag-test': ae350_jtag_test.perform,
             'ddr-suite': ae350_ddr_suite.perform,
             'dma-suite': ae350_dma_suite.perform,

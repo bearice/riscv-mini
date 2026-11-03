@@ -30,9 +30,11 @@ SYSINFO 的 QSPI 设备项发布控制页、范围和寄存器 ABI 1；引脚、
 - `board_flash_read`：`6Bh` 的 1-1-4 读取；命令、24-bit 地址和八个 dummy 时钟使用单线，数据使用四线。支持非对齐缓冲，越界在 MMIO 前拒绝。
 - `board_flash_read_single`：`03h` 单线读取，用于同地址比对。
 - `board_i2c_init`、`board_twi_mux_select/get`、`board_i2c_probe`、`board_i2c_read_register`：管理总线初始化、支路选择、ACK/NACK 和 repeated-START 读取。
+- `board_flash_erase`：`06h` 写使能并确认 WEL 后发 `20h` 擦除一个 4 KiB 扇区（`BOARD_FLASH_SECTOR`），轮询 `05h` 的 busy 位，最长 1 秒。
+- `board_flash_program`：同样写使能后发 `02h`，数据不得跨越 256 B 页（`BOARD_FLASH_PAGE`），按左对齐 4 字节分段发送，轮询 busy 最长 10 ms。
 - `board_management_stop`：等待 QSPI 完成、恢复原始 QE 状态，禁用 I2C 并恢复 mux 选择和 GPIO 方向。失败时返回错误。
 
-QSPI 以轮询方式使用，单线程、单所有者；寄存器/接收热循环位于 ILM。阵列 program/erase API 由后续明确的存储用途定义。I2C 时序使用保守标准速度配置。
+QSPI 以轮询方式使用，单线程、单所有者；寄存器/接收热循环位于 ILM。擦除/编程的传输错误或 busy 超时会使 Flash 回到未初始化状态，后续调用需重新 `board_flash_init`；WEL 未置位只返回错误。目前唯一的写入用途是 BIOS 的启动槽安装（[运行环境](runtime.md#持久启动)）；BIOS 在启动时初始化一次 U7，并保留其 JEDEC/容量供 `flash` 命令使用。I2C 时序使用保守标准速度配置。
 
 | QSPI 偏移 | 寄存器 |
 | --- | --- |

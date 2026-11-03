@@ -11,7 +11,7 @@
 #include "board_io.h"
 #include "irq.h"
 
-#define UART2 0xf0300000u
+#define UART2 AE350_UART_BASE
 #define DONE 0xC4100004u
 #define SCHEMA 0x50340001u
 #define GUARD 2000000u
@@ -27,11 +27,11 @@ enum {
     R29, R30, SCHEMA_W
 };
 
-/* Above the payload window (DDR code may occupy through 0x80000). */
-#define OV_SRC 0x00100000u
-#define OV_DST 0x00110000u
-#define OV_CPU 0x00120000u
+#define OV_SRC (AE350_DIAG_IO_BASE + 0x00000000u)
+#define OV_DST (AE350_DIAG_IO_BASE + 0x00010000u)
+#define OV_CPU (AE350_DIAG_IO_BASE + 0x00020000u)
 #define OV_BYTES 0x00010000u
+_Static_assert(OV_CPU + OV_BYTES <= AE350_DIAG_IO_BASE + AE350_DIAG_IO_BYTES, "IO scratch outside diag.io");
 #define OV_LIMIT 200000u
 
 static volatile uint32_t *const slot = (volatile uint32_t *)AE350_RESULTS_BASE;

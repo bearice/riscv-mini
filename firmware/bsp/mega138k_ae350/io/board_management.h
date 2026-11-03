@@ -7,6 +7,11 @@ struct board_flash_info { uint32_t controller, jedec, bytes, status, sfdp, hz; }
 int board_flash_init(struct board_flash_info *info);
 int board_flash_read(uint32_t offset,void *buffer,unsigned bytes);
 int board_flash_read_single(uint32_t offset,void *buffer,unsigned bytes);
+/* Array writes after board_flash_init: erase one aligned sector, or program
+ * bytes that stay within one page. Callers verify by reading back. */
+enum { BOARD_FLASH_SECTOR=4096, BOARD_FLASH_PAGE=256 };
+int board_flash_erase(uint32_t offset);
+int board_flash_program(uint32_t offset,const void *data,unsigned bytes);
 int board_i2c_init(void);
 int board_i2c_probe(unsigned address);
 int board_i2c_read_register(unsigned address,uint8_t offset,void *buffer,unsigned bytes);

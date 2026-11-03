@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device tree OpenSBI hands to U-Boot: the machine tree with the boot
+ * devices U-Boot drives. Linux boots with mega138k_ae350.dts from the card.
+ */
+
+#include "mega138k_ae350.dts"
+
+/* Console and timer bind before relocation. */
+&{/cpus} {
+	bootph-all;
+};
+
+&cpu0 {
+	bootph-all;
+};
+
+&cpu0_intc {
+	bootph-all;
+};
+
+&{/soc} {
+	bootph-all;
+};
+
+&serial0 {
+	bootph-all;
+};
+
+&dmac0 {
+	status = "okay";
+};
+
+&mmc0 {
+	status = "okay";
+};
+
+&ethernet0 {
+	status = "okay";
+};

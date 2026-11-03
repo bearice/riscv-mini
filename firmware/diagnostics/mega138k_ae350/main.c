@@ -7,10 +7,9 @@
 #include <stdint.h>
 #include "ae350_address_map.h"
 
-#define UART2_BASE 0xf0300000u
 #define UART_DATA 0x20u
 #define UART_LSR  0x34u
-#define UART_REG(offset) (*(volatile uint32_t *)(UART2_BASE + (offset)))
+#define UART_REG(offset) (*(volatile uint32_t *)(AE350_UART_BASE + (offset)))
 
 #define CPU_ADDR(dram_off) ((uint32_t)(dram_off))   /* zero-based DDR */
 /* Host patches this declared application parameter block before applying the
@@ -23,8 +22,17 @@ volatile uint32_t mini_app_parameters[5] = {0, 0x12345678u, 1024, 0, 0};
 #define P_FLAGS          3u
 #define P_TRAV_MB        4u
 
-#define WORK_BASE  CPU_ADDR(0x100000u)   /* 1 MiB into DRAM: above the payload */
-#define WORK_SIZE  (1u << 20)
+/* Scratch owned by this payload, inside the contract's diag.memory range.
+ * Geometry, capacity and traversal addresses are memory under test instead. */
+#define WORK_BASE      (AE350_DIAG_MEMORY_BASE + 0x000000u)  /* patterns, perf, stress */
+#define WORK_SIZE      0x00100000u
+#define RMW_ADDR       (AE350_DIAG_MEMORY_BASE + 0x100000u)
+#define CACHE_ADDR     (AE350_DIAG_MEMORY_BASE + 0x101000u)  /* line, by-address range at +0x1000 */
+#define OBSERVER_ADDR  (AE350_DIAG_MEMORY_BASE + 0x103000u)
+#define CODE_STUB_ADDR (AE350_DIAG_MEMORY_BASE + 0x104000u)
+#define WORK_END       (AE350_DIAG_MEMORY_BASE + 0x105000u)
+_Static_assert(WORK_END <= AE350_DIAG_MEMORY_BASE + AE350_DIAG_MEMORY_BYTES, "memory scratch outside diag.memory");
+_Static_assert(0x80000u + 1024u * 16u <= WORK_SIZE, "perf buffers outside WORK_SIZE");
 
 extern char __text_start[], __text_end[], __data_start[], __data_end[], __bss_start[], __bss_end[];
 
@@ -244,8 +252,8 @@ static void test_exec(void) {
     kv(" sp", sp); kv(" text_bytes", text_len); kv(" text_sum", sum); puts_uart("\r\n");
 
     /* Same-address code replacement: assemble two stubs at one fixed address. */
-    volatile uint32_t *code = (volatile uint32_t *)0x2100u;
-    uint32_t (*fn)(uint32_t) = (uint32_t (*)(uint32_t))0x2100u;
+    volatile uint32_t *code = (volatile uint32_t *)CODE_STUB_ADDR;
+    uint32_t (*fn)(uint32_t) = (uint32_t (*)(uint32_t))CODE_STUB_ADDR;
     uint32_t r1 = 0, r2 = 0;
     RES[0x43] = 1;
     code[0] = 0x00150513u;  /* addi a0, a0, 1 */
@@ -267,20 +275,19 @@ static void test_exec(void) {
 
 /* ------------------------------------------------------------------ atomics */
 static void test_nonatomic_rmw(void) {
-    /* The AE350 hard macro's AHB data port has a single-bit HRESP and no
-     * exclusive/atomic attribute, and every aligned AMO/LR.SC through it hangs
-     * the hart: reproduced with a minimal DDR-resident program on both SRAM
-     * (0x1940) and DRAM (0x102004), PC stuck on the AMO instruction, no bus
-     * transaction issued, no trap.  The tests below therefore only exercise
-     * plain RMW sequences and record the limitation explicitly. */
-    volatile uint32_t *p = (volatile uint32_t *)0x102008u;
+    /* This test exercises plain RMW only, not the A extension. Earlier
+     * bring-up attempts hung on AMO/LR.SC at DDR addresses 0x1940 and
+     * 0x102004. Those observations do not establish that AE350 lacks A,
+     * nor distinguish cache/PMA configuration from interconnect behavior.
+     * In particular, 0x1940 is DDR in the current address map, not SRAM. */
+    volatile uint32_t *p = (volatile uint32_t *)RMW_ADDR;
     uint32_t ok = 1;
     *p = 100u;
     uint32_t tmp = *p;
     *p = tmp + 7u;
     if (*p != 107u) ok = 0;
     test_begin("nonatomic.rmw"); test_result(ok);
-    kv(" amo_supported", 0); kv(" rmw_value", *p); puts_uart("\r\n");
+    kv(" amo_verified", 0); kv(" rmw_value", *p); puts_uart("\r\n");
 }
 
 /* --------------------------------------------------- bandwidth and latency */
@@ -366,7 +373,7 @@ static uint32_t ddr_read_off(uint32_t off) { return *(volatile uint32_t *)CPU_AD
 static void ddr_write_off(uint32_t off, uint32_t v) { *(volatile uint32_t *)CPU_ADDR(off) = v; }
 
 static void test_cache(void) {
-    const uint32_t off = 0x200000u;      /* 2 MiB into DRAM, outside the payload */
+    const uint32_t off = CACHE_ADDR;
     uint32_t errs = 0, steps = 0, write_through = 0;
     uint32_t v_stale, v_after_inval, v_before_clean, v_after_clean, ctl0, ctl1;
 
@@ -572,7 +579,7 @@ static inline __attribute__((always_inline)) uint32_t observer_read(volatile uin
  * and compiler spills must not increment the DDR counter we are observing. */
 __attribute__((section(".ilm.text"), noinline))
 static void measure_cache_traffic(void) {
-    volatile uint32_t *p = (volatile uint32_t *)CPU_ADDR(0x206000u);
+    volatile uint32_t *p = (volatile uint32_t *)OBSERVER_ADDR;
     uint32_t c0, c1, c2, c3, w0, w1, w2, errs = 0;
     mcache_csrc(0x3u);
     dc_inval_all_cmd();

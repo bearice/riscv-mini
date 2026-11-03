@@ -7,7 +7,7 @@ static volatile uint32_t *const r=(volatile uint32_t *)AE350_RESULTS_BASE;
 static struct board_flash_info flash;
 static uint8_t buffer[544],eeprom[16];
 static uint8_t single[512];
-static void putc(char c) {while(!(W(0xf0300034u)&0x20u)) {} W(0xf0300020u)=(uint8_t)c;}
+static void putc(char c) {while(!(W((AE350_UART_BASE+0x34u))&0x20u)) {} W((AE350_UART_BASE+0x20u))=(uint8_t)c;}
 static void puts(const char *s) {while(*s)putc(*s++);}
 static uint32_t crc(const uint8_t *p,unsigned bytes) {
     uint32_t c=~0u;while(bytes--) {c^=*p++;for(unsigned b=0;b<8;b++)c=(c>>1)^(0xedb88320u&-(c&1));}return ~c;

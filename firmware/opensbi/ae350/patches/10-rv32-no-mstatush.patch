@@ -1,0 +1,16 @@
+--- a/firmware/fw_base.S
++++ b/firmware/fw_base.S
+@@ -42,8 +42,11 @@
+ 
+ .macro CLEAR_MDT tmp
+ #if __riscv_xlen == 32
+-	li 	\tmp, MSTATUSH_MDT
+-	csrc	CSR_MSTATUSH, \tmp
++	/*
++	 * Privileged 1.11 RV32 harts (Andes A25) have no mstatush and trap
++	 * on it before any trap handler exists. MDT (Smdbltrp) needs 1.12+,
++	 * so on such harts there is nothing to clear.
++	 */
+ #else
+ 	li 	\tmp, MSTATUS_MDT
+ 	csrc	CSR_MSTATUS, \tmp

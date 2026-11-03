@@ -38,9 +38,7 @@
     "flash": "user_flash",
     "i2c": "system_i2c",
     "twi_mux": "twi_mux",
-    "boot_flash": "config_flash",
-    "sfp0": "sfp_0",
-    "sfp1": "sfp_1"
+    "boot_flash": "config_flash"
   },
   "gpio": {
     "leds": [

@@ -1,4 +1,5 @@
 """Versioned digital/audio result; acoustic stimulation is not inferred."""
+from gateware.machines.mega138k_ae350 import address_map as amap
 DONE=0xc5100001
 SCHEMA=0x41550001
 NAMES=('stage','error','pio','pio_gaps','restarts','snapshot','minimum','maximum','activity',
@@ -45,7 +46,7 @@ def judge_video(words, seconds):
         errors.append('video error/underflow/guard counter')
     if words[4]<seconds*58 or words[12]<seconds*58*19200 or not words[13]:
         errors.append('continuous video read/CPU workload missing')
-    if words[16] not in (0x01000000,0x01100000) or words[17]!=1 or words[18]:
+    if words[16] not in (amap.DIAG_VIDEO_FB0,amap.DIAG_VIDEO_FB1) or words[17]!=1 or words[18]:
         errors.append('video inactive or pending at completion')
     return errors
 

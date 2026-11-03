@@ -1,10 +1,18 @@
 #pragma once
+#include "ae350_address_map.h"
 #include "ae350_video.h"
 #include "ae350_dma.h"
 
-#define VIDEO_FB0 0x01000000u
-#define VIDEO_FB1 0x01100000u
+/* diag.video: guard page, FB0, FB1 (guard words on both sides), CPU stress buffer. */
+#define VIDEO_FB0 AE350_DIAG_VIDEO_FB0
+#define VIDEO_FB1 AE350_DIAG_VIDEO_FB1
 #define VIDEO_FB_BYTES (640u*480u*2u)
+#define VIDEO_STRESS AE350_DIAG_VIDEO_STRESS
+#define VIDEO_STRESS_BYTES 65536u
+_Static_assert(VIDEO_FB0 + VIDEO_FB_BYTES + 32u <= VIDEO_FB1 &&
+               VIDEO_FB1 + VIDEO_FB_BYTES + 32u <= VIDEO_STRESS &&
+               VIDEO_STRESS + VIDEO_STRESS_BYTES <= AE350_DIAG_VIDEO_BASE + AE350_DIAG_VIDEO_BYTES,
+               "video fixture outside diag.video");
 #define VIDEO_GUARD 0x5650c35au
 
 __attribute__((always_inline))

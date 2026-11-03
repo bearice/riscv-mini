@@ -299,7 +299,15 @@ class AE350Fabric(LiteXModule):
                           self.flash.selected.eq(legal & flash_page),self.flash.commit.eq(commit)]
         # Device entries are contiguous 32-byte records. Decode the record
         # index rather than OR-ing every individual address into error_q.
-        sys_ro = _onehot(off,(0,4,8,0xc,0x10,0x14,0x20,0x24)) | ((off[5:]>=2) & (off[5:]<2+amap.DEVICE_COUNT))
+        records = (amap.LOOPBACK_EP, amap.DMAC_EP, amap.WS2812_EP, amap.IO_EP, amap.SENSE_EP, amap.AUDIO_EP,
+                   amap.MIC_EP, amap.VIDEO_EP, amap.SD_EP, amap.SPI_EP, amap.I2C_EP)
+        count_off = amap.SYSINFO_DEVICE_COUNT_ADDR - amap.SYSINFO_BASE
+        stride_off = amap.SYSINFO_DEVICE_STRIDE_ADDR - amap.SYSINFO_BASE
+        table_off = amap.SYSINFO_DEVICES_ADDR - amap.SYSINFO_BASE
+        stride = amap.SYSINFO_DEVICE_BYTES
+        assert len(records) == amap.DEVICE_COUNT and stride == 1 << 5 and table_off % stride == 0
+        sys_ro = (_onehot(off,(0,4,8,0xc,0x10,0x14,count_off,stride_off)) |
+                  ((off[5:]>=table_off//stride) & (off[5:]<table_off//stride+amap.DEVICE_COUNT)))
         irq_ro = _onehot(off, (0x00, 0x04, 0x08, 0x10, 0x20))
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
@@ -308,22 +316,12 @@ class AE350Fabric(LiteXModule):
             sys_data.eq(0), irq_data.eq(0), dma_data.eq(0), ddr_data.eq(0),
             Case(off, {
                 0: sys_data.eq(amap.SYSINFO_ID), 4: sys_data.eq(amap.ABI_VERSION),
-                8: sys_data.eq(amap.SYSINFO_CAP), 0x20: sys_data.eq(amap.DEVICE_COUNT),
+                8: sys_data.eq(amap.SYSINFO_CAP), count_off: sys_data.eq(amap.DEVICE_COUNT),
                 0xc: sys_data.eq(amap.BOOT_CONTRACT_VERSION),
                 0x10: sys_data.eq(amap.FABRIC_HZ),
                 0x14: sys_data.eq(amap.image_abi()),
-                0x24: sys_data.eq(32),
-                **{0x40+4*i: sys_data.eq(v) for i,v in enumerate(amap.LOOPBACK_EP)},
-                **{0x60+4*i: sys_data.eq(v) for i,v in enumerate(amap.DMAC_EP)},
-                **{0x80+4*i: sys_data.eq(v) for i,v in enumerate(amap.WS2812_EP)},
-                **{0xa0+4*i: sys_data.eq(v) for i,v in enumerate(amap.IO_EP)},
-                **{0xc0+4*i: sys_data.eq(v) for i,v in enumerate(amap.SENSE_EP)},
-                **{0xe0+4*i: sys_data.eq(v) for i,v in enumerate(amap.AUDIO_EP)},
-                **{0x100+4*i: sys_data.eq(v) for i,v in enumerate(amap.MIC_EP)},
-                **{0x160+4*i: sys_data.eq(v) for i,v in enumerate(amap.SPI_EP)},
-                **{0x180+4*i: sys_data.eq(v) for i,v in enumerate(amap.I2C_EP)},
-                **{0x140+4*i: sys_data.eq(v) for i,v in enumerate(amap.SD_EP)},
-                **{0x120+4*i: sys_data.eq(v) for i,v in enumerate(amap.VIDEO_EP)},
+                stride_off: sys_data.eq(stride),
+                **{table_off+stride*r+4*i: sys_data.eq(v) for r,record in enumerate(records) for i,v in enumerate(record)},
             }),
             Case(off, {
                 0: irq_data.eq(amap.IRQ_ID),4: irq_data.eq(amap.ABI_VERSION),

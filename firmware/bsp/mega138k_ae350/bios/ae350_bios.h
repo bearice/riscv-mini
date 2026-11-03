@@ -19,3 +19,7 @@ void bios_command(char *line);
 void bios_editor(void);
 void bios_runtime_init(void);
 extern struct bios_info ae350_bios_info;
+/* User flash identity from bios_runtime_init; status is its board_flash_init result. */
+struct board_flash_info;
+extern struct board_flash_info bios_flash;
+extern int bios_flash_status;

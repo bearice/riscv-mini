@@ -45,7 +45,7 @@ sddma.py 同样来自上述 LiteSDCard revision 的 frontend/dma.py，保留版�
 | Directory | Upstream | Revision | Local changes |
 | --- | --- | --- | --- |
 | usb_host | https://github.com/ultraembedded/core_usb_host | 81eb9f131dbb434a9047ae074fea5c31ef46ce5d | None |
-| usb_fs_phy | https://github.com/ultraembedded/core_usb_fs_phy | 68a63ff937e58e90f4f534b9c6705c649d545136 | USB_CLK_FREQ and modulo sample counter: 4 at 48MHz, 5 at 60MHz |
+| usb_fs_phy | https://github.com/ultraembedded/core_usb_fs_phy | 68a63ff937e58e90f4f534b9c6705c649d545136 | USB_CLK_FREQ and modulo sample counter: 4 at 48MHz, 5 at 60MHz; RX sample point re-centred on edges; EOP drives J for one bit time before releasing the bus (upstream releases with the SE0→J edge, leaving J to the pull-up) |
 
 Host RTL headers specify GPL v2 or later; upstream supplies GPL v3. PHY
 headers specify LGPL v2.1 or later. Both license files and copyright notices

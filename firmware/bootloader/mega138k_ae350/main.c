@@ -5,6 +5,8 @@
  *     -> short POST: DLM scratch pattern, DDR calibration status, DDR word check, ROM CRC
  *     -> results mirrored in DLM AE350_RESULTS_BASE
  *     -> UART identity banner and loader menu (20K framing, AE350 ABI)
+ *     -> no input for AUTOBOOT_SECONDS: load the image stored in user flash
+ *        (same header and checks as a UART upload); failure keeps the loader
  *
  * ROM-private stack/data use DLM. CRC runs in explicitly ROM-loaded ILM.
  * Diagnostic results occupy a reserved DLM region; no fabric work SRAM.
@@ -116,17 +118,24 @@ static uint32_t crc32_step(uint32_t crc, uint32_t byte) {
     for (int i = 0; i < 8; i++) crc = (crc >> 1) ^ (0xedb88320u & (~(crc & 1u) + 1u));
     return crc;
 }
+/* UART status polls per second at the configured core clock (measured). */
+#define SPINS_PER_SECOND 4000000u
+#define POLL_SLICE       5000u
+#define AUTOBOOT_SECONDS 3u
+static int input_seen;
 static int getc_timeout(uint32_t *out, uint32_t spins) {
-    while (spins--) if (UART_REG(UART_LSR) & 1u) { *out = UART_REG(UART_DATA) & 0xffu; return 1; }
+    while (spins--) if (UART_REG(UART_LSR) & 1u) {
+        *out = UART_REG(UART_DATA) & 0xffu; input_seen = 1; return 1;
+    }
     return 0;
 }
 static void send_ack(uint32_t seq) {
     putc('K');
     for (int i = 0; i < 4; i++) putc((seq >> (8 * i)) & 0xffu);
 }
-/* ~10 s at the configured core clock: long enough for a 128-byte packet at
- * 115200 (11 ms), short enough that an aborted upload recovers quickly. */
-static int recv_byte(uint32_t *b) { return getc_timeout(b, 40000000u); }
+/* ~10 s: long enough for a 128-byte packet at 115200 (11 ms), short enough
+ * that an aborted upload recovers quickly. */
+static int recv_byte(uint32_t *b) { return getc_timeout(b, 10u * SPINS_PER_SECOND); }
 static int recv_word(uint32_t *w) {
     uint32_t b;
     *w = 0;
@@ -139,11 +148,95 @@ static int recv_word(uint32_t *w) {
 
 static int ddr_usable;
 
+/* Header checks shared by UART uploads and the user-flash image; returns the
+ * error line or 0 and latches the payload length/load address. */
+static const char *check_header(void) {
+    const uint32_t *h = (const uint32_t *)img;
+    uint32_t hc = 0xffffffffu;
+    for (uint32_t i = 0; i < IMG_HDR - 4u; i++) hc = crc32_step(hc, img[i]);
+    hc ^= 0xffffffffu;
+    if (h[0] != IMG_MAGIC || h[1] != IMG_VERSION || h[2] != IMG_HDR ||
+        h[8] || h[9] || h[10] || hc != h[11]) return "ERR HEADER\r\n";
+    if (h[3] != *(volatile uint32_t *)AE350_BOOT_IMAGE_ABI_ADDR) return "ERR ABI\r\n";
+    if (h[4] < 4u || h[4] > AE350_MAX || h[5] != AE350_LOAD || h[6] != AE350_LOAD) return "ERR RANGE\r\n";
+    payload_left = h[4];
+    load_addr = h[5];
+    return 0;
+}
+static void enter(uint32_t source) {
+    __asm__ volatile("fence.i" ::: "memory");
+    ((void (*)(uint32_t))load_addr)(source);
+}
+
+/* ---------------------------------------------------------- user flash ---
+ * Fabric QSPI, register ABI 1: CONTROL bit0 hold CS / bit2 receive /
+ * bits 9:8 bytes-1, STATUS bit0 busy, SCK divider, left-aligned TX, RX. */
+#define QSPI_ABI      1u
+#define QSPI_CONTROL  0x0cu
+#define QSPI_STATUS   0x10u
+#define QSPI_DIVIDER  0x14u
+#define QSPI_TX       0x18u
+#define QSPI_RX       0x1cu
+#define RECORD_BASE   0x04u
+#define RECORD_ABI    0x14u
+#define RECORD_FLAGS  0x18u
+#define RECORD_PRESENT (1u << 16)
+#define REG(a)        (*(volatile uint32_t *)(a))
+
+static uint32_t user_flash_base(void) {
+    uint32_t count = REG(AE350_SYSINFO_DEVICE_COUNT_ADDR), stride = REG(AE350_SYSINFO_DEVICE_STRIDE_ADDR);
+    if (stride < AE350_SYSINFO_DEVICE_BYTES || count > 64u) return 0;
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t record = AE350_SYSINFO_DEVICES_ADDR + i * stride;
+        if (REG(record) == AE350_SPI_ID && (REG(record + RECORD_FLAGS) & RECORD_PRESENT) &&
+            REG(record + RECORD_ABI) == QSPI_ABI) return REG(record + RECORD_BASE);
+    }
+    return 0;
+}
+static int qspi_transfer(uint32_t base, uint32_t data, uint32_t bytes, uint32_t receive, uint32_t *value) {
+    for (uint32_t spins = SPINS_PER_SECOND; REG(base + QSPI_STATUS) & 1u; ) if (!--spins) return 0;
+    REG(base + QSPI_CONTROL) = 1u | (receive ? 4u : 0u) | ((bytes - 1u) << 8);
+    REG(base + QSPI_TX) = data;
+    for (uint32_t spins = SPINS_PER_SECOND; REG(base + QSPI_STATUS) & 1u; ) if (!--spins) return 0;
+    if (value) *value = REG(base + QSPI_RX);
+    return 1;
+}
+/* Single-line 03h read; leaves CS released and the device in its reset mode. */
+static int user_flash_read(uint32_t base, uint32_t offset, uint8_t *out, uint32_t bytes, uint32_t *crc) {
+    int ok = qspi_transfer(base, (0x03u << 24) | offset, 4u, 0u, 0);
+    while (ok && bytes) {
+        uint32_t n = bytes > 4u ? 4u : bytes, value;
+        ok = qspi_transfer(base, 0xffffffffu, n, 1u, &value);
+        for (uint32_t i = 0; ok && i < n; i++) {
+            out[i] = (uint8_t)(value >> (8u * (n - i - 1u)));
+            if (crc) *crc = crc32_step(*crc, out[i]);
+        }
+        out += n; bytes -= n;
+    }
+    REG(base + QSPI_CONTROL) = 0u;
+    return ok;
+}
+static void boot_user_flash(uint32_t base) {
+    const char *err;
+    puts("\r\nUSER FLASH BOOT\r\n");
+    REG(base + QSPI_DIVIDER) = 0u;
+    if (!user_flash_read(base, AE350_USER_FLASH_BOOT_OFFSET, img, IMG_HDR, 0)) err = "ERR USER FLASH IO\r\n";
+    else if ((err = check_header()) == 0) {
+        run_crc = 0xffffffffu;
+        if (!user_flash_read(base, AE350_USER_FLASH_BOOT_OFFSET + IMG_HDR, (uint8_t *)load_addr, payload_left, &run_crc))
+            err = "ERR USER FLASH IO\r\n";
+        else if ((run_crc ^ 0xffffffffu) != ((const uint32_t *)img)[7]) err = "ERR CRC\r\n";
+    }
+    if (err) { puts(err); puts("BL> "); return; }
+    puts("SYSTEM READY\r\n");
+    enter(AE350_BOOT_SOURCE_USER_FLASH);
+}
+
 static void loader(void) {
     /* A started upload runs to completion before accepting another command. */
     for (;;) {
         uint32_t c = 0;
-        if (!getc_timeout(&c, 5000u)) return;   /* ~tens of microseconds per slice */
+        if (!getc_timeout(&c, POLL_SLICE)) return;
         if (c != 'u') continue;
         if (!ddr_usable) { puts("ERR DDR INIT\r\n"); goto retry; }
         puts("READY HEADER\r\n");
@@ -153,18 +246,8 @@ static void loader(void) {
             img[i] = (uint8_t)b;
         }
         {
-            const uint32_t *h = (const uint32_t *)img;
-            uint32_t hc = 0xffffffffu;
-            for (uint32_t i = 0; i < IMG_HDR - 4u; i++) hc = crc32_step(hc, img[i]);
-            hc ^= 0xffffffffu;
-            if (h[0] != IMG_MAGIC || h[1] != IMG_VERSION || h[2] != IMG_HDR ||
-                h[8] || h[9] || h[10] || hc != h[11]) { puts("ERR HEADER\r\n"); goto retry; }
-            if (h[3] != *(volatile uint32_t *)AE350_BOOT_IMAGE_ABI_ADDR) { puts("ERR ABI\r\n"); goto retry; }
-            if (h[4] < 4u || h[4] > AE350_MAX || h[5] != AE350_LOAD || h[6] != AE350_LOAD) {
-                puts("ERR RANGE\r\n"); goto retry;
-            }
-            payload_left = h[4];
-            load_addr = h[5];
+            const char *err = check_header();
+            if (err) { puts(err); goto retry; }
         }
         puts("READY DATA\r\n");
         seq_expected = 0;
@@ -210,9 +293,7 @@ static void loader(void) {
             if (run_crc != h[7]) { puts("ERR CRC\r\n"); goto retry; }
         }
         puts("SYSTEM READY\r\n> ");
-        __asm__ volatile("fence.i" ::: "memory");
-        void (*entry)(void) = (void (*)(void))load_addr;
-        entry();
+        enter(AE350_BOOT_SOURCE_UART);
     retry:
         puts("BL> ");
     }
@@ -254,5 +335,10 @@ void main(void) {
     if (RES[3] & 2u) puts("DDR INIT OK\r\n"); else puts("ERR DDR INIT; DLM/JTAG only\r\n");
     puts("BL> ");
 
+    /* Any received byte, including the host's 'u', cancels the user-flash boot. */
+    uint32_t flash = ddr_usable ? user_flash_base() : 0u;
+    for (uint32_t slice = 0; flash && !input_seen && slice < AUTOBOOT_SECONDS * (SPINS_PER_SECOND / POLL_SLICE); slice++)
+        loader();
+    if (flash && !input_seen) boot_user_flash(flash);
     for (;;) loader();
 }

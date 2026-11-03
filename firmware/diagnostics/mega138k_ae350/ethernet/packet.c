@@ -11,7 +11,7 @@
 #define W(a) (*(volatile uint32_t *)(uintptr_t)(a))
 static volatile uint32_t *const r=(volatile uint32_t *)AE350_RESULTS_BASE;
 static const struct ethernet_endpoint endpoint={.mac={2,0x35,0,0,0,1},.ipv4={192,0,2,2},.udp_port=32768};
-static void out(const char *s) {while(*s) {while(!(W(0xf0300034u)&0x20)){}W(0xf0300020u)=(uint8_t)*s++;}}
+static void out(const char *s) {while(*s) {while(!(W((AE350_UART_BASE+0x34u))&0x20)){}W((AE350_UART_BASE+0x20u))=(uint8_t)*s++;}}
 static void hex(uint32_t v) {for(int n=28;n>=0;n-=4) {char b[2]={"0123456789abcdef"[(v>>n)&15],0};out(b);}}
 static void hex1(uint32_t v) {char b[2]={"0123456789abcdef"[v&15],0};out(b);}
 static const char *parse_hex(const char *p,uint32_t *out_val) {
@@ -159,9 +159,10 @@ void main(void) {
     unsigned events=ethernet_packet_reg(0x1c);ethernet_delay_us(100000);
     r[112]=ethernet_packet_reg(0x1c)-events;r[113]=r[112]*1280u;
     if((r[15]&3)!=3||r[113]<120000000u||r[113]>130000000u) {r[5]=0xfffffffdu;goto done;}
+    _Static_assert(0x4000u+4u*1536u<=AE350_DIAG_ETH_BYTES,"rings outside diag.eth");
     const struct ethernet_ring_config ring={
-        .tx=(void *)0x02000000u,.rx=(void *)0x02001000u,
-        .tx_buffers=(void *)0x02002000u,.rx_buffers=(void *)0x02004000u,
+        .tx=(void *)(AE350_DIAG_ETH_BASE+0x0000u),.rx=(void *)(AE350_DIAG_ETH_BASE+0x1000u),
+        .tx_buffers=(void *)(AE350_DIAG_ETH_BASE+0x2000u),.rx_buffers=(void *)(AE350_DIAG_ETH_BASE+0x4000u),
         .count=4,.stride=1536};
     if(ethernet_dma_init(&ring)) {r[5]=0xfffffffcu;goto done;}
     r[123]=0x444d4132u;
@@ -178,8 +179,8 @@ void main(void) {
             if(ethernet_dma_rx_release())r[115]++;
         }else if(available<0) {r[115]++;if(available==-4)r[14]++;break;}
         sample_counters();
-        while(W(0xf0300034u)&1u) {
-            char c=(char)(W(0xf0300020u)&0xffu);
+        while(W((AE350_UART_BASE+0x34u))&1u) {
+            char c=(char)(W((AE350_UART_BASE+0x20u))&0xffu);
             if(c=='\r'||c=='\n') {
                 if(cmd_len>0) {
                     cmd[cmd_len]=0;cmd_len=0;interactive=1;start=ethernet_cycles();

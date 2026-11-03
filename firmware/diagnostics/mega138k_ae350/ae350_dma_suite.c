@@ -10,23 +10,28 @@
 #include "ae350_dma.h"
 
 #define W(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
-#define SRC 0x00040000u
-#define DST 0x00050000u
-#define CANARY 0x00051000u
-#define CROSS_SRC 0x00021FF0u
-#define CROSS_DST 0x00031FF0u
-#define CH1_SRC 0x00060000u
-#define CH1_DST 0x00061000u
+/* Offsets inside the contract's diag.dma range; CROSS_* straddle a 4 KiB page. */
+#define AT(offset) (AE350_DIAG_DMA_BASE + (offset))
+#define SRC AT(0x00040000u)
+#define DST AT(0x00050000u)
+#define CANARY AT(0x00051000u)
+#define CROSS_SRC AT(0x00021FF0u)
+#define CROSS_DST AT(0x00031FF0u)
+#define CH1_SRC AT(0x00060000u)
+#define CH1_DST AT(0x00061000u)
 #define GUARD 0xA11CE001u
-#define LINE 0x00200000u
-#define LINE_SRC 0x00201000u
-#define LINE_DST 0x00202400u
-#define MULTI 0x00220000u
-#define MULTI_SRC 0x00221000u
-#define PARTIAL 0x00230000u
-#define PARTIAL_SRC 0x00231000u
-#define HS_SRC 0x00240000u
-#define HS_DST 0x00241000u
+#define LINE AT(0x00200000u)
+#define LINE_SRC AT(0x00201000u)
+#define LINE_DST AT(0x00202400u)
+#define MULTI AT(0x00220000u)
+#define MULTI_SRC AT(0x00221000u)
+#define PARTIAL AT(0x00230000u)
+#define PARTIAL_SRC AT(0x00231000u)
+#define HS_SRC AT(0x00240000u)
+#define HS_DST AT(0x00241000u)
+#define DMA_SCRATCH_END AT(0x00242000u)
+_Static_assert(AE350_DIAG_DMA_BASE % 0x00400000u == 0, "diag.dma must keep the offsets' alignment");
+_Static_assert(DMA_SCRATCH_END <= AE350_DIAG_DMA_BASE + AE350_DIAG_DMA_BYTES, "DMA scratch outside diag.dma");
 
 enum {
     STAGE, BULK_COUNT, BULK_MISMATCH, BULK_GUARDS, BULK_TIMEOUT,

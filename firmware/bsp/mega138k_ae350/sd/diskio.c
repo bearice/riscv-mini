@@ -1,11 +1,12 @@
-/* FatFs physical drive 0. SD owns hard-DMAC channel 4 until unmount/stop. */
+/* FatFs physical drive 0. SD owns its hard-DMAC channel until unmount/stop. */
 #include "ff.h"
 #include "diskio.h"
 #include "ae350_sd.h"
+#include "ae350_address_map.h"
 DSTATUS disk_status(BYTE drive) {return drive || ae350_sd_status()?STA_NOINIT:0;}
 DSTATUS disk_initialize(BYTE drive) {
     if(drive)return STA_NOINIT;
-    return !ae350_sd_status() || !ae350_sd_init(4)?0:STA_NOINIT;
+    return !ae350_sd_status() || !ae350_sd_init(AE350_SD_DMA_CHANNEL)?0:STA_NOINIT;
 }
 DRESULT disk_read(BYTE drive,BYTE *buffer,LBA_t sector,UINT count) {
     if(drive || !buffer || !count)return RES_PARERR;

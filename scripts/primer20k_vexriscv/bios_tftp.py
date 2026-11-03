@@ -154,8 +154,11 @@ def main():
                 server.serve_once()
                 print('\n'.join(server.events), flush=True)
                 server.events.clear()
-            except socket.timeout:
-                pass
+            except socket.timeout as error:
+                # Also raised by a failed transfer (TimeoutError is socket.timeout).
+                if server.events:
+                    print('\n'.join(server.events + [f'transfer failed: {error}']), flush=True)
+                    server.events.clear()
     except KeyboardInterrupt:
         pass
     finally:

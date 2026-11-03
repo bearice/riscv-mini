@@ -1,0 +1,70 @@
+--- a/arch/riscv/Kconfig
++++ b/arch/riscv/Kconfig
+@@ -289,6 +289,21 @@
+ 	default 0xc0000000 if 32BIT
+ 	default 0xff60000000000000 if 64BIT
+ 
++config RISCV_RESERVED_VA_START
++	hex "Start of a kernel virtual range that is never mapped"
++	depends on MMU && 32BIT
++	default 0x0
++	help
++	  Some cores match tightly coupled memories on the virtual address,
++	  ahead of translation, so a kernel mapping inside that window reaches
++	  the local memory instead of its physical target. The range must lie
++	  in the vmalloc area; it is kept permanently busy there.
++
++config RISCV_RESERVED_VA_SIZE
++	hex "Size of the never-mapped kernel virtual range"
++	depends on MMU && 32BIT
++	default 0x0
++
+ config KASAN_SHADOW_OFFSET
+ 	hex
+ 	depends on KASAN_GENERIC
+--- a/arch/riscv/mm/init.c
++++ b/arch/riscv/mm/init.c
+@@ -25,6 +25,7 @@
+ #endif
+ #include <linux/kfence.h>
+ #include <linux/execmem.h>
++#include <linux/vmalloc.h>
+ 
+ #include <asm/fixmap.h>
+ #include <asm/io.h>
+@@ -1434,10 +1435,35 @@
+ 				    low_size, high);
+ }
+ 
++#if defined(CONFIG_MMU) && defined(CONFIG_32BIT)
++static struct vm_struct reserved_va_area;
++
++static void __init reserve_va_window(void)
++{
++	unsigned long start = CONFIG_RISCV_RESERVED_VA_START;
++	unsigned long size = CONFIG_RISCV_RESERVED_VA_SIZE;
++
++	if (!size)
++		return;
++	if (!PAGE_ALIGNED(start) || !PAGE_ALIGNED(size) ||
++	    start < VMALLOC_START || start + size - 1 > VMALLOC_END)
++		panic("reserved kernel VA %#lx+%#lx is not a page range inside vmalloc\n",
++		      start, size);
++	reserved_va_area.addr = (void *)start;
++	reserved_va_area.size = size;
++	reserved_va_area.flags = VM_IOREMAP;
++	vm_area_add_early(&reserved_va_area);
++	pr_info("reserved kernel VA %#lx-%#lx (never mapped)\n", start, start + size - 1);
++}
++#else
++static inline void reserve_va_window(void) { }
++#endif
++
+ void __init paging_init(void)
+ {
+ 	setup_bootmem();
+ 	setup_vm_final();
++	reserve_va_window();
+ 
+ 	/* Depend on that Linear Mapping is ready */
+ 	memblock_allow_resize();
