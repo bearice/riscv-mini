@@ -70,8 +70,7 @@ def perform(args):
         hardware = HardwareSession(op, port=args.port)
         uart = BootSession(hardware.open_serial(), hardware.open_log('uart.log'))
         hardware.check_fpga(args.cable_serial)
-        base = [hardware.tools['openfpgaloader'], '-c', 'ft2232',
-                '--ftdi-serial', args.cable_serial, '--external-flash']
+        base = [*hardware.loader_command(args.cable_serial), '--external-flash']
         def run(name, options):
             log_path = op.path / (name + '.log')
             with log_path.open('w') as log:

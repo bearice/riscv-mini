@@ -6,10 +6,10 @@
 
 隔离官方 Flash 时序时，可临时在机器 JSON 中设置 `rtl.timing_probe: true`，再用相同的 `mini.py build gateware --machine mega138k_ae350 --synthesize` 入口和原 workspace 构建。探测仅实例化 AE350、官方 Flash、FR APB 回接、PLL/复位和 UART/JTAG 引脚，不实例化 DDR、SD、音频或视频；不提供可运行的 bootloader 环境，板端入口拒绝该产物。结束后移除该字段，恢复完整系统；频率仅修改 `clocks.sys`。失败构建的完整时序报告也保存在各自 run 中，便于后续频率复验。
 
-Gowin 增量 PnR 支持 Arora V/III，AE350 的 GW5AST-138 可用，20K 的 GW2A 不适用。AE350 `gateware --synthesize` 默认 `--pnr-mode full`。稳定工作区、对象缓存和成功产物复用默认生效；厂商增量 PnR 显式选择。`place` 只复用布局 `.p`；`pnr` 复用布局和布线 `.pr`，这两种模式要求已有兼容成功基线，否则在运行 Gowin 前报错。可选 `auto` 在同一命名工作区存在兼容成功实现时使用 `.pr`，否则全量实现。完整 `.pr` 的读取和匹配在实际工程上可能比全量实现慢，不能把它等同于必然加速。
+Gowin 增量 PnR 支持 Arora V/III，AE350 的 GW5AST-138 可用，20K 的 GW2A 不适用。AE350 `gateware`/`system --synthesize` 默认 `--pnr-mode auto`：同一命名工作区存在兼容成功实现时使用其 `.pr` 做厂商增量 PnR，否则全量实现。稳定工作区、对象缓存和成功产物复用同样默认生效。`full` 强制全量实现；`place` 只复用布局 `.p`；`pnr` 复用布局和布线 `.pr`，这两种模式要求已有兼容成功基线，否则在运行 Gowin 前报错。完整 `.pr` 的读取和匹配在实际工程上可能比全量实现慢，不能把它等同于必然加速；大范围改动后的时序收敛问题可用 `full` 复核。
 
 ```text
-python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize
+python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize            # auto
 python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --pnr-mode full
 python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --pnr-mode pnr
 python scripts/mini.py build gateware --machine mega138k_ae350 --synthesize --workspace experiment --pnr-mode place

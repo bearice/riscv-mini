@@ -2,7 +2,9 @@
 
 > 适用机器：`mega138k_ae350`。配置以机器 JSON 和所选硬件产物的导出为准。
 
-当前硬件使用Dock J23的SDRAM扩展排针接出CPU JTAG。引脚依据配套`TANG_MEGA-138K_Pro-Dock-4071f_Schematics.pdf`第16页；该页标题栏标注Dock-4071d Rev1.11。这是GPIO到AE350调试接口的连接，不新增JTAG控制器。板载USB继续负责FPGA配置和UART。
+当前硬件使用Dock J23的SDRAM扩展排针接出CPU JTAG。引脚依据配套`TANG_MEGA-138K_Pro-Dock-4071f_Schematics.pdf`第16页；该页标题栏标注Dock-4071d Rev1.11。这是GPIO到AE350调试接口的连接，不新增JTAG控制器。
+
+当前外接 FT4232 的 A 通道连接 FPGA JTAG，B 通道连接下表 CPU JTAG，C 通道连接 SOM J5 UART：J5-6（N16，FPGA RX）接 C TX，J5-7（P15，FPGA TX）接 C RX，J5-8 共地。Linux UART 选择该设备的 `if02-port0`，CPU JTAG 使用 `serial:<设备序列号>B`。FPGA 编程选择 openFPGALoader 的 `ft4232`、通道 0，配置方法见[开发环境](../../common/development.md)。
 
 | 调试信号 | J23接点 | FPGA球位 | 相对FPGA方向 |
 | --- | ---: | --- | --- |
@@ -28,6 +30,8 @@
 | RTS | 20 | V23 | 输入 | 2 | SDRAM_CLK |
 
 这四脚不与上述CPU JTAG或Dock实际摄像头接口重叠。DTR/RTS均是调试器输出，只能接FPGA输入，尚未赋予复位或硬件流控功能。当前RTL仅接出N16/P15的硬UART2，上表辅助UART尚未实例化，接线核对不代表串口功能已验收。
+
+当前 FT4232 D 通道另接 J23：14/16/18/20/22/24/26/28 依次为调试器 TX/RX/RTS/CTS/DTR/DSR/DCD/RI。它与 C 通道的 SOM 主串口分开；这些辅助信号尚未在当前 RTL 启用。
 
 核心板原理图第1页确认Bank3供电3.3V；Dock原理图第2页确认Bank2默认由R250（0Ω）接3.3V，R251（1.8V选路）不装。RV-Debugger Plus手册标注TX/RX/DTR/RTS默认3.3V，因此默认装配下四脚电平匹配，后续约束应使用LVCMOS33。Bank2可通过电阻改装为1.8V，以上结论基于默认装配，尚未测量实板电压。P25虽有VREF复用功能，此处作为普通数字I/O使用。JTAG的四根信号同属Bank2，也依赖其3.3V供电。
 

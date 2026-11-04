@@ -95,7 +95,7 @@ def validate_pair(board, config):
                  i2c=('i2c',), twi_mux=('twi_mux',), sd=('sd',), fan=('fan',), cpu_jtag=('jtag',), flash=('spi',), boot_flash=('spi',),
                  ethernet=('rmii',), ethernet_clock=('clock',), usb=('ulpi',),
                  spi_lcd=('spi_lcd',), phy_reset=('reset',),
-                 sfp0=('sfp',), sfp1=('sfp',))
+                 sfp0=('sfp',), sfp1=('sfp',), uart_activity_led=('led',), sd_activity_led=('led',))
     for name, ref in config['devices'].items():
         if name == 'microphones':
             required.update({item: 'microphone' for item in ref})
@@ -274,6 +274,8 @@ class DeviceDescription:
     phy_reset: Optional[str] = None
     sfp0: Optional[str] = None
     sfp1: Optional[str] = None
+    uart_activity_led: Optional[str] = None
+    sd_activity_led: Optional[str] = None
 
 
 @dataclass(frozen=True)

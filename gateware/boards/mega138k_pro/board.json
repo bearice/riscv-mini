@@ -347,6 +347,32 @@
         }
       }
     },
+    "config_done_led": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "W10"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
+    "config_ready_led": {
+      "kind": "led",
+      "signals": {
+        "pad": {
+          "pins": [
+            "V11"
+          ],
+          "io_standard": "LVCMOS33",
+          "bank_vccio": 3.3,
+          "active_low": true
+        }
+      }
+    },
     "button_0": {
       "kind": "button",
       "signals": {
@@ -1017,11 +1043,9 @@
     "L14",
     "M14",
     "V1",
-    "V11",
     "V3",
     "V4",
     "W1",
-    "W10",
     "W3",
     "W4",
     "Y2",

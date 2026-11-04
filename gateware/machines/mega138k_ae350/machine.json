@@ -38,7 +38,9 @@
     "flash": "user_flash",
     "i2c": "system_i2c",
     "twi_mux": "twi_mux",
-    "boot_flash": "config_flash"
+    "boot_flash": "config_flash",
+    "uart_activity_led": "config_done_led",
+    "sd_activity_led": "config_ready_led"
   },
   "gpio": {
     "leds": [
@@ -66,7 +68,7 @@
     "hdmi_reset_sites": [
       "R35C181[0][A]",
       "R47C181[0][A]",
-      "R36C181[0][B]"
+      "R35C181[0][B]"
     ],
     "ethernet_rx_delay_ps": 2500
   },

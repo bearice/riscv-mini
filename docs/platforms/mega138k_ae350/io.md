@@ -8,6 +8,10 @@
 
 `gateware/boards/mega138k_pro/board.json` 的 `user_io` 是 LED、按键、WS2812 的映射来源，数量、GPIO 位号和极性进入生成头文件和镜像 ABI。底板有六盏低有效 LED（J14、R26、L20、M25、N21、N23）、四个低有效按键（K16、F15、G15、G16，5 ms 去抖）和 H16 上的 WS2812B-2020，没有拨码开关。复位 LED 高阻、灯灭。摄像头、两组 JTAG、UART、DDR、配置脚和核心板复位不发布为用户 GPIO。
 
+核心板 DONE（W10，LED2）和 READY（V11，LED1）以 `use_done_as_gpio`/`use_ready_as_gpio` 释放为 fabric 输出，由机器 JSON 的 `devices.uart_activity_led`、`devices.sd_activity_led` 绑定，不占 GPIO 位、不进入镜像 ABI。DONE 灯指示 UART2 RX/TX 线上活动，READY 灯指示 SD 核心的命令/数据传输。两脚外部 1 kΩ 上拉，低电平点亮；逻辑只拉低或高阻。每次活动亮 40 ms 后强制灭 40 ms，持续流量表现为闪烁。配置完成前和重新配置时两脚恢复配置功能，灯的含义随之回到配置状态。
+
+2026-11-05 SRAM 候选 `5bdcb81a4602` 完成 PnR（setup/hold 违规均为 0，最小脉宽通过）、DMA 和 DDR（13 项、0 失败）回归。SD 在 25 MHz 下读取 9 个扇区，重复 CRC 一致，TX 请求门/FIFO/排空检查通过；未提供独立主机 CRC，不宣称主机参考校验通过。回执分别为 `build/runs/20261104T124938335005Z-build-activity-leds-sd-ack-hdmi-adjacent-row-bf1a6e`、`20261104T162447588235Z-board-ae350-dma-suite`、`20261104T162540049332Z-board-ae350-ddr-suite`、`20261104T162352049680Z-board-ae350-sd-suite`。活动脉冲仿真通过；实物灯效仍待目视确认。未写 Flash 或 SD 卡，未更新 current。
+
 LED 由板级页 `0xf8080028` 的逻辑寄存器控制，1 为亮，读回为寄存器值；按键及诊断注入位接硬核 GPIO 输入 `0xf0700000`。当前加密网表不能启用 `AE350_GPIO_IOPORT_EN`，因此不冒称 LED 是硬 GPIO 输出。软件通过 `board_led_*`、`board_button_get`、`board_events_take` 和 `board_ws2812_*` 使用逻辑设备。硬 GPIO 驱动仅接受发布的输入位；非法位、方向和未识别设备在写寄存器之前拒绝。调用者串行使用板级输出接口；不提供多调用者仲裁。
 
 ATCGPIO100 中断使能为 `+0x50`，模式从 `+0x54` 开始每通道占四位、每组八通道，上升沿编码 6，状态为 `+0x64`。GPIO 的 PLIC source 为 7，实板套件核对此号。20K HAL 保持旧接口，同时提供有返回状态的查询接口；AE350 的板级 API 不伪造不存在的开关读数。

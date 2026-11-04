@@ -240,7 +240,7 @@ def implementation_flow(text, seed):
     return flow
 
 
-def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, profile='ddr', pnr_mode='full',
+def rtl(store, run, cpu, boot, board, component, plan=False, synthesize=False, profile='ddr', pnr_mode='auto',
         place_option=None, route_option=None):
     if profile not in PROFILES:
         raise ValueError('Unknown AE350 profile: ' + profile)
@@ -606,7 +606,7 @@ def build(store, run, args, cpu, board, plan):
     artifact = boot
     if args.target != 'bootloader' and boot:
         artifact = rtl(store, run, cpu, boot, board, args.target, plan, getattr(args, 'synthesize', False), profile,
-                       getattr(args, 'pnr_mode', 'full'))
+                       getattr(args, 'pnr_mode', 'auto'))
     elif args.target != 'bootloader':
         run.step(args.target, 'BUILD', reason='requires the platform bootloader output')
     if not plan and artifact:

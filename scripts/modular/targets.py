@@ -26,8 +26,9 @@ def add_targets(parser):
         target.add_argument('--purpose', default='candidate', help='Purpose recorded with this build request')
         target.add_argument('--workspace', default='default', help='Reusable work area name; use a different name for independent experiments')
         if name == 'gateware':
-            target.add_argument('--pnr-mode', choices=('auto', 'full', 'place', 'pnr'), default='full',
-                                help='AE350: full (default), or explicitly reuse successful placement/routing state')
+            target.add_argument('--pnr-mode', choices=('auto', 'full', 'place', 'pnr'), default='auto',
+                                help='AE350: auto (default) reuses the workspace\'s compatible successful placement/routing, '
+                                     'otherwise runs full; full forces a fresh implementation')
         if name == 'machine-description':
             continue
         if name in CORE:
@@ -50,9 +51,9 @@ def execute(store, run, args):
     machine = getattr(args, 'machine', None) or machines.LEGACY
     if machine not in machines.MACHINES:
         raise ValueError('Unknown machine: ' + str(machine))
-    if machine == machines.PRIMARY and getattr(args, 'pnr_mode', 'full') not in ('auto', 'full'):
+    if machine == machines.PRIMARY and getattr(args, 'pnr_mode', 'auto') not in ('auto', 'full'):
         raise ValueError('--pnr-mode requires --machine ' + machines.AE350)
-    if getattr(args, 'pnr_mode', 'full') not in ('auto', 'full') and not args.synthesize:
+    if getattr(args, 'pnr_mode', 'auto') not in ('auto', 'full') and not args.synthesize:
         raise ValueError('--pnr-mode requires --synthesize')
     if not getattr(args, 'locked', None) and (args.target in ('system','cpu','soc-description','gateware','cpu-qualification') or
             machine == machines.AE350 and args.target == 'bootloader'):

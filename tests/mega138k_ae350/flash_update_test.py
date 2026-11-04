@@ -14,6 +14,20 @@ from mini_ops.mega138k_ae350 import ae350_session
 
 
 class UpdateTests(unittest.TestCase):
+    def test_ft4232_selection_and_explicit_serial_override(self):
+        hardware = object.__new__(ae350_session.HardwareSession)
+        hardware.tools = dict(openfpgaloader='loader', fpga_cable='ft4232',
+                              fpga_channel=0, fpga_cable_serial='board')
+        self.assertEqual(hardware.loader_command(),
+                         ['loader', '-c', 'ft4232', '--ftdi-serial', 'board', '--ftdi-channel', '0'])
+        self.assertEqual(hardware.loader_command('other')[4], 'other')
+        hardware.tools['fpga_frequency'] = 2000000
+        self.assertEqual(hardware.loader_command()[-2:], ['--freq', '2000000'])
+        hardware.tools = dict(openfpgaloader='loader')
+        self.assertEqual(hardware.loader_command('old')[2], 'ft2232')
+        with self.assertRaises(ae350_session.SessionError):
+            hardware.loader_command()
+
     def test_wrong_fpga_identity_cannot_start_sram_write(self):
         self.check_sram_rejection('idcode 0x1000563d', 'DONE', 1)
 

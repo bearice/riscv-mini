@@ -17,14 +17,15 @@ stays high until its DMA_ACK is high, then stays low until that ACK has fallen,
 and rises again only when another beat fits. ACK is counted on its rising edge
 and does not move data. The hard macro launches that edge on its own clock, so
 a fabric-edge sample can miss it. ack_catch holds the edge until the next
-fabric clock. The synchronous sample stays in the count so simulation, which
-does not execute the catcher, still sees an ack that is high at the clock.
+fabric clock. The retained level is synchronized before edge counting; the
+raw ACK fast path is used only to withdraw REQ promptly.
 """
 from functools import reduce
 from operator import or_
 
 from migen import *
 from migen.fhdl.specials import Special, SPECIAL_INPUT, SPECIAL_OUTPUT
+from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 from litex.soc.interconnect.ahb import AHBInterface
 
@@ -199,6 +200,12 @@ class AE350Fabric(LiteXModule):
         self.ack_rx = Signal(16)
         catch_tx = Signal()
         catch_rx = Signal()
+        counted_tx = Signal()
+        counted_rx = Signal()
+        # Keep the asynchronous fast path for withdrawing REQ, but never
+        # sample raw ACK in the edge counter. The preset catcher retains a
+        # short pulse; synchronize that retained level before edge detection.
+        self.specials += [MultiReg(catch_tx, counted_tx), MultiReg(catch_rx, counted_rx)]
         level_tx = Signal()
         level_rx = Signal()
         self.specials += [
@@ -420,11 +427,11 @@ class AE350Fabric(LiteXModule):
             If(self.fifo.clear,
                 self.ack_tx.eq(0), self.ack_rx.eq(0),
             ).Else(
-                If(level_tx & ~ack_q[0], self.ack_tx.eq(self.ack_tx + 1)),
-                If(level_rx & ~ack_q[1], self.ack_rx.eq(self.ack_rx + 1)),
+                If(counted_tx & ~ack_q[0], self.ack_tx.eq(self.ack_tx + 1)),
+                If(counted_rx & ~ack_q[1], self.ack_rx.eq(self.ack_rx + 1)),
             ),
-            ack_q[0].eq(level_tx),
-            ack_q[1].eq(level_rx),
+            ack_q[0].eq(counted_tx),
+            ack_q[1].eq(counted_rx),
             If(self.fifo.clear, self.irq_pending.eq(0))
             .Elif(self.fifo.irq_set, self.irq_pending.eq(1))
             .Elif(w1c, self.irq_pending.eq(0)),

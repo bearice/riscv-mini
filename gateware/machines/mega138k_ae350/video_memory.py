@@ -40,7 +40,10 @@ class DDRMemoryArbiter(LiteXModule):
             command.eq(memory.cmd_en & memory.cmd_ready)]
         for i,p in enumerate(ports):
             accepted=Signal()
-            self.comb += [p.cmd_ready.eq(active & (grant==i) & memory.cmd_ready & (read|memory.wr_data_rdy)),
+            # Once granted, this port's command is the selected command.
+            # Decode locally so the read-only video port's ready does not
+            # depend on the other clients' command mux.
+            self.comb += [p.cmd_ready.eq(active & (grant==i) & memory.cmd_ready & ((p.cmd==1)|memory.wr_data_rdy)),
                 p.wr_data_rdy.eq(active & (grant==i) & memory.cmd_ready & memory.wr_data_rdy),
                 p.rd_data.eq(memory.rd_data),p.rd_data_valid.eq(memory.rd_data_valid & busy & (owner==i))]
             self.sync += [accepted.eq(command & (grant==i)),If(accepted,counts[i].eq(counts[i]+1))]
@@ -212,7 +215,10 @@ class VideoFrameReader(LiteXModule):
         # and invalid-address state transition. It adds no per-block latency.
         if runtime:
             row_span = Signal(32)
-            fsm.act('EXTENT',NextValue(row_span,(height-1)*stride[:16]),NextState('BOUND'))
+            # Inputs are stable from accept() onward; BOUND reads the value
+            # sampled in EXTENT, so no FSM-decoded enable is needed.
+            self.sync += row_span.eq((height-1)*stride[:16])
+            fsm.act('EXTENT',NextState('BOUND'))
             fsm.act('BOUND',NextValue(end,base+row_span+row_bytes),NextState('CHECK'))
         else:
             fsm.act('EXTENT',NextValue(end,base+(height-1)*stride+row_bytes),NextState('CHECK'))

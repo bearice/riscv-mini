@@ -1,6 +1,6 @@
 """Retained APB/AHB SD transactions across the sys/mem clock domains."""
 from migen import *
-from migen.genlib.cdc import MultiReg, PulseSynchronizer
+from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.ahb import AHBInterface
@@ -63,11 +63,10 @@ class SDClockCrossing(LiteXModule):
                                      (native.rx_req,self.rx_req,self.rx_ack,native.rx_ack)):
             synchronized=Signal();held=Signal()
             self.specials += MultiReg(raw,synchronized,'sys')
-            event=PulseSynchronizer('sys','mem')
-            self.submodules += event
-            previous=Signal()
-            self.sync += previous.eq(ack)
-            self.comb += [event.i.eq(ack & ~previous),nack.eq(event.o)]
+            # Native REQ must remain withdrawn until its low level has
+            # crossed back into sys. A single mem-cycle ACK can release
+            # native REQ before the slower sys sampler ever observes it low.
+            self.specials += MultiReg(held,nack,'mem')
             self.sync += If(ack,held.eq(1)).Elif(~synchronized,held.eq(0))
             self.comb += request.eq(synchronized & ~held & ~ack)
         self.requests=crossing([('off',12),('data',32),('write',1)],'sys','mem')

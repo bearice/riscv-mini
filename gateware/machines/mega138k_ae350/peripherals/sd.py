@@ -134,10 +134,13 @@ class FabricSD(LiteXModule):
         self.rx = AudioData(self.rx_bus,amap.SD_RX_DATA,False)
         self.tx_ack,self.rx_ack,self.tx_req,self.rx_req=(Signal() for _ in range(4))
         reset = Signal()
+        reset.attr.add(('syn_maxfan', 16))
         enabled = Signal()
         tx_hold,rx_hold=Signal(),Signal()
         self.sync += [tx_hold.eq(self.tx_ack),rx_hold.eq(self.rx_ack)]
         busy = ~t.core.fsm.ongoing('IDLE')
+        self.busy = Signal()
+        self.sync += self.busy.eq(busy)
         self.comb += [t.reset.eq(reset),path.reset.eq(reset),
             self.tx.valid.eq(path.tx_input.ready & ~reset),self.rx.valid.eq(path.rx_fifo.source.valid & ~reset),
             path.tx_input.valid.eq(self.tx.transfer),path.tx_input.data.eq(self._swap(self.tx.data)),

@@ -22,6 +22,9 @@ def bind_ports(machine):
         for index, resource in enumerate(getattr(machine.gpio, group)):
             io.pad(port, resource, index=index)
     io.pad('ws2812', d.ws2812, 'data')
+    for port in ('uart_activity_led', 'sd_activity_led'):
+        if getattr(d, port, None):
+            io.pad(port, getattr(d, port))
     memory = machine.memory.resource
     signals = io.board.resources[memory].signals
     for name in ('addr', 'ba', 'dm', 'dq'):

@@ -104,9 +104,19 @@ class HardwareSession:
         return int.from_bytes(self.halt().read_memory(address, 4), 'little')
 
     # -- programming -----------------------------------------------------
+    def loader_command(self, cable_serial=None):
+        serial = cable_serial or self.tools.get('fpga_cable_serial')
+        if not serial:
+            raise SessionError('openFPGALoader requires an explicit FPGA cable serial')
+        command = [self.tools['openfpgaloader'], '-c', self.tools.get('fpga_cable', 'ft2232'),
+                   '--ftdi-serial', serial, '--ftdi-channel', str(self.tools.get('fpga_channel', 0))]
+        if self.tools.get('fpga_frequency'):
+            command += ['--freq', str(self.tools['fpga_frequency'])]
+        return command
+
     def check_fpga(self, cable_serial):
         self._acquire()
-        base = [self.tools['openfpgaloader'], '-c', 'ft2232', '--ftdi-serial', cable_serial]
+        base = self.loader_command(cable_serial)
         detected = subprocess.run([*base, '--detect'], capture_output=True, text=True, timeout=30)
         output = detected.stdout + detected.stderr
         (self.op.path / 'fpga-detect.log').write_text(output)
@@ -118,7 +128,10 @@ class HardwareSession:
         if self.dry_run:
             return True
         self._acquire()
-        if cable_serial:
+        backend = self.tools.get('fpga_programmer', 'auto')
+        if backend not in ('auto', 'gowin', 'openfpgaloader'):
+            raise SessionError('fpga_programmer must be auto, gowin or openfpgaloader')
+        if backend == 'openfpgaloader' or (backend == 'auto' and (cable_serial or self.tools.get('fpga_cable_serial'))):
             # Keep Flash and SRAM operations on libusb when a serial-selected
             # Flash operation has just reattached the kernel FTDI driver.
             base = self.check_fpga(cable_serial)

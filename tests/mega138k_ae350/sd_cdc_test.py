@@ -54,7 +54,8 @@ class Native(Module):
         self.tx_req,self.rx_req,self.tx_ack,self.rx_ack=(Signal() for _ in range(4))
         self.word,self.commits=Signal(32),Signal(32)
         self.ack_events=Signal(32)
-        self.sync += If(self.tx_ack,self.ack_events.eq(self.ack_events+1))
+        previous=Signal()
+        self.sync += [previous.eq(self.tx_ack),If(self.tx_ack & ~previous,self.ack_events.eq(self.ack_events+1))]
         self.comb += [self.ok.eq(self.off==0x80),self.rdata.eq(self.word)]
         self.sync += If(self.commit & self.selected & self.ok & self.write,self.word.eq(self.wdata),self.commits.eq(self.commits+1))
 m=Module();machine=resolve_machine('mega138k_ae350');layout=AddressMap(machine)
@@ -93,8 +94,10 @@ def bench2():
         yield
         assert (yield sd.tx_req)==0,'CDC ack latency duplicated a request'
     assert (yield native.ack_events)==1
+    assert (yield native.tx_ack)==1,'native ACK must wait for observed REQ withdrawal'
     yield native.tx_req.eq(0)
     for _ in range(8):yield
+    assert (yield native.tx_ack)==0,'native ACK did not release after REQ withdrawal'
     yield native.tx_req.eq(1)
     for _ in range(8):yield
     assert (yield sd.tx_req)==1

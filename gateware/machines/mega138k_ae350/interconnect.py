@@ -87,11 +87,15 @@ class MemInterconnect(LiteXModule):
             # The hard macro sees only flop outputs, not a decode/ready mux.
             # Retain the first ERROR cycle with HREADY low, then capture the
             # final response. No new slave is dispatched until CPU acceptance.
-            self.sync += If(accept_now,response_ready.eq(0),response_error.eq(0)).Elif(
-                state & dispatched & ~response_ready,
-                response_error.eq(selected_error),
-                If(ready,response_data.eq(selected_data),response_ready.eq(1))
-            ).Elif(state & response_ready,response_error.eq(0))
+            # Acceptance requires response_ready and ERROR is only held in
+            # DATA, so clearing on response_ready keeps the error flop off
+            # the hard-macro HTRANS path.
+            self.sync += [
+                If(accept_now,response_ready.eq(0)).Elif(state & dispatched & ~response_ready,
+                    If(ready,response_data.eq(selected_data),response_ready.eq(1))),
+                If(response_ready,response_error.eq(0)).Elif(state & dispatched,
+                    response_error.eq(selected_error)),
+            ]
         else:
             self.comb += [master.rdata.eq(selected_data),master.resp.eq(selected_error)]
         # Slave-side wiring: the accepted address is held for the whole data

@@ -23,6 +23,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gowin-bin', default='')
     parser.add_argument('--riscv-bin', default='')
+    parser.add_argument('--fpga-programmer', choices=('auto', 'gowin', 'openfpgaloader'))
+    parser.add_argument('--fpga-cable')
+    parser.add_argument('--fpga-cable-serial')
+    parser.add_argument('--fpga-channel', type=int, choices=range(4))
+    parser.add_argument('--fpga-frequency', type=int, help='openFPGALoader JTAG frequency in Hz')
     args = parser.parse_args()
     config_path = ROOT / '.tools.local.json'
     previous = json.loads(config_path.read_text()) if config_path.exists() else {}
@@ -58,6 +63,12 @@ def main():
         'make': discover('make', executable('make.exe', 'make'), make_candidates),
         'openfpgaloader': discover('openfpgaloader', executable('openFPGALoader.exe', 'openFPGALoader'), openfpgaloader_candidates),
     }
+    if args.fpga_frequency is not None and args.fpga_frequency <= 0:
+        parser.error('--fpga-frequency must be positive')
+    for key in ('fpga_programmer', 'fpga_cable', 'fpga_cable_serial', 'fpga_channel', 'fpga_frequency'):
+        value = getattr(args, key)
+        if value is not None or key in previous:
+            config[key] = value if value is not None else previous[key]
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     print(f'Local tool paths saved to {config_path.name}')
 

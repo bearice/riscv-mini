@@ -224,6 +224,14 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
         },
+        "uart_activity_led": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "sd_activity_led": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
         "boot_flash": {
           "type": "string",
           "minLength": 1
@@ -685,6 +693,14 @@
                 "pattern": "^[a-z][a-z0-9_]*$"
               },
               "sfp1": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "uart_activity_led": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "sd_activity_led": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]*$"
               }

@@ -13,7 +13,7 @@ Dock 4071f 原理图的 SDIO/M.2 页（J19、R189–R195）及本地板卡示例
 | DAT0 / DAT1 / DAT2 / DAT3 | H23 / J23 / A25 / B25 | LVCMOS33，上拉 |
 | DET | J15 | 低有效，有卡为 0 |
 
-SD 控制器逻辑使用 100 MHz mem 域（即 DDR UI 时钟），sys 控制面为 50 MHz，来自 fabric PLL；二者经显式 CDC 连接。保留事务的 FIFO、REQ 抑制和 ACK 事件适配器负责跨域。卡侧默认 25 MHz，由 mem100 分频产生。接收使能相对上游增加一个 mem 周期，使用较晚的已寄存输入样本；原生 PHY 的命令、数据和 CRC 引擎保持复用。本轮 25 MHz 镜像的独立验收见 [P7 记录](../../../reports/ae350-p7.md)，历史 sys80 结果见原报告。
+SD 控制器逻辑使用 100 MHz mem 域（即 DDR UI 时钟），sys 控制面为 50 MHz，来自 fabric PLL；二者经显式 CDC 连接。保留事务的 FIFO 和四相 REQ/ACK 适配器负责跨域：sys 收到 ACK 立即抑制请求，并将保持的 ACK 同步到 mem；直到 sys 观察到原生 REQ 撤销才释放 ACK，避免 mem 单周期脉冲让慢域漏掉请求撤销。卡侧默认 25 MHz，由 mem100 分频产生。接收使能相对上游增加一个 mem 周期，使用较晚的已寄存输入样本；原生 PHY 的命令、数据和 CRC 引擎保持复用。本轮 25 MHz 镜像的独立验收见 [P7 记录](../../../reports/ae350-p7.md)，历史 sys80 结果见原报告。
 
 数据路径：SDPHY/Core ↔ 字节/32-bit 转换与双向 FIFO ↔ Extended AHB 固定地址端点 ↔ 硬核 DMAC ↔ 既有 DDR AHB 通路。SD 不增加独立 DDR 主端口，不使用 LiteSDCard 的 Wishbone 内存 DMA 前端。FIFO 每方向 16 个 32-bit 寄存器字，字节顺序按小端内存转换；AHB 只允许对正确方向的固定数据字做 32-bit 访问，空读/满写及非法地址有界 ERROR。请求按 FIFO 可用性产生，ACK 捕获与 audio/mic 相同。
 

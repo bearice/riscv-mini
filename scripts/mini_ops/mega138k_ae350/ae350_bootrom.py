@@ -101,7 +101,7 @@ def perform(args):
         tool = hardware.tools.get('openfpgaloader')
         if not tool:
             raise ValueError('Configure openfpgaloader for bounded Flash readback')
-        base = [tool, '-c', 'ft2232', '--ftdi-serial', args.cable_serial, '--external-flash']
+        base = [*hardware.loader_command(args.cable_serial), '--external-flash']
         def run(name, options):
             log_path = op.path / (name + '.log')
             with log_path.open('w') as log:

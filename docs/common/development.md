@@ -1,5 +1,14 @@
 # 开发环境
 
+AE350 的 SRAM 编程支持官方 Gowin Programmer 和 openFPGALoader。在本机配置中用
+`fpga_programmer` 选择 `auto`（默认）、`gowin` 或 `openfpgaloader`；auto 在指定
+FTDI 序列号时使用 openFPGALoader，否则使用官方工具。可通过
+`scripts/tools/configure_tools.py --fpga-programmer openfpgaloader --fpga-cable ft4232 --fpga-cable-serial <序列号> --fpga-channel 0`
+保存配置。`fpga_channel` 的 0–3 对应 A–D，默认线缆为 `ft2232`、通道为 A。
+配置发现会保留这些选择；FPGA 与 CPU JTAG、UART 分别选择。Linux 须具备 USB
+访问权限；长线调试可用 `--fpga-frequency 2000000` 将 FPGA JTAG 设置为 2 MHz。
+Flash 安装与读回仍走明确的 openFPGALoader 操作，不由 SRAM 后端选择触发。
+
 Linux/NixOS 开发环境使用仓库根目录的 Nix flake：
 
 ```sh

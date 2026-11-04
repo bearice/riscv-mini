@@ -6,7 +6,8 @@ Topology
 * Independent 64-bit data AHB runs on the 256-bit DDR user-interface clock
   (100 MHz for 400 MHz CK), so the data port needs no clock crossing.
 * CPU reset release uses synchronized calibration status and a bounded
-  fabric watchdog; the ROM still boots if calibration fails.
+  fabric watchdog. The data bus has no clock without the DDR interface, so
+  a DDR PLL or calibration failure is not survivable.
 * Diagnostics cross through a coherent request/acknowledge snapshot.
 
 Board pins and machine clocks are resolved from the shared JSON contracts.
@@ -41,6 +42,7 @@ from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
 from gateware.devices.video.hdmi.phy import GowinHDMIPHY
 from gateware.machines.mega138k_ae350.peripherals.sd import FabricSD
 from gateware.machines.mega138k_ae350.sd_cdc import SDClockCrossing
+from gateware.devices.gpio.activity import ActivityFlash
 
 DDR3_CTRL = ('cs_n','ras_n','cas_n','we_n','cke','odt','reset_n')
 
@@ -138,8 +140,9 @@ class DDRSoC(LiteXModule):
         board = config.board
         resources = board.resources
         io_map = self.io = bind_ports(config)
-        platform = create_platform(io_map, 'clk50', dict(use_cpu_as_gpio=1,
-            use_mspi_as_gpio=1, use_sspi_as_gpio=1, timing_driven=1,
+        dual_purpose = dict(use_cpu_as_gpio=1, use_mspi_as_gpio=1, use_sspi_as_gpio=1,
+                            use_done_as_gpio=1, use_ready_as_gpio=1)
+        platform = create_platform(io_map, 'clk50', dict(**dual_purpose, timing_driven=1,
             **config.rtl.implementation_options()))
         root = Path(__file__).resolve().parents[3]
         for name in ('ddr3', 'ddr_pll'):
@@ -161,8 +164,7 @@ class DDRSoC(LiteXModule):
         options = dict(config.rtl.implementation_options())
         if implementation_options is not None and implementation_options != options:
             raise ValueError('Implementation options must come from machine.json')
-        platform.toolchain.options.update(use_cpu_as_gpio=1,use_mspi_as_gpio=1,use_sspi_as_gpio=1,
-                                          timing_driven=1,**options)
+        platform.toolchain.options.update(**dual_purpose, timing_driven=1, **options)
         platform.default_clk_name = 'clk50'
         platform.default_clk_period = 1e9 / board.input_clock_hz
         self.platform = platform
@@ -198,6 +200,7 @@ class DDRSoC(LiteXModule):
 
         # DDR UI clock domain and its asynchronous reset.
         self.cd_ddr = ClockDomain('ddr')
+        self.cd_ddr.rst.attr.add(('syn_maxfan', 64))
         self.comb += self.cd_ddr.clk.eq(self.ddr.clk_out)
         self.specials += AsyncResetSynchronizer(self.cd_ddr, ~self.ddr.pll_lock | ResetSignal('sys'))
         # The CPU data port, its interconnect and SD share the UI clock.
@@ -385,6 +388,16 @@ class DDRSoC(LiteXModule):
         serial = platform.request('serial')
         self.cpu.cpu_params.update(i_UART2_RXD=serial.rx, o_UART2_TXD=serial.tx,
                                    i_RTC_CLK=self.crg.rtc)
+        # Both lines idle high; a start bit or data zero on either is activity.
+        flash_cycles = ae350_map.FABRIC_HZ // 25
+        for device, activity in (('uart_activity_led', ~serial.rx | ~serial.tx),
+                                 ('sd_activity_led', self.sd_native.busy)):
+            ref = getattr(config.devices, device)
+            if ref:
+                indicator = ActivityFlash(activity, flash_cycles)
+                self.submodules += indicator
+                driven = 0 if resources[ref].signals['pad'].active_low else 1
+                self.specials += Tristate(platform.request(device), driven, indicator.on)
         # The configured AE350 subsystem hardens UART2/PIT/GPIO/RTC internally
         # (see gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_config.v), so there is no
         # fabric UART implementation or port-level peripheral clock enable.
