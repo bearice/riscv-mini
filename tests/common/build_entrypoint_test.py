@@ -36,14 +36,16 @@ class BuildEntrypointTests(unittest.TestCase):
         for name in removed:self.assertFalse((ROOT/'scripts'/name).exists(),name)
 
     def test_backends_have_no_second_cli(self):
-        for path in (ROOT/'scripts/builders').glob('*.py'):
+        from scripts.modular import machines, targets
+        for name in set(BACKENDS.values()):
+            # Resolve exactly as the dispatch does; importing is part of the check.
+            path=Path(targets.backend_module(machines.PRIMARY,name).__file__)
             source=path.read_text(encoding='utf-8');tree=ast.parse(source)
             self.assertNotIn('parse_args(',source,path.name)
             self.assertNotIn('ArgumentParser(',source,path.name)
             self.assertNotIn("__name__",source,path.name)
-            if path.stem!='__init__':
-                build=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='build')
-                self.assertEqual(build.args.args[-1].arg,'run')
+            build=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='build')
+            self.assertEqual(build.args.args[-1].arg,'run')
 
 
     def test_backend_plan_cannot_download_or_execute(self):

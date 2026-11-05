@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image
 import imageio_ffmpeg
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 SOURCES = {'original.gif': 'https://www.nyan.cat/cats/original.gif',
            'original.mp3': 'https://www.nyan.cat/music/original.mp3'}
 

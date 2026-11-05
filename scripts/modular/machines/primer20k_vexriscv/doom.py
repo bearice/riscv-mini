@@ -10,7 +10,7 @@ image is drawn straight into the BIOS framebuffer).
 """
 import subprocess,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2]
+ROOT=Path(__file__).resolve().parents[4]
 
 
 def build(a, run=None):
@@ -25,7 +25,7 @@ def build(a, run=None):
         a.define += [f'DOOM_TIMEDEMO="{a.timedemo}"',f'DOOM_BENCH_FRAMES={a.benchmark_frames}']
     app=a.source_dir.resolve()
     from types import SimpleNamespace
-    from scripts.builders.payload import build as payload
+    from scripts.modular.machines.primer20k_vexriscv.payload import build as payload
     payload(SimpleNamespace(source=None, source_dir=app, output_dir=a.output_dir,
         include_dir=[], define=['BIOS_LIBC_HEAP_BYTES=(48u*1024u*1024u)',
         'DOOMGENERIC_RESX=480','DOOMGENERIC_RESY=272',*a.define],

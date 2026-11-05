@@ -31,14 +31,29 @@ MACHINES = {
                  ('net', 'ae350_eth', 'AE350_ETH', 'riscv-mini AE350 Ethernet',
                   'NETDEVICES && DM_ETH', AE350_ETH_HELP)],
         patches=port/'ae350/patches'),
+    'primer20k_vexriscv': dict(
+        # All added files live under the U-Boot layout here; their upstream
+        # wiring (Kconfig/Makefile/board hooks/dts Makefile/initcall order)
+        # is part of the machine patch series rather than these tables.
+        board='riscv-mini/riscv_mini',
+        files=['arch/riscv/dts/riscv-mini.dts',
+               'configs/riscv_mini_defconfig',
+               'include/configs/riscv_mini.h',
+               'drivers/serial/serial_liteuart32.c',
+               'drivers/net/liteeth.c',
+               'drivers/mmc/litesd.c',
+               'drivers/usb/host/liteusb.c',
+               'drivers/video/riscv_mini_lcd.c'],
+        maintainers='RISCV-MINI\nM:\tbearice\nS:\tgithub.com/bearice/riscv-mini\nF:\tboard/riscv-mini/\n\n',
+        patches=port/'vexriscv/patches'),
 }
 
 
 def inputs(machine):
     spec = MACHINES[machine]
-    return [Path(__file__).resolve(), *sorted((port/'board'/spec['board']).iterdir()),
-            *(port/name for name in spec['files']),
-            *(port/'drivers'/directory/(name+'.c') for directory, name, *_ in spec['drivers']),
+    return [Path(__file__).resolve(), *sorted((port/'board'/spec['board']).rglob('*')),
+            *(port/name for name in spec.get('files', [])),
+            *(port/'drivers'/directory/(name+'.c') for directory, name, *_ in spec.get('drivers', [])),
             *vendor_install.patches(spec['patches'])]
 
 
@@ -74,13 +89,21 @@ def add_driver(src, directory, name, config, title, depends, help_text):
 
 def install(src, machine):
     spec = MACHINES[machine]
-    for path in sorted((port/'board'/spec['board']).iterdir()):
-        vendor_install.copy(path, src/'board'/spec['board']/path.name)
-    for name in spec['files']:
+    board = port/'board'/spec['board']
+    for path in sorted(board.rglob('*')):
+        if path.is_file():
+            vendor_install.copy(path, src/'board'/spec['board']/path.relative_to(board))
+    for name in spec.get('files', []):
         vendor_install.copy(port/name, src/name)
-    hook_board(src, spec['board'], *spec['target'])
-    for driver in spec['drivers']:
+    if 'target' in spec:
+        hook_board(src, spec['board'], *spec['target'])
+    for driver in spec.get('drivers', []):
         add_driver(src, *driver)
+    maintainers = spec.get('maintainers')
+    if maintainers:
+        stream = src/'MAINTAINERS'
+        if 'RISCV-MINI' not in stream.read_text():
+            stream.write_text(stream.read_text()+maintainers)
     vendor_install.apply_patches(src, spec['patches'])
 
 

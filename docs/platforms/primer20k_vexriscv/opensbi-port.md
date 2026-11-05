@@ -5,7 +5,7 @@
 Linux 6.12.112 已在 v0.9.1 RV32IMA/Sv32 实板进入用户态并通过内存、进程和定时器检查，最新路线与边界见 [Linux 最小系统移植](linux-port.md)。下文 SBI 探针验收仅证明其列出的检查，不能代替 Linux 的独立验收。
 
 BIOS 继续提供原有 M-mode 裸机服务；OSB1 镜像增加一次性的 OS 交接，由 OpenSBI 接管 M-mode，再进入 S-mode payload。
-平台、兼容补丁和 S/U 探针分别位于 [platform](../../../firmware/opensbi/platform)、[patches](../../../firmware/opensbi/patches) 和 [probe](../../../firmware/opensbi/probe)。Rust 多任务内核尚未实现。
+本机的平台、补丁和 S/U 探针位于 [vexriscv 端口目录](../../../firmware/opensbi/vexriscv)（`platform/`、`patches/`、`probe/`），上游版本与树校验固定在该目录的 `source.json`；与 AE350 共用同一个 [安装器](../../../firmware/opensbi/install.py)。Rust 多任务内核尚未实现。
 
 ## CPU 与中断
 
@@ -24,11 +24,12 @@ Supervisor IRQ mask/pending CSR 分别为 `0x9c0` / `0xdc0`，machine 为 `0xbc0
 
 ## 上游兼容
 
-固定 OpenSBI revision `6ad246a1494807ee91e36ffcf60e4c30bb309d45`（版本输出 v1.9），VexRiscv 固定 `b6118e5cc2a33323425df6455697139021d50c72`。
+固定 OpenSBI revision `6ad246a1494807ee91e36ffcf60e4c30bb309d45`，VexRiscv 固定 `b6118e5cc2a33323425df6455697139021d50c72`。源码树来自无 `.git` 的归档，`OPENSBI_VERSION_GIT` 为空，启动横幅的版本串为空（git 检出时为 `v1.9-73-g6ad246a1`）。
 
 上游启动与 trap 入口的 `CLEAR_MDT` 在 RV32 访问 `mstatush`。本 CPU 没有 Smdbltrp/mstatush，首次启动在 `0x41000188` 触发非法指令后停在早期 trap loop。
-`no-mdt.patch` 增加平台条件，只有声明 `FW_MDT_UNSUPPORTED` 的本平台跳过该操作；其他平台保留上游行为。
-构建器检查补丁是否已经应用，拒绝与固定版本不符的源码。
+`10-no-mdt.patch` 增加平台条件，只有声明 `FW_MDT_UNSUPPORTED` 的本平台跳过该操作；其他平台保留上游行为。
+源码树从固定归档由安装器重建并逐文件校验 `tree_sha256`；未入库的上游改动会被拒绝，而不是被猜测合并。
+`mini_csr.h` 按所选硬件生成，只写入构建输出，不进入受校验的源码树。
 
 LLVM 23 的 soft-float 构建会对上游 `sbi_trap_ldst.c` 的浮点分支发出 `sometimes-uninitialized` 告警。
 本平台只将这一类告警降级，其他编译告警继续作为错误；未验收浮点非对齐访存的模拟路径。

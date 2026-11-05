@@ -3,7 +3,7 @@ import sys,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/'scripts'))
-from scripts.builders.opensbi import lcd_node
+from scripts.modular.machines.primer20k_vexriscv.opensbi import lcd_node
 from scripts.primer20k_vexriscv.uboot_verify import read_words
 
 class VideoTest(unittest.TestCase):

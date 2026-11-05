@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.builders.busybox import validate_archive
+from scripts.modular.machines.primer20k_vexriscv.busybox import validate_archive
 
 
 def elf(machine=243, bits=1):

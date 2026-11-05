@@ -1,18 +1,21 @@
-"""Prepare a pinned RV32 Linux + freestanding initramfs build in WSL ext4.
+"""Prepare a pinned RV32 Linux build in WSL ext4; never accesses hardware.
 
-Run the emitted build.sh through PowerShell's wsl entrypoint, then --record.
-No FPGA programming or SD/Flash writes are performed by this builder.
+The source tree is reconstructed on the Windows host from the pinned archive
+under firmware/linux/vexriscv/source.json and the shared port installer, then
+synchronized into the ext4 build tree by content hash; the port itself is the
+shared installer plus this machine's config and (later) patch series. The
+kernel objects and the freestanding initramfs stay in obj-minimal, which is
+also where busybox finds the UAPI headers and gen_init_cpio.
 """
 import hashlib
 import json
 import shlex
 import os
 from pathlib import Path
-from scripts.modular.storage import source_file_hash, SOURCE_HASH_FORMAT
+from scripts.modular.machines.primer20k_vexriscv import sourceprep
+from scripts.modular.storage import Store, source_file_hash, SOURCE_HASH_FORMAT
 
-ROOT = Path(__file__).resolve().parents[2]
-VERSION = '6.12.112'
-SHA256 = '164dc9d1f6c93c61a15e1f071c48379b467f2b17c469cce7223471968208ed03'
+ROOT = Path(__file__).resolve().parents[4]
 
 
 def wsl_path(path):
@@ -25,9 +28,11 @@ def wsl_path(path):
 def build(args, run=None):
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
+    store = Store()
     if args.record:
+        _, spec = sourceprep.manifest(store, 'linux')
         files = ('Image', 'vmlinux', 'config', 'init', 'System.map')
-        record = dict(version=VERSION, source_sha256=SHA256,
+        record = dict(version=spec['version'], source_sha256=spec['archive_sha256'],
                       isa='rv32ima_zicsr_zifencei', abi='ilp32',
                       load_address='0x02000000', console='liteuart0 (native ttyLXU0; early SBI DBCN)',
                       artifacts={name: hashlib.sha256((out / name).read_bytes()).hexdigest()
@@ -52,22 +57,28 @@ def build(args, run=None):
         return
     port = shlex.quote(wsl_path(ROOT / 'firmware/linux'))
     output = shlex.quote(wsl_path(out))
+    tree = sourceprep.prepare(store, run, 'linux', store.build / 'vendor/linux-6.12.112-vexriscv')
+    tree_sha = run.result['upstream_source']['tree_sha256']
+    version = run.result['upstream_source']['version']
     script = f'''#!/bin/bash
 set -euo pipefail
 BASE="$HOME/riscv-mini-linux"
-SRC="$BASE/linux-{VERSION}"
+SRC="$BASE/linux-{version}"
 OBJ="$BASE/obj-minimal"
 PORT={port}
 OUT={output}
+VENDOR={shlex.quote(wsl_path(tree))}; TREE_SHA="{tree_sha}"
 mkdir -p "$BASE" "$OUT"
-cd "$BASE"
-if [ ! -f linux-{VERSION}.tar.xz ]; then
-    curl -fL --retry 3 -o linux-{VERSION}.tar.xz https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-{VERSION}.tar.xz
+# The ext4 tree is disposable build state: replace it wholesale whenever its
+# marker does not match the reconstructed source, never patch it in place.
+if [ "$(cat "$SRC/.mini-source.json" 2>/dev/null || true)" != "$TREE_SHA" ]; then
+    rm -rf "$SRC.mini-tmp"
+    cp -a "$VENDOR" "$SRC.mini-tmp"
+    rm -rf "$SRC"
+    mv "$SRC.mini-tmp" "$SRC"
+    echo "$TREE_SHA" > "$SRC/.mini-source.json"
 fi
-echo '{SHA256}  linux-{VERSION}.tar.xz' | sha256sum -c -
-if [ ! -d "$SRC" ]; then tar -xf linux-{VERSION}.tar.xz; fi
 mkdir -p "$OBJ"
-python "$PORT/install.py" "$SRC"
 make -C "$SRC" ARCH=riscv O="$OBJ" headers
 mkdir -p "$OBJ/uapi/include"
 cp -a "$OBJ/usr/include/." "$OBJ/uapi/include/"
@@ -82,7 +93,7 @@ dir /mnt 755 0 0
 file /init $OBJ/mini-init 755 0 0
 EOF
 cd "$SRC"
-make ARCH=riscv LLVM=1 O="$OBJ" KCONFIG_ALLCONFIG="$PORT/mini.config" allnoconfig
+make ARCH=riscv LLVM=1 O="$OBJ" KCONFIG_ALLCONFIG="$PORT/vexriscv/linux.config" allnoconfig
 scripts/config --file "$OBJ/.config" --set-str INITRAMFS_SOURCE "$OBJ/initramfs.list"
 make ARCH=riscv LLVM=1 O="$OBJ" olddefconfig
 grep -q '^CONFIG_ARCH_RV32I=y$' "$OBJ/.config"

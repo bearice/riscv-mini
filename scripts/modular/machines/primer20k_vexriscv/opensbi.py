@@ -1,11 +1,11 @@
 """Build pinned single-hart OpenSBI and its S-mode probe using WSL LLVM."""
-import json,shlex,shutil,subprocess,sys
+import json,shlex,subprocess
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[4]
 from scripts.modular.machines.primer20k_vexriscv.rtl import generate_csr
+from scripts.modular.machines.primer20k_vexriscv import sourceprep
+from scripts.modular.storage import Store
 from scripts.primer20k_vexriscv.bios_image import pack
-REV="6ad246a1494807ee91e36ffcf60e4c30bb309d45"
 from scripts.modular.executor import linux_path as linux
 COMMANDS=[]
 
@@ -108,25 +108,16 @@ def peripheral_nodes(csr):
 
 
 def build(a, run=None):
-    src=a.source.resolve();out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
-    if not src.exists():
-        subprocess.run(['git','clone','-c','core.autocrlf=false','https://github.com/riscv-software-src/opensbi',str(src)],check=True)
-        subprocess.run(['git','-C',str(src),'checkout',REV],check=True)
-    if subprocess.check_output(['git','-C',str(src),'rev-parse','HEAD'],text=True).strip()!=REV:
-        raise ValueError('OpenSBI source revision differs from pinned version')
+    out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
     if a.pack_only:
         pack_output(out,a.osb_name);return
-    # Python entrypoint shebangs must retain LF when the checkout is on Windows.
-    for script in (src/'scripts').rglob('*'):
-        if script.suffix not in ('.py','.sh'):continue
-        script.write_bytes(script.read_bytes().replace(b'\r\n',b'\n'))
-    for config in src.rglob('*.carray'):
-        config.write_bytes(config.read_bytes().replace(b'\r\n',b'\n'))
-    patch=out/'no-mdt.patch'
-    patch.write_bytes((ROOT/'firmware/opensbi/patches/no-mdt.patch').read_bytes().replace(b'\r\n',b'\n'))
-    # Idempotent: refuse a changed upstream source rather than guessing a patch.
-    if subprocess.run(['git','-C',str(src),'apply','--reverse','--check',str(patch)],capture_output=True).returncode:
-        subprocess.run(['git','-C',str(src),'apply',str(patch)],check=True)
+    store=Store()
+    # The default --source means the managed reconstructed tree; an explicitly
+    # given tree is accepted too, but must satisfy the same source manifest.
+    requested=Path(a.source)
+    if requested==ROOT/'build/vendor/opensbi':
+        requested=store.build/'vendor/opensbi-6ad246a1-vexriscv'
+    src=sourceprep.prepare(store,run,'opensbi',requested).resolve()
     csr=json.loads((a.soc_dir/'csr.json').read_text())
     if 'cpu_timer_time' not in csr['csr_registers']:raise ValueError('SoC needs CPU machine timer')
     generate_csr(csr,out/'include')
@@ -134,8 +125,9 @@ def build(a, run=None):
     # mini_csr.h stays as the generated LiteX header: current LiteX pulls in
     # generated/soc.h and system.h itself, so the probe and platform build with
     # -I on the generated include directory instead of an appended constants block.
-    plat=src/'platform/riscv_mini';shutil.copytree(ROOT/'firmware/opensbi/platform',plat,dirs_exist_ok=True)
-    (plat/'mini_csr.h').write_text(header.replace('#include <stdint.h>', '#include <sbi/sbi_types.h>'))
+    # It is hardware-specific, so it lives in the build output, never in the
+    # pinned source tree; the platform finds it through the same include path.
+    (out/'include/mini_csr.h').write_text(header.replace('#include <stdint.h>', '#include <sbi/sbi_types.h>'))
     (out/'mini_csr.h').write_text(header)
     # Inside OpenSBI, uintptr_t comes from sbi/sbi_types.h and differs from the
     # toolchain stdint.h that the generated LiteX headers include; map one to the
@@ -171,7 +163,7 @@ def build(a, run=None):
         f'reg=<0xf2000000 0x1000>,<0x{usb_control:x} 0x20>,<0x{phy_reset:x} 0x4>; interrupt-parent=<&irq>; interrupts=<{csr["constants"]["usb_host_interrupt"]}>; }}; '
         +lcd_node(csr)+peripheral_nodes(csr)+'}; };\n')
     wsl(['dtc','-I','dts','-O','dtb','-o',linux(dtb),linux(dts)])
-    probe=ROOT/'firmware/opensbi/probe';elf=out/'probe.elf';raw=out/'probe.bin'
+    probe=ROOT/'firmware/opensbi/vexriscv/probe';elf=out/'probe.elf';raw=out/'probe.bin'
     wsl(['clang','--target=riscv32-unknown-elf','-march=rv32ima_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror',
          '-ffreestanding','-nostdlib','-msmall-data-limit=0','-fuse-ld=lld','-I'+linux(out),'-I'+linux(out/'include'),
          linux(probe/'start.S'),linux(probe/'probe.c'),linux(probe/'mmu.c'),'-Wl,-T,'+linux(probe/'probe.ld'),'-o',linux(elf)],out/'probe-build.log')
