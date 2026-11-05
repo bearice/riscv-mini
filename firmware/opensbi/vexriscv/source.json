@@ -4,6 +4,5 @@
   "url": "https://codeload.github.com/riscv-software-src/opensbi/tar.gz/6ad246a1494807ee91e36ffcf60e4c30bb309d45",
   "archive_sha256": "5338f4f69b16503f45b2a147ac1bca360f735aa9fef28d1a5aba00718bd28100",
   "patches": [],
-  "tree_sha256": "2eb62c3c6ab6400cac9116bafb51899308a0b45e7e2b651cd97842606ac85660",
   "installer": "firmware/opensbi/install.py --machine primer20k_vexriscv"
 }

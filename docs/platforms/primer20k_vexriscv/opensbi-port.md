@@ -28,7 +28,7 @@ Supervisor IRQ mask/pending CSR 分别为 `0x9c0` / `0xdc0`，machine 为 `0xbc0
 
 上游启动与 trap 入口的 `CLEAR_MDT` 在 RV32 访问 `mstatush`。本 CPU 没有 Smdbltrp/mstatush，首次启动在 `0x41000188` 触发非法指令后停在早期 trap loop。
 `10-no-mdt.patch` 增加平台条件，只有声明 `FW_MDT_UNSUPPORTED` 的本平台跳过该操作；其他平台保留上游行为。
-源码树从固定归档由安装器重建并逐文件校验 `tree_sha256`；未入库的上游改动会被拒绝，而不是被猜测合并。
+源码树从固定归档由安装器重建（归档 SHA 校验）；已有树直接采用，重建树的哈希只记入构建收据。
 `mini_csr.h` 按所选硬件生成，只写入构建输出，不进入受校验的源码树。
 
 LLVM 23 的 soft-float 构建会对上游 `sbi_trap_ldst.c` 的浮点分支发出 `sometimes-uninitialized` 告警。

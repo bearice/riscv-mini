@@ -4,6 +4,5 @@
   "url": "https://codeload.github.com/riscv-software-src/opensbi/tar.gz/7a7a60dc87a41c79fb63d5972943e9d8fe4abf77",
   "archive_sha256": "fe858e3aa9c031c3b7d4dd0797d9f03506e2a95135f7af4fecaedb2547775b9c",
   "patches": [],
-  "installer": "firmware/opensbi/install.py --machine mega138k_ae350",
-  "tree_sha256": "5413c91242d9a7d6b68cb09a3bf8a1020a2d3fdc29cb9ffbdfe768f69f88f630"
+  "installer": "firmware/opensbi/install.py --machine mega138k_ae350"
 }

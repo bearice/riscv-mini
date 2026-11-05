@@ -125,11 +125,11 @@ python scripts/mini.py clean --execute
 
 上游源码树（Linux、OpenSBI、U-Boot）统一按以下方式管理：
 
-- `firmware/<component>/<machine>/source.json` 固定上游版本、压缩包 URL 与 SHA256、`installer` 和重建后的 `tree_sha256`；`patches` 必须为空，清单本身不列补丁。
+- `firmware/<component>/<machine>/source.json` 固定上游版本、压缩包 URL 与 SHA256、`installer`；`patches` 必须为空，清单本身不列补丁。重建树的哈希只记入构建收据（供 WSL 树同步标记），不钉入清单。
 - 每个源码树有自己的入口 `firmware/<component>/install.py SOURCE --machine <machine>`，按机器条件用 Python 安装：复制按上游目录布局保存的板级文件与驱动，从表格添加 Kconfig/Makefile 接线和板级挂接，最后应用该机器的 `patches/`。
 - 驱动和新增文件不放进补丁。补丁只用于修改上游已有代码，一个目的一个文件，按文件名顺序应用；后一个补丁可以建立在前一个之上。
 - 公用函数在 `firmware/vendor_install.py`：文件复制、补丁序列应用（重复安装先从末尾撤回已安装序列再整体应用，冲突时恢复调用前状态）以及命令行；`--inputs` 列出安装读取的全部仓库文件，构建把它们记入收据并参与 key。
-- 构建入口只从压缩包解出原始树后运行清单中的安装入口，再核对 `tree_sha256`；`build/vendor` 中已有的树只核对哈希，不一致即拒绝构建。修改任何安装输入后，从压缩包重放安装并更新 `tree_sha256`。
+- 构建入口只从压缩包解出原始树后运行清单中的安装入口（归档 SHA 与安装器是唯一的校验点）；`build/vendor` 中已有的树直接采用，不做哈希比对。修改任何安装输入后，删除对应 `build/vendor` 树即可从压缩包重放安装。
 
 ### AE350 Linux / OpenSBI / U-Boot
 

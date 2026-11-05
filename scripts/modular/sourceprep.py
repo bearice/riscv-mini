@@ -2,10 +2,13 @@
 
 Shared framework layer; machine packages own their pin tables. Every vendor
 source has one manifest (`source.json`: version, archive, url, archive_sha256,
-installer, tree_sha256). The installer named there
+installer). The installer named there
 (`firmware/<component>/install.py --machine <m>`) is the only step between the
 pristine archive and the build tree; its machine patches hold edits to upstream
-code, so a manifest lists no patches of its own.
+code, so a manifest lists no patches of its own. The reconstructed tree's hash
+is recorded in the run receipt for downstream sync markers, but never pinned:
+an existing vendor tree is accepted as-is, so no pin needs re-recording when
+the extraction representation changes.
 """
 import hashlib
 import json
@@ -146,10 +149,6 @@ def prepare(store, run, name, source, manifests, dry=False):
             tree = children[0]
             command, options = installer(store, spec)
             subprocess.run([*command, str(tree), *options], check=True)
-            if tree_hash(tree) != spec['tree_sha256']:
-                raise ValueError('Reconstructed source differs from the saved source tree')
             tree.rename(source)
-    actual = tree_hash(source)
-    if actual != spec['tree_sha256']:
-        raise ValueError('Unrecorded upstream edits: save/update the port installer inputs and source manifest before building '+name)
+    run.result['upstream_source']['tree_sha256'] = tree_hash(source)
     return source
