@@ -1,5 +1,108 @@
 # AE350 Soft USB Host
 
+## OHCI 迁移实验
+
+当前源码改用锁定依赖中的 `UsbOhciWishbone_Dw32_Pc1_Pf48000000` 单口 OHCI 核。
+USB 时钟改为 48 MHz（50 MHz ×24 ÷25），APB 控制面仍为 sys50；控制寄存器
+基址不变，标准 OHCI 寄存器位于页首，诊断身份改为 `0xae350c02`。
+OHCI 的 32 位 Wishbone DMA 经过保留事务的适配器和异步 FIFO，作为第四个主端口
+访问共享 256 位 DDR 接口；PLIC 使用 EXT_INT[4]（源 14）。字节写使能保留，
+DDR 窗口外的 DMA 返回 ERROR。字位置偏移使用显式位拼接，避免生成 Verilog 时
+自定宽乘法截断位移量，导致描述符写错字。
+
+裸机枚举诊断目录仍为 `firmware/diagnostics/mega138k_ae350/usb`，改用 TinyUSB
+OHCI HCD 与本地 `ohci_litex.h`；通过轮询运行，ROM 上传时缓存关闭。
+它不验证 PLIC ISR，也不替代 Linux DMA 一致性验收。Linux 配置和 DTS 已切到
+标准 `generic-ohci`，但当前内核默认一致性 DMA 与 A25 L1D 的组合尚待验证，
+不能据裸机通过宣称 Linux 可用。当前实验不宣称低速、等时或高速设备验收通过。
+
+首轮候选 `1ea6b2915846` 的完整 STA 通过，但实板枚举失败；HCCA 帧号写回正常，
+描述符头遭覆盖。真实 OHCI 核加 DDR 适配器的 RTL 仿真复现此问题，并在位移量
+定宽修复后通过。最终候选和实板结果以本节后续记录及 `build/runs/` 回执为准。
+
+候选 `0c2366135c33` 完整 STA 通过，裸机枚举回执
+`20261104T175147110556Z-board-ae350-usb-suite` 通过：设备 `090c:1000`、
+`1050:0407`，两个 HID 接口，未验证物理输入。PLIC 源 14 的挂起、claim、
+清除设备事件和 complete 流程通过，见 `20261104T175120108117Z-board-ae350-jtag`。
+Linux 标准 `ohci-platform` 已绑定，根 Hub、外部四口 Hub、Yubico 和 Logitech
+键盘/鼠标接口均已枚举；但存储尚未通过：
+`20261105T035633157119Z-board-ae350-linux` 中出现 Hub 超时和 U 盘反复复位，
+未完成只读数据检查，不能将控制传输通过视为完整存储验收。
+
+`board linux --usb-readonly` 使用新增的 `usb-readonly` 用户态命令，以只读方式
+打开 `/dev/sda`，读取首 1 MiB 两次并比较校验值，然后记录中断和内核日志。
+此选项不执行 `--devices` 原有的 USB 尾部改写/恢复测试，也不写 SD 或 Flash。
+Linux L1D 开启时的 DMA 一致性与存储错误原因仍待进一步验证；硬核 MMSC_CFG
+读回 `0x2007f039`，未置 PPMA 位，PMA CSR 访问返回错误，不假设动态非缓存区域可用。
+
+裸机 `--define USB_TEST_MSC=1` 可启用附加 MSC 检查，链接同版本 `msc_host.c`，
+并加入其头文件目录。它只读取 LBA 0 两次，校验重复 CRC 和前后保护字。
+`20261105T055237685298Z-board-ae350-usb-suite` 中该单项通过，CRC 均为
+`2f45b85d`；但 HID 没有完成挂载，综合套件仍判失败，不作为多类设备并发验收。
+默认诊断保留独立 HID 枚举回归；附加 MSC 模式不会放宽 HID 或读取检查。
+
+同一 `0c2366135c33` 的后续重复测试未稳定通过，重插外接 Hub 后也未恢复。
+`20261105T143319478906Z-board-ae350-usb-suite` 的 HID＋MSC 组合失败；
+不能将较早的一次成功枚举视为重复性验收通过。该位流的 DDR 复核
+`20261105T143103515901Z-board-ae350-ddr-suite` 通过 13 项、0 失败，
+SD 只读一致性复核 `20261105T144032824622Z-board-ae350-sd-suite` 通过；
+后者没有独立主机扇区 CRC，仍不宣称主机参考校验通过。
+
+诊断可通过 `--define CFG_TUSB_DEBUG=2` 启用 TinyUSB 阶段日志，直接输出 UART，
+不依赖 BIOS syscall 或 Newlib。载荷 `506543715ebb` 的阶段日志见
+`20261105T143630020998Z-board-ae350-usb-suite`：读到 Hub `05e3:0606`，
+但 25 字节配置描述符多次在收到 24 字节后失败；该轮最终仍未完成枚举。
+随后 JTAG 观察到 Hub 控制 TD 的 CC=2（bit-stuffing error），见
+`20261105T143839751901Z-board-ae350-jtag`，不能直接据此认定电气故障或 PHY 根因。
+`ohci_phy_test.py` 使用锁定的真实 PHY RTL 检查 0–64 字节短包、填充位、
+采样相位、±2000 ppm、边沿抖动和两线 15 ns 偏移，数字仿真通过；
+此结果不替代实板波形和重复枚举验收。
+
+绕过外接 Hub，将 Logitech 接收器直连 Soft USB 后，标准非 debug 载荷
+`6e7a8e81aa5c` 连续两轮 SRAM 重配置后的枚举通过，回执为
+`20261105T144450847241Z-board-ae350-usb-suite` 和
+`20261105T144648068784Z-board-ae350-usb-suite`：`046d:c52b`、3 个 HID 接口，
+各观察 60 秒且无脱离。第二轮用户确认已输入，同时 UART 收到 2 条报告
+（`00000001`、`00490000`）。这是直连枚举与实际报告的证据，不延伸为 Hub、
+MSC 或 Linux 验收；套件自身不推断用户动作，其 `physical_keypress_verified`
+字段仍保留自动检查的 `false`，上述操作相关性另记于此。
+
+LED 修正后的候选 `67c2ddca7e04` 同样通过标准直连枚举，回执
+`20261105T145439929159Z-board-ae350-usb-suite`：`046d:c52b`、3 个 HID 接口，
+60 秒无脱离。本轮未另外操作键鼠，报告数为 0，不挪用旧位流的输入结果。
+
+同一新位流恢复 Hub＋U 盘后的组合测试
+`20261105T145809806445Z-board-ae350-usb-suite` 未通过，CPU 停在 MSC 命令包完成
+断言。debug 载荷 `8895e4035a20` 的回执
+`20261105T150756887874Z-board-ae350-usb-suite` 显示 Hub 与 U 盘均已配置，
+首个 Test Unit Ready 的 31 字节命令包成功，但随后 13 字节状态包失败，
+后续 Read Capacity 命令包也失败并触发 `msch_xfer_cb` 第 336 行断言。
+`20261105T151047715566Z-board-ae350-jtag` 观察到相关 TD 的 CC=5
+（device not responding）；`20261105T151236111349Z-board-ae350-jtag` 核对裸机
+`mcachectl=0`。与旧位流的 Hub 配置/填充位错误分别记录，不认定为同一根因。
+
+可选 `--define USB_ORDERED_MMIO=1` 在 OHCI MMIO 前用 fence 和 DDR 只读响应
+排空 CPU AHB 适配器的 posted-write 缓冲；默认关闭。对照载荷 `784825fac348`
+及 `20261105T150354717233Z-board-ae350-usb-suite` 未消除失败，因此它不是已验证
+修复，也不提供 Linux 缓存一致性。`ohci_phy_tx_test.py` 检查真实两级输出寄存器
+后的 NRZI、填充位与 2-bit SE0＋1-bit 驱动 J，包含 31 字节负载，仿真通过。
+`ohci_in_transfer_test.py` 的真实 OHCI＋DDR 模型完成 9/13/25 字节多包 IN，
+校验 toggle、CRC、字节掩码、缓冲区保护和 TD 收尾；仍不替代存储实板验收。
+上述 RX、TX、多包 IN 和 USB 结果合同回归的合并记录为
+`20261105T152335805896Z-ae350-ohci-protocol-regressions-a88cb0`，全部通过。
+
+新位流的 Linux 只读复核 `20261105T152150496407Z-board-ae350-linux`
+通过用户态自测，标准 OHCI 绑定并识别 Hub 与 YubiKey HID，但 Hub 超时、
+U 盘反复复位，`/dev/sda` 不可用，USB 只读测试仍失败。这一结果不签收
+Linux 存储或 DMA 缓存一致性。过程只用 SRAM、UART 和 TFTP，不写 Flash、SD 或 U 盘。
+
+关闭 MSC 的 Hub＋HID 复核 `20261105T152334816192Z-board-ae350-usb-suite`
+通过：`090c:1000` 设备身份、`1050:0407` 的两个 HID 接口，60 秒无脱离。
+该模式不执行存储读写，未看到 Hub 下 Logitech 的接口，不签收所有 Hub 端口。
+因此 OHCI 仍为实验候选，不能据此宣称已完整替代此前的 PIO 存储功能。
+
+## PIO 后端历史记录
+
 Dock 唯一 Soft USB 口连接独立 60MHz 全速 PIO Host，APB 控制面保持 sys50，通过 AXI-Lite 异步 FIFO 访问 USB 域。时钟取自机器 `clocks.usb`，PLL 使用 50MHz ×24 ÷20，VCO 1200MHz。固件复用 TinyUSB Host/HID/Hub 和 PIO HCD，诊断程序采用轮询；当前没有 BIOS 键盘输入集成，不宣称 LS 或 HS 支持。Linux 使用共享原生 HCD（见[Linux 驱动](#linux-驱动)），经全速 Hub 支持存储类与 HID。
 
 ## 板级连接

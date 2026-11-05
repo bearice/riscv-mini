@@ -191,7 +191,7 @@ class AE350Fabric(LiteXModule):
             (amap.MIC_DATA, 0x10000, self.audio.rx_bus),
             (amap.LOOPBACK_DATA, 4, fifo_bus),
             (0, 1 << 32, err_bus),
-        ], require_sel=True, registered=True)
+        ], require_sel=True, registered=True, registered_response=True)
         self.irq_enable = Signal()
         self.irq_pending = Signal()
         self.req_enable = Signal()
@@ -243,7 +243,7 @@ class AE350Fabric(LiteXModule):
                               self.audio.tx_req, self.audio.rx_req,
                               sd.tx_req if sd is not None else 0, sd.rx_req if sd is not None else 0, Constant(0, 2))),
             cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 1),
-                                 self.audio.tx_irq, self.audio.rx_irq, Constant(0, 3),
+                                 self.audio.tx_irq, self.audio.rx_irq, getattr(usb, 'irq', 0), Constant(0, 2),
                                  self.board.irq, video.irq if video is not None else 0, ethernet.irq if ethernet is not None else 0, Constant(0, 6))),
             self.audio.off.eq(off), self.audio.write.eq(write_q), self.audio.wdata.eq(wdata_q),
             self.audio.commit.eq(commit),

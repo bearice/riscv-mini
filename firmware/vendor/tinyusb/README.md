@@ -3,8 +3,9 @@
 Upstream: https://github.com/hathach/tinyusb, release **0.20.0**, commit
 `3af1bec1a9161ee8dec29487831f7ac7ade9e189`. MIT license is in LICENSE.
 
-Only common utilities, OS abstraction headers, host headers/core, Hub, HID Host and
-OHCI are vendored. The application compiles `tusb.c`, `tusb_fifo.c`, `usbh.c`,
+Only common utilities, OS abstraction headers, host headers/core, Hub, HID Host,
+MSC Host and OHCI are vendored. MSC files are unmodified from the same pinned
+commit and are used by the AE350 read-only sector diagnostic. The application compiles `tusb.c`, `tusb_fifo.c`, `usbh.c`,
 `hub.c` and `hid_host.c`, plus the selected PIO `hcd_ultra.c` or OHCI driver;
 none are linked into the boot ROM. The HAL enables two Hub slots, four device
 slots and eight global HID slots. Hub sources remain upstream 0.20.0.

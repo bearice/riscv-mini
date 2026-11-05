@@ -447,10 +447,10 @@ static void usb_attribute(const char *device,const char *name)
     path[n++]='/'; for(const char *s=name;*s && n+1<sizeof(path);s++) path[n++]=*s; path[n]=0;
     load_file(path,data,sizeof(data)); text("USB disk "); text(name); text("="); text(data);
 }
-static void usb_storage_test(void)
+static void usb_storage_test(int readonly)
 {
     char data[128]; long fd=-1; unsigned long long bytes=0; int sector=0; u32 hash,ms;
-    for(unsigned i=0;i<200 && fd<0;i++) { fd=open_file("/dev/sda",2|0x1000|0x4000); if(fd<0) delay_ms(100); }
+    for(unsigned i=0;i<200 && fd<0;i++) { fd=open_file("/dev/sda",(readonly?0:2)|0x1000|0x4000); if(fd<0) delay_ms(100); }
     if(fd<0) { list_dir("/sys/bus/usb/devices"); kernel_log(); die("USB disk /dev/sda absent"); }
     /* /sys/block/sda -> ../devices/.../usb1/1-1/1-1.1/1-1.1:1.0/host0/...: the USB device
      * directory is the path before the first interface (":") component. */
@@ -473,6 +473,11 @@ static void usb_storage_test(void)
     text(usb_data[510]==0x55 && usb_data[511]==0xaa?"yes\n":"no\n");
     ms=usb_io(fd,0,usb_data,USB_READ,0); usb_rate("USB re-read ",USB_READ,ms);
     if(checksum(usb_data,USB_READ)!=hash) die("USB repeat read differs");
+    if(readonly) {
+        close_file(fd);
+        text("SELFTEST USB-storage read-only PASS\n");
+        return;
+    }
     /* The last 256 KiB is saved, overwritten, verified and restored before returning. */
     unsigned long long tail=bytes-USB_REGION;
     usb_io(fd,tail,usb_saved,USB_REGION,0); u32 saved=checksum(usb_saved,USB_REGION);
@@ -568,7 +573,7 @@ void mini_main(long *stack)
     read_file("/proc/interrupts");
     read_file("/proc/tty/driver/serial");
 #endif
-    text("Commands: help, uname, mem, cpu, uptime, test, irqs, serial, fb, fbstat, devices, usb, dmesg, network HOST, reboot\n");
+    text("Commands: help, uname, mem, cpu, uptime, test, irqs, serial, fb, fbstat, devices, usb, usb-readonly, dmesg, network HOST, reboot\n");
     for (;;) {
         char command[64]; unsigned n = 0; char c;
         text("linux-mini> ");
@@ -586,7 +591,8 @@ void mini_main(long *stack)
         else if (equal(command, "fb")) framebuffer_test();
         else if (equal(command, "fbstat")) read_file("/sys/class/graphics/fb0/device/dma_status");
         else if (equal(command,"devices")) devices_test();
-        else if (equal(command,"usb")) usb_storage_test();
+        else if (equal(command,"usb")) usb_storage_test(0);
+        else if (equal(command,"usb-readonly")) usb_storage_test(1);
         else if (equal(command,"dmesg")) kernel_log();
         else if (command[0]=='n' && command[1]=='e' && command[2]=='t' && command[3]=='w' && command[4]=='o' && command[5]=='r' && command[6]=='k' && command[7]==' ') network_test(command+8);
         else if (equal(command, "uname")) { text(uts); text(" "); text(uts + 130); text("\n"); }

@@ -196,6 +196,17 @@ class FabricVideo(LiteXModule):
             self.ui, width=width, height=height, response_timeout=response_timeout, runtime=runtime))
         self.requests = requests = ClockDomainsRenamer({'write': 'video_pix', 'read': 'video_ddr'})(AsyncFIFO(97, 2))
         self.fifo = fifo = ClockDomainsRenamer({'write': 'video_ddr', 'read': 'video_pix'})(AsyncFIFO(96 if runtime else 80, fifo_depth))
+        # Epoch/index checks at the consumer must not feed the current BRAM
+        # output back into its own next read address in one pixel clock.
+        pixel_bits = 32 if runtime else 16
+        self.pixel_output = output = ClockDomainsRenamer('video_pix')(stream.Buffer(
+            [('data',pixel_bits),('index',32),('epoch',32)], pipe_valid=True, pipe_ready=True))
+        self.comb += [output.sink.valid.eq(fifo.readable),
+            output.sink.data.eq(fifo.dout[:pixel_bits]),
+            output.sink.index.eq(fifo.dout[pixel_bits:pixel_bits+32]),
+            output.sink.epoch.eq(fifo.dout[pixel_bits+32:pixel_bits+64]),
+            fifo.re.eq(fifo.readable & output.sink.ready),
+            output.source.connect(pixels.source)]
 
         base0, base1 = Signal(32), Signal(32)
         stride = Signal(32, reset=width * 2)
@@ -300,10 +311,7 @@ class FabricVideo(LiteXModule):
                 buffered.sink.index.eq(pixel_index),buffered.sink.epoch.eq(word_epoch),
                 buffered.source.ready.eq(fifo.writable),
                 fifo.din.eq(Cat(buffered.source.data,buffered.source.index,buffered.source.epoch)),
-                fifo.we.eq(buffered.source.valid),
-                pixels.source.valid.eq(fifo.readable),pixels.source.data.eq(fifo.dout[:32]),
-                pixels.source.index.eq(fifo.dout[32:64]),pixels.source.epoch.eq(fifo.dout[64:96]),
-                fifo.re.eq(fifo.readable & pixels.source.ready)]
+                fifo.we.eq(buffered.source.valid)]
             self.sync.video_ddr += If(reader.source.valid & reader.source.ready,
                 holding.eq(1),
                 If(reader.source.block==0,
@@ -322,9 +330,6 @@ class FabricVideo(LiteXModule):
             self.comb += [
                 reader.source.ready.eq(~holding),
                 fifo.din.eq(Cat(word[:16], pixel_index, word_epoch)), fifo.we.eq(holding),
-                pixels.source.valid.eq(fifo.readable), pixels.source.data.eq(fifo.dout[:16]),
-                pixels.source.index.eq(fifo.dout[16:48]), pixels.source.epoch.eq(fifo.dout[48:80]),
-                fifo.re.eq(fifo.readable & pixels.source.ready),
             ]
             self.sync.video_ddr += If(reader.source.valid & reader.source.ready,
                 holding.eq(1), lane.eq(0), word.eq(reader.source.data),

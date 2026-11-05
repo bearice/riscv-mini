@@ -70,7 +70,7 @@ class SoftUSBHost(LiteXModule):
 
 class USBRegisterBridge(LiteXModule):
     """One owned APB operation, independent AXI address/data acceptance."""
-    def __init__(self, native, clock_hz=60000000):
+    def __init__(self, native, clock_hz=60000000, identity=0xae350c01):
         from migen import FSM, If, NextValue, NextState
         from litex.soc.interconnect.axi import AXILiteClockDomainCrossing
         self.off, self.wdata, self.rdata = Signal(12), Signal(32), Signal(32)
@@ -83,7 +83,7 @@ class USBRegisterBridge(LiteXModule):
             If(self.off >= 0x100,
                 NextValue(self.error, self.write | ((self.off != 0x100) & (self.off != 0x104) & (self.off != 0x108))),
                 NextValue(self.rdata, 0),
-                If(self.off == 0x100, NextValue(self.rdata, 0xae350c01)),
+                If(self.off == 0x100, NextValue(self.rdata, identity)),
                 If(self.off == 0x104, NextValue(self.rdata, self.raw_status)),
                 If(self.off == 0x108, NextValue(self.rdata, clock_hz)),
                 NextState('DONE')
@@ -106,14 +106,14 @@ class USBRegisterBridge(LiteXModule):
 class USBClock(LiteXModule):
     """50 MHz input * 24 / 20 = 60 MHz; independent 1200 MHz VCO."""
     def __init__(self, platform, clkin, reset, clock_hz):
-        if clock_hz != 60000000:
+        if clock_hz not in (48000000, 60000000):
             raise ValueError("Dock USB PLL currently requires machine clocks.usb=60000000")
         from migen import ClockDomain, Constant
         from migen.genlib.resetsync import AsyncResetSynchronizer
         self.cd_usb = ClockDomain('usb')
         self.locked = Signal()
         params = dict(p_FCLKIN='50.0', p_IDIV_SEL=1, p_FBDIV_SEL=1,
-            p_MDIV_SEL=24, p_ODIV0_SEL=20, p_CLKFB_SEL='INTERNAL',
+            p_MDIV_SEL=24, p_ODIV0_SEL=1200000000 // clock_hz, p_CLKFB_SEL='INTERNAL',
             p_CLK4_IN_SEL=Constant(0,2), p_RESET_I_EN='FALSE', p_RESET_O_EN='FALSE',
             p_SSC_EN='FALSE', i_CLKIN=clkin, i_CLKFB=0, i_RESET=reset,
             i_PLLPWD=0, i_RESET_I=0, i_RESET_O=0, o_LOCK=self.locked,
@@ -128,4 +128,4 @@ class USBClock(LiteXModule):
         self.specials += Instance('PLL', name='usb_pll', **params)
         self.specials += AsyncResetSynchronizer(self.cd_usb, reset | ~self.locked)
         platform.add_generated_clock_constraint(self.cd_usb.clk, clkin,
-            divide_by=20, multiply_by=24, pin='usb_pll/CLKOUT0')
+            divide_by=1200000000 // clock_hz, multiply_by=24, pin='usb_pll/CLKOUT0')

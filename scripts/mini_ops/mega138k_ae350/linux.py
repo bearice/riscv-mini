@@ -268,6 +268,17 @@ def perform(args):
             elif loads:
                 op.record('uboot_load', source=uboot_load, files=loads)
             console.userspace(op, boot, layout, uboot)
+            if getattr(args, 'usb_readonly', False):
+                if args.devices:
+                    raise ValueError('--usb-readonly cannot be combined with --devices')
+                replies = {}
+                for command in ('usb-readonly', 'irqs', 'dmesg'):
+                    console.send(command)
+                    replies[command] = console.until(b'linux-mini> ').decode(errors='replace')
+                passed = 'SELFTEST USB-storage read-only PASS' in replies['usb-readonly']
+                op.record('linux_usb_readonly', passed=passed, media_written=False, commands=replies)
+                if not passed:
+                    raise RuntimeError('Read-only USB storage selftest did not pass')
             if args.devices:
                 # Enabled device nodes only; the USB disk tail is saved, rewritten and restored.
                 # The kernel log keeps the driver probe and USB topology as evidence.

@@ -206,6 +206,7 @@ def parser():
             op.add_argument('--tftp-python',default=sys.executable,help='Firewall-allowed Python to run the existing read-only TFTP server')
             op.add_argument('--timeout',type=int,default=180)
             op.add_argument('--devices',action='store_true',help='Also verify native Linux device drivers. 20K: SD/Flash reads and UDP echo. AE350: USB disk reads plus a saved/rewritten/restored 256 KiB tail')
+            op.add_argument('--usb-readonly',action='store_true',help='AE350: read USB disk first MiB twice and collect driver/IRQ evidence; no media writes')
             op.add_argument('--sd-install',action='store_true',help='AE350: replace Image/fw_payload.bin/mega138k_ae350.dtb in the SD root, then `boot sd`: the BIOS starts fw_payload.bin and U-Boot loads Image and the DTB')
             op.add_argument('--uboot-load',choices=('sd','net'),default='sd',help='AE350 with fw_payload.bin: U-Boot loads Image and the DTB from the SD card (`run sdboot`) or over TFTP from --host-ip')
             op.add_argument('--uboot-command',action='append',default=[],metavar='COMMAND',help='AE350 with fw_payload.bin: stop autoboot and run this U-Boot command before loading; repeatable, output kept in the receipt')

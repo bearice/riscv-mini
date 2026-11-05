@@ -60,14 +60,34 @@ Contracts (verified against the vendor reference):
     Response: rdata[256], error. A write response drives the data bits to 0.
 """
 from migen import *
-from migen.genlib.fifo import AsyncFIFO, SyncFIFO
+from migen.genlib.fifo import AsyncFIFO, SyncFIFO, SyncFIFOBuffered
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
 
 
 def SameClockFIFO(width, depth):
-    """``fifo_cls`` for a ``sys`` domain that shares the ``ddr`` clock."""
-    return ClockDomainsRenamer('write')(SyncFIFO(width, depth))
+    """Same-clock, block-RAM-friendly FIFO with the requested total capacity.
+
+    The output slot adds one cycle of first-word latency. Synchronous reads
+    avoid a wide register RAM and its high-fanout per-word clock enables.
+    """
+    if depth < 2:
+        raise ValueError('SameClockFIFO needs at least two entries')
+    fifo = Module()
+    fifo.submodules.storage = storage = SyncFIFOBuffered(width, depth)
+    fifo.width, fifo.depth = width, depth
+    for name in ('din','dout','readable','re','level'):
+        setattr(fifo,name,getattr(storage,name))
+    fifo.we, fifo.writable = Signal(), Signal()
+    # The backing FIFO's output slot is extra physical capacity. Enforce the
+    # requested logical depth, including that slot, and guard writes itself
+    # just as the unbuffered FIFO does when a producer holds WE while full.
+    fifo.comb += [fifo.writable.eq(storage.writable & (storage.level < depth)),
+                  storage.we.eq(fifo.we & fifo.writable)]
+    for special in storage.fifo._fragment.specials:
+        if isinstance(special, Memory):
+            special.name_override = 'ae350_ddr_fifo_%d' % width
+    return ClockDomainsRenamer('write')(fifo)
 
 
 def _or_tree(nodes):

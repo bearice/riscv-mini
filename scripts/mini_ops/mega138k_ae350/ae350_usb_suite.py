@@ -24,12 +24,16 @@ def judge_usb(text):
     if 'USB BEGIN' not in text:failures.append('missing payload start')
     if 'USB ENUM PASS' not in text:failures.append('enumeration did not complete successfully')
     if not devices or not hid:failures.append('missing VID/PID or HID interface')
+    msc_required='USB MSC BEGIN' in text
+    msc_crcs=re.findall(r'USB MSC READONLY PASS ([0-9a-f]{8}) ([0-9a-f]{8})',text)
+    msc_passed=bool(msc_crcs and msc_crcs[-1][0]==msc_crcs[-1][1]) if msc_required else None
+    if msc_required and not msc_passed:failures.append('MSC read-only sector/repeat CRC did not pass')
     return dict(devices=devices,hid_interfaces=hid,reports_received=reports,
                 raw_status=raw,raw_lines=None if raw is None else raw&3,
                 pll_locked=None if raw is None else bool(raw&8),
                 tx_enabled=None if raw is None else bool(raw&4),controller_control=control,
                 detach_events=text.count('USB DETACH'),failures=failures,
-                physical_keypress_verified=False)
+                physical_keypress_verified=False,msc_readonly_passed=msc_passed,msc_crcs=msc_crcs)
 
 
 def perform(args):

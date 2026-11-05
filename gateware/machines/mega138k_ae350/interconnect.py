@@ -5,8 +5,9 @@ One master, several slaves with disjoint windows.  The single definition of
 
     accept = master.trans[1] & hit & master.readyout
 
-and it is used for *everything*: capturing the address, direction and size,
-selecting the slave, and advancing the data phase.  A slave only sees HTRANS
+and it qualifies dispatch and advancing the data phase. Request fields may
+track idle address phases while HREADY is high; only accepted fields are
+ever dispatched. A slave only sees HTRANS
 asserted while its own accepted transfer is in progress, and the response mux
 is driven by the slave captured for the transfer currently in its data phase.
 
@@ -92,7 +93,11 @@ class MemInterconnect(LiteXModule):
             # the hard-macro HTRANS path.
             self.sync += [
                 If(accept_now,response_ready.eq(0)).Elif(state & dispatched & ~response_ready,
-                    If(ready,response_data.eq(selected_data),response_ready.eq(1))),
+                    If(ready,response_ready.eq(1))),
+                # accept_now requires response_ready, while capture requires
+                # its inverse. Keep the data enable independent of HTRANS.
+                If(state & dispatched & ~response_ready & ready,
+                    response_data.eq(selected_data)),
                 If(response_ready,response_error.eq(0)).Elif(state & dispatched,
                     response_error.eq(selected_error)),
             ]
@@ -118,17 +123,15 @@ class MemInterconnect(LiteXModule):
                 bus.sel.eq(Mux(master.readyout, sel_hit[i], sel_lat[i])),
             ]
         self.sync += [
-            If(accept_now,
+            If(master.readyout,
                addr_lat.eq(master.addr),
                write_lat.eq(master.write),
                size_lat.eq(master.size),
                burst_lat.eq(master.burst), prot_lat.eq(master.prot), trans_lat.eq(master.trans),
                sel_lat.eq(sel_hit),
-               self.accepted.eq(1),
-               self.n_accepted.eq(self.n_accepted + 1),
-            ).Else(
-               self.accepted.eq(0),
             ),
+            self.accepted.eq(accept_now),
+            If(self.accepted,self.n_accepted.eq(self.n_accepted + 1)),
             If(state == 0,
                If(accept_now, state.eq(1)),
             ).Else(
@@ -143,8 +146,10 @@ class MemInterconnect(LiteXModule):
         ]
         if registered:
             self.sync += If(accept_now, dispatched.eq(0)).Elif(dispatch, dispatched.eq(1))
+        slave_accepted = Signal(nslaves)
+        self.sync += slave_accepted.eq(sel_hit & Replicate(accept_now,nslaves))
         for i in range(nslaves):
-            self.sync += If(accept_now & sel_hit[i], self.n_slave[i].eq(self.n_slave[i] + 1))
+            self.sync += If(slave_accepted[i], self.n_slave[i].eq(self.n_slave[i] + 1))
 
 
 class ErrorSlave(LiteXModule):

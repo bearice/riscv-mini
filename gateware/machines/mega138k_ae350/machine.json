@@ -13,7 +13,7 @@
     "cpu": 800000000,
     "data_memory_bus": 100000000,
     "video": 25175000,
-    "usb": 60000000,
+    "usb": 48000000,
     "ethernet_tx": 125000000
   },
   "memory": {

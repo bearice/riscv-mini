@@ -143,7 +143,7 @@ def linux_runner(required, root=ROOT):
 
 def python_packages():
     result = {}
-    for name in ('migen', 'litex', 'litex-boards', 'litedram', 'liteeth', 'litesdcard', 'litespi', 'pythondata-cpu-vexriscv'):
+    for name in ('migen', 'litex', 'litex-boards', 'litedram', 'liteeth', 'litesdcard', 'litespi', 'pythondata-cpu-vexriscv', 'pythondata-misc-usb-ohci'):
         package = importlib.metadata.distribution(name)
         result[name] = dict(version=package.version, source=package.read_text('direct_url.json'))
     return result

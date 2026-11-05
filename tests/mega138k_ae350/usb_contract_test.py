@@ -17,4 +17,10 @@ class USBContractTests(unittest.TestCase):
         self.assertFalse(r['physical_keypress_verified'])
     def test_failure_or_incomplete_run_rejected(self):
         self.assertTrue(judge_usb('USB BEGIN\r\nUSB DEVICE 046dc52b\r\nUSB HID\r\nUSB ENUM FAIL\r\n')['failures'])
+    def test_msc_requires_successful_matching_reads(self):
+        base='USB BEGIN\r\nUSB DEVICE 10500407\r\nUSB HID\r\nUSB MSC BEGIN\r\n'
+        for evidence in ('','USB MSC READONLY PASS 12345678 87654321\r\n'):
+            self.assertTrue(judge_usb(base+evidence+'USB ENUM PASS\r\n')['failures'])
+        result=judge_usb(base+'USB MSC READONLY PASS 12345678 12345678\r\nUSB ENUM PASS\r\n')
+        self.assertFalse(result['failures']);self.assertTrue(result['msc_readonly_passed'])
 if __name__=='__main__':unittest.main()

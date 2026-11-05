@@ -36,7 +36,7 @@ from gateware.gowin_platform import create_platform
 from gateware.machines.mega138k_ae350.ports import bind_ports
 from gateware.machines.mega138k_ae350.address_map import AddressMap
 from gateware.machines.mega138k_ae350.clock import ClockReset, PLLStatusSynchronizer
-from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB, SameClockFIFO
+from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI, DDR3AHB, SameClockFIFO, REQ_WIDTH, RESP_WIDTH
 from gateware.machines.mega138k_ae350.video_memory import DDRMemoryArbiter
 from gateware.machines.mega138k_ae350.peripherals.video import FabricVideo
 from gateware.devices.video.hdmi.phy import GowinHDMIPHY
@@ -168,6 +168,15 @@ class DDRSoC(LiteXModule):
         platform.default_clk_name = 'clk50'
         platform.default_clk_period = 1e9 / board.input_clock_hz
         self.platform = platform
+        # Synchronous one-entry backing RAMs otherwise become hundreds of
+        # FF clock enables. Keep the two same-clock queues in block RAM.
+        platform.toolchain.additional_tcl_commands += [
+            'set ddr_fifo_constraints [open ae350_ddr_fifos.gsc w]',
+            *['puts $ddr_fifo_constraints {INS "ae350_ddr_fifo_%d" syn_ramstyle=block_ram}' % width
+              for width in (REQ_WIDTH, RESP_WIDTH)],
+            'close $ddr_fifo_constraints',
+            'add_file ae350_ddr_fifos.gsc',
+        ]
 
         pads = {
             'addr':    [platform.request('ddr3_addr', i) for i in range(15)],
@@ -321,10 +330,13 @@ class DDRSoC(LiteXModule):
         self.sd = SDClockCrossing(self.sd_native)
         from gateware.machines.mega138k_ae350.peripherals.usb import SoftUSBHost, USBRegisterBridge, USBClock
         self.usb_clock = USBClock(platform, platform.lookup_request('clk50'), ResetSignal('sys'), config.clocks.usb)
-        self.usb = SoftUSBHost(platform, clock_hz=config.clocks.usb)
-        self.usb_registers = USBRegisterBridge(self.usb.bus, config.clocks.usb)
+        from gateware.machines.mega138k_ae350.peripherals.usb_ohci import OHCIHost
+        self.usb = OHCIHost(platform)
+        self.usb_registers = USBRegisterBridge(self.usb.bus, config.clocks.usb, identity=0xae350c02)
         self.specials += MultiReg(Cat(self.usb.rx_dp, self.usb.rx_dn, self.usb.tx_oe, self.usb_clock.locked),
                                   self.usb_registers.raw_status, 'sys')
+        self.usb_registers.irq = Signal()
+        self.specials += MultiReg(self.usb.interrupt, self.usb_registers.irq, 'sys')
         usb_pads = platform.request('soft_usb')
         for name, output in (('tx_dp', self.usb.tx_dp),
                              ('tx_dn', self.usb.tx_dn)):
@@ -345,8 +357,9 @@ class DDRSoC(LiteXModule):
                                flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma,
                                sfp=self.sfp)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
-            DDRMemoryArbiter(self.ddr.ui,cpu_ui,video.ui,self.ethernet_dma.memory.ui))
-        self.comb += arbiter.network_pending.eq(self.ethernet_dma.memory.pending)
+            DDRMemoryArbiter(self.ddr.ui,cpu_ui,video.ui,self.ethernet_dma.memory.ui,self.usb.dma.memory.ui))
+        self.comb += [arbiter.network_pending.eq(self.ethernet_dma.memory.pending),
+                      arbiter.usb_pending.eq(self.usb.dma.memory.pending)]
         self.comb += [self.crg.hdmi_pll.mode.eq(video.mode),
                       self.crg.video_clock_reset.eq(video.clock_reset),
                       video.clock_locked.eq(self.crg.hdmi_pll.locked),
@@ -396,8 +409,10 @@ class DDRSoC(LiteXModule):
             if ref:
                 indicator = ActivityFlash(activity, flash_cycles)
                 self.submodules += indicator
-                driven = 0 if resources[ref].signals['pad'].active_low else 1
-                self.specials += Tristate(platform.request(device), driven, indicator.on)
+                # Configuration pins need an explicit idle level once
+                # released as GPIO; do not rely on their Hi-Z bias.
+                level = ~indicator.on if resources[ref].signals['pad'].active_low else indicator.on
+                self.specials += Tristate(platform.request(device), level, 1)
         # The configured AE350 subsystem hardens UART2/PIT/GPIO/RTC internally
         # (see gateware/vendor/gowin_gw5ast/ae350_soc/riscv_ae350_config.v), so there is no
         # fabric UART implementation or port-level peripheral clock enable.

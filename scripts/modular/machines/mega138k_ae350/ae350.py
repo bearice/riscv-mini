@@ -33,6 +33,7 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/peripherals/sd_phy.py',
     'gateware/machines/mega138k_ae350/peripherals/qspi.py',
     'gateware/machines/mega138k_ae350/peripherals/usb.py',
+    'gateware/machines/mega138k_ae350/peripherals/usb_ohci.py',
     'gateware/machines/mega138k_ae350/peripherals/ethernet.py',
     'gateware/machines/mega138k_ae350/peripherals/ethernet_dma.py',
     'gateware/machines/mega138k_ae350/peripherals/ethernet_rgmii.py',

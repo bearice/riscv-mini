@@ -11,13 +11,26 @@ class DDRMemoryArbiter(LiteXModule):
     cascaded arbiters. An accepted untagged read keeps its owner until its
     actual response, regardless of a client's subsequent pending level.
     """
-    def __init__(self,memory,cpu,video,network):
+    def __init__(self,memory,cpu,video,network,usb=None):
         from migen import Array, Cat, Case
         ports=[cpu,video,network]
         self.cpu_pending,self.video_pending,self.network_pending=[Signal() for _ in ports]
         pending=[self.cpu_pending,self.video_pending,self.network_pending]
         self.cpu_commands,self.video_commands,self.network_commands=[Signal(32) for _ in ports]
         counts=[self.cpu_commands,self.video_commands,self.network_commands]
+        self.usb_pending = Signal()
+        self.usb_commands = Signal(32)
+        if usb is not None:
+            ports.append(usb)
+            pending.append(self.usb_pending)
+            counts.append(self.usb_commands)
+        choices = {}
+        for previous in range(len(ports)):
+            choice = previous
+            for step in range(len(ports)-1, 0, -1):
+                index = (previous + step) % len(ports)
+                choice = Mux(pending[index], index, choice)
+            choices[previous] = choice
         self.max_video_wait=Signal(32);self.unexpected_response=Signal()
         self.read_pending=busy=Signal()
         grant,owner,last=Signal(2),Signal(2),Signal(2,reset=2)
@@ -27,10 +40,10 @@ class DDRMemoryArbiter(LiteXModule):
         def select(field):return Array([getattr(p,field) for p in ports])[grant]
         read=Signal()
         self.comb += [any_pending.eq(Cat(*pending)!=0),
-            Case(last,{0:chosen.eq(Mux(pending[1],1,Mux(pending[2],2,0))),
-                       1:chosen.eq(Mux(pending[2],2,Mux(pending[0],0,1))),
-                       'default':chosen.eq(Mux(pending[0],0,Mux(pending[1],1,2)))}),
-            active.eq(valid & ~busy & selected_pending),read.eq(select('cmd')==1),
+            Case(last,{i:chosen.eq(value) for i,value in choices.items()}),
+            # The registered grant owns readiness. Pending selects the next
+            # grant; cmd_en remains the validity qualifier for acceptance.
+            active.eq(valid & ~busy),read.eq(select('cmd')==1),
             memory.addr.eq(select('addr')),memory.cmd.eq(select('cmd')),memory.burst.eq(0),
             memory.wr_data.eq(select('wr_data')),memory.wr_data_mask.eq(select('wr_data_mask')),
             memory.wr_data_en.eq(active & ~read & select('cmd_en') & select('wr_data_en') &

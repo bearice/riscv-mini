@@ -19,7 +19,7 @@ class RunRequest:
     operation: str
     build: str
     port: str | None = None
-    cpu_jtag_location: int | None = None
+    cpu_jtag_location: int | str | None = None
     payload: str | None = None
     location: int | None = None
     repeat: int | None = None
@@ -50,12 +50,22 @@ class RunRequest:
         needs_cpu = (self.operation in ('recover', 'verify')) or bool(self.self_test) or (self.repeat or 1) > 1
         if needs_cpu and not self.cpu_jtag_location:
             problems.append('this request needs --cpu-jtag-location')
-        if self.port is not None and not re.fullmatch(r'COM[1-9][0-9]*', str(self.port).upper()):
-            problems.append('--port must name a COM port')
+        if self.port is not None and not (re.fullmatch(r'COM[1-9][0-9]*', str(self.port).upper())
+                                         or str(self.port).startswith('/dev/')):
+            problems.append('--port must name a COM port or /dev device')
         for name in ('location', 'cpu_jtag_location'):
             value = getattr(self, name)
-            if value is not None and value <= 0:
-                problems.append('--' + name.replace('_', '-') + ' must be positive')
+            if value is None:
+                continue
+            if name == 'cpu_jtag_location' and str(value).startswith('serial:'):
+                valid = bool(str(value)[7:])
+            else:
+                try:
+                    valid = int(value) > 0
+                except (TypeError, ValueError):
+                    valid = False
+            if not valid:
+                problems.append('--' + name.replace('_', '-') + ' must identify a valid cable')
         if problems:
             raise ValueError('invalid board request: ' + '; '.join(problems))
         return self

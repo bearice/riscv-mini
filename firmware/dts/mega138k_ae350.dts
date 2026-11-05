@@ -171,9 +171,11 @@
 			status = "disabled";
 		};
 
-		/* Polled full-speed PIO host; the core interrupt is not wired to the PLIC. */
+		/* OHCI DMA host, fabric EXT_INT[4]. */
 		usb0: usb@f8060000 {
-			compatible = "riscv-mini,ae350-softusb";
+			compatible = "generic-ohci";
+			interrupt-parent = <&plic0>;
+			interrupts = <PLIC_EXT(4) IRQ_TYPE_LEVEL_HIGH>;
 			reg = <AE350_USB_BASE AE350_CSR_PAGE_BYTES>;
 			status = "okay";
 		};
