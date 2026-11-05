@@ -30,6 +30,21 @@ static void fail(unsigned where, unsigned cause, unsigned pc, unsigned value, un
     probe_puts(" f=");
     hex(faults);
     probe_puts("\r\n");
+    /* A previous accepted trap was recorded; show it so the failing context
+       is not lost when this trap is only its consequence. */
+    if(s_fault){
+        probe_puts("RECORDED cause=");
+        hex(last_cause);
+        probe_puts(" pc=");
+        hex(last_pc);
+        probe_puts(" val=");
+        hex(last_val);
+        probe_puts(" st=");
+        hex(last_st);
+        probe_puts(" faulted=");
+        hex(faults);
+        probe_puts("\r\n");
+    }
     for(;;){}
 }
 int probe_mmu_trap(unsigned cause) {

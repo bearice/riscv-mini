@@ -131,11 +131,17 @@ def build(a, run=None):
     if 'cpu_timer_time' not in csr['csr_registers']:raise ValueError('SoC needs CPU machine timer')
     generate_csr(csr,out/'include')
     header=(out/'include/generated/csr.h').read_text()
-    for k,v in csr['constants'].items():
-        if isinstance(v,int):header+='\n#define '+k.upper()+' '+str(v)+'u'
+    # mini_csr.h stays as the generated LiteX header: current LiteX pulls in
+    # generated/soc.h and system.h itself, so the probe and platform build with
+    # -I on the generated include directory instead of an appended constants block.
     plat=src/'platform/riscv_mini';shutil.copytree(ROOT/'firmware/opensbi/platform',plat,dirs_exist_ok=True)
     (plat/'mini_csr.h').write_text(header.replace('#include <stdint.h>', '#include <sbi/sbi_types.h>'))
     (out/'mini_csr.h').write_text(header)
+    # Inside OpenSBI, uintptr_t comes from sbi/sbi_types.h and differs from the
+    # toolchain stdint.h that the generated LiteX headers include; map one to the
+    # other for the platform build only (the probe keeps plain stdint).
+    shim=out/'shim';shim.mkdir(exist_ok=True)
+    (shim/'stdint.h').write_text('#include <sbi/sbi_types.h>\n')
     dts=out/'riscv_mini.dts';dtb=out/'riscv_mini.dtb'
     validation=json.loads((a.soc_dir/'validation.json').read_text())
     isa=validation['isa']
@@ -167,11 +173,12 @@ def build(a, run=None):
     wsl(['dtc','-I','dts','-O','dtb','-o',linux(dtb),linux(dts)])
     probe=ROOT/'firmware/opensbi/probe';elf=out/'probe.elf';raw=out/'probe.bin'
     wsl(['clang','--target=riscv32-unknown-elf','-march=rv32ima_zicsr_zifencei','-mabi=ilp32','-Os','-Wall','-Wextra','-Werror',
-         '-ffreestanding','-nostdlib','-msmall-data-limit=0','-fuse-ld=lld','-I'+linux(out),
+         '-ffreestanding','-nostdlib','-msmall-data-limit=0','-fuse-ld=lld','-I'+linux(out),'-I'+linux(out/'include'),
          linux(probe/'start.S'),linux(probe/'probe.c'),linux(probe/'mmu.c'),'-Wl,-T,'+linux(probe/'probe.ld'),'-o',linux(elf)],out/'probe-build.log')
     wsl(['llvm-objcopy','-O','binary',linux(elf),linux(raw)])
     payload=a.payload_path.resolve() if a.payload_path else raw
     wsl(['make','-C',linux(src),'-j4','LLVM=1','PLATFORM=riscv_mini','O='+linux(out/'sbi-soft'),
+         'MINI_INCLUDE='+linux(out/'include'),'MINI_SHIM='+linux(out/'shim'),
          'FW_PAYLOAD_PATH='+linux(payload), 'FW_FDT_PATH='+linux(dtb)],out/'opensbi-build.log')
     (out/'build.sh').write_text('set -eu\n'+'\n'.join(COMMANDS)+'\n',newline='\n')
     print('Prepared',out/'build.sh')
