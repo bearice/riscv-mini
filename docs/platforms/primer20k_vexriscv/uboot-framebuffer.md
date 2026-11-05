@@ -25,8 +25,9 @@ probe 先关闭并等待已有 DMA 排空，再将 `base0/base1` 都指向新 fr
 enable、select、base0、base1、packed state、address_error，每个寄存器为一个 32-bit 字。
 无 LCD 的 SoC 不生成节点；旧固定帧槽或未压缩 state ABI 会明确拒绝。
 
-驱动源码、defconfig 和环境设置位于 `firmware/uboot/`，
-上游 Kconfig/Makefile 接线包含在 `uboot-port.patch`，构建器自动复制驱动。
+驱动源码、defconfig 和环境设置按上游布局位于 `firmware/uboot/`，
+上游 Kconfig/Makefile 接线在 `vexriscv/patches/`；两者都由共享安装器按
+`vexriscv/source.json` 固定的源码清单自动装配，构建器不再手工复制。
 U-Boot 与 OpenSBI 使用同一20K硬件身份，按现有 workspace 增量构建，不按尝试创建新的源码/输出目录。
 
 ```sh

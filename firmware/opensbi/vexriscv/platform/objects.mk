@@ -1,4 +1,10 @@
 platform-objs-y += platform.o
+# The platform's mini_csr.h includes the generated LiteX headers; the build
+# entry supplies their directory as MINI_INCLUDE, and MINI_SHIM provides an
+# OpenSBI-context stdint.h. The shim must be searched first.
+ifdef MINI_INCLUDE
+platform-cflags-y += -I"$(MINI_SHIM)" -I"$(MINI_INCLUDE)"
+endif
 PLATFORM_RISCV_XLEN = 32
 PLATFORM_RISCV_ABI = ilp32
 PLATFORM_RISCV_ISA = rv32ima_zicsr_zifencei

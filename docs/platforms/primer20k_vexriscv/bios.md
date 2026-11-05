@@ -126,7 +126,7 @@ TFTP 为 512 B 停等协议，吞吐受逐块往返和软件轮询限制；最�
 
 ## 程序格式和 ABI
 
-[公开 C 接口](../../../firmware/bios/include/bios.h) 与 [程序 SDK](../../../scripts/builders/payload.py) 不依赖生成的 CSR 地址。ABI=1、ILP32：`a7=0x42494f53`，`a6=功能号`，`a0..a5=参数`，`a0=返回值`。负值表示错误（GETC/MOUSE 的 -1 也表示暂无输入）。TIME 返回毫秒计数的 32 位原始位模式，差值应按 uint32_t 处理。
+[公开 C 接口](../../../firmware/bios/include/bios.h) 与 [程序 SDK](../../../scripts/modular/machines/primer20k_vexriscv/payload.py) 不依赖生成的 CSR 地址。ABI=1、ILP32：`a7=0x42494f53`，`a6=功能号`，`a0..a5=参数`，`a0=返回值`。负值表示错误（GETC/MOUSE 的 -1 也表示暂无输入）。TIME 返回毫秒计数的 32 位原始位模式，差值应按 uint32_t 处理。
 
 | ID | 服务 | 参数 / 返回 |
 | --- | --- | --- |

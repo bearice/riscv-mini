@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.builders.opensbi import ethernet_node, ETH_RING_REGISTERS
+from scripts.modular.machines.primer20k_vexriscv.opensbi import ethernet_node, ETH_RING_REGISTERS
 
 
 class EthernetTest(unittest.TestCase):

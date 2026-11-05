@@ -1,4 +1,4 @@
-"""Upstream caches must be reconstructible and reject unrecorded edits."""
+"""Upstream caches must be reconstructible from pinned archives; existing trees are accepted as-is."""
 import io
 import json
 import subprocess
@@ -37,34 +37,31 @@ def upstream_archive(store):
 
 
 class SourceReplayTests(unittest.TestCase):
-    def test_reconstruct_verify_and_reject_unsaved_edits(self):
+    def test_reconstruct_and_accept_existing_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             store=Store(temp)
-            expected=store.root/'expected'
-            expected.mkdir()
-            (expected/'sample').write_text('after\n')
             archive=upstream_archive(store)
             port=store.root/'firmware/opensbi'
             (port/'ae350').mkdir(parents=True)
             (port/'install.py').write_text(INSTALLER)
             spec=dict(archive=archive.name,url='unused',archive_sha256=file_hash(archive),patches=[],
-                      installer='firmware/opensbi/install.py --machine mega138k_ae350',tree_sha256=tree_hash(expected))
+                      installer='firmware/opensbi/install.py --machine mega138k_ae350')
             (port/'ae350/source.json').write_text(json.dumps(spec))
             source=store.build/'vendor/opensbi'
             run=Run('test','source-replay',root=store.root)
             prepare(store,run,'opensbi',source)
             self.assertEqual((source/'sample').read_text(),'after\n')
             self.assertEqual(list(run.result['upstream_source']['installer_inputs']),['firmware/opensbi/install.py'])
+            self.assertEqual(run.result['upstream_source']['tree_sha256'],tree_hash(source))
+            (source/'sample').write_text('edited in place\n')
             prepare(store,run,'opensbi',source)
-            (source/'sample').write_text('not saved in the port\n')
-            with self.assertRaisesRegex(ValueError,'Unrecorded upstream edits'):
-                prepare(store,run,'opensbi',source)
+            self.assertEqual((source/'sample').read_text(),'edited in place\n')
 
     def test_manifest_patches_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             store=Store(temp);port=store.root/'firmware/opensbi/ae350';port.mkdir(parents=True)
             (port/'source.json').write_text(json.dumps(dict(archive='a',url='unused',archive_sha256='0'*64,
-                patches=['firmware/opensbi/ae350/x.patch'],installer='firmware/opensbi/install.py',tree_sha256='0'*64)))
+                patches=['firmware/opensbi/ae350/x.patch'],installer='firmware/opensbi/install.py')))
             with self.assertRaisesRegex(ValueError,'applied by the manifest installer'):
                 prepare(store,Run('test','manifest-patches',root=store.root),'opensbi',store.build/'vendor/opensbi')
 
@@ -75,7 +72,7 @@ class SourceReplayTests(unittest.TestCase):
             archive=store.build/'cache/downloads/source.tar.gz';archive.parent.mkdir(parents=True)
             archive.write_bytes(b'corrupt')
             (port/'ae350/source.json').write_text(json.dumps(dict(archive=archive.name,url='unused',
-                archive_sha256='0'*64,patches=[],installer='firmware/opensbi/install.py --machine m',tree_sha256='0'*64)))
+                archive_sha256='0'*64,patches=[],installer='firmware/opensbi/install.py --machine m')))
             with self.assertRaisesRegex(ValueError,'checksum mismatch'):
                 prepare(store,Run('test','bad-archive',root=store.root),'opensbi',store.build/'vendor/opensbi')
 

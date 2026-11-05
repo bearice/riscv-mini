@@ -6,9 +6,7 @@ import shlex
 import struct
 import urllib.request
 from pathlib import Path
-import sys
-sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
-from scripts.builders.linux import ROOT, wsl_path
+from scripts.modular.machines.primer20k_vexriscv.linux import ROOT, wsl_path
 from scripts.modular.storage import source_file_hash, file_hash, SOURCE_HASH_FORMAT
 
 SOURCES = {

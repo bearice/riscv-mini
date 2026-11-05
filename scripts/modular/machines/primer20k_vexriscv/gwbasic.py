@@ -1,11 +1,9 @@
 """Build the GW-BASIC interpreter payload and report what it occupies."""
 import json, subprocess, sys
 from pathlib import Path
-import sys
-sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'scripts')]
-from scripts.builders import payload as bios_payload
+from scripts.modular.machines.primer20k_vexriscv import payload as bios_payload
 from scripts.tools.riscv_toolchain import executable as tool_executable
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 APP = ROOT / 'firmware/apps/gwbasic'
 HELPERS = ['string']
 

@@ -1,5 +1,6 @@
 """One target registry and execution convention for all project builds."""
 import importlib
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -12,6 +13,16 @@ CORE = ('system', 'bios', 'bootloader', 'hal-sdk', 'cpu', 'soc-description', 'ga
 BACKENDS = {'cpu-gcb':'cpu_gcb', 'cpu-qualification':'cpu_qualification', 'matrix':'matrix',
             'linux':'linux', 'busybox':'busybox', 'uboot':'uboot', 'opensbi':'opensbi',
             'payload':'payload', 'doom':'doom', 'gwbasic':'gwbasic', 'nyancat':'nyancat'}
+
+
+def backend_module(machine, name):
+    """Backend handlers live in the machine package; only shared CPU helpers
+    fall back to scripts.builders. This is the same resolution the dispatch
+    performs, so tests can mirror it."""
+    dotted = 'scripts.modular.machines.%s.%s' % (machine, name)
+    if importlib.util.find_spec(dotted) is not None:
+        return importlib.import_module(dotted)
+    return importlib.import_module('scripts.builders.' + name)
 
 
 def add_targets(parser):
@@ -131,7 +142,7 @@ def backend(store, run, args, dry):
         run.step(args.target,'BUILD',reason='resolved backend request; no tools or source downloads executed')
         run.finish(plan=True);return None
     with working(store, run, machine, args.target, digest(request), path=output) as workspace:
-        module=importlib.import_module('scripts.builders.'+name)
+        module=backend_module(machine, name)
         actual=SimpleNamespace(**vars(args));actual.output_dir=output
         actual.prepare_only=False;actual.record=False;actual.pack_only=False
         if args.target in ('opensbi','uboot'):

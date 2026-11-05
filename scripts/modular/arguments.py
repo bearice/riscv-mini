@@ -68,7 +68,8 @@ def nyancat(parser):    pass
 
 def opensbi(parser):
 
-    parser.add_argument('--source',type=Path,default=ROOT/'build/vendor/opensbi')
+    parser.add_argument('--source',type=Path,default=ROOT/'build/vendor/opensbi',
+                       help='OpenSBI tree location; contents always come from the machine source manifest, and an explicit tree must satisfy it')
 
     parser.add_argument('--payload-path',type=Path,default=None,help='FW_PAYLOAD image (defaults to the S-mode probe)')
     parser.add_argument('--osb-name',default='OPENSBI.OSB',help='Output OSB1 file name in --output-dir')
@@ -89,7 +90,7 @@ def payload(parser):
 
 def uboot(parser):
     parser.add_argument("--source", default="$HOME/uboot-port",
-                        help="WSL-native source path (default $HOME/uboot-port)")
+                        help="build tree location for this machine; contents always come from the machine source manifest (default $HOME/uboot-port)")
     parser.add_argument("--obj", default="$HOME/uboot-port-obj",
                         help="WSL-native build output path (default $HOME/uboot-port-obj)")
 
