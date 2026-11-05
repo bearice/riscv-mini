@@ -62,7 +62,7 @@
     "debounce_ms": 5
   },
   "rtl": {
-    "place_option": 3,
+    "place_option": 1,
     "route_option": 2,
     "features": {
       "flash": true,
