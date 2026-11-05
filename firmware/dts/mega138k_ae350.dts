@@ -64,16 +64,12 @@
 		reg = <AE350_DDR_BASE AE350_OS_MEMORY_BYTES>;
 	};
 
-	reserved-memory {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		ranges;
-
-		opensbi@1000000 {
-			reg = <AE350_OS_SBI_BASE AE350_OS_SBI_BYTES>;
-			no-map;
-		};
-	};
+	/*
+	 * No opensbi@ node here: OpenSBI's FDT fixup already injects no-map
+	 * reserved-memory nodes (mmode_resv*) covering its firmware and
+	 * scratch regions. A duplicate DTB reservation overlapped them and
+	 * made Linux print "OF: reserved mem: OVERLAP DETECTED!".
+	 */
 
 	soc {
 		#address-cells = <1>;

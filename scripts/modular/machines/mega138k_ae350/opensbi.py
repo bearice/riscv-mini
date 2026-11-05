@@ -123,7 +123,7 @@ def build(store, run, args, dry):
         prepare(store, run, 'opensbi', source, dry=True)
         run.finish(plan=True)
         return
-    key = hashlib.sha256(str((inputs, layout.software_layout())).encode()).hexdigest()
+    key = hashlib.sha256(str((inputs, layout.software_layout(), run.result['dtb_source_sha256'])).encode()).hexdigest()
     with working(store, run, 'mega138k_ae350', 'opensbi', key) as workspace:
         prepare(store, run, 'opensbi', source)
         output.mkdir(parents=True, exist_ok=True)

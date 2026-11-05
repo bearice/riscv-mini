@@ -1,5 +1,7 @@
 # AE350 P8 当前状态与交接（2026-11-03）
 
+> 本文保留 2026-11-03 的 PIO/P8 历史状态。2026-11-06 的当前 LED/OHCI 候选、FT4232 接线、镜像身份与验证限制见[活动灯与 OHCI 交接](ohci-led-handoff.md)。下文旧调试器、网络地址及 PIO USB 通过结果不能直接用于当前 OHCI 候选。
+
 P8 的三项（网络、USB、Linux）分别出结果，见 [migration-stages.md](migration-stages.md)。本文只记录当前状态和剩余工作；不是发布，也不是已验收的硬件版本。历史过程见 Git 记录与 `build/runs/` 回执（本机，不随 Git 分发）。
 
 通用约束：重复构建复用 `--workspace default`；板测只写 FPGA SRAM、不改 `current`；Flash 只在用户明确授权时写（已授权并完成：U4 ROM、U7 BIOS、SD 启动文件；gateware 留在 SRAM，USB 稳定后再写 U4 位流区）；主机对端网卡是 `enp4s0`（192.168.1.1/24），不改 `enp2s0`；不要直接运行 `openFPGALoader --detect/--scan-usb` 或 `programmer_cli --scan-cables/--scan`。
