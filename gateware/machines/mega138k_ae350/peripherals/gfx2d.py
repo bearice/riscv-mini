@@ -24,6 +24,8 @@ ERR_ADDR = 4
 ERR_TIMEOUT = 5
 
 OP_FILL_RECT = 0
+OP_COPY_AREA = 1
+OP_IMAGE_BLIT = 2
 
 DESC_NAMES = ('OP', 'SRC_ADDR', 'DST_ADDR', 'SRC_STRIDE', 'DST_STRIDE',
               'WIDTH', 'HEIGHT', 'FG_COLOR', 'BG_COLOR', 'BLIT_SRC_WB')
@@ -63,12 +65,23 @@ class Gfx2DEngine(LiteXModule):
         beat_base = Signal(32)
         offset = Signal(32)
         row_start = Signal(32)  # incremental: no row*stride multiplier
+        src_row_start = Signal(32)  # copy: src row addr; blit: src row byte addr
         limit = Signal(32)      # ddr_size - row_bytes, loaded in INIT
+        src_limit = Signal(32)  # copy: ddr_size - row_bytes; blit: ddr_size - blit_wb
+        dir_down = Signal()     # copy: src < dst -> iterate backwards (overlap)
         self.sync += row_bytes.eq(width << 1)  # RGB565: 2 bytes/pixel
         # One adder per state (see FSM): ROW_INC adds stride, ROW_SETUP
         # derives geometry from the registered row_start.
         nxt_row_start = Signal(32)
-        self.comb += nxt_row_start.eq(row_start + dst_stride)
+        nxt_src_row_start = Signal(32)
+        self.comb += [
+            nxt_row_start.eq(Mux(dir_down & (op == OP_COPY_AREA),
+                                 row_start - dst_stride, row_start + dst_stride)),
+            nxt_src_row_start.eq(Mux(op == OP_COPY_AREA,
+                                     Mux(dir_down, src_row_start - src_stride,
+                                         src_row_start + src_stride),
+                                     src_row_start + blit_wb)),
+        ]
         beat_byte = Signal(32)
         self.comb += beat_byte.eq(beat_base + (beat << 5))
         # Per-row edge masks, registered in ROW_SETUP: middle beats are
@@ -88,17 +101,40 @@ class Gfx2DEngine(LiteXModule):
         beat_mask = Signal(32)
         self.comb += beat_mask.eq(Mux(beat == 0, first_mask,
                                      Mux(beat == beats - 1, last_mask, 0xffffffff)))
+        # COPY_AREA source beat base (offsets are equal, see ROW_SETUP).
+        src_beat_base = Signal(32)
+        # IMAGE_BLIT source byte stream state.
+        src_beat_buf = Signal(256)
+        src_beat_loaded = Signal()
+        src_byte_off = Signal(32)
+        src_bytes_left = Signal(32)
+        bit_buf = Signal(16)
+        bit_cnt = Signal(5)
+        copy_data = Signal(256)
         # Replicated pixels are block-aligned; shift by the row's byte
         # parity so odd dst/stride keep pixel phase (pattern period is
         # one pixel = 2 bytes, so parity shift is sufficient).
         wr_pattern = Signal(256)
         self.comb += wr_pattern.eq(Cat(*[fg[:16]] * 16) << Cat(Constant(0, 3), offset[0]))
+        # Blit expansion: top 16 bits of bit_buf, MSB-first per byte.
+        # Registered in B_EXP, shifted in B_PREP (two stages for timing).
+        blit_expanded = Signal(256)
+        blit_pix = [Mux(bit_buf[15 - j], fg[:16], bg[:16]) for j in range(16)]
+        self.comb += blit_expanded.eq(Cat(*blit_pix))  # pix0 is LSB = first pixel
+        blit_exp_reg = Signal(256)
+        # No per-beat shift: the dst row byte offset is absorbed at row
+        # setup as doff/2 dummy pixels in the bit stream (see ROW_SETUP),
+        # so beat slot s of beat i always shows stream pixel 16i+s.
+        blit_shifted = Signal(256)
+        self.comb += blit_shifted.eq(blit_exp_reg)
         # Registered outputs: the arbiter mux to the DDR IP must be the
         # only logic after these registers (it fits timing for the
         # existing CPU/video ports; comb mask/data paths did not).
         out_addr, out_data, out_mask = Signal(29), Signal(256), Signal(32)
+        prep_data = Signal(256)
         self.comb += [
-            self.ui.cmd.eq(0), self.ui.burst.eq(0),
+            self.ui.cmd.eq(0),
+            self.ui.burst.eq(0),
             self.ui.addr.eq(out_addr),
             self.ui.wr_data.eq(out_data),
             self.ui.wr_data_mask.eq(out_mask),
@@ -106,33 +142,95 @@ class Gfx2DEngine(LiteXModule):
         ]
         load_out = Signal()
         self.sync += If(load_out, out_addr.eq(beat_byte[2:31] & ~Constant(7, 29)),
-                        out_data.eq(wr_pattern), out_mask.eq(beat_mask))
+                        out_data.eq(prep_data), out_mask.eq(beat_mask))
+        src_byte = Signal(8)
+        self.comb += src_byte.eq((src_beat_buf >> (src_byte_off[0:5] << 3))[:8])
 
         self.fsm = fsm = FSM(reset_state='IDLE')
-        # PREP registers the current beat's addr/data/mask; SEND then
-        # presents them for exactly one DDR accept cycle.
-        self.comb += load_out.eq(fsm.ongoing('PREP'))
+        # PREP-family states register the current beat's addr/data/mask;
+        # the SEND state then presents them for one DDR accept cycle.
+        self.comb += load_out.eq(fsm.ongoing('PREP') | fsm.ongoing('C_WPREP') |
+                                 fsm.ongoing('B_PREP'))
+        self.comb += prep_data.eq(Mux(fsm.ongoing('PREP'), wr_pattern,
+                                     Mux(fsm.ongoing('C_WPREP'), copy_data, blit_shifted)))
+        rd_addr = Signal(29)
+        self.comb += [
+            self.ui.cmd.eq(Mux(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND'), 1, 0)),
+            self.ui.addr.eq(Mux(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND'),
+                                rd_addr, out_addr)),
+        ]
+        rd_base = Signal(32)
+        self.comb += rd_base.eq(Mux(fsm.ongoing('B_RD_PREP'), src_beat_base,
+                                    src_beat_base + (beat << 5)))
+        self.sync += If(fsm.ongoing('C_RPREP') | fsm.ongoing('B_RD_PREP'),
+                        rd_addr.eq(rd_base[2:31] & ~Constant(7, 29)))
         self.comb += self.busy.eq(~fsm.ongoing('IDLE'))
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), self.ui.wr_data_mask.eq(0xffffffff),
                 self.ui.addr.eq(dst_addr[2:31] & ~Constant(7, 29)),
                 If(start, NextValue(err, 0), NextValue(elapsed, 0),
                    NextValue(row, 0), NextValue(beat, 0), NextValue(row_start, dst_addr),
+                   NextValue(src_row_start, src_addr),
                    NextState('INIT')))
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(limit, ddr_size - row_bytes), NextState('ROW_SETUP'))
+                NextValue(limit, ddr_size - row_bytes),
+                NextValue(src_limit, Mux(op == OP_IMAGE_BLIT,
+                                         ddr_size - blit_wb, ddr_size - row_bytes)),
+                NextValue(dir_down, src_addr < dst_addr),
+                NextState('ROW_START'))
+        # Copy-down needs the last row's start; compute it incrementally
+        # in ROW_START (one stride add per cycle would be slow, so use a
+        # dedicated state that steps row/row_start from the last row:
+        # actually compute via a single multiply is avoided; instead we
+        # start from dst and step down by iterating ROW_START height
+        # times would be O(n) states. Simpler: handle descending by
+        # starting at row 0 and pre-advancing row_start in INIT2 with a
+        # loop-free approach: step in ROW_START until row reaches
+        # height-1 -- but that is O(height) cycles, acceptable (480 max)
+        # and uses only one adder per cycle.
+        fsm.act('ROW_START',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                If(dir_down & (op == OP_COPY_AREA) & (row != height - 1),
+                   NextValue(row, row + 1), NextValue(row_start, row_start + dst_stride),
+                   NextValue(src_row_start, src_row_start + src_stride), NextState('ROW_START'))
+                .Else(NextState('ROW_SETUP')))
         # Range per row is a single registered compare against limit.
+        pascal = [NextValue(beats, beats_w),
+                 NextValue(beat_base, row_start & ~Constant(31, 32)),
+                 NextValue(offset, row_start[0:5]),
+                 NextValue(first_mask, Cat(*first_bits)),
+                 NextValue(last_mask, Cat(*last_bits))]
         fsm.act('ROW_SETUP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                If(op != OP_FILL_RECT, NextValue(err, ERR_UNSUPPORTED), NextState('FINISH'))
-                .Elif((width == 0) | (height == 0), NextValue(err, ERR_PARAM), NextState('FINISH'))
+                If(op > OP_IMAGE_BLIT, NextValue(err, ERR_UNSUPPORTED), NextState('FINISH'))
+                .Elif((width == 0) | (height == 0) | (dst_stride < row_bytes),
+                      NextValue(err, ERR_PARAM), NextState('FINISH'))
+                .Elif((op == OP_COPY_AREA) &
+                      ((src_stride < row_bytes) |
+                       (src_addr[0:5] != dst_addr[0:5]) |
+                       (src_stride[0:5] != dst_stride[0:5])),
+                      NextValue(err, ERR_PARAM), NextState('FINISH'))
+                .Elif((op == OP_IMAGE_BLIT) &
+                      ((blit_wb < (width + 7) >> 3) | (dst_addr[0] != 0) | (dst_stride[0] != 0)),
+                      NextValue(err, ERR_PARAM), NextState('FINISH'))
                 .Elif(row_start > limit, NextValue(err, ERR_ADDR), NextState('FINISH'))
-                .Else(NextValue(beats, beats_w),
-                      NextValue(beat_base, row_start & ~Constant(31, 32)),
-                      NextValue(offset, row_start[0:5]),
-                      NextValue(first_mask, Cat(*first_bits)),
-                      NextValue(last_mask, Cat(*last_bits)), NextState('PREP')))
+                .Elif((op != OP_FILL_RECT) & (src_row_start > src_limit),
+                      NextValue(err, ERR_ADDR), NextState('FINISH'))
+                .Else(*pascal,
+                      If(op == OP_COPY_AREA,
+                         NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
+                         NextState('C_RPREP'))
+                      .Elif(op == OP_IMAGE_BLIT,
+                            NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
+                            NextValue(src_byte_off, src_row_start[0:5]),
+                            NextValue(src_beat_loaded, 0),
+                            NextValue(src_bytes_left, blit_wb),
+                            NextValue(bit_buf, 0),
+                            NextValue(bit_cnt, row_start[0:5] >> 1),  # doff/2 dummy px
+                            NextState('B_FETCH'))
+                      .Else(NextState('PREP'))))
+        last_row = Mux(dir_down & (op == OP_COPY_AREA), row == 0, row == height - 1)
         fsm.act('PREP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('SEND'))
         fsm.act('SEND',
@@ -146,10 +244,93 @@ class Gfx2DEngine(LiteXModule):
                 ).Elif(elapsed == response_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('C_RPREP',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('C_RSEND'))
+        fsm.act('C_RSEND',
+                self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(0),
+                If(self.ui.cmd_ready,
+                    NextValue(elapsed, 0), NextState('C_RWAIT'),
+                ).Elif(elapsed == response_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('C_RWAIT',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                If(self.ui.rd_data_valid,
+                    NextValue(copy_data, self.ui.rd_data), NextState('C_WPREP'),
+                ).Elif(elapsed == response_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('C_WPREP',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('C_WSEND'))
+        down = dir_down & (op == OP_COPY_AREA)
+        fsm.act('C_WSEND',
+                self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1), self.ui.wr_data_end.eq(1),
+                If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                    NextValue(elapsed, 0),
+                    If(Mux(down, beat == 0, beat == beats - 1),
+                        If(last_row, NextState('FINISH'))
+                        .Else(NextState('ROW_INC')),
+                    ).Else(NextValue(beat, Mux(down, beat - 1, beat + 1)),
+                           NextState('C_RPREP')),
+                ).Elif(elapsed == response_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('B_FETCH',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                If(bit_cnt >= 16, NextState('B_EXP'))
+                .Elif(src_bytes_left == 0, NextState('B_EXP'))
+                .Elif(src_byte_off == 32,
+                      NextValue(src_beat_base, src_beat_base + 32),
+                      NextValue(src_byte_off, 0), NextValue(src_beat_loaded, 0),
+                      NextState('B_FETCH'))
+                .Elif(~src_beat_loaded, NextState('B_RD_PREP'))
+                # Valid bits are left-aligned (top of bit_buf); fetch
+                # places the new byte just below the valid region.
+                .Else(NextValue(bit_buf, bit_buf | (Cat(Constant(0, 8), src_byte) >> bit_cnt)),
+                      NextValue(bit_cnt, bit_cnt + 8),
+                      NextValue(src_byte_off, src_byte_off + 1),
+                      NextValue(src_bytes_left, src_bytes_left - 1),
+                      NextState('B_FETCH')))
+        fsm.act('B_RD_PREP',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('B_RD_SEND'))
+        fsm.act('B_RD_SEND',
+                self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(0),
+                If(self.ui.cmd_ready,
+                    NextValue(elapsed, 0), NextState('B_RD_WAIT'),
+                ).Elif(elapsed == response_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('B_RD_WAIT',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                If(self.ui.rd_data_valid,
+                    NextValue(src_beat_buf, self.ui.rd_data),
+                    NextValue(src_beat_loaded, 1), NextState('B_FETCH'),
+                ).Elif(elapsed == response_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('B_EXP',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(blit_exp_reg, blit_expanded), NextState('B_PREP'))
+        fsm.act('B_PREP',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('B_WSEND'))
+        fsm.act('B_WSEND',
+                self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1), self.ui.wr_data_end.eq(1),
+                If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                    NextValue(elapsed, 0),
+                    NextValue(bit_buf, bit_buf << 16),
+                    NextValue(bit_cnt, Mux(bit_cnt > 16, bit_cnt - 16, 0)),
+                    If(beat == beats - 1,
+                        If(row == height - 1, NextState('FINISH'))
+                        .Else(NextState('ROW_INC')),
+                    ).Else(NextValue(beat, beat + 1), NextState('B_FETCH')),
+                ).Elif(elapsed == response_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Else(NextValue(elapsed, elapsed + 1)))
         fsm.act('ROW_INC',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(row, row + 1), NextValue(beat, 0),
-                NextValue(row_start, nxt_row_start), NextState('ROW_SETUP'))
+                NextValue(row, Mux(down, row - 1, row + 1)), NextValue(beat, 0),
+                NextValue(row_start, nxt_row_start),
+                NextValue(src_row_start, nxt_src_row_start), NextState('ROW_SETUP'))
         fsm.act('FINISH',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(self.done_err, err), NextValue(self.ack, ~self.ack), NextState('IDLE'))

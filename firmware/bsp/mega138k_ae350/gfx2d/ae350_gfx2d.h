@@ -27,6 +27,17 @@ int ae350_gfx2d_probe(void);
 /* rgb565 pixel, little-endian in memory. dst/stride are byte addresses. */
 int ae350_gfx2d_fill_rect(uint32_t dst, uint32_t dst_stride,
                           uint32_t width, uint32_t height, uint16_t rgb565);
+/* COPY_AREA requires (src%32)==(dst%32) and (src_stride%32)==(dst_stride%32);
+ * the engine copies backwards when src<dst (overlap-safe). RGB565. */
+int ae350_gfx2d_copy_area(uint32_t src, uint32_t src_stride,
+                          uint32_t dst, uint32_t dst_stride,
+                          uint32_t width, uint32_t height);
+/* IMAGE_BLIT expands 1bpp packed (MSB-first per byte) to RGB565;
+ * dst must be pixel aligned (even address/stride). */
+int ae350_gfx2d_image_blit(uint32_t src, uint32_t src_wb,
+                           uint32_t dst, uint32_t dst_stride,
+                           uint32_t width, uint32_t height,
+                           uint16_t fg, uint16_t bg);
 int ae350_gfx2d_status(unsigned *status);
 /* Bounded poll until DONE; returns AE350_GFX2D_OK or the engine error. */
 int ae350_gfx2d_wait(unsigned max_rounds);

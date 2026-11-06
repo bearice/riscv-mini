@@ -115,7 +115,7 @@ RTL 与生成 C 头共用。首 32 字节遵循平台公共控制头。
 | --- | --- | --- |
 | **Step 1（本提交）** | 计划文档；`peripherals/gfx2d.py` APB 骨架（只响应 ID/ABI/CAP/寄存器读写，START 返回 UNSUPPORTED）；`address_map.py` 地址/ID/寄存器/设备表；`fabric.py` APB decode + `EXT_INT[10]`；`soc.py` 实例化。**不接 DDR，无 PnR 风险增量之外的改动。** | `mini.py build gateware` PnR 通过（`--pnr-mode full`，run `20261105T204542678685Z-build-gfx2d-step1-skeleton-irqreg-81fdd7`；setup slack +0.002ns，余量极小，Step 2 改动需复核时序）；host 测试读 ID/ABI/CAP；SYSINFO 设备数 12。 |
 | **Step 2（本提交）** | DDR 数据面：`DDRMemoryArbiter` 新增 gfx2d 端口；引擎状态机 FILL_RECT（mask 写、每行 first/last mask 预计算、引擎输出寄存器化）；BSP `ae350_gfx2d_fill_rect`（含 cache sync） | gateware PnR 通过（`--pnr-mode full`，run `20261106T062458439090Z-build-gfx2d-step2-fill-timingfix6-6a7acd`；setup slack +0.036ns）；host 测试对齐/非对齐填充逐像素校验通过；BSP 单文件编译通过。诊断 suite 逐像素校验待 Step 3 板级验收时一并覆盖。 |
-| Step 3 | COPY_AREA（stride + 重叠）与 IMAGE_BLIT（1bpp→RGB565 展开） | suite 覆盖重叠/非重叠、逐字 blit |
+| **Step 3（本提交）** | COPY_AREA（stride + 重叠，`src<dst` 时逆序逐 beat 复制；要求 `(src%32)==(dst%32)` 且 `(src_stride%32)==(dst_stride%32)`，同 FB 滚动天然满足）与 IMAGE_BLIT（1bpp MSB-first 位流→RGB565 展开；dst 须像素对齐即偶地址/偶 stride，行内字节偏移吸收为 `doff/2` 个 dummy 像素；源 beat 按行跨 beat 取字节） | gateware PnR 通过（`--pnr-mode full`，run `20261106T090149635451Z-build-gfx2d-step3-copy-blit-b59f33`；setup slack +0.003ns，**余量已耗尽，Step 4 前必须做时序加固**）；host 测试 COPY 基本+重叠下移、BLIT 8×2+非对齐 16×1 通过；BSP `ae350_gfx2d_copy_area`/`ae350_gfx2d_image_blit` 编译通过。板级诊断 suite 覆盖重叠/逐字待 Step 4 实板验收。 |
 | Step 4 | BIOS TTY 接入（`ae350_tty_flush` 走 blit/copy/fill）；Linux fbdev `fb_fillrect/fb_copyarea/fb_imageblit`；U-Boot LCD 加速 | TTY 帧时间对比、Linux 控制台、视频并发压力 |
 | Step 5 | 二期评估：Alpha Blend（读-改-写 + 混合运算）、Scale（行缓冲 + 最近邻/线性插值） | 按 DE/灰度需求单独立项 |
 
