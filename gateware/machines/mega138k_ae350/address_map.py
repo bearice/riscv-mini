@@ -85,6 +85,11 @@ CSR_PAGE_BYTES = 4096
 
 ETH_BASE = 0xf80a0000
 SFP_BASE = 0xf80b0000
+GFX2D_BASE = 0xf80c0000
+GFX2D_ID = 0xae350601
+GFX2D_CAP = 0x3f  # fill, copy, blit, RGB565, RGB888, XRGB8888
+EXT_INT_GFX2D = 10
+GFX2D_REGS = dict(CONTROL=12, STATUS=16, IRQ_STATUS=20, IRQ_ENABLE=24, LAST_ERROR=28, OP=32, SRC_ADDR=36, DST_ADDR=40, SRC_STRIDE=44, DST_STRIDE=48, WIDTH=52, HEIGHT=56, FG_COLOR=60, BG_COLOR=64, BLIT_SRC_WB=68, COMMANDS=72, ERRORS=76, CLEAR_ERRORS=80)
 EXT_INT_ETHERNET = 9
 
 USB_BASE = 0xf8060000
@@ -204,6 +209,7 @@ CAP_VIDEO = 1024
 CAP_SD = 2048
 CAP_FLASH = 4096
 CAP_I2C = 8192
+CAP_GFX2D = 16384
 
 FLAG_PRESENT = 1
 
@@ -213,7 +219,7 @@ FLAG_DMA = 4
 
 FLAG_IRQ = 8
 
-SYSINFO_CAP = CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED | CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE | CAP_AUDIO | CAP_MIC | CAP_VIDEO | CAP_FABRIC_READER | CAP_SD | CAP_FLASH | CAP_I2C
+SYSINFO_CAP = CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED | CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE | CAP_AUDIO | CAP_MIC | CAP_VIDEO | CAP_FABRIC_READER | CAP_SD | CAP_FLASH | CAP_I2C | CAP_GFX2D
 
 WS2812_ID = 2922709761
 
@@ -253,12 +259,14 @@ MIC_EP = (MIC_ID, MIC_BASE, 4096, MIC_DATA, 4, ABI_VERSION, EXT_INT_MIC | MIC_RE
 
 VIDEO_EP = (VIDEO_ID, VIDEO_BASE, 4096, 0, 0, ABI_VERSION, EXT_INT_VIDEO | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
 
+GFX2D_EP = (GFX2D_ID, GFX2D_BASE, 4096, 0, 0, ABI_VERSION, EXT_INT_GFX2D | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
+
 SD_EP = (SD_ID, SD_BASE, 4096, SD_TX_DATA, 8, ABI_VERSION, (FLAG_PRESENT | FLAG_DATA | FLAG_DMA) << 16, SD_TX_DMA_SEL | (SD_RX_DMA_SEL << 8))
 
 SPI_EP = (SPI_ID, SPI_BASE, 0x28, 0, 0, 1, FLAG_PRESENT << 16, 0)
 I2C_EP = (I2C_ID, I2C_BASE, 0x30, 0, 0, 0, FLAG_PRESENT << 16, 0)
 
-DEVICE_COUNT = 11
+DEVICE_COUNT = 12
 
 STATUS_ADDR = DDR_CSR_BASE
 
@@ -431,7 +439,7 @@ class AddressMap:
 
     def interface(self):
         binding = self.io.gpio_binding()
-        return dict(ethernet_management=dict(csr=self.ETH_BASE, clock_hz=25000000, backend='clause22-mdio+liteeth-dma-ring', packets=dict(clock_hz=self.machine.clocks.ethernet_tx, mtu=1530, id_offset=0x10, version=2, data_width=32, tx_storage_clock_hz=self.FABRIC_HZ, descriptor_bytes=32, ring_max=256, irq=self.EXT_INT_ETHERNET, io_delays='PHY-TX-RX-2ns', rx_data_delay_ps=self.machine.rtl.ethernet_rx_delay_ps, rx_timing='routed-ddr-input-v1', tx_timing='routed-ddr-skew-v1', transport='DDR-descriptor-rings')), usb=dict(csr=self.USB_BASE, clock_hz=self.machine.clocks.usb, speed='full', backend='OHCI-Wishbone-DDR', irq=14, diagnostic_offsets=[0x100,0x104,0x108]), cpu='ae350-rv32imac', image_version=1, load=self.DDR_CODE, management=dict(spi=dict(csr=self.SPI_BASE,backend='fabric-QSPI',register_abi=1,data_width=4,clock_hz=self.FABRIC_HZ//2,size_bytes=self.USER_FLASH_BYTES,flash='user-U7',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.flash].signals.items()}),i2c=dict(csr=self.I2C_BASE,backend='ATCIIC100',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.i2c].signals.items()},mux=dict(pins=list(self.machine.board.resources[self.machine.devices.twi_mux].signals['sel'].pins),gpio_shift=self.TWI_MUX_GPIO_SHIFT,reset=0))), sd=dict(csr=self.SD_BASE, abi=self.ABI_VERSION, transport='litesdcard-native-4bit', clock_domain='mem', default_hz=25000000, clock_hz=self.DATA_HZ, cdc='retained-APB-AHB-REQ-ACK', dma='hard-DMAC-AHB-FIFO', tx=dict(data=self.SD_TX_DATA,request=self.SD_TX_REQ,selector=self.SD_TX_DMA_SEL), rx=dict(data=self.SD_RX_DATA,request=self.SD_RX_REQ,selector=self.SD_RX_DMA_SEL), pins={name:list(sig.pins) for name,sig in self.machine.board.resources[self.machine.devices.sd].signals.items()}), video=dict(csr=self.VIDEO_BASE, width=640, height=480, format='RGB565', formats=['RGB565','RGB888','XRGB8888'], modes=[dict(id=i,**asdict(m),actual_pixel_hz=pll_config(m.pixel_hz)['actual_hz']) for i,m in enumerate(MODES)], runtime_modes=True, irq=self.EXT_INT_VIDEO, hpd_irq='sticky-W1C-connect-disconnect', pixel_requested_hz=self.machine.clocks.video, serializer_requested_hz=self.machine.clocks.video * 5, pins=self.io.video_binding(), commit='vblank-snapshot', memory='round-robin-single-outstanding-DDR3-UI', abi=self.ABI_VERSION, registers=self.VIDEO_REGS), audio=dict(pins=self.io.audio_binding(), sample_rate=48000, tx=dict(csr=self.AUDIO_BASE, data=self.AUDIO_DATA, irq=self.EXT_INT_AUDIO, request=self.AUDIO_REQ, selector=self.AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=self.ABI_VERSION), rx=dict(csr=self.MIC_BASE, data=self.MIC_DATA, irq=self.EXT_INT_MIC, request=self.MIC_REQ, selector=self.MIC_DMA_SEL, pcm='mono-s24-in-s32-le', abi=self.ABI_VERSION)), memories=self.WINDOWS, reserved=self.SUBRANGES, registers=dict(ddr_status=self.STATUS_ADDR, calib_cycles=self.CALIB_CYCLES_ADDR, reads=self.READ_COUNT_ADDR, writes=self.WRITE_COUNT_ADDR, write_trace=self.WRITE_TRACE_ADDR, read_trace=self.READ_TRACE_ADDR, gpio=self.GPIO_BASE, ws2812=self.WS2812_BASE, board_io=self.IO_BASE, sense=self.SENSE_BASE, plic=self.PLIC_BASE), gpio=dict(leds=list(binding['led_bits']), buttons=list(binding['button_bits']), inject=binding['inject_bit'], irq_mask=binding['irq_mask'], led_active_low=[int(item) for item in binding['led_active_low']], button_active_low=[int(item) for item in binding['button_active_low']]), loader=dict(max_bytes=self.DDR_CODE_MAX, stack_top=self.PAYLOAD_STACK_TOP), uart=dict(base=self.UART_BASE, baud=115200), capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1', dmac='exported-unproven', ext_ahb='loopback', fabric_reader='RGB565-scanout', board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core', fan='pwm-percent-25khz', temperature='die-quarter-degree'))
+        return dict(ethernet_management=dict(csr=self.ETH_BASE, clock_hz=25000000, backend='clause22-mdio+liteeth-dma-ring', packets=dict(clock_hz=self.machine.clocks.ethernet_tx, mtu=1530, id_offset=0x10, version=2, data_width=32, tx_storage_clock_hz=self.FABRIC_HZ, descriptor_bytes=32, ring_max=256, irq=self.EXT_INT_ETHERNET, io_delays='PHY-TX-RX-2ns', rx_data_delay_ps=self.machine.rtl.ethernet_rx_delay_ps, rx_timing='routed-ddr-input-v1', tx_timing='routed-ddr-skew-v1', transport='DDR-descriptor-rings')), usb=dict(csr=self.USB_BASE, clock_hz=self.machine.clocks.usb, speed='full', backend='OHCI-Wishbone-DDR', irq=14, diagnostic_offsets=[0x100,0x104,0x108]), cpu='ae350-rv32imac', image_version=1, load=self.DDR_CODE, management=dict(spi=dict(csr=self.SPI_BASE,backend='fabric-QSPI',register_abi=1,data_width=4,clock_hz=self.FABRIC_HZ//2,size_bytes=self.USER_FLASH_BYTES,flash='user-U7',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.flash].signals.items()}),i2c=dict(csr=self.I2C_BASE,backend='ATCIIC100',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.i2c].signals.items()},mux=dict(pins=list(self.machine.board.resources[self.machine.devices.twi_mux].signals['sel'].pins),gpio_shift=self.TWI_MUX_GPIO_SHIFT,reset=0))), sd=dict(csr=self.SD_BASE, abi=self.ABI_VERSION, transport='litesdcard-native-4bit', clock_domain='mem', default_hz=25000000, clock_hz=self.DATA_HZ, cdc='retained-APB-AHB-REQ-ACK', dma='hard-DMAC-AHB-FIFO', tx=dict(data=self.SD_TX_DATA,request=self.SD_TX_REQ,selector=self.SD_TX_DMA_SEL), rx=dict(data=self.SD_RX_DATA,request=self.SD_RX_REQ,selector=self.SD_RX_DMA_SEL), pins={name:list(sig.pins) for name,sig in self.machine.board.resources[self.machine.devices.sd].signals.items()}), video=dict(csr=self.VIDEO_BASE, width=640, height=480, format='RGB565', formats=['RGB565','RGB888','XRGB8888'], modes=[dict(id=i,**asdict(m),actual_pixel_hz=pll_config(m.pixel_hz)['actual_hz']) for i,m in enumerate(MODES)], runtime_modes=True, irq=self.EXT_INT_VIDEO, hpd_irq='sticky-W1C-connect-disconnect', pixel_requested_hz=self.machine.clocks.video, serializer_requested_hz=self.machine.clocks.video * 5, pins=self.io.video_binding(), commit='vblank-snapshot', memory='round-robin-single-outstanding-DDR3-UI', abi=self.ABI_VERSION, registers=self.VIDEO_REGS), gfx2d=dict(csr=self.GFX2D_BASE, abi=self.ABI_VERSION, cap=self.GFX2D_CAP, irq=self.EXT_INT_GFX2D, registers=self.GFX2D_REGS, stage=1), audio=dict(pins=self.io.audio_binding(), sample_rate=48000, tx=dict(csr=self.AUDIO_BASE, data=self.AUDIO_DATA, irq=self.EXT_INT_AUDIO, request=self.AUDIO_REQ, selector=self.AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=self.ABI_VERSION), rx=dict(csr=self.MIC_BASE, data=self.MIC_DATA, irq=self.EXT_INT_MIC, request=self.MIC_REQ, selector=self.MIC_DMA_SEL, pcm='mono-s24-in-s32-le', abi=self.ABI_VERSION)), memories=self.WINDOWS, reserved=self.SUBRANGES, registers=dict(ddr_status=self.STATUS_ADDR, calib_cycles=self.CALIB_CYCLES_ADDR, reads=self.READ_COUNT_ADDR, writes=self.WRITE_COUNT_ADDR, write_trace=self.WRITE_TRACE_ADDR, read_trace=self.READ_TRACE_ADDR, gpio=self.GPIO_BASE, ws2812=self.WS2812_BASE, board_io=self.IO_BASE, sense=self.SENSE_BASE, plic=self.PLIC_BASE), gpio=dict(leds=list(binding['led_bits']), buttons=list(binding['button_bits']), inject=binding['inject_bit'], irq_mask=binding['irq_mask'], led_active_low=[int(item) for item in binding['led_active_low']], button_active_low=[int(item) for item in binding['button_active_low']]), loader=dict(max_bytes=self.DDR_CODE_MAX, stack_top=self.PAYLOAD_STACK_TOP), uart=dict(base=self.UART_BASE, baud=115200), capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1', dmac='exported-unproven', ext_ahb='loopback', fabric_reader='RGB565-scanout', board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core', fan='pwm-percent-25khz', temperature='die-quarter-degree'))
 
     def image_abi(self):
         import json

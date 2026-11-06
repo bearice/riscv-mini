@@ -167,11 +167,12 @@ class LoopbackFifo(LiteXModule):
 class AE350Fabric(LiteXModule):
     """Extended AHB decode plus the platform APB pages owned by P3a."""
 
-    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None, usb=None, ethernet=None, sfp=None):
+    def __init__(self, cpu, diagnostics, io, layout, video=None, sd=None, flash=None, usb=None, ethernet=None, sfp=None, gfx2d=None):
         amap = layout
         self.ethernet_management = EthernetManagement(amap.FABRIC_HZ)
         self.qspi = UserQSPI(amap.FABRIC_HZ, amap.USER_FLASH_BYTES)
         self.video = video
+        self.gfx2d = gfx2d
         fifo_bus = AHBInterface(data_width=32, address_width=32)
         err_bus = AHBInterface(data_width=32, address_width=32)
         self.fifo = LoopbackFifo(fifo_bus)
@@ -244,7 +245,7 @@ class AE350Fabric(LiteXModule):
                               sd.tx_req if sd is not None else 0, sd.rx_req if sd is not None else 0, Constant(0, 2))),
             cpu.interrupt.eq(Cat(self.irq_pending & self.irq_enable, Constant(0, 1),
                                  self.audio.tx_irq, self.audio.rx_irq, getattr(usb, 'irq', 0), Constant(0, 2),
-                                 self.board.irq, video.irq if video is not None else 0, ethernet.irq if ethernet is not None else 0, Constant(0, 6))),
+                                 self.board.irq, video.irq if video is not None else 0, ethernet.irq if ethernet is not None else 0, gfx2d.irq if gfx2d is not None else 0, Constant(0, 5))),
             self.audio.off.eq(off), self.audio.write.eq(write_q), self.audio.wdata.eq(wdata_q),
             self.audio.commit.eq(commit),
             self.board.off.eq(off),
@@ -256,13 +257,15 @@ class AE350Fabric(LiteXModule):
             level_tx.eq(catch_tx | cpu.dma_ack[0]),
             level_rx.eq(catch_rx | cpu.dma_ack[1]),
         ]
-        sysinfo,irq,ddr,dma,ws,board,sense,audio,mic,sd_page,video_page = [Signal() for _ in range(11)]
+        sysinfo,irq,ddr,dma,ws,board,sense,audio,mic,sd_page,video_page,gfx2d_page = [Signal() for _ in range(12)]
         self.comb += [
             signal.eq(addr_q[12:] == (base >> 12)) for signal,base in (
                 (sysinfo,amap.SYSINFO_BASE),(irq,amap.IRQ_BASE),(ddr,amap.DDR_CSR_BASE),
                 (dma,amap.DMA_SVC_BASE),(ws,amap.WS2812_BASE),(board,amap.IO_BASE),
                 (sense,amap.SENSE_BASE),(audio,amap.AUDIO_BASE),(mic,amap.MIC_BASE),
-                (sd_page,amap.SD_BASE),(video_page,amap.VIDEO_BASE))]
+                (sd_page,amap.SD_BASE),(video_page,amap.VIDEO_BASE),(gfx2d_page,amap.GFX2D_BASE))]
+        gfx2d_ok = gfx2d.ok if gfx2d is not None else 0
+        gfx2d_rdata = gfx2d.rdata if gfx2d is not None else 0
         qspi_page = Signal()
         self.comb += qspi_page.eq(addr_q[12:] == (amap.SPI_BASE >> 12))
         sd_ok = sd.ok if sd is not None else 0
@@ -307,7 +310,7 @@ class AE350Fabric(LiteXModule):
         # Device entries are contiguous 32-byte records. Decode the record
         # index rather than OR-ing every individual address into error_q.
         records = (amap.LOOPBACK_EP, amap.DMAC_EP, amap.WS2812_EP, amap.IO_EP, amap.SENSE_EP, amap.AUDIO_EP,
-                   amap.MIC_EP, amap.VIDEO_EP, amap.SD_EP, amap.SPI_EP, amap.I2C_EP)
+                   amap.MIC_EP, amap.VIDEO_EP, amap.SD_EP, amap.SPI_EP, amap.I2C_EP, amap.GFX2D_EP)
         count_off = amap.SYSINFO_DEVICE_COUNT_ADDR - amap.SYSINFO_BASE
         stride_off = amap.SYSINFO_DEVICE_STRIDE_ADDR - amap.SYSINFO_BASE
         table_off = amap.SYSINFO_DEVICES_ADDR - amap.SYSINFO_BASE
@@ -356,6 +359,7 @@ class AE350Fabric(LiteXModule):
             (legal & audio & self.audio.tx_ok,self.audio.tx_rdata),
             (legal & mic & self.audio.rx_ok,self.audio.rx_rdata),
             (legal & video_page & video_ok,video_rdata),
+            (legal & gfx2d_page & gfx2d_ok,gfx2d_rdata),
             (legal & sense & self.sense.ok,self.sense.rdata),
             (legal & ws & self.board.ws_ok,self.board.ws_rdata),
             (legal & board & self.board.io_ok,self.board.io_rdata),
@@ -399,6 +403,9 @@ class AE350Fabric(LiteXModule):
         if video is not None:
             self.comb += [video.off.eq(off), video.write.eq(write_q), video.wdata.eq(wdata_q),
                           video.commit.eq(commit), video.selected.eq(legal & video_page)]
+        if gfx2d is not None:
+            self.comb += [gfx2d.off.eq(off), gfx2d.write.eq(write_q), gfx2d.wdata.eq(wdata_q),
+                          gfx2d.commit.eq(commit), gfx2d.selected.eq(legal & gfx2d_page)]
         self.sync += [
             If(~cpu.apb_select,
                 wait.eq(0),
