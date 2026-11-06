@@ -11,7 +11,7 @@ class DDRMemoryArbiter(LiteXModule):
     cascaded arbiters. An accepted untagged read keeps its owner until its
     actual response, regardless of a client's subsequent pending level.
     """
-    def __init__(self,memory,cpu,video,network,usb=None):
+    def __init__(self,memory,cpu,video,network,usb=None,gfx2d=None):
         from migen import Array, Cat, Case
         ports=[cpu,video,network]
         self.cpu_pending,self.video_pending,self.network_pending=[Signal() for _ in ports]
@@ -24,6 +24,12 @@ class DDRMemoryArbiter(LiteXModule):
             ports.append(usb)
             pending.append(self.usb_pending)
             counts.append(self.usb_commands)
+        self.gfx2d_pending = Signal()
+        self.gfx2d_commands = Signal(32)
+        if gfx2d is not None:
+            ports.append(gfx2d)
+            pending.append(self.gfx2d_pending)
+            counts.append(self.gfx2d_commands)
         choices = {}
         for previous in range(len(ports)):
             choice = previous
@@ -33,8 +39,9 @@ class DDRMemoryArbiter(LiteXModule):
             choices[previous] = choice
         self.max_video_wait=Signal(32);self.unexpected_response=Signal()
         self.read_pending=busy=Signal()
-        grant,owner,last=Signal(2),Signal(2),Signal(2,reset=2)
-        valid=Signal();chosen=Signal(2)
+        id_bits=(len(ports)-1).bit_length()
+        grant,owner,last=Signal(id_bits),Signal(id_bits),Signal(id_bits,reset=2)
+        valid=Signal();chosen=Signal(id_bits)
         any_pending=Signal();active=Signal();command=Signal()
         selected_pending=Array(pending)[grant]
         def select(field):return Array([getattr(p,field) for p in ports])[grant]

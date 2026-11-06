@@ -563,7 +563,7 @@ class AddressMap:
     def c_header(self):
         self.require()
         constants = {name: value for (name, value) in self.constants().items() if name.isupper() and isinstance(value, int)}
-        return '#pragma once\n/* Generated from ae350_map.py. */\n' + ''.join(('#define AE350_%s 0x%xu\n' % item for item in sorted(constants.items()))) + ''.join(('#define AE350_VIDEO_%s 0x%xu\n' % item for item in sorted(self.VIDEO_REGS.items()))) + '#define AE350_IMAGE_ABI 0x%08xu\n' % self.image_abi()
+        return '#pragma once\n/* Generated from ae350_map.py. */\n' + ''.join(('#define AE350_%s 0x%xu\n' % item for item in sorted(constants.items()))) + ''.join(('#define AE350_VIDEO_%s 0x%xu\n' % item for item in sorted(self.VIDEO_REGS.items()))) + ''.join(('#define AE350_GFX2D_%s 0x%xu\n' % item for item in sorted(self.GFX2D_REGS.items()))) + '#define AE350_IMAGE_ABI 0x%08xu\n' % self.image_abi()
 
     def ld_fragment(self):
         self.require()
