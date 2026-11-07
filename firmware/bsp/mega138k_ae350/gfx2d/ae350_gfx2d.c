@@ -101,6 +101,11 @@ int ae350_gfx2d_wait(unsigned max_rounds) {
         if (status & GFX2D_STATUS_DONE)
             return (status & GFX2D_STATUS_ERROR) ? (int)R(GFX2D_LAST_ERROR) : AE350_GFX2D_OK;
         if (!(status & GFX2D_STATUS_BUSY)) return AE350_GFX2D_PARAM;
+        /* Back off between polls: with the L1 I-cache off (bootloader reset
+         * state), a tight APB spin starves instruction fetch while the
+         * engine hammers DDR and faults as an illegal instruction. The
+         * BIOS enables caches, but payloads may not; keep polling gentle. */
+        for (volatile unsigned d = 0; d < 24; d++) {}
     }
     return AE350_GFX2D_TIMEOUT;
 }
