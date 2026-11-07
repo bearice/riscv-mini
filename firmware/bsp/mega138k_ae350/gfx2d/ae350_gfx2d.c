@@ -6,8 +6,66 @@
 #define fence() __asm__ volatile("fence rw,rw" ::: "memory")
 
 int ae350_gfx2d_probe(void) {
-    return (R(0)==AE350_GFX2D_ID && R(4)==AE350_ABI_VERSION)
-        ? AE350_GFX2D_OK : AE350_GFX2D_DEVICE;
+    /* Cached: the TTY path issues thousands of ops; two APB reads per
+     * call would dominate. Device identity does not change at runtime. */
+    static int cached = -1;
+    if (cached < 0)
+        cached = (R(0)==AE350_GFX2D_ID && R(4)==AE350_ABI_VERSION)
+            ? AE350_GFX2D_OK : AE350_GFX2D_DEVICE;
+    return cached;
+}
+
+/* Cache-clean only the lines the engine actually touches: per row of the
+ * rectangle (a full-span clean of a sparse cell costs ~600 line ops).
+ * Batched CSR writes with one fence: per-row sync calls would fence 16x. */
+static int sync_rect(uint32_t addr, uint32_t stride, uint32_t row_bytes,
+                     uint32_t rows) {
+    uint64_t span = (uint64_t)stride * (rows - 1) + row_bytes;
+    if (span > AE350_DDR_SIZE || addr >= AE350_DDR_SIZE ||
+        span > AE350_DDR_SIZE - addr)
+        return AE350_GFX2D_ADDR;
+    for (uint32_t r = 0; r < rows; r++) {
+        uint32_t a = addr + r * stride;
+        uint32_t last = (a + row_bytes - 1u) & ~(AE350_DMA_LINE - 1u);
+        for (uint32_t line = a & ~(AE350_DMA_LINE - 1u); line <= last; line += AE350_DMA_LINE) {
+            __asm__ volatile("csrw 0x7cb, %0" :: "r"(line) : "memory");
+            __asm__ volatile("csrw 0x7cc, %0" :: "r"(1u) : "memory");
+            if (line == last) break;
+        }
+    }
+    fence();
+    return AE350_GFX2D_OK;
+}
+
+/* Descriptor shadow: the engine latches all descriptor registers at
+ * START, so rewriting an unchanged register is wasted APB traffic
+ * (50 MHz fabric vs the CPU). The TTY path issues thousands of
+ * same-shape ops; diffing cuts APB writes per op from 10 to ~4. */
+struct gfx2d_desc {
+    uint32_t op, src, dst, src_stride, dst_stride, w, h, fg, bg, wb;
+};
+static struct gfx2d_desc last_desc;
+static int desc_valid;
+
+static void write_desc_diff(const struct gfx2d_desc *d) {
+    if (!desc_valid || d->op != last_desc.op) W(GFX2D_OP, d->op);
+    if (!desc_valid || d->src != last_desc.src) W(GFX2D_SRC_ADDR, d->src);
+    if (!desc_valid || d->dst != last_desc.dst) W(GFX2D_DST_ADDR, d->dst);
+    if (!desc_valid || d->src_stride != last_desc.src_stride) W(GFX2D_SRC_STRIDE, d->src_stride);
+    if (!desc_valid || d->dst_stride != last_desc.dst_stride) W(GFX2D_DST_STRIDE, d->dst_stride);
+    if (!desc_valid || d->w != last_desc.w) W(GFX2D_WIDTH, d->w);
+    if (!desc_valid || d->h != last_desc.h) W(GFX2D_HEIGHT, d->h);
+    if (!desc_valid || d->fg != last_desc.fg) W(GFX2D_FG_COLOR, d->fg);
+    if (!desc_valid || d->bg != last_desc.bg) W(GFX2D_BG_COLOR, d->bg);
+    if (!desc_valid || d->wb != last_desc.wb) W(GFX2D_BLIT_SRC_WB, d->wb);
+    last_desc.op=d->op; last_desc.src=d->src; last_desc.dst=d->dst;
+    last_desc.src_stride=d->src_stride; last_desc.dst_stride=d->dst_stride;
+    last_desc.w=d->w; last_desc.h=d->h; last_desc.fg=d->fg; last_desc.bg=d->bg;
+    last_desc.wb=d->wb;
+    desc_valid = 1;
+    fence();
+    W(GFX2D_CONTROL, 1);
+    fence();
 }
 
 int ae350_gfx2d_fill_rect(uint32_t dst, uint32_t dst_stride,
@@ -18,20 +76,10 @@ int ae350_gfx2d_fill_rect(uint32_t dst, uint32_t dst_stride,
      * device-visible memory before START (cache clean, dma sync). */
     uint64_t bytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * 2;
     if (bytes > 0xffffffffull) return AE350_GFX2D_ADDR;
-    if (ae350_dma_sync_for_device(dst, (uint32_t)bytes)) return AE350_GFX2D_ADDR;
-    W(GFX2D_OP, GFX2D_OP_FILL_RECT);
-    W(GFX2D_SRC_ADDR, 0);
-    W(GFX2D_DST_ADDR, dst);
-    W(GFX2D_SRC_STRIDE, 0);
-    W(GFX2D_DST_STRIDE, dst_stride);
-    W(GFX2D_WIDTH, width);
-    W(GFX2D_HEIGHT, height);
-    W(GFX2D_FG_COLOR, rgb565);
-    W(GFX2D_BG_COLOR, 0);
-    W(GFX2D_BLIT_SRC_WB, 0);
-    fence();
-    W(GFX2D_CONTROL, 1);
-    fence();
+    if (sync_rect(dst, dst_stride, width * 2, height)) return AE350_GFX2D_ADDR;
+    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_FILL_RECT, .src=0, .dst=dst,
+        .src_stride=0, .dst_stride=dst_stride, .w=width, .h=height,
+        .fg=rgb565, .bg=0, .wb=0 });
     return AE350_GFX2D_OK;
 }
 
@@ -42,22 +90,12 @@ int ae350_gfx2d_copy_area(uint32_t src, uint32_t src_stride,
     if (!width || !height) return AE350_GFX2D_PARAM;
     uint64_t bytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * 2;
     if (bytes > 0xffffffffull) return AE350_GFX2D_ADDR;
-    if (ae350_dma_sync_for_device(src, (uint32_t)bytes) ||
-        ae350_dma_sync_for_device(dst, (uint32_t)bytes))
+    if (sync_rect(src, src_stride, width * 2, height) ||
+        sync_rect(dst, dst_stride, width * 2, height))
         return AE350_GFX2D_ADDR;
-    W(GFX2D_OP, GFX2D_OP_COPY_AREA);
-    W(GFX2D_SRC_ADDR, src);
-    W(GFX2D_DST_ADDR, dst);
-    W(GFX2D_SRC_STRIDE, src_stride);
-    W(GFX2D_DST_STRIDE, dst_stride);
-    W(GFX2D_WIDTH, width);
-    W(GFX2D_HEIGHT, height);
-    W(GFX2D_FG_COLOR, 0);
-    W(GFX2D_BG_COLOR, 0);
-    W(GFX2D_BLIT_SRC_WB, 0);
-    fence();
-    W(GFX2D_CONTROL, 1);
-    fence();
+    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_COPY_AREA, .src=src, .dst=dst,
+        .src_stride=src_stride, .dst_stride=dst_stride, .w=width, .h=height,
+        .fg=0, .bg=0, .wb=0 });
     return AE350_GFX2D_OK;
 }
 
@@ -70,22 +108,14 @@ int ae350_gfx2d_image_blit(uint32_t src, uint32_t src_wb,
     uint64_t dbytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * 2;
     uint64_t sbytes = (uint64_t)src_wb * height;
     if (dbytes > 0xffffffffull || sbytes > 0xffffffffull) return AE350_GFX2D_ADDR;
+    /* Source is one contiguous buffer (src_wb bytes per row): single sync.
+     * Destination is strided: per-row sync of touched lines only. */
     if (ae350_dma_sync_for_device(src, (uint32_t)sbytes) ||
-        ae350_dma_sync_for_device(dst, (uint32_t)dbytes))
+        sync_rect(dst, dst_stride, width * 2, height))
         return AE350_GFX2D_ADDR;
-    W(GFX2D_OP, GFX2D_OP_IMAGE_BLIT);
-    W(GFX2D_SRC_ADDR, src);
-    W(GFX2D_DST_ADDR, dst);
-    W(GFX2D_SRC_STRIDE, 0);
-    W(GFX2D_DST_STRIDE, dst_stride);
-    W(GFX2D_WIDTH, width);
-    W(GFX2D_HEIGHT, height);
-    W(GFX2D_FG_COLOR, fg);
-    W(GFX2D_BG_COLOR, bg);
-    W(GFX2D_BLIT_SRC_WB, src_wb);
-    fence();
-    W(GFX2D_CONTROL, 1);
-    fence();
+    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_IMAGE_BLIT, .src=src, .dst=dst,
+        .src_stride=0, .dst_stride=dst_stride, .w=width, .h=height,
+        .fg=fg, .bg=bg, .wb=src_wb });
     return AE350_GFX2D_OK;
 }
 
