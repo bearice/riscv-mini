@@ -76,6 +76,7 @@ AE350_CLOSURE = (
     'gateware/machines/mega138k_ae350/peripherals/board_sense.py',
     'gateware/machines/mega138k_ae350/peripherals/audio.py',
     'gateware/machines/mega138k_ae350/peripherals/video.py',
+    'gateware/machines/mega138k_ae350/peripherals/gfx2d.py',
     'gateware/machines/mega138k_ae350/fabric.py',
     'gateware/machines/mega138k_ae350/soc.py',
     'gateware/machines/mega138k_ae350/ports.py',

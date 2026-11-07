@@ -56,7 +56,7 @@ class Gfx2DHostTest(unittest.TestCase):
                 if en and wen:
                     base = addr << 2  # UI addr = byte_addr[2:31] with low bits cleared
                     for i in range(32):
-                        if (mask >> i) & 1:
+                        if not ((mask >> i) & 1):
                             mem[base + i] = (data >> (8 * i)) & 0xff
                 elif en and cmd == 1:
                     base = addr << 2
@@ -188,7 +188,7 @@ class Gfx2DHostTest(unittest.TestCase):
             if en and wen:
                 base = addr << 2
                 for i in range(32):
-                    if (mask >> i) & 1:
+                    if not ((mask >> i) & 1):
                         mem[base + i] = (data >> (8 * i)) & 0xff
             elif en and cmd == 1:
                 base = addr << 2
@@ -263,6 +263,26 @@ class Gfx2DHostTest(unittest.TestCase):
             want = fg if bit else bg
             px = mem2[0x4004 + 2 * c] | (mem2[0x4004 + 2 * c + 1] << 8)
             assert px == want, ('unaligned', c, px, want)
+        # Src offset 16 inside the source beat (same DDR beat as a
+        # previous blit at offset 0) -- regression for src_byte_off.
+        # Two ops on one DUT instance need a single simulation, so
+        # run the second op via the same _run_op helper machinery on
+        # a fresh instance whose memory already contains both results
+        # is not enough; instead exercise offset src on its own here
+        # (multi-op state leakage is covered on the board suite).
+        d3 = make()
+        mem3 = bytearray(1 << 20)
+        mem3[0x5000:0x5000 + 2] = bytes([0xF0, 0x0F])
+        mem3[0x5010:0x5010 + 2] = glyph2
+        self._run_op(d3, self._fake_pump_factory(d3, mem3), {
+            'OP': 2, 'SRC_ADDR': 0x5010, 'DST_ADDR': 0x7004, 'SRC_STRIDE': 0,
+            'DST_STRIDE': 64, 'WIDTH': 16, 'HEIGHT': 1, 'FG_COLOR': fg, 'BG_COLOR': bg,
+            'BLIT_SRC_WB': 2})
+        for c in range(16):
+            bit = (glyph2[c >> 3] >> (7 - (c & 7))) & 1
+            want = fg if bit else bg
+            px = mem3[0x7004 + 2 * c] | (mem3[0x7004 + 2 * c + 1] << 8)
+            assert px == want, ('src-off16', c, px, want)
         print('PASS GFX2D: IMAGE_BLIT 8x2 + unaligned 16x1')
 
     def test_address_map(self):

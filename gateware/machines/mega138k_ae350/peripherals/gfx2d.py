@@ -36,9 +36,10 @@ class Gfx2DEngine(LiteXModule):
 
     Drives one untagged single-beat DDR3UI port. Address is the
     32-byte block number (byte_addr[2:31] with low bits cleared, same
-    encoding as VideoFrameReader / DDR3AHB); ``wr_data_mask`` covers
-    the partial blocks at row edges, so arbitrary dst/stride/width
-    are handled without read-modify-write.
+    encoding as VideoFrameReader / DDR3AHB); the UI ``wr_data_mask``
+    (bit 1 = byte unchanged, inverted at the output) covers the
+    partial blocks at row edges, so arbitrary dst/stride/width are
+    handled without read-modify-write.
     """
     def __init__(self, ddr_size=1 << 30, response_timeout=1 << 18):
         self.ui = DDR3UI()
@@ -58,7 +59,7 @@ class Gfx2DEngine(LiteXModule):
         row_bytes = Signal(32)
         row = Signal(32)
         beat = Signal(32)
-        beats = Signal(32)
+        beats = Signal(16)
         elapsed = Signal(max=response_timeout + 1)
         err = Signal(32)
 
@@ -72,43 +73,60 @@ class Gfx2DEngine(LiteXModule):
         self.sync += row_bytes.eq(width << 1)  # RGB565: 2 bytes/pixel
         # One adder per state (see FSM): ROW_INC adds stride, ROW_SETUP
         # derives geometry from the registered row_start.
+        # Row-increment deltas are registered in INIT so ROW_INC is a
+        # single adder per row (no subtract/mux cone in the cycle).
+        delta_dst = Signal(32)
+        delta_src = Signal(32)
         nxt_row_start = Signal(32)
         nxt_src_row_start = Signal(32)
         self.comb += [
-            nxt_row_start.eq(Mux(dir_down & (op == OP_COPY_AREA),
-                                 row_start - dst_stride, row_start + dst_stride)),
-            nxt_src_row_start.eq(Mux(op == OP_COPY_AREA,
-                                     Mux(dir_down, src_row_start - src_stride,
-                                         src_row_start + src_stride),
-                                     src_row_start + blit_wb)),
+            nxt_row_start.eq(row_start + delta_dst),
+            nxt_src_row_start.eq(src_row_start + delta_src),
         ]
-        beat_byte = Signal(32)
-        self.comb += beat_byte.eq(beat_base + (beat << 5))
-        # Per-row edge masks, registered in ROW_SETUP: middle beats are
-        # full, only first/last can be partial. Per-beat work is a mux.
+        beat_byte = Signal(32)  # registered, incremented by 32 per beat
+        # Per-row geometry is computed in the 5-bit low-word domain:
+        # row_bytes is constant per op, so fold split in INIT and only a
+        # 6-bit add runs per row.
+        rb_hi5 = Signal(32)  # row_bytes >> 5 (registered in INIT)
+        rb_lo5 = Signal(5)   # row_bytes[0:5]
+        # Current row's offset is a slice of the row_start register (free);
+        # using it directly avoids a one-row-lagged off5 register.
+        off5 = Signal(5)
+        self.comb += off5.eq(row_start[0:5])
         first_mask, last_mask = Signal(32), Signal(32)
         beats_w = Signal(32)
-        self.comb += beats_w.eq((row_start[0:5] + row_bytes + 31) >> 5)
+        geo_sum = Signal(6)
+        self.comb += geo_sum.eq(off5 + rb_lo5 + 31)
+        self.comb += beats_w.eq(rb_hi5 + geo_sum[5])
         first_end = Signal(6)
-        self.comb += first_end.eq(Mux(row_bytes > 32 - row_start[0:5], 32,
-                                     row_start[0:5] + row_bytes))
-        first_bits = [(row_start[0:5] <= i) & (i < first_end) for i in range(32)]
-        # Last beat end: (offset + row_bytes - 1) mod 32, +1 for count
-        # (full 32 when the total is a multiple of 32).
+        self.comb += first_end.eq(Mux((rb_hi5 != 0) | (off5 + rb_lo5 >= 32), 32,
+                                     off5 + rb_lo5))
+        first_bits = [(off5 <= i) & (i < first_end) for i in range(32)]
+        # Last beat end: (offset + row_bytes - 1) mod 32, +1 for count.
         last_count = Signal(6)
-        self.comb += last_count.eq((row_start[0:5] + row_bytes - 1)[0:5] + 1)
+        self.comb += last_count.eq((off5 + rb_lo5 - 1)[0:5] + 1)
         last_bits = [i < last_count for i in range(32)]
+        beats_left = Signal(16)  # counts down; 1 = last beat of row
+        first_beat = Signal()    # 1 while emitting the row's first beat
         beat_mask = Signal(32)
-        self.comb += beat_mask.eq(Mux(beat == 0, first_mask,
-                                     Mux(beat == beats - 1, last_mask, 0xffffffff)))
+        self.comb += beat_mask.eq(Mux(first_beat, first_mask,
+                                     Mux(beats_left == 1, last_mask, 0xffffffff)))
         # COPY_AREA source beat base (offsets are equal, see ROW_SETUP).
         src_beat_base = Signal(32)
-        # IMAGE_BLIT source byte stream state.
-        src_beat_buf = Signal(256)
+        # IMAGE_BLIT source byte stream state. The beat is pre-rotated
+        # into beat_shift at load, then walked 8 bits per fetched byte:
+        # the per-byte 256-bit extractor cone is gone.
+        # NB: the load shift amount must be an explicit 8-bit off*8
+        # (Cat(Constant(0,3), off[0:5])). (off[0:5] << 3) truncates to
+        # 5 bits in generated Verilog (shift result width = left operand
+        # width), so off>=4 silently shifted by (off<<3)%32 on hardware
+        # while Migen sim (Python semantics) passed.
+        beat_shift = Signal(256)
         src_beat_loaded = Signal()
-        src_byte_off = Signal(32)
+        src_byte_off = Signal(32)  # initial intra-beat offset only
+        bytes_in_beat = Signal(8)
         src_bytes_left = Signal(32)
-        bit_buf = Signal(16)
+        bit_buf = Signal(24)
         bit_cnt = Signal(5)
         copy_data = Signal(256)
         # Replicated pixels are block-aligned; shift by the row's byte
@@ -119,7 +137,7 @@ class Gfx2DEngine(LiteXModule):
         # Blit expansion: top 16 bits of bit_buf, MSB-first per byte.
         # Registered in B_EXP, shifted in B_PREP (two stages for timing).
         blit_expanded = Signal(256)
-        blit_pix = [Mux(bit_buf[15 - j], fg[:16], bg[:16]) for j in range(16)]
+        blit_pix = [Mux(bit_buf[23 - j], fg[:16], bg[:16]) for j in range(16)]
         self.comb += blit_expanded.eq(Cat(*blit_pix))  # pix0 is LSB = first pixel
         blit_exp_reg = Signal(256)
         # No per-beat shift: the dst row byte offset is absorbed at row
@@ -137,14 +155,19 @@ class Gfx2DEngine(LiteXModule):
             self.ui.burst.eq(0),
             self.ui.addr.eq(out_addr),
             self.ui.wr_data.eq(out_data),
-            self.ui.wr_data_mask.eq(out_mask),
+            # DDR3UI wr_data_mask bit 1 = byte MASKED (left unchanged);
+            # the engine's out_mask uses 1 = write, so invert here.
+            self.ui.wr_data_mask.eq(~out_mask),
             self.ui.wr_data_end.eq(0),
         ]
         load_out = Signal()
         self.sync += If(load_out, out_addr.eq(beat_byte[2:31] & ~Constant(7, 29)),
                         out_data.eq(prep_data), out_mask.eq(beat_mask))
         src_byte = Signal(8)
-        self.comb += src_byte.eq((src_beat_buf >> (src_byte_off[0:5] << 3))[:8])
+        self.comb += src_byte.eq(beat_shift[0:8])
+        src_byte_q = Signal(8)
+        src_byte_pending = Signal()
+
 
         self.fsm = fsm = FSM(reset_state='IDLE')
         # PREP-family states register the current beat's addr/data/mask;
@@ -172,13 +195,49 @@ class Gfx2DEngine(LiteXModule):
                    NextValue(row, 0), NextValue(beat, 0), NextValue(row_start, dst_addr),
                    NextValue(src_row_start, src_addr),
                    NextState('INIT')))
+        # INIT is split into three states so no single state carries
+        # the full geometry+validation+CE cone (that cone was the
+        # PnR timing critical path). INIT: byte limits (subtractors).
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(limit, ddr_size - row_bytes),
                 NextValue(src_limit, Mux(op == OP_IMAGE_BLIT,
                                          ddr_size - blit_wb, ddr_size - row_bytes)),
+                NextState('INIT2'))
+        # INIT2: row-step direction and 5-bit-domain geometry fold.
+        cmp_dst_stride = Signal()
+        fsm.act('INIT2',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(cmp_dst_stride, dst_stride < row_bytes),
                 NextValue(dir_down, src_addr < dst_addr),
-                NextState('ROW_START'))
+                NextValue(delta_dst, Mux((src_addr < dst_addr) & (op == OP_COPY_AREA),
+                                         -dst_stride, dst_stride)),
+                NextValue(delta_src, Mux(op == OP_COPY_AREA,
+                                         Mux(src_addr < dst_addr,
+                                             -src_stride, src_stride),
+                                         blit_wb)),
+                NextValue(rb_hi5, row_bytes >> 5),
+                NextValue(rb_lo5, row_bytes[0:5]),
+                NextState('INIT3'))
+        # INIT3: all parameter validation is op-invariant: run it once
+        # here, leaving ROW_SETUP with only per-row range checks.
+        # The 32-bit stride compare is pre-registered in INIT2
+        # (cmp_dst_stride) so INIT3 only has short cones.
+        static_bad = ((op > OP_IMAGE_BLIT) | (width == 0) | (height == 0) |
+                      cmp_dst_stride |
+                      ((op == OP_COPY_AREA) &
+                       ((src_stride < row_bytes) |
+                        (src_addr[0:5] != dst_addr[0:5]) |
+                        (src_stride[0:5] != dst_stride[0:5]))) |
+                      ((op == OP_IMAGE_BLIT) &
+                       ((blit_wb < (width + 7) >> 3) | (dst_addr[0] != 0) |
+                        (dst_stride[0] != 0))))
+        fsm.act('INIT3',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                If(static_bad,
+                   NextValue(err, Mux(op > OP_IMAGE_BLIT, ERR_UNSUPPORTED, ERR_PARAM)),
+                   NextState('FINISH'))
+                .Else(NextState('ROW_START')))
         # Copy-down needs the last row's start; compute it incrementally
         # in ROW_START (one stride add per cycle would be slow, so use a
         # dedicated state that steps row/row_start from the last row:
@@ -197,50 +256,61 @@ class Gfx2DEngine(LiteXModule):
                 .Else(NextState('ROW_SETUP')))
         # Range per row is a single registered compare against limit.
         pascal = [NextValue(beats, beats_w),
+                 NextValue(beats_left, beats_w),
+                 NextValue(first_beat, 1),
                  NextValue(beat_base, row_start & ~Constant(31, 32)),
+                 NextValue(beat_byte, row_start & ~Constant(31, 32)),
                  NextValue(offset, row_start[0:5]),
                  NextValue(first_mask, Cat(*first_bits)),
                  NextValue(last_mask, Cat(*last_bits))]
+        # ROW_SETUP: per-row range checks only (two 32-bit compares
+        # isolated in their own cycle). ROW_PASCAL then loads the
+        # geometry/masks and dispatches to the op datapaths.
         fsm.act('ROW_SETUP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                If(op > OP_IMAGE_BLIT, NextValue(err, ERR_UNSUPPORTED), NextState('FINISH'))
-                .Elif((width == 0) | (height == 0) | (dst_stride < row_bytes),
-                      NextValue(err, ERR_PARAM), NextState('FINISH'))
-                .Elif((op == OP_COPY_AREA) &
-                      ((src_stride < row_bytes) |
-                       (src_addr[0:5] != dst_addr[0:5]) |
-                       (src_stride[0:5] != dst_stride[0:5])),
-                      NextValue(err, ERR_PARAM), NextState('FINISH'))
-                .Elif((op == OP_IMAGE_BLIT) &
-                      ((blit_wb < (width + 7) >> 3) | (dst_addr[0] != 0) | (dst_stride[0] != 0)),
-                      NextValue(err, ERR_PARAM), NextState('FINISH'))
-                .Elif(row_start > limit, NextValue(err, ERR_ADDR), NextState('FINISH'))
+                If(row_start > limit, NextValue(err, ERR_ADDR), NextState('FINISH'))
                 .Elif((op != OP_FILL_RECT) & (src_row_start > src_limit),
                       NextValue(err, ERR_ADDR), NextState('FINISH'))
-                .Else(*pascal,
-                      If(op == OP_COPY_AREA,
-                         NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
-                         NextState('C_RPREP'))
-                      .Elif(op == OP_IMAGE_BLIT,
-                            NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
-                            NextValue(src_byte_off, src_row_start[0:5]),
-                            NextValue(src_beat_loaded, 0),
-                            NextValue(src_bytes_left, blit_wb),
-                            NextValue(bit_buf, 0),
-                            NextValue(bit_cnt, row_start[0:5] >> 1),  # doff/2 dummy px
-                            NextState('B_FETCH'))
-                      .Else(NextState('PREP'))))
+                .Else(NextState('ROW_PASCAL')))
+        fsm.act('ROW_PASCAL',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                *pascal,
+                If(op == OP_COPY_AREA,
+                   NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
+                   NextState('C_RPREP'))
+                .Elif(op == OP_IMAGE_BLIT,
+                      NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
+                      NextValue(src_byte_off, src_row_start[0:5]),
+                      NextValue(bytes_in_beat, 32 - src_row_start[0:5]),
+                      NextValue(src_beat_loaded, 0),
+                      NextValue(src_byte_pending, 0),
+                      NextValue(src_bytes_left, blit_wb),
+                      NextValue(bit_buf, 0),
+                      NextValue(bit_cnt, row_start[0:5] >> 1),  # doff/2 dummy px
+                      NextState('B_FETCH'))
+                .Else(NextState('PREP')))
         last_row = Mux(dir_down & (op == OP_COPY_AREA), row == 0, row == height - 1)
+        down = dir_down & (op == OP_COPY_AREA)
+        # ROW_INC is declared early (state encoding order) so the
+        # row-advance adders sit with the other per-row geometry.
+        fsm.act('ROW_INC',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(row, Mux(down, row - 1, row + 1)), NextValue(beat, 0),
+                NextValue(row_start, nxt_row_start),
+                NextValue(src_row_start, nxt_src_row_start), NextState('ROW_SETUP'))
         fsm.act('PREP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('SEND'))
         fsm.act('SEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1), self.ui.wr_data_end.eq(1),
                 If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
-                    If(beat == beats - 1,
+                    If(beats_left == 1,
                         If(row == height - 1, NextState('FINISH'))
                         .Else(NextState('ROW_INC')),
-                    ).Else(NextValue(beat, beat + 1), NextState('PREP')),
+                    ).Else(NextValue(beat, beat + 1),
+                             NextValue(beats_left, beats_left - 1),
+                             NextValue(first_beat, 0),
+                             NextValue(beat_byte, beat_byte + 32), NextState('PREP')),
                 ).Elif(elapsed == response_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
@@ -262,16 +332,17 @@ class Gfx2DEngine(LiteXModule):
                 ).Else(NextValue(elapsed, elapsed + 1)))
         fsm.act('C_WPREP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('C_WSEND'))
-        down = dir_down & (op == OP_COPY_AREA)
         fsm.act('C_WSEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1), self.ui.wr_data_end.eq(1),
                 If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
-                    If(Mux(down, beat == 0, beat == beats - 1),
+                    If(beats_left == 1,
                         If(last_row, NextState('FINISH'))
                         .Else(NextState('ROW_INC')),
-                    ).Else(NextValue(beat, Mux(down, beat - 1, beat + 1)),
-                           NextState('C_RPREP')),
+                    ).Else(NextValue(beat, beat + 1),
+                             NextValue(beats_left, beats_left - 1),
+                             NextValue(first_beat, 0),
+                             NextState('C_RPREP')),
                 ).Elif(elapsed == response_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
@@ -279,17 +350,26 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(bit_cnt >= 16, NextState('B_EXP'))
                 .Elif(src_bytes_left == 0, NextState('B_EXP'))
-                .Elif(src_byte_off == 32,
+                .Elif(bytes_in_beat == 0,
                       NextValue(src_beat_base, src_beat_base + 32),
-                      NextValue(src_byte_off, 0), NextValue(src_beat_loaded, 0),
+                      NextValue(src_byte_off, 0), NextValue(bytes_in_beat, 32),
+                      NextValue(src_beat_loaded, 0),
                       NextState('B_FETCH'))
                 .Elif(~src_beat_loaded, NextState('B_RD_PREP'))
+                # Extractor cone gets its own cycle: beat_buf ->
+                # shifter -> src_byte_q only (was the critical path).
+                .Elif(~src_byte_pending,
+                      NextValue(src_byte_q, src_byte),
+                      NextValue(src_byte_pending, 1), NextState('B_FETCH'))
                 # Valid bits are left-aligned (top of bit_buf); fetch
                 # places the new byte just below the valid region.
-                .Else(NextValue(bit_buf, bit_buf | (Cat(Constant(0, 8), src_byte) >> bit_cnt)),
+                .Else(NextValue(bit_buf, bit_buf | (Cat(Constant(0, 16), src_byte_q) >> bit_cnt)),
                       NextValue(bit_cnt, bit_cnt + 8),
                       NextValue(src_byte_off, src_byte_off + 1),
+                      NextValue(bytes_in_beat, bytes_in_beat - 1),
+                      NextValue(beat_shift, beat_shift >> 8),
                       NextValue(src_bytes_left, src_bytes_left - 1),
+                      NextValue(src_byte_pending, 0),
                       NextState('B_FETCH')))
         fsm.act('B_RD_PREP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), NextState('B_RD_SEND'))
@@ -303,7 +383,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('B_RD_WAIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(self.ui.rd_data_valid,
-                    NextValue(src_beat_buf, self.ui.rd_data),
+                    NextValue(beat_shift, self.ui.rd_data >> Cat(Constant(0, 3), src_byte_off[0:5])),
                     NextValue(src_beat_loaded, 1), NextState('B_FETCH'),
                 ).Elif(elapsed == response_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
@@ -317,20 +397,21 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1), self.ui.wr_data_end.eq(1),
                 If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
+                    # Remaining valid bits move below the consumed 16;
+                    # <<16 puts them at the top. Buffer is 24b so the
+                    # last byte's tail never truncates.
                     NextValue(bit_buf, bit_buf << 16),
                     NextValue(bit_cnt, Mux(bit_cnt > 16, bit_cnt - 16, 0)),
-                    If(beat == beats - 1,
+                    If(beats_left == 1,
                         If(row == height - 1, NextState('FINISH'))
                         .Else(NextState('ROW_INC')),
-                    ).Else(NextValue(beat, beat + 1), NextState('B_FETCH')),
+                    ).Else(NextValue(beat, beat + 1),
+                             NextValue(beats_left, beats_left - 1),
+                             NextValue(first_beat, 0),
+                             NextValue(beat_byte, beat_byte + 32), NextState('B_FETCH')),
                 ).Elif(elapsed == response_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
-        fsm.act('ROW_INC',
-                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(row, Mux(down, row - 1, row + 1)), NextValue(beat, 0),
-                NextValue(row_start, nxt_row_start),
-                NextValue(src_row_start, nxt_src_row_start), NextState('ROW_SETUP'))
         fsm.act('FINISH',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(self.done_err, err), NextValue(self.ack, ~self.ack), NextState('IDLE'))
