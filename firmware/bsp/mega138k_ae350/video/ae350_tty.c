@@ -45,6 +45,36 @@ int ae350_tty_flush(struct ae350_tty *t) {
         if(!t->initialized[slot]) {
             ae350_gfx2d_fill_rect(base,s.stride,pitch,s.height,0);
             ae350_gfx2d_wait(0xffff);
+        } else {
+            /* Scroll detection: if the grid moved up k rows inside the
+             * DECSTBM region, COPY_AREA the pixels instead of redrawing
+             * every cell (~30x cheaper for one-row scrolls). Compare
+             * ignoring the cursor REVERSE bit: drawn[] stores the
+             * post-reverse cell, the grid stores the raw cell. Rows the
+             * copy does not cover fall back to the normal diff below. */
+            unsigned top=t->terminal.top,bottom=t->terminal.bottom;
+            unsigned kmax=bottom-top; if(kmax>8)kmax=8;
+            for(unsigned k=1;k<=kmax;k++) {
+                int match=1;
+                for(unsigned r=top;r+k<=bottom&&match;r++)
+                    for(unsigned c=0;c<VT_COLS;c++) {
+                        vt_cell_t g=t->terminal.grid[r][c];
+                        vt_cell_t d=t->drawn[slot][r+k][c];
+                        if(g.ch!=d.ch || (g.attr&~ATTR_REVERSE)!=(d.attr&~ATTR_REVERSE)) {match=0;break;}
+                    }
+                if(!match)continue;
+                /* Rows below bottom-k keep stale drawn[] entries: the diff
+                 * below redraws any that differ from the grid. */
+                uint32_t src_px=(yoff+(top+k)*16u)*pitch+xoff;
+                uint32_t dst_px=(yoff+top*16u)*pitch+xoff;
+                unsigned hh=(bottom-top+1u-k)*16u;
+                ae350_gfx2d_copy_area(base+src_px*2u,s.stride,
+                    base+dst_px*2u,s.stride,VT_COLS*8u,hh);
+                ae350_gfx2d_wait(0xffff);
+                for(unsigned r=top;r+k<=bottom;r++)
+                    for(unsigned c=0;c<VT_COLS;c++) t->drawn[slot][r][c]=t->drawn[slot][r+k][c];
+                break;
+            }
         }
         for(unsigned row=0;row<VT_ROWS;row++)for(unsigned col=0;col<VT_COLS;col++) {
             vt_cell_t cell=t->terminal.grid[row][col];

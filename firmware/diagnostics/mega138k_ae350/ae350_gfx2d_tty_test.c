@@ -95,7 +95,50 @@ int main(void) {
     out[6] = *(volatile uint32_t *)(AE350_GFX2D_BASE + AE350_GFX2D_COMMANDS);
     out[7] = *(volatile uint32_t *)(AE350_GFX2D_BASE + AE350_GFX2D_ERRORS);
 
-    if (out[2] || out[3] || out[4] || out[5] || out[7])
+    /* Scroll phase: build a near-full frame, flush twice (alternating
+     * slots), then scroll and flush on the slot whose drawn[] holds the
+     * near-full frame: the COPY_AREA scroll path must reproduce the
+     * grid on screen. */
+    for (unsigned n = 0; n < 25; n++) {
+        char line[4] = { (char)('A' + (n % 26)), (char)('0' + (n / 10)), (char)('0' + (n % 10)), 0 };
+        ae350_tty_write(&tty, line);
+        ae350_tty_write(&tty, "\r\n");
+    }
+    out[6] = ae350_tty_flush(&tty);
+    ae350_tty_write(&tty, "X");
+    out[6] = ae350_tty_flush(&tty);
+    { volatile uint32_t *gc = (volatile uint32_t *)(AE350_GFX2D_BASE + AE350_GFX2D_COMMANDS);
+      out[7] = *gc; }
+    for (unsigned n = 25; n < 35; n++) {
+        char line[4] = { (char)('A' + (n % 26)), (char)('0' + (n / 10)), (char)('0' + (n % 10)), 0 };
+        ae350_tty_write(&tty, line);
+        ae350_tty_write(&tty, "\r\n");
+    }
+    out[6] = ae350_tty_flush(&tty);
+    out[0] = 0xC3200040u;
+    ae350_video_status(&s);
+    fb = (uint16_t *)(s.active ? AE350_DIAG_VIDEO_FB1 : AE350_DIAG_VIDEO_FB0);
+    if (!fb) { out[0] = 0xC3200001u; return 0; }
+    ae350_dma_sync_for_cpu((uint32_t)(uintptr_t)fb, 1280u * 480u);
+    check_cell(fb, pitch, xoff, yoff, 0, 0, tty.terminal.grid[0][0],
+               (unsigned *)&out[8]);
+    { vt_cell_t cur = tty.terminal.grid[29][0]; cur.attr ^= ATTR_REVERSE;
+      check_cell(fb, pitch, xoff, yoff, 0, 29, cur, (unsigned *)&out[9]); }
+    check_cell(fb, pitch, xoff, yoff, 40, 15, tty.terminal.grid[15][40],
+               (unsigned *)&out[10]);
+    check_cell(fb, pitch, xoff, yoff, 1, 0, tty.terminal.grid[0][1],
+               (unsigned *)&out[11]);
+    /* 35 lines + trailing CRLF scrolls 6 times: row 0 shows line 6 ('G'),
+     * row 29 is the blank cursor row. */
+    out[12] = (unsigned)(tty.terminal.grid[0][0].ch == 'G' &&
+                         tty.terminal.grid[29][0].ch == ' ');
+    out[13] = *(volatile uint32_t *)(AE350_GFX2D_BASE + AE350_GFX2D_ERRORS);
+    ae350_video_status(&s);
+    out[14] = s.active;  /* buffer the scroll checks read */
+    out[15] = (unsigned)tty.terminal.grid[15][40].attr;
+
+    if (out[2] || out[3] || out[4] || out[5] || out[8] || out[9] ||
+        out[10] || out[11] || out[13] || !out[12])
         out[0] = 0xC3200002u;
     __asm__ volatile("fence" ::: "memory");
     for (;;) __asm__ volatile("wfi");
