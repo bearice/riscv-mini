@@ -1,0 +1,471 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * KMS/DRM driver for the AE350 video engine (Tang Mega 138K Pro).
+ *
+ * drm_simple_display_pipe based: the connector exposes the gateware's
+ * fixed mode table (read from MODE_INFO registers) plus an optional DT
+ * custom mode; modesets program either the fixed index or the CUS register
+ * bank (geometry + PLL search, same limits as the BSP).  Framebuffers are
+ * GEM DMA objects; update() copies the plane framebuffer into the scanout
+ * buffer (fbdev emulation therefore works through the same path).
+ */
+#include <linux/dma-mapping.h>
+#include <linux/dma-map-ops.h>
+#include <linux/fb.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/platform_device.h>
+
+#include <drm/drm_aperture.h>
+#include <drm/drm_atomic.h>
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_connector.h>
+#include <drm/drm_device.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
+#include <drm/drm_fbdev_shmem.h>
+#include <drm/drm_format_helper.h>
+#include <drm/drm_framebuffer.h>
+#include <drm/drm_gem_dma_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_managed.h>
+#include <drm/drm_modeset_helper_vtables.h>
+#include <drm/drm_plane.h>
+#include <drm/drm_probe_helper.h>
+#include <drm/drm_simple_kms_helper.h>
+
+#include "riscv_mini_ae350_regs.h"
+
+#define DRIVER_NAME "ae350-drm"
+#define DRIVER_DESC "KMS driver for AE350 video engine"
+#define DRIVER_DATE "20251107"
+#define DRIVER_MAJOR 1
+#define DRIVER_MINOR 0
+
+static const u32 ae350_drm_formats[] = {
+	DRM_FORMAT_XRGB8888,
+	DRM_FORMAT_RGB888,
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_XRGB1555,
+};
+
+/* Gateware format ids match the MODE_CONFIG[15:8] field. */
+static int ae350_drm_format_id(u32 fourcc)
+{
+	switch (fourcc) {
+	case DRM_FORMAT_RGB565:
+		return AE350_FMT_RGB565;
+	case DRM_FORMAT_RGB888:
+		return AE350_FMT_RGB888;
+	case DRM_FORMAT_XRGB8888:
+		return AE350_FMT_XRGB8888;
+	case DRM_FORMAT_XRGB1555:
+		return AE350_FMT_XRGB1555;
+	default:
+		return -1;
+	}
+}
+
+static u32 ae350_drm_bpp(u32 format_id)
+{
+	switch (format_id) {
+	case AE350_FMT_RGB565:
+	case AE350_FMT_XRGB1555:
+		return 2;
+	case AE350_FMT_RGB888:
+		return 3;
+	case AE350_FMT_XRGB8888:
+		return 4;
+	default:
+		return 0;
+	}
+}
+
+struct ae350_drm {
+	struct drm_device dev;
+	struct drm_simple_display_pipe pipe;
+	struct drm_connector connector;
+	void __iomem *csr;
+	void __iomem *gfx;
+	u32 width;
+	u32 height;
+	u32 format_id;
+	u32 fourcc;
+	/* Scanout target buffer (copy destination of plane updates). */
+	dma_addr_t dma;
+	void *cpu;
+	size_t size;
+	u32 stride;
+};
+
+static void ae350_drm_copy_fb(struct ae350_drm *drm,
+			      struct drm_framebuffer *fb)
+{
+	struct iosys_map dst_map, *src_maps;
+	struct drm_rect clip;
+	int ret;
+
+	src_maps = kcalloc(4, sizeof(*src_maps), GFP_KERNEL);
+	if (!src_maps)
+		return;
+	iosys_map_set_vaddr(&dst_map, drm->cpu);
+	ret = drm_gem_fb_vmap(fb, src_maps, NULL);
+	if (ret) {
+		drm_err(&drm->dev, "framebuffer vmap failed: %d\n", ret);
+		goto done;
+	}
+	drm_rect_init(&clip, 0, 0, drm->width, drm->height);
+	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_maps,
+			  fb, &clip, NULL);
+	if (ret)
+		drm_err(&drm->dev, "framebuffer blit failed: %d\n", ret);
+	drm_gem_fb_vunmap(fb, src_maps);
+done:
+	kfree(src_maps);
+	/* VA-type cache command needs the CPU virtual address. */
+	ae350_cache_clean_range((u32)(uintptr_t)drm->cpu, (u32)drm->size);
+}
+
+static int ae350_drm_present(struct ae350_drm *drm, u32 slot)
+{
+	u32 status = readl(drm->csr + AE350_V_STATUS);
+	int ret;
+
+	if ((status & 1u) && ((status >> 1) & 1u) == slot)
+		return 0;
+	if (!(readl(drm->csr + 8) & 0x40u))
+		return 0;
+	if (!readl(drm->csr + AE350_V_ENABLE)) {
+		ret = ae350_video_enable(drm->csr, 1);
+		if (ret)
+			return ret;
+	}
+	ret = ae350_video_commit(drm->csr, 1u | (slot << 1));
+	if (ret)
+		return ret;
+	status = readl(drm->csr + AE350_V_STATUS);
+	return ((status & 3u) == (1u | (slot << 1)) &&
+		readl(drm->csr + AE350_V_ACTIVE_BASE) == drm->dma) ?
+		0 : -EIO;
+}
+
+static void ae350_drm_pipe_enable(struct drm_simple_display_pipe *pipe,
+				  struct drm_crtc_state *crtc_state,
+				  struct drm_plane_state *plane_state)
+{
+	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+	struct drm_device *dev = &drm->dev;
+	struct drm_display_mode *mode = &crtc_state->mode;
+	struct drm_framebuffer *fb = plane_state->fb;
+	struct ae350_mode_info info;
+	struct ae350_pll_result pll;
+	size_t want;
+	int format_id, ret;
+	u32 i, count, pixel_hz;
+
+	format_id = ae350_drm_format_id(fb->format->format);
+	if (format_id < 0) {
+		drm_err(dev, "unsupported format %p4cc\n", &fb->format->format);
+		return;
+	}
+	if (drm->cpu && (drm->width != (u32)mode->hdisplay ||
+			 drm->height != (u32)mode->vdisplay ||
+			 drm->format_id != format_id)) {
+		dma_free_coherent(dev->dev, drm->size, drm->cpu, drm->dma);
+		drm->cpu = NULL;
+		drm->size = 0;
+	}
+	if (!drm->cpu) {
+		drm->stride = (u32)mode->hdisplay * ae350_drm_bpp(format_id);
+		want = drm->stride * mode->vdisplay;
+		drm->cpu = dma_alloc_coherent(dev->dev, want, &drm->dma,
+					      GFP_KERNEL);
+		if (!drm->cpu)
+			return;
+		drm->size = want;
+		memset(drm->cpu, 0, want);
+	}
+	drm->width = mode->hdisplay;
+	drm->height = mode->vdisplay;
+	drm->format_id = format_id;
+	drm->fourcc = fb->format->format;
+	/* Find an exact fixed-mode match first (geometry + totals). */
+	count = readl(drm->csr + AE350_V_MODE_COUNT);
+	for (i = 0; i < count; i++) {
+		ae350_read_mode_info(drm->csr, i, &info);
+		if (info.width == mode->hdisplay && info.height == mode->vdisplay &&
+		    info.h_total == mode->htotal &&
+		    info.v_total == mode->vtotal)
+			break;
+	}
+	ae350_video_stop(drm->csr);
+	if (i < count) {
+		ret = ae350_video_set_mode(drm->csr, i, format_id);
+	} else {
+		info.width = mode->hdisplay;
+		info.height = mode->vdisplay;
+		info.h_front = mode->hsync_start - mode->hdisplay;
+		info.h_sync = mode->hsync_end - mode->hsync_start;
+		info.h_back = mode->htotal - mode->hsync_end;
+		info.v_front = mode->vsync_start - mode->vdisplay;
+		info.v_sync = mode->vsync_end - mode->vsync_start;
+		info.v_back = mode->vtotal - mode->vsync_end;
+		info.h_positive = !!(mode->flags & DRM_MODE_FLAG_PHSYNC);
+		info.v_positive = !!(mode->flags & DRM_MODE_FLAG_PVSYNC);
+		pixel_hz = mode->clock * 1000u;
+		ret = ae350_video_pll_search(pixel_hz, &pll);
+		if (ret)
+			return;
+		ret = ae350_video_set_custom_mode(drm->csr, &info, format_id,
+						  &pll, pixel_hz);
+	}
+	if (ret) {
+		drm_err(dev, "mode set failed: %d\n", ret);
+		return;
+	}
+	writel(drm->dma, drm->csr + AE350_V_BASE0);
+	writel(drm->dma, drm->csr + AE350_V_BASE1);
+	writel(drm->stride, drm->csr + AE350_V_STRIDE);
+	ret = ae350_video_enable(drm->csr, 1);
+	if (ret) {
+		drm_err(dev, "scanout enable failed: %d\n", ret);
+		return;
+	}
+	ae350_drm_copy_fb(drm, fb);
+	if (ae350_drm_present(drm, 0))
+		drm_err(dev, "first present failed\n");
+}
+
+static void ae350_drm_pipe_disable(struct drm_simple_display_pipe *pipe)
+{
+	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+
+	if (drm->cpu) {
+		dma_free_coherent(drm->dev.dev, drm->size, drm->cpu, drm->dma);
+		drm->cpu = NULL;
+		drm->size = 0;
+	}
+	ae350_video_enable(drm->csr, 0);
+}
+
+static void ae350_drm_pipe_update(struct drm_simple_display_pipe *pipe,
+				  struct drm_plane_state *old_plane_state)
+{
+	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+	struct drm_plane_state *plane_state = pipe->plane.state;
+
+	if (plane_state->fb) {
+		ae350_drm_copy_fb(drm, plane_state->fb);
+		if (ae350_drm_present(drm, 0))
+			drm_err(&drm->dev, "frame present failed\n");
+	}
+}
+
+static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
+				struct drm_plane_state *plane_state,
+				struct drm_crtc_state *crtc_state)
+{
+	/* No vblank IRQ exists; the atomic core fakes the event. */
+	crtc_state->no_vblank = true;
+	return 0;
+}
+
+static const struct drm_simple_display_pipe_funcs ae350_drm_pipe_funcs = {
+	.enable = ae350_drm_pipe_enable,
+	.disable = ae350_drm_pipe_disable,
+	.update = ae350_drm_pipe_update,
+	.check = ae350_drm_pipe_check,
+};
+
+static enum drm_mode_status ae350_drm_mode_valid(struct drm_device *dev,
+						 const struct drm_display_mode *mode)
+{
+	struct ae350_drm *drm = dev->dev_private;
+	struct ae350_mode_info info;
+	struct ae350_pll_result pll;
+	u32 h_total, v_total, i, count;
+
+	if (mode->hdisplay < 1 || mode->hdisplay > 4095 ||
+	    mode->vdisplay < 1 || mode->vdisplay > 4095)
+		return MODE_BAD;
+	h_total = mode->htotal;
+	v_total = mode->vtotal;
+	if (h_total >= 4096 || v_total >= 4096)
+		return MODE_BAD;
+	if (mode->clock == 0 || mode->clock > 74250) /* kHz */
+		return MODE_BAD;
+	count = readl(drm->csr + AE350_V_MODE_COUNT);
+	for (i = 0; i < count; i++) {
+		ae350_read_mode_info(drm->csr, i, &info);
+		if (info.width == mode->hdisplay && info.height == mode->vdisplay &&
+		    info.h_total == h_total && info.v_total == v_total)
+			return MODE_OK;
+	}
+	return ae350_video_pll_search(mode->clock * 1000u, &pll) ?
+		MODE_BAD : MODE_OK;
+}
+
+static int ae350_drm_get_modes(struct drm_connector *connector)
+{
+	struct ae350_drm *drm = connector->dev->dev_private;
+	struct drm_display_mode *mode;
+	struct ae350_mode_info info;
+	u32 count, i;
+	int n = 0;
+
+	count = readl(drm->csr + AE350_V_MODE_COUNT);
+	for (i = 0; i < count; i++) {
+		ae350_read_mode_info(drm->csr, i, &info);
+		mode = drm_mode_create(&drm->dev);
+		if (!mode)
+			return -ENOMEM;
+		mode->hdisplay = info.width;
+		mode->vdisplay = info.height;
+		mode->hsync_start = info.width + info.h_front;
+		mode->hsync_end = mode->hsync_start + info.h_sync;
+		mode->htotal = info.h_total;
+		mode->vsync_start = info.height + info.v_front;
+		mode->vsync_end = mode->vsync_start + info.v_sync;
+		mode->vtotal = info.v_total;
+		mode->clock = DIV_ROUND_UP(info.actual_pixel_hz, 1000);
+		if (info.h_positive)
+			mode->flags |= DRM_MODE_FLAG_PHSYNC;
+		if (info.v_positive)
+			mode->flags |= DRM_MODE_FLAG_PVSYNC;
+		drm_mode_set_name(mode);
+		drm_mode_probed_add(connector, mode);
+		n++;
+	}
+	return n;
+}
+
+static const struct drm_connector_helper_funcs ae350_drm_connector_helper = {
+	.get_modes = ae350_drm_get_modes,
+};
+
+static enum drm_connector_status ae350_drm_detect(
+	struct drm_connector *connector, bool force)
+{
+	/* Fixed display: always describe as connected so userspace can probe
+	 * modes without a sink. Actual HPD state is in sysfs (drm status). */
+	return connector_status_connected;
+}
+
+static const struct drm_connector_funcs ae350_drm_connector_funcs = {
+	.detect = ae350_drm_detect,
+	.fill_modes = drm_helper_probe_single_connector_modes,
+	.destroy = drm_connector_cleanup,
+	.reset = drm_atomic_helper_connector_reset,
+	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+};
+
+static const struct drm_mode_config_funcs ae350_drm_mode_funcs = {
+	.fb_create = drm_gem_fb_create,
+	.mode_valid = ae350_drm_mode_valid,
+	.atomic_check = drm_atomic_helper_check,
+	.atomic_commit = drm_atomic_helper_commit,
+};
+
+DEFINE_DRM_GEM_FOPS(ae350_drm_fops);
+
+static struct drm_driver ae350_drm_driver = {
+	DRM_GEM_DMA_DRIVER_OPS_VMAP,
+	.name = DRIVER_NAME,
+	.desc = DRIVER_DESC,
+	.date = DRIVER_DATE,
+	.major = DRIVER_MAJOR,
+	.minor = DRIVER_MINOR,
+	.driver_features = DRIVER_ATOMIC | DRIVER_GEM | DRIVER_MODESET,
+	.fops = &ae350_drm_fops,
+};
+
+static int ae350_drm_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct ae350_drm *drm;
+	struct drm_device *dev_drm;
+	struct drm_connector *connector;
+	struct resource *res;
+	int ret;
+
+	if (!dev_is_dma_coherent(dev))
+		return dev_err_probe(dev, -EINVAL, "video requires coherent DMA\n");
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+
+	drm = devm_drm_dev_alloc(dev, &ae350_drm_driver, struct ae350_drm,
+				 dev);
+	if (IS_ERR(drm))
+		return PTR_ERR(drm);
+	dev_drm = &drm->dev;
+	dev_drm->dev_private = drm;
+	platform_set_drvdata(pdev, drm);
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	drm->csr = devm_ioremap_resource(dev, res);
+	if (IS_ERR(drm->csr)) {
+		ret = PTR_ERR(drm->csr);
+		goto release;
+	}
+	if (readl(drm->csr) != AE350_VIDEO_ID) {
+		ret = -ENODEV;
+		goto release;
+	}
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (res) {
+		drm->gfx = devm_ioremap_resource(dev, res);
+		if (IS_ERR(drm->gfx))
+			drm->gfx = NULL;
+	}
+	ret = drmm_mode_config_init(dev_drm);
+	if (ret)
+		goto release;
+	dev_drm->mode_config.min_width = 1;
+	dev_drm->mode_config.max_width = 4096;
+	dev_drm->mode_config.min_height = 1;
+	dev_drm->mode_config.max_height = 4096;
+	dev_drm->mode_config.preferred_depth = 16;
+	dev_drm->mode_config.funcs = &ae350_drm_mode_funcs;
+	ret = drmm_connector_init(dev_drm, &drm->connector,
+				  &ae350_drm_connector_funcs,
+				  DRM_MODE_CONNECTOR_HDMIA, NULL);
+	if (ret)
+		goto release;
+	drm_connector_helper_add(&drm->connector, &ae350_drm_connector_helper);
+	ret = drm_simple_display_pipe_init(dev_drm, &drm->pipe,
+					   &ae350_drm_pipe_funcs,
+					   ae350_drm_formats,
+					   ARRAY_SIZE(ae350_drm_formats), NULL,
+					   &drm->connector);
+	if (ret)
+		goto release;
+	drm_mode_config_reset(dev_drm);
+	ret = drm_dev_register(dev_drm, 0);
+	if (ret)
+		goto release;
+	drm_fbdev_shmem_setup(dev_drm, 16);
+	dev_info(dev, "fb%d: KMS %s modes from %u gateware modes\n",
+		 dev_drm->primary->index, DRIVER_NAME,
+		 readl(drm->csr + AE350_V_MODE_COUNT));
+	return 0;
+
+release:
+	return ret;
+}
+
+static const struct of_device_id ae350_drm_of_match[] = {
+	{ .compatible = "riscv-mini,ae350-video-drm" }, { }
+};
+MODULE_DEVICE_TABLE(of, ae350_drm_of_match);
+
+static struct platform_driver ae350_drm_platform_driver = {
+	.probe = ae350_drm_probe,
+	.driver = { .name = "ae350-video-drm",
+		    .of_match_table = ae350_drm_of_match,
+		    .suppress_bind_attrs = true },
+};
+module_platform_driver(ae350_drm_platform_driver);
+MODULE_LICENSE("GPL");

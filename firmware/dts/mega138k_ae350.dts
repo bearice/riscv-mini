@@ -25,7 +25,7 @@
 	};
 
 	chosen {
-		bootargs = "earlycon console=ttyS0,115200 rdinit=/init";
+		bootargs = "earlycon console=ttyS0,115200 rdinit=/init consoleblank=0";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -142,12 +142,20 @@
 		};
 
 		video0: lcd@f8030000 {
-			compatible = "riscv-mini,rgb-lcd";
-			reg = <AE350_VIDEO_BASE AE350_CSR_PAGE_BYTES>;
+			compatible = "riscv-mini,ae350-video";
+			reg = <AE350_VIDEO_BASE AE350_CSR_PAGE_BYTES>,
+			      <AE350_GFX2D_BASE AE350_CSR_PAGE_BYTES>;
 			interrupt-parent = <&plic0>;
 			interrupts = <PLIC_EXT(AE350_EXT_INT_VIDEO) IRQ_TYPE_EDGE_RISING>;
 			dma-coherent;
-			status = "disabled";
+			/* Fixed-mode table index (0 = 640x480) and pixel format. */
+			riscv-mini,mode = <0>;
+			riscv-mini,format = "rgb565";
+			/* One custom mode (programmed into the gateware CUS bank) when
+			 * present: width, height, h_front, h_sync, h_back, v_front,
+			 * v_sync, v_back, refresh_millihz, h_positive, v_positive. */
+			/* riscv-mini,custom-mode = <800 600 40 128 88 1 4 23 60000 1 1>; */
+			status = "okay";
 		};
 
 		audio0: audio@f8010000 {

@@ -139,6 +139,24 @@ static void mini_uart_write(struct uart_port *port, unsigned int offset, u8 valu
         with (fb / 'Makefile').open('a') as stream:
             stream.write('obj-$(CONFIG_FB_RISCV_MINI) += riscv_mini_fb.o\n')
 
+    # AE350 video drivers (fbdev and DRM/KMS share a register header).
+    (fb / 'riscv_mini_ae350_regs.h').write_bytes((port / 'riscv_mini_ae350_regs.h').read_bytes())
+    (fb / 'riscv_mini_ae350_fb.c').write_bytes((port / 'riscv_mini_ae350_fb.c').read_bytes())
+    if 'config FB_AE350_VIDEO\n' not in (fb / 'Kconfig').read_text():
+        with (fb / 'Kconfig').open('a') as stream:
+            stream.write('\nconfig FB_AE350_VIDEO\n    bool "ae350 video framebuffer with GFX2D accel (fbdev)"\n    depends on FB && OF && RISCV\n    select FB_DMAMEM_HELPERS\n')
+        with (fb / 'Makefile').open('a') as stream:
+            stream.write('obj-$(CONFIG_FB_AE350_VIDEO) += riscv_mini_ae350_fb.o\n')
+
+    drm = src / 'drivers/gpu/drm/tiny'
+    (drm / 'riscv_mini_ae350_regs.h').write_bytes((port / 'riscv_mini_ae350_regs.h').read_bytes())
+    (drm / 'riscv_mini_ae350_drm.c').write_bytes((port / 'riscv_mini_ae350_drm.c').read_bytes())
+    if 'config DRM_AE350_VIDEO\n' not in (drm / 'Kconfig').read_text():
+        with (drm / 'Kconfig').open('a') as stream:
+            stream.write('\nconfig DRM_AE350_VIDEO\n    tristate "ae350 KMS/DRM video driver"\n    depends on DRM && OF && RISCV && MMU\n    select DRM_KMS_HELPER\n    select DRM_GEM_DMA_HELPER\n    select DRM_GEM_SHMEM_HELPER\n    select DRM_GEM_FRAMEBUFFER_HELPER\n    select DRM_SIMPLE_KMS_HELPER\n    select DRM_CLIENT_SELECTION\n    help\n      KMS/DRM driver for the AE350 video engine (fixed and custom modes).\n')
+        with (drm / 'Makefile').open('a') as stream:
+            stream.write('obj-$(CONFIG_DRM_AE350_VIDEO) += riscv_mini_ae350_drm.o\n')
+
     vendor_install.apply_patches(src, MACHINES[machine]['patches'])
 
 
