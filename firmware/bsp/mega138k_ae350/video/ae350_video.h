@@ -42,17 +42,27 @@ enum {
     VIDEO_MODE_CONFIG=AE350_VIDEO_MODE_CONFIG,
     VIDEO_MODE_STATUS=AE350_VIDEO_MODE_STATUS,
     VIDEO_MODE_COUNT=AE350_VIDEO_MODE_COUNT,
+    VIDEO_CUS_WH=AE350_VIDEO_CUS_WH,
+    VIDEO_CUS_H=AE350_VIDEO_CUS_H,
+    VIDEO_CUS_V=AE350_VIDEO_CUS_V,
+    VIDEO_CUS_PLL=AE350_VIDEO_CUS_PLL,
+    VIDEO_CUS_PCLK=AE350_VIDEO_CUS_PCLK,
     VIDEO_MODE_INFO_BASE=AE350_VIDEO_MODE_INFO_BASE,
     VIDEO_REQUEST_OVERFLOW=AE350_VIDEO_REQUEST_OVERFLOW
 };
 
 enum ae350_video_format {
-    AE350_VIDEO_RGB565=0, AE350_VIDEO_RGB888=1, AE350_VIDEO_XRGB8888=2
+    AE350_VIDEO_RGB565=0, AE350_VIDEO_RGB888=1, AE350_VIDEO_XRGB8888=2,
+    AE350_VIDEO_XRGB1555=3
 };
+/* Mode index selecting the programmable custom mode (KMS-style): timings
+ * and PLL parameters come from the CUS register bank. */
+#define AE350_VIDEO_MODE_CUSTOM 8u
 /* HPD is synchronized and filtered for 2ms. DEVICE on older gateware. */
 int ae350_video_get_hpd(unsigned *connected);
 /* RGB888 and XRGB8888 store B,G,R[,X] in increasing byte addresses.
- * X is ignored. RGB565 uses little-endian R[15:11],G[10:5],B[4:0]. */
+ * X is ignored. RGB565 uses little-endian R[15:11],G[10:5],B[4:0].
+ * XRGB1555 uses X[15],R[14:10],G[9:5],B[4:0] (X ignored). */
 struct ae350_video_mode {
     uint32_t width,height,pixel_hz,nominal_pixel_hz,refresh_millihz;
     uint32_t h_total,v_total,h_front,h_sync,h_back,v_front,v_sync,v_back;
@@ -64,6 +74,15 @@ int ae350_video_get_mode(unsigned mode,struct ae350_video_mode *info);
  * buffer configuration. Call init_buffers() and present() afterwards.
  * A timeout keeps ownership conservative and requires recovery. */
 int ae350_video_set_mode(unsigned mode,enum ae350_video_format format);
+/* CEA-style programmable mode: geometry may be any timing with totals
+ * below 4096, pixel clock within the 74.25MHz profile. Like set_mode(),
+ * stops scanout first. The PLL divider search mirrors video_modes.py
+ * (integer 5:1 serializer constraint, VCO 650MHz-1.3GHz, <=0.5% error). */
+int ae350_video_set_custom_mode(unsigned width, unsigned height,
+    unsigned h_front, unsigned h_sync, unsigned h_back,
+    unsigned v_front, unsigned v_sync, unsigned v_back,
+    unsigned refresh_millihz, unsigned h_positive, unsigned v_positive,
+    enum ae350_video_format format);
 /* Disabling drains scanout first. Enabling is permitted only while stopped
  * and mode-ready; present() enables output automatically before starting. */
 int ae350_video_enable(unsigned enable);

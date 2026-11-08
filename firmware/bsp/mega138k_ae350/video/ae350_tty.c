@@ -11,8 +11,9 @@ static int tty_gfx2d_ready(void) {
 }
 
 /* Glyph pack buffer must live in DDR: the GFX2D engine reads the blit
- * source through its DDR port, so a DLM stack buffer is unreachable. */
-static uint8_t tty_packed_glyph[16];
+ * source through its DDR port, so a DLM stack buffer is unreachable.
+ * Non-static so the host HAL test can map the truncated address back. */
+uint8_t tty_packed_glyph[16];
 
 void ae350_tty_init(struct ae350_tty *t) {
     vt_reset(&t->terminal);t->terminal.mode=VT_MODE_CURSOR;

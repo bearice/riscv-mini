@@ -364,6 +364,10 @@ class DDRSoC(LiteXModule):
                       arbiter.usb_pending.eq(self.usb.dma.memory.pending),
                       arbiter.gfx2d_pending.eq(self.gfx2d.engine.busy)]
         self.comb += [self.crg.hdmi_pll.mode.eq(video.mode),
+                      self.crg.hdmi_pll.cus_idiv.eq(video.cus_pll[0:2]),
+                      self.crg.hdmi_pll.cus_m8.eq(video.cus_pll[2:12]),
+                      self.crg.hdmi_pll.cus_pixel_div.eq(video.cus_pll[12:19]),
+                      self.crg.hdmi_pll.cus_serial_div.eq(video.cus_pll[19:26]),
                       self.crg.video_clock_reset.eq(video.clock_reset),
                       video.clock_locked.eq(self.crg.hdmi_pll.locked),
                       arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),

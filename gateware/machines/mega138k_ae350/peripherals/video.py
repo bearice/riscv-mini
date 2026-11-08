@@ -89,7 +89,13 @@ class VideoPixels(LiteXModule):
             If((x == 0) | (x == width - 1) | (y == 0) | (y == height - 1), pattern.eq(0xffffff)),
         ]
         if runtime:
-            self.comb += If(self.format != 0,
+            # Formats: 0=RGB565 (above), 1/2=RGB888/XRGB8888 B,G,R[,X] bytes,
+            # 3=XRGB1555 X[15],R[14:10],G[9:5],B[4:0] with 5->8 expansion.
+            self.comb += If(self.format == 3,
+                red.eq(Cat(pixel[12:15], pixel[10:15])),
+                green.eq(Cat(pixel[7:10], pixel[5:10])),
+                blue.eq(Cat(pixel[2:5], pixel[:5])),
+            ).Elif(self.format != 0,
                 red.eq(pixel[16:24]), green.eq(pixel[8:16]), blue.eq(pixel[:8]))
         self.sync += [
             If(x == h_total - 1,
@@ -160,7 +166,7 @@ class FabricVideo(LiteXModule):
                           self.hpd_monitor.enable.eq(self.hpd_irq_enable),
                           self.irq.eq(self.hpd_monitor.irq)]
         self.video_enable = Signal(reset=1)
-        self.mode = Signal(max=len(MODES))
+        self.mode = Signal(max=len(MODES)+1)
         self.format = Signal(2)
         self.mode_busy = Signal()
         self.mode_apply = Signal()
@@ -268,12 +274,56 @@ class FabricVideo(LiteXModule):
             fields = dict(width=12,height=12,h_front=12,h_sync=12,h_back=12,
                           v_front=12,v_sync=12,v_back=12,h_positive=1,v_positive=1)
             mode_values = {name: Signal(bits) for name,bits in fields.items()}
-            self.comb += Case(self.mode, {i: [mode_values[n].eq(getattr(m,n)) for n in fields]
-                                           for i,m in enumerate(MODES)})
+            # Custom mode (index len(MODES)): timing comes from the CUS register
+            # bank, KMS-style. Registers are packed to keep the APB map small:
+            #   CUS_WH:  width[11:0] | height[27:16]
+            #   CUS_H:   h_front[11:0] | h_sync[23:12] | h_back[31:24] (<=255)
+            #   CUS_V:   v_front[7:0] | v_sync[15:8] | v_back[23:16] |
+            #            h_positive[24] | v_positive[25]
+            #   CUS_PLL: idiv[1:0] | m8[11:2] | pixel_div[18:12] | serial_div[25:19]
+            #   CUS_PCLK: requested pixel Hz (software-computed, informational)
+            self.cus_wh, self.cus_h, self.cus_v = Signal(32), Signal(32), Signal(32)
+            self.cus_pll, self.cus_pclk = Signal(32), Signal(32)
+            custom_values = dict(
+                width=self.cus_wh[0:12], height=self.cus_wh[16:28],
+                h_front=self.cus_h[0:12], h_sync=self.cus_h[12:24],
+                h_back=Cat(self.cus_h[24:32], Constant(0,4)),
+                v_front=Cat(self.cus_v[0:8], Constant(0,4)),
+                v_sync=Cat(self.cus_v[8:16], Constant(0,4)),
+                v_back=Cat(self.cus_v[16:24], Constant(0,4)),
+                h_positive=self.cus_v[24], v_positive=self.cus_v[25])
+            case = {i: [mode_values[n].eq(getattr(m,n)) for n in fields]
+                    for i,m in enumerate(MODES)}
+            case[len(MODES)] = [mode_values[n].eq(custom_values[n]) for n in fields]
+            self.comb += Case(self.mode, case)
             bpp = Signal(3)
             row_bytes = Signal(16)
             self.comb += [Case(self.format,{i:bpp.eq(v) for i,v in enumerate(BYTES_PER_PIXEL)}),
                           row_bytes.eq(mode_values['width'] * bpp)]
+            # Custom-mode gateware validation: geometry, totals, PLL ranges
+            # and the 74.25MHz pixel-clock ceiling (same profile as the
+            # fixed table) are checked; divider consistency is the driver's
+            # job (KMS computes PLL parameters). Any failure rejects the
+            # MODE_CONFIG write with command_error.
+            cus_idiv, cus_m8 = self.cus_pll[0:2], self.cus_pll[2:12]
+            cus_pixdiv, cus_serdiv = self.cus_pll[12:19], self.cus_pll[19:26]
+            cus_vco = Signal(37)  # 50e6 * m8
+            cus_h_total, cus_v_total = Signal(14), Signal(14)
+            cus_bad = Signal()
+            self.comb += [
+                cus_vco.eq(Constant(50000000) * cus_m8),
+                cus_h_total.eq(self.cus_wh[0:12]+self.cus_h[0:12]+self.cus_h[12:24]+Cat(self.cus_h[24:32],Constant(0,4))),
+                cus_v_total.eq(self.cus_wh[16:28]+Cat(self.cus_v[0:8],Constant(0,4))+Cat(self.cus_v[8:16],Constant(0,4))+Cat(self.cus_v[16:24],Constant(0,4))),
+                cus_bad.eq((self.cus_wh[0:12] == 0) | (self.cus_wh[16:28] == 0) |
+                    (cus_h_total >= 4096) | (cus_v_total >= 4096) |
+                    (cus_idiv != 1) & (cus_idiv != 2) |
+                    (cus_m8 < 16) | (cus_m8 > 1023) |
+                    (cus_pixdiv != 5 * cus_serdiv) |
+                    (cus_serdiv < 2) | (cus_serdiv > 25) |
+                    (cus_vco < Constant(650000000) * (cus_idiv << 3)) |
+                    (cus_vco > Constant(1300000000) * (cus_idiv << 3)) |
+                    (cus_vco > Constant(74250000) * (cus_idiv << 3) * cus_pixdiv)),
+            ]
             for domain in ('video_pix','video_ddr'):
                 bundle = Cat(*(mode_values.values()),self.format,row_bytes,self.mode_sequence)
                 cdc = BusSynchronizer(len(bundle),'sys',domain)
@@ -420,12 +470,16 @@ class FabricVideo(LiteXModule):
             geometry=Signal(32)
             frequency=Signal(32)
             self.comb += [geometry.eq(mode_values['width'] | (mode_values['height'] << 16)),
-                Case(self.mode,{i:frequency.eq(pll_config(m.pixel_hz)['actual_hz']) for i,m in enumerate(MODES)})]
+                Case(self.mode,{i:frequency.eq(pll_config(m.pixel_hz)['actual_hz']) for i,m in enumerate(MODES)}),
+                If(self.mode==len(MODES),frequency.eq(self.cus_pclk))]
             reads.update({reg['MODE']:self.mode,reg['FORMAT']:self.format,
                           reg['MODE_STATUS']:self.mode_busy,reg['MODE_COUNT']:len(MODES),
                           reg['ENABLE']:self.video_enable,
                           reg['HPD']:Cat(self.hpd_connected,hpd_sync),
-                          reg['GEOMETRY']:geometry,reg['PIXEL_HZ']:frequency})
+                          reg['GEOMETRY']:geometry,reg['PIXEL_HZ']:frequency,
+                          reg['CUS_WH']:self.cus_wh,reg['CUS_H']:self.cus_h,
+                          reg['CUS_V']:self.cus_v,reg['CUS_PLL']:self.cus_pll,
+                          reg['CUS_PCLK']:self.cus_pclk})
             for i,mode in enumerate(MODES):
                 actual=pll_config(mode.pixel_hz)['actual_hz']
                 info=(mode.width | (mode.height<<16),actual,mode.h_total | (mode.v_total<<16),
@@ -444,8 +498,11 @@ class FabricVideo(LiteXModule):
                 ((self.off==reg['CLEAR_ERRORS']) & (self.wdata==1)) |
                 (((self.off==reg['IRQ_STATUS']) | (self.off==reg['IRQ_ENABLE'])) & (self.wdata < (4 if hpd_supported else 1))) |
                 (((self.off==reg['ENABLE']) & (self.wdata<2)) if runtime else 0) |
-                (((self.off==reg['MODE_CONFIG']) & (self.wdata[:8]<len(MODES)) &
-                  (self.wdata[8:10]<3) & (self.wdata[10:]==0)) if runtime else 0),read_ok))]
+                (((self.off==reg['MODE_CONFIG']) & (self.wdata[:8]<len(MODES)+1) &
+                  (self.wdata[8:10]<4) & (self.wdata[10:]==0)) if runtime else 0) |
+                ((self.off==reg['CUS_WH']) | (self.off==reg['CUS_H']) |
+                 (self.off==reg['CUS_V']) | (self.off==reg['CUS_PLL']) |
+                 (self.off==reg['CUS_PCLK']) if runtime else 0),read_ok))]
         admitted=Signal()
         self.sync += admitted.eq(self.selected & self.write & self.ok)
         go=self.commit & admitted
@@ -467,12 +524,18 @@ class FabricVideo(LiteXModule):
                        self.mode_busy.eq(0))),
                 If(go & (self.off==reg['MODE_CONFIG']),
                     If(self.video_enable | ~self.stopped | pending | self.mode_busy,command_error.eq(1))
+                    .Elif((self.wdata[:8]==len(MODES)) & cus_bad,command_error.eq(1))
                     .Else(self.mode.eq(self.wdata[:8]),self.format.eq(self.wdata[8:10]),
                           self.mode_busy.eq(1),self.mode_apply.eq(1),timer.eq(0),
                           self.mode_sequence.eq(Mux(self.mode_sequence==0xffffffff,1,self.mode_sequence+1)))),
                 If(go & (self.off==reg['ENABLE']),
                     If(self.mode_busy | pending | ~self.stopped,command_error.eq(1))
-                    .Else(self.video_enable.eq(self.wdata[0])))]
+                    .Else(self.video_enable.eq(self.wdata[0]))),
+                If(go & (self.off==reg['CUS_WH']) & (self.mode!=len(MODES)),self.cus_wh.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_H']) & (self.mode!=len(MODES)),self.cus_h.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_V']) & (self.mode!=len(MODES)),self.cus_v.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_PLL']) & (self.mode!=len(MODES)),self.cus_pll.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_PCLK']) & (self.mode!=len(MODES)),self.cus_pclk.eq(self.wdata))]
             self.comb += [self.clock_reset.eq(self.mode_busy & (timer<32)),
                           self.mode_hold.eq(self.mode_busy & ((timer<768) | ~lock))]
             # Mode-dependent row span is recomputed only for admission; the

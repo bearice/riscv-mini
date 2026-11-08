@@ -125,7 +125,10 @@ class Gfx2DEngine(LiteXModule):
         src_beat_loaded = Signal()
         src_byte_off = Signal(32)  # initial intra-beat offset only
         bytes_in_beat = Signal(8)
-        src_bytes_left = Signal(32)
+        src_bytes_left = Signal(16)  # per-row source bytes; blit_wb<=65535
+                                   # is enforced in static_bad, so the
+                                   # 32-bit decrementer chain halving is
+                                   # safe and the critical path shortens
         bit_buf = Signal(24)
         bit_cnt = Signal(5)
         copy_data = Signal(256)
@@ -230,8 +233,8 @@ class Gfx2DEngine(LiteXModule):
                         (src_addr[0:5] != dst_addr[0:5]) |
                         (src_stride[0:5] != dst_stride[0:5]))) |
                       ((op == OP_IMAGE_BLIT) &
-                       ((blit_wb < (width + 7) >> 3) | (dst_addr[0] != 0) |
-                        (dst_stride[0] != 0))))
+                       ((blit_wb < (width + 7) >> 3) | (blit_wb > 65535) |
+                        (dst_addr[0] != 0) | (dst_stride[0] != 0))))
         fsm.act('INIT3',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(static_bad,

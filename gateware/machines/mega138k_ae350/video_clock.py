@@ -15,14 +15,25 @@ class VideoPLL(LiteXModule):
     def __init__(self, clkin, outputs, input_hz):
         self.reset = Signal()
         self.locked = Signal()
-        self.mode = Signal(max=len(MODES))
+        self.mode = Signal(max=len(MODES)+1)
+        # Custom-mode raw PLL parameters (physical values; inverted below
+        # per UG306 dynamic divider semantics like the fixed table).
+        self.cus_idiv = Signal(2)
+        self.cus_m8 = Signal(10)  # MDIV*8 + FRAC, eighths of a VCO period
+        self.cus_pixel_div = Signal(7)
+        self.cus_serial_div = Signal(7)
         idsel, mdsel = Signal(6), Signal(7)
         fraction = Signal(3)
         pixel_div, serial_div = Signal(7), Signal(7)
         configs = [pll_config(m.pixel_hz, int(input_hz)) for m in MODES]
-        self.comb += Case(self.mode,{i:[idsel.eq(64-c['idiv']),mdsel.eq(128-c['mdiv']),
+        case = {i: [idsel.eq(64-c['idiv']),mdsel.eq(128-c['mdiv']),
             fraction.eq(7-c['fraction']),pixel_div.eq(128-c['pixel_div']),
-            serial_div.eq(128-c['serial_div'])] for i,c in enumerate(configs)})
+            serial_div.eq(128-c['serial_div'])] for i,c in enumerate(configs)}
+        case[len(MODES)] = [idsel.eq(64-self.cus_idiv),
+            mdsel.eq(128-(self.cus_m8>>3)),fraction.eq(7-(self.cus_m8&7)),
+            pixel_div.eq(128-self.cus_pixel_div),
+            serial_div.eq(128-self.cus_serial_div)]
+        self.comb += Case(self.mode, case)
         boot=configs[0]
         # The implementation tool derives analog loop settings from the
         # static recipe even when the divider ports are dynamic.
@@ -65,6 +76,21 @@ class VideoPLL(LiteXModule):
                     '-divide_by %d -multiply_by %d -phase %g [get_pins {ae350_hdmi_pll/CLKOUT%d}]'
                     %(name,c['idiv']*8*div,multiply,phase,i))
             clock_sets.append(names)
+        # Custom mode shares the PLL outputs with arbitrary dividers; bound
+        # it to the 74.25MHz profile in gateware validation and declare the
+        # same worst-case periods so STA stays safe for any custom mode.
+        custom_c = next(c for c, m in zip(configs, MODES) if m.pixel_hz == 74250000)
+        names = []
+        for i, base in enumerate(('hdmi_pix', 'hdmi_5x', 'hdmi_reset')):
+            name = base + '_clk_custom'
+            names.append(name)
+            div = custom_c['serial_div'] if i == 1 else custom_c['pixel_div']
+            multiply = custom_c['mdiv'] * 8 + custom_c['fraction']
+            phase = 45 * RESET_FINE / div if i == 2 else 0
+            self.constraints.append('create_generated_clock -name %s -add -source [get_ports {clk50}] '
+                '-divide_by %d -multiply_by %d -phase %g [get_pins {ae350_hdmi_pll/CLKOUT%d}]'
+                % (name, custom_c['idiv'] * 8 * div, multiply, phase, i))
+        clock_sets.append(names)
         self.clock_names=' '.join(name for group in clock_sets for name in group)
         self.constraints.append('set_clock_groups -exclusive '+
             ' '.join('-group [get_clocks {%s}]'%' '.join(group) for group in clock_sets))
