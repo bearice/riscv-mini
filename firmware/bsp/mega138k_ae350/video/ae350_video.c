@@ -190,8 +190,9 @@ int ae350_video_init_buffers(void *first,void *second,uint32_t stride) {
     if(!width || !height || width>4096 || height>4096)return AE350_VIDEO_DEVICE;
     if((R(8)&0x40u) && R(VIDEO_MODE_STATUS))return AE350_VIDEO_BUSY;
     unsigned format=current_format();
-    if(format>2)return AE350_VIDEO_DEVICE;
-    unsigned row_bytes=width*(format+2u);
+    if(format>3)return AE350_VIDEO_DEVICE;
+    static const unsigned bpp[]={2,3,4,2}; /* RGB565/RGB888/XRGB8888/XRGB1555 */
+    unsigned row_bytes=width*bpp[format];
     if(!stride)stride=(row_bytes+31u)&~31u;
     if((stride&31u) || stride<row_bytes || stride>=65536u)return AE350_VIDEO_ALIGN;
     uint32_t bytes=stride*height,a=(uint32_t)(uintptr_t)first,b=(uint32_t)(uintptr_t)second;

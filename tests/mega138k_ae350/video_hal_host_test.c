@@ -198,6 +198,11 @@ int main(int argc,char **argv) {
       assert(ae350_video_set_mode(0,AE350_VIDEO_RGB888)==0);
     }
     void *large_a=(void *)0x02000000u,*large_b=(void *)0x02400000u;
+    /* XRGB1555: 2 bpp buffer sizing and cache clean. */
+    assert(ae350_video_set_mode(0,AE350_VIDEO_XRGB1555)==0);
+    assert(ae350_video_init_buffers(large_a,large_b,0)==0);
+    assert(ae350_video_present(0)==0 && clean_bytes==640u*480u*2u);
+    assert(ae350_video_set_mode(0,AE350_VIDEO_RGB888)==0);
     assert(ae350_video_init(a,b,0)==AE350_VIDEO_STATE);
     assert(ae350_video_init_buffers(large_a,large_b,1280)==AE350_VIDEO_ALIGN);
     assert(ae350_video_init_buffers(large_a,large_b,0)==0);
