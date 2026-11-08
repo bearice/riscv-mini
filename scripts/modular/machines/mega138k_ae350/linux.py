@@ -62,6 +62,8 @@ def build(store, run, args, dry):
                             '-isystem', str(output/'uapi/include'), '-Wl,-e,_start',
                             '-Wl,--build-id=none', str(port/'init.c'), '-o', str(output/'mini-init')],
                            check=True, stdout=log, stderr=log)
+            subprocess.run(['make', '-C', str(source), 'O='+str(output), 'ARCH=riscv', 'LLVM=1', 'olddefconfig'],
+                           check=True, stdout=log, stderr=log)
             subprocess.run(['make', '-C', str(source), 'O='+str(output), 'ARCH=riscv', 'LLVM=1', '-j8', 'Image'],
                            check=True, stdout=log, stderr=log)
         image = output/'arch/riscv/boot/Image'

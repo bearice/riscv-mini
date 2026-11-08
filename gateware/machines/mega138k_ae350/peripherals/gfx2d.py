@@ -95,9 +95,9 @@ class Gfx2DEngine(LiteXModule):
         self.comb += off5.eq(row_start[0:5])
         first_mask, last_mask = Signal(32), Signal(32)
         beats_w = Signal(32)
-        geo_sum = Signal(6)
+        geo_sum = Signal(7)
         self.comb += geo_sum.eq(off5 + rb_lo5 + 31)
-        self.comb += beats_w.eq(rb_hi5 + geo_sum[5])
+        self.comb += beats_w.eq(rb_hi5 + geo_sum[5:7])
         first_end = Signal(6)
         self.comb += first_end.eq(Mux((rb_hi5 != 0) | (off5 + rb_lo5 >= 32), 32,
                                      off5 + rb_lo5))
@@ -344,6 +344,7 @@ class Gfx2DEngine(LiteXModule):
                         .Else(NextState('ROW_INC')),
                     ).Else(NextValue(beat, beat + 1),
                              NextValue(beats_left, beats_left - 1),
+                             NextValue(beat_byte, beat_byte + 32),
                              NextValue(first_beat, 0),
                              NextState('C_RPREP')),
                 ).Elif(elapsed == response_timeout,

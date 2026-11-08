@@ -140,6 +140,24 @@ class Gfx2DHostTest(unittest.TestCase):
 
         run_simulation(d, bench(), clocks={'sys': 10, 'ddr': 10})
 
+    def test_fill_carry_sum(self):
+        # 10 pixels (20 bytes) at byte offset 20: off5 + rb_lo5 + 31 = 71 > 63
+        # Exercises the second carry bit in geo_sum (regression test).
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        dst, stride, w, h, fg = 0x2014, 64, 10, 2, 0x07E0
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 0, 'DST_ADDR': dst, 'DST_STRIDE': stride,
+            'WIDTH': w, 'HEIGHT': h, 'FG_COLOR': fg})
+        for r in range(h):
+            base = dst + r * stride
+            for c in range(w):
+                px = mem[base + 2 * c] | (mem[base + 2 * c + 1] << 8)
+                assert px == fg, (r, c, px)
+            assert mem[base - 1] == 0
+            assert mem[base + 2 * w] == 0
+        print('PASS GFX2D: FILL_RECT carry sum (off5 + rb_lo5 + 31 > 63)')
+
     def _run_op(self, d, mem_pump, desc):
         reg = amap.GFX2D_REGS
 
@@ -230,7 +248,22 @@ class Gfx2DHostTest(unittest.TestCase):
             for c in range(8):
                 px = mem2[0x8020 + r * 32 + 2 * c] | (mem2[0x8020 + r * 32 + 2 * c + 1] << 8)
                 assert px == 0x2000 + r * 8 + c, ('overlap', r, c, px)
-        print('PASS GFX2D: COPY_AREA basic + overlap-down')
+        # Multi-beat copy: 32 pixels (64 bytes = 2 beats) across 2 rows
+        d3 = make()
+        mem3 = bytearray(1 << 20)
+        for r in range(2):
+            for c in range(32):
+                px = 0x3000 + r * 32 + c
+                mem3[0x10000 + r * 64 + 2 * c] = px & 0xff
+                mem3[0x10000 + r * 64 + 2 * c + 1] = px >> 8
+        self._run_op(d3, self._fake_pump_factory(d3, mem3), {
+            'OP': 1, 'SRC_ADDR': 0x10000, 'DST_ADDR': 0x20000,
+            'SRC_STRIDE': 64, 'DST_STRIDE': 64, 'WIDTH': 32, 'HEIGHT': 2})
+        for r in range(2):
+            for c in range(32):
+                px = mem3[0x20000 + r * 64 + 2 * c] | (mem3[0x20000 + r * 64 + 2 * c + 1] << 8)
+                assert px == 0x3000 + r * 32 + c, ('multi-beat copy', r, c, px)
+        print('PASS GFX2D: COPY_AREA basic + overlap-down + multi-beat')
 
     def test_blit(self):
         d = make()

@@ -31,7 +31,7 @@ struct ae350_fb {
 	void *cpu[2];
 	u32 active_slot;
 	bool blanked;
-	u16 palette[16];
+	u32 palette[16];
 	/* Blit bitmap staging: the GFX2D engine reads DDR only, so fbcon
 	 * bitmaps (kernel memory) are copied here before IMAGE_BLIT. */
 	u8 *scratch;
@@ -189,14 +189,17 @@ static void ae350_fb_fillrect(struct fb_info *info,
 {
 	struct ae350_fb *fb = info->par;
 	u32 dst;
+	u32 color;
 
 	if (ae350_gfx_ready(fb) && rect->width && rect->height) {
 		dst = ae350_phys(fb, rect->dx, rect->dy);
 		if (rect->dy + rect->height <=
 		    (rect->dy >= fb->height ? fb->height * 2 : fb->height)) {
+			color = rect->color < 16 ? ((u32 *)info->pseudo_palette)[rect->color] :
+						   rect->color;
 			ae350_gfx_write_desc(fb, AE350_GFX_FILL, 0, dst, 0,
 					 fb->stride, rect->width, rect->height,
-					 rect->color, 0, 0);
+					 color, 0, 0);
 			if (!ae350_gfx2d_run(fb->gfx))
 				return;
 		}
@@ -232,6 +235,7 @@ static void ae350_fb_imageblit(struct fb_info *info,
 	u32 dst;
 	u32 bytes_per_row;
 	size_t total;
+	u32 fg, bg;
 
 	if (ae350_gfx_ready(fb) && image->depth == 1 &&
 	    image->width >= 1 && image->height >= 1) {
@@ -243,11 +247,15 @@ static void ae350_fb_imageblit(struct fb_info *info,
 			(image->dy >= fb->height ? fb->height * 2 : fb->height)) {
 			memcpy(fb->scratch, image->data, total);
 			ae350_cache_clean_range((u32)(uintptr_t)fb->scratch, total);
+			fg = image->fg_color < 16 ? ((u32 *)info->pseudo_palette)[image->fg_color] :
+						    image->fg_color;
+			bg = image->bg_color < 16 ? ((u32 *)info->pseudo_palette)[image->bg_color] :
+						    image->bg_color;
 			ae350_gfx_write_desc(fb, AE350_GFX_BLIT,
 					     (u32)fb->scratch_dma, dst,
 					     bytes_per_row, fb->stride,
 					     image->width, image->height,
-					     image->fg_color, image->bg_color,
+					     fg, bg,
 					     bytes_per_row);
 			if (!ae350_gfx2d_run(fb->gfx))
 				return;
@@ -316,7 +324,7 @@ static int ae350_fb_probe(struct platform_device *pdev)
 	const char *format_str = "rgb565";
 	u32 custom[11];
 	u32 pixel_hz;
-	int ret, i;
+	int ret;
 	bool use_custom = false;
 
 	if (!dev_is_dma_coherent(dev))
@@ -504,8 +512,9 @@ release:
 static void ae350_fb_shutdown(struct platform_device *pdev)
 {
 	struct fb_info *info = platform_get_drvdata(pdev);
+	struct ae350_fb *fb = info ? info->par : NULL;
 
-	if (info && ae350_video_enable(info->par, 0))
+	if (fb && ae350_video_enable(fb->csr, 0))
 		dev_err(&pdev->dev, "video stop timed out at shutdown\n");
 }
 

@@ -514,6 +514,8 @@ class FabricVideo(LiteXModule):
             # holds reset then waits for lock and CDC settling before ready.
             timer=Signal(16)
             lock=Signal()
+            cus_wr=Signal()
+            self.comb += cus_wr.eq((self.mode!=len(MODES)) | (~self.video_enable & self.stopped & ~self.mode_busy))
             self.specials += MultiReg(self.clock_locked,lock)
             self.sync += [self.mode_apply.eq(0),
                 If(self.mode_busy,
@@ -531,11 +533,11 @@ class FabricVideo(LiteXModule):
                 If(go & (self.off==reg['ENABLE']),
                     If(self.mode_busy | pending | ~self.stopped,command_error.eq(1))
                     .Else(self.video_enable.eq(self.wdata[0]))),
-                If(go & (self.off==reg['CUS_WH']) & (self.mode!=len(MODES)),self.cus_wh.eq(self.wdata)),
-                If(go & (self.off==reg['CUS_H']) & (self.mode!=len(MODES)),self.cus_h.eq(self.wdata)),
-                If(go & (self.off==reg['CUS_V']) & (self.mode!=len(MODES)),self.cus_v.eq(self.wdata)),
-                If(go & (self.off==reg['CUS_PLL']) & (self.mode!=len(MODES)),self.cus_pll.eq(self.wdata)),
-                If(go & (self.off==reg['CUS_PCLK']) & (self.mode!=len(MODES)),self.cus_pclk.eq(self.wdata))]
+                If(go & (self.off==reg['CUS_WH']) & cus_wr,self.cus_wh.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_H']) & cus_wr,self.cus_h.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_V']) & cus_wr,self.cus_v.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_PLL']) & cus_wr,self.cus_pll.eq(self.wdata)),
+                If(go & (self.off==reg['CUS_PCLK']) & cus_wr,self.cus_pclk.eq(self.wdata))]
             self.comb += [self.clock_reset.eq(self.mode_busy & (timer<32)),
                           self.mode_hold.eq(self.mode_busy & ((timer<768) | ~lock))]
             # Mode-dependent row span is recomputed only for admission; the
