@@ -92,6 +92,7 @@ RTL 与生成 C 头共用。首 32 字节遵循平台公共控制头。
 | 0x48 | COMMANDS | 已接受命令计数 |
 | 0x4C | ERRORS | 累计错误计数 |
 | 0x50 | CLEAR_ERRORS | 写 1 清除 ERROR/DONE/LAST_ERROR |
+| 0x54 | FORMAT | 像素格式（0=RGB565, 1=RGB888, 2=XRGB8888, 3=XRGB1555） |
 
 约束：
 
@@ -137,8 +138,9 @@ RTL 与生成 C 头共用。首 32 字节遵循平台公共控制头。
 | **Step 4i PR 审查第 8 轮修复（本提交）** | 针对 PR #3 第 8 轮代码审查发现缺陷修复：GFX2D 加速与 CPU 缓存一致性同步：在 `firmware/linux/riscv_mini_ae350_fb.c` 中增加基于虚拟地址的矩形缓存维护助手（`ae350_fb_clean_rect` / `ae350_fb_inval_rect`），在 `ae350_fb_fillrect`、`ae350_fb_copyarea`、`ae350_fb_imageblit` 启动 GFX2D DMA 前将源和目的矩形脏缓存行刷写到 DDR（`L1D_VA_WB`），在 DMA 操作成功完成后立即失效目的矩形缓存行（`L1D_VA_INVAL`），防止软件回退（如 `sys_copyarea`）读取到加速前的陈旧缓存数据，并杜绝 CPU 脏行在后续 `ae350_fb_sync` 中覆盖 GFX2D 硬件写入的像素。 | Linux 6.12.112 构建通过；实机验收启动并通过自测套件。 |
 | **Step 4j PR 审查第 9 轮修复（本提交）** | 针对 PR #3 第 9 轮代码审查发现缺陷修复：软件回退渲染缓存刷写：在 `firmware/linux/riscv_mini_ae350_fb.c` 中为 `sys_fillrect`、`sys_copyarea`、`sys_imageblit` 软件回退路径及 `ae350_fb_write` 增加绘制完成后的目的矩形缓存刷写（`ae350_fb_clean_rect`），并在 `ae350_fb_cctl_rect` 中加入视口边界钳位保护，确保 CPU 软件绘制的像素立即刷写至 DDR，使硬件 scanout 无需等待后续 draw 或 buffer switch 即可即时显示更新内容。 | Linux 6.12.112 构建通过；实机验收启动并通过自测套件。 |
 | **Step 4k PR 审查第 10 轮修复（本提交）** | 针对 PR #3 第 10 轮代码审查发现缺陷修复：当前显存槽 present 缓存刷写：在 `firmware/linux/riscv_mini_ae350_fb.c` 的 `ae350_present` 中，将 `ae350_fb_clean(fb, slot)` 移到 `already-active` 检查之前，确保用户空间使用 `mmap()` 直接修改当前活动帧缓冲并调用 `FBIOPAN_DISPLAY` 提交时，能立即将修改内容刷写至 DDR 并在硬件 scanout 上即时呈现，避免更新滞留于 CPU 缓存。 | Linux 6.12.112 构建通过；实机验收启动并通过自测套件。 |
+| **Step 5a 多格式支持与软件栈完善（本提交）** | GFX2D 引擎新增多格式支持与全链路软件栈打通：(1) 寄存器面新增 `FORMAT` (0x54)，CAP 更新为 `0x6f` (FILL/COPY/BLIT/RGB565/XRGB8888/XRGB1555)；(2) 状态机支持 2 次幂深度动态行字节计算 (`width << shift`)、32bpp 像素图样生成与任意字节对齐相位旋转、32bpp 1bpp 展开 (`IMAGE_BLIT`) 与 4 字节对齐校验；(3) 时序加固：倒计数比较器优化与 `video_waiting` 打拍打断跨 die 10.1ns 路径，Gowin 综合与 PnR 全时钟 0 TNS 闭合；(4) BSP (`ae350_gfx2d`) 新增 `_fmt` 变体与默认格式包装；(5) Linux fbdev (`riscv_mini_ae350_fb`) 解除 16bpp 硬编码，动态适配 bpp、stride、check_var 与调色板计算；(6) Linux DRM (`riscv_mini_ae350_drm`) 接入 GFX2D `COPY_AREA` 加速 GEM DMA 帧缓冲搬移；(7) 板级工具链增加 openFPGALoader 掉电/复位后 JTAG ROM 自动重启重试机制。 | Gowin PnR 通过（0 TNS，run `20261109T093521412719Z-build-multiformat-step5a-pnr-opt-1dc318`）；Host 仿真 11 项单元测试全过；BIOS 上传实测通过（run `20261109T101533255760Z-board-ae350-upload`）；Linux 6.12.112 实板 TFTP 启动成功并通过自测（run `20261109T102918792481Z-board-ae350-linux`）；实板硬件 GFX2D 32bpp XRGB8888 FILL/COPY/BLIT 逐像素校验通过、16bpp XRGB1555 FILL 逐像素校验通过、24bpp RGB888 参数拒绝通过；fb0 硬件加速运行无误（0 ERRORS, 0 underflows）。 |
 | 附带发现（实板） | CPU 流式写 FB 偶发丢像素：cached 全屏写/读回 307200 像素坏 2 个（首坏 idx 291837）；未 cache 大批量流式写卡死（DDR3AHB 写缓冲与连续写交互）。属平台既有问题、与 GFX2D 无关，BIOS 路径（cache 开）亦受影响——GFX2D 渲染全屏逐像素 0 坏。另：DLM 内结果区在 cache 开时被掩盖，诊断需强制刷回。 | cpu 写测试 run `20261107T150249834830Z` |
-| Step 5 | 二期评估：Alpha Blend（读-改-写 + 混合运算）、Scale（行缓冲 + 最近邻/线性插值） | 按 DE/灰度需求单独立项 |
+| Step 5b | 二期评估：Alpha Blend（读-改-写 + 混合运算）、Scale（行缓冲 + 最近邻/线性插值） | 按 DE/灰度需求单独立项 |
 
 每步都复用同一 `--workspace`（默认 `default`），见 AGENTS.md 构建铁律。
 

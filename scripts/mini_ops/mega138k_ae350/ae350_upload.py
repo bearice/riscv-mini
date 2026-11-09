@@ -125,8 +125,16 @@ def perform_upload(args, selected=None):
 
         try:
             # No JTAG on the success path: the port is already open, so the ROM's
-            # own reset banner is captured directly.
-            op.record('banner', text=wait_banner())
+            # own reset banner is captured directly. If the banner was missed during
+            # programmer disconnect, restart via JTAG when available.
+            try:
+                op.record('banner', text=wait_loader(session, build_id, 3.0 if args.cpu_jtag_location else args.timeout))
+            except (TimeoutError, RuntimeError):
+                if args.cpu_jtag_location:
+                    restart()
+                    op.record('banner', text=wait_banner())
+                else:
+                    raise
             if args.self_test:
                 _negative_cases(session, image, payload, args, op, restart, wait_banner)
             uploads = []

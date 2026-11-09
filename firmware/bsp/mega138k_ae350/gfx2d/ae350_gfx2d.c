@@ -42,10 +42,29 @@ static int sync_rect(uint32_t addr, uint32_t stride, uint32_t row_bytes,
  * (50 MHz fabric vs the CPU). The TTY path issues thousands of
  * same-shape ops; diffing cuts APB writes per op from 10 to ~4. */
 struct gfx2d_desc {
-    uint32_t op, src, dst, src_stride, dst_stride, w, h, fg, bg, wb;
+    uint32_t op, src, dst, src_stride, dst_stride, w, h, fg, bg, wb, fmt;
 };
 static struct gfx2d_desc last_desc;
 static int desc_valid;
+static unsigned default_fmt = AE350_GFX2D_FMT_RGB565;
+
+int ae350_gfx2d_set_format(unsigned format) {
+    if (format > AE350_GFX2D_FMT_XRGB1555) return AE350_GFX2D_PARAM;
+    default_fmt = format;
+    return AE350_GFX2D_OK;
+}
+
+unsigned ae350_gfx2d_get_format(void) {
+    return default_fmt;
+}
+
+static inline unsigned bpp_for_format(unsigned fmt) {
+    switch (fmt) {
+        case AE350_GFX2D_FMT_XRGB8888: return 4;
+        case AE350_GFX2D_FMT_RGB888: return 3;
+        default: return 2;
+    }
+}
 
 static void write_desc_diff(const struct gfx2d_desc *d) {
     if (!desc_valid || d->op != last_desc.op) W(GFX2D_OP, d->op);
@@ -58,37 +77,47 @@ static void write_desc_diff(const struct gfx2d_desc *d) {
     if (!desc_valid || d->fg != last_desc.fg) W(GFX2D_FG_COLOR, d->fg);
     if (!desc_valid || d->bg != last_desc.bg) W(GFX2D_BG_COLOR, d->bg);
     if (!desc_valid || d->wb != last_desc.wb) W(GFX2D_BLIT_SRC_WB, d->wb);
+    if (!desc_valid || d->fmt != last_desc.fmt) W(GFX2D_FORMAT, d->fmt);
     last_desc.op=d->op; last_desc.src=d->src; last_desc.dst=d->dst;
     last_desc.src_stride=d->src_stride; last_desc.dst_stride=d->dst_stride;
     last_desc.w=d->w; last_desc.h=d->h; last_desc.fg=d->fg; last_desc.bg=d->bg;
-    last_desc.wb=d->wb;
+    last_desc.wb=d->wb; last_desc.fmt=d->fmt;
     desc_valid = 1;
     fence();
     W(GFX2D_CONTROL, 1);
     fence();
 }
 
-int ae350_gfx2d_fill_rect(uint32_t dst, uint32_t dst_stride,
-                          uint32_t width, uint32_t height, uint16_t rgb565) {
+int ae350_gfx2d_fill_rect_fmt(uint32_t dst, uint32_t dst_stride,
+                              uint32_t width, uint32_t height, uint32_t color,
+                              unsigned format) {
     if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
-    if (!width || !height) return AE350_GFX2D_PARAM;
-    /* The engine writes DDR directly: the rectangle's lines must be in
-     * device-visible memory before START (cache clean, dma sync). */
-    uint64_t bytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * 2;
+    if (!width || !height || format > AE350_GFX2D_FMT_XRGB1555)
+        return AE350_GFX2D_PARAM;
+    unsigned bpp = bpp_for_format(format);
+    uint64_t bytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * bpp;
     if (bytes > 0xffffffffull) return AE350_GFX2D_ADDR;
-    if (sync_rect(dst, dst_stride, width * 2, height)) return AE350_GFX2D_ADDR;
+    if (sync_rect(dst, dst_stride, width * bpp, height)) return AE350_GFX2D_ADDR;
     write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_FILL_RECT, .src=0, .dst=dst,
         .src_stride=0, .dst_stride=dst_stride, .w=width, .h=height,
-        .fg=rgb565, .bg=0, .wb=0 });
+        .fg=color, .bg=0, .wb=0, .fmt=format });
     return AE350_GFX2D_OK;
 }
 
-int ae350_gfx2d_copy_area(uint32_t src, uint32_t src_stride,
-                          uint32_t dst, uint32_t dst_stride,
-                          uint32_t width, uint32_t height) {
+int ae350_gfx2d_fill_rect(uint32_t dst, uint32_t dst_stride,
+                          uint32_t width, uint32_t height, uint16_t rgb565) {
+    return ae350_gfx2d_fill_rect_fmt(dst, dst_stride, width, height, rgb565, default_fmt);
+}
+
+int ae350_gfx2d_copy_area_fmt(uint32_t src, uint32_t src_stride,
+                              uint32_t dst, uint32_t dst_stride,
+                              uint32_t width, uint32_t height,
+                              unsigned format) {
     if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
-    if (!width || !height) return AE350_GFX2D_PARAM;
-    uint64_t row_bytes = (uint64_t)width * 2;
+    if (!width || !height || format > AE350_GFX2D_FMT_XRGB1555)
+        return AE350_GFX2D_PARAM;
+    unsigned bpp = bpp_for_format(format);
+    uint64_t row_bytes = (uint64_t)width * bpp;
     if (src < dst && (dst - src) < row_bytes) return AE350_GFX2D_PARAM;
     uint64_t src_span = (uint64_t)src_stride * (height - 1) + row_bytes;
     uint64_t dst_span = (uint64_t)dst_stride * (height - 1) + row_bytes;
@@ -96,12 +125,44 @@ int ae350_gfx2d_copy_area(uint32_t src, uint32_t src_stride,
         (uint64_t)dst < (uint64_t)src + src_span)
         return AE350_GFX2D_PARAM;
     if (dst_span > 0xffffffffull || src_span > 0xffffffffull) return AE350_GFX2D_ADDR;
-    if (sync_rect(src, src_stride, width * 2, height) ||
-        sync_rect(dst, dst_stride, width * 2, height))
+    if (sync_rect(src, src_stride, (uint32_t)row_bytes, height) ||
+        sync_rect(dst, dst_stride, (uint32_t)row_bytes, height))
         return AE350_GFX2D_ADDR;
     write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_COPY_AREA, .src=src, .dst=dst,
         .src_stride=src_stride, .dst_stride=dst_stride, .w=width, .h=height,
-        .fg=0, .bg=0, .wb=0 });
+        .fg=0, .bg=0, .wb=0, .fmt=format });
+    return AE350_GFX2D_OK;
+}
+
+int ae350_gfx2d_copy_area(uint32_t src, uint32_t src_stride,
+                          uint32_t dst, uint32_t dst_stride,
+                          uint32_t width, uint32_t height) {
+    return ae350_gfx2d_copy_area_fmt(src, src_stride, dst, dst_stride, width, height, default_fmt);
+}
+
+int ae350_gfx2d_image_blit_fmt(uint32_t src, uint32_t src_wb,
+                               uint32_t dst, uint32_t dst_stride,
+                               uint32_t width, uint32_t height,
+                               uint32_t fg, uint32_t bg,
+                               unsigned format) {
+    if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
+    if (!width || !height || src_wb < (width + 7) / 8 ||
+        format == AE350_GFX2D_FMT_RGB888 || format > AE350_GFX2D_FMT_XRGB1555)
+        return AE350_GFX2D_PARAM;
+    unsigned bpp = bpp_for_format(format);
+    if (format == AE350_GFX2D_FMT_XRGB8888 && ((dst % 4) != 0 || (dst_stride % 4) != 0))
+        return AE350_GFX2D_PARAM;
+    if ((dst % 2) != 0 || (dst_stride % 2) != 0)
+        return AE350_GFX2D_PARAM;
+    uint64_t dbytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * bpp;
+    uint64_t sbytes = (uint64_t)src_wb * height;
+    if (dbytes > 0xffffffffull || sbytes > 0xffffffffull) return AE350_GFX2D_ADDR;
+    if (ae350_dma_sync_for_device(src, (uint32_t)sbytes) ||
+        sync_rect(dst, dst_stride, (uint32_t)(width * bpp), height))
+        return AE350_GFX2D_ADDR;
+    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_IMAGE_BLIT, .src=src, .dst=dst,
+        .src_stride=0, .dst_stride=dst_stride, .w=width, .h=height,
+        .fg=fg, .bg=bg, .wb=src_wb, .fmt=format });
     return AE350_GFX2D_OK;
 }
 
@@ -109,20 +170,7 @@ int ae350_gfx2d_image_blit(uint32_t src, uint32_t src_wb,
                            uint32_t dst, uint32_t dst_stride,
                            uint32_t width, uint32_t height,
                            uint16_t fg, uint16_t bg) {
-    if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
-    if (!width || !height || src_wb < (width + 7) / 8) return AE350_GFX2D_PARAM;
-    uint64_t dbytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * 2;
-    uint64_t sbytes = (uint64_t)src_wb * height;
-    if (dbytes > 0xffffffffull || sbytes > 0xffffffffull) return AE350_GFX2D_ADDR;
-    /* Source is one contiguous buffer (src_wb bytes per row): single sync.
-     * Destination is strided: per-row sync of touched lines only. */
-    if (ae350_dma_sync_for_device(src, (uint32_t)sbytes) ||
-        sync_rect(dst, dst_stride, width * 2, height))
-        return AE350_GFX2D_ADDR;
-    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_IMAGE_BLIT, .src=src, .dst=dst,
-        .src_stride=0, .dst_stride=dst_stride, .w=width, .h=height,
-        .fg=fg, .bg=bg, .wb=src_wb });
-    return AE350_GFX2D_OK;
+    return ae350_gfx2d_image_blit_fmt(src, src_wb, dst, dst_stride, width, height, fg, bg, default_fmt);
 }
 
 int ae350_gfx2d_status(unsigned *status) {

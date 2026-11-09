@@ -359,6 +359,137 @@ class Gfx2DHostTest(unittest.TestCase):
             assert px == want, ('src-off16', c, px, want)
         print('PASS GFX2D: IMAGE_BLIT 8x2 + unaligned 16x1')
 
+    def test_fill_rect_xrgb8888(self):
+        # 32bpp (4 bytes/px) XRGB8888 fill.
+        # Test 16 pixels (64 bytes) spanning multiple beats at unaligned offset (0x2005)
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        dst, stride, w, h, fg = 0x2005, 128, 16, 2, 0x11223344
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 0, 'DST_ADDR': dst, 'DST_STRIDE': stride,
+            'WIDTH': w, 'HEIGHT': h, 'FG_COLOR': fg, 'FORMAT': 2})
+        for r in range(h):
+            base = dst + r * stride
+            for c in range(w):
+                px = (mem[base + 4 * c] |
+                      (mem[base + 4 * c + 1] << 8) |
+                      (mem[base + 4 * c + 2] << 16) |
+                      (mem[base + 4 * c + 3] << 24))
+                assert px == fg, (r, c, hex(px), hex(fg))
+            assert mem[base - 1] == 0
+            assert mem[base + 4 * w] == 0
+        print('PASS GFX2D: FILL_RECT XRGB8888 multi-beat unaligned')
+
+    def test_copy_area_xrgb8888(self):
+        # 32bpp COPY_AREA: forward and downward overlap
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        stride = 256
+        # Fill source area (8x4 pixels of 32bpp) with unique words
+        for r in range(4):
+            for c in range(8):
+                val = 0xA0000000 | (r << 16) | c
+                addr = 0x1000 + r * stride + 4 * c
+                mem[addr:addr + 4] = val.to_bytes(4, 'little')
+        # Copy to 0x2000 (same byte offset mod 32: 0)
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 1, 'SRC_ADDR': 0x1000, 'DST_ADDR': 0x2000,
+            'SRC_STRIDE': stride, 'DST_STRIDE': stride,
+            'WIDTH': 8, 'HEIGHT': 4, 'FORMAT': 2})
+        for r in range(4):
+            for c in range(8):
+                want = 0xA0000000 | (r << 16) | c
+                addr = 0x2000 + r * stride + 4 * c
+                got = int.from_bytes(mem[addr:addr + 4], 'little')
+                assert got == want, (r, c, hex(got), hex(want))
+
+        # Downward overlap copy: 0x2000 -> 0x2100 (same stride 256, delta +1 row)
+        d2 = make()
+        self._run_op(d2, self._fake_pump_factory(d2, mem), {
+            'OP': 1, 'SRC_ADDR': 0x2000, 'DST_ADDR': 0x2100,
+            'SRC_STRIDE': stride, 'DST_STRIDE': stride,
+            'WIDTH': 8, 'HEIGHT': 4, 'FORMAT': 2})
+        for r in range(4):
+            for c in range(8):
+                want = 0xA0000000 | (r << 16) | c
+                addr = 0x2100 + r * stride + 4 * c
+                got = int.from_bytes(mem[addr:addr + 4], 'little')
+                assert got == want, ('overlap', r, c, hex(got), hex(want))
+        print('PASS GFX2D: COPY_AREA XRGB8888 basic + overlap-down')
+
+    def test_image_blit_xrgb8888(self):
+        # 32bpp IMAGE_BLIT: 1bpp monochrome expanded to 32bpp pixels
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        glyph = bytes([0b10100101, 0b01011010])
+        mem[0x1000:0x1002] = glyph
+        fg, bg = 0x00FF00AA, 0x11002233
+        # 8x2 glyph, dst=0x2000 (aligned), blit_wb=1
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 2, 'SRC_ADDR': 0x1000, 'DST_ADDR': 0x2000,
+            'SRC_STRIDE': 0, 'DST_STRIDE': 64, 'WIDTH': 8, 'HEIGHT': 2,
+            'FG_COLOR': fg, 'BG_COLOR': bg, 'BLIT_SRC_WB': 1, 'FORMAT': 2})
+        for r in range(2):
+            for c in range(8):
+                bit = (glyph[r] >> (7 - c)) & 1
+                want = fg if bit else bg
+                addr = 0x2000 + r * 64 + 4 * c
+                px = int.from_bytes(mem[addr:addr + 4], 'little')
+                assert px == want, (r, c, hex(px), hex(want))
+
+        # Unaligned dst: 4-byte aligned (offset 8) 16x1, src wb=2
+        d2 = make()
+        mem2 = bytearray(DDR_SIZE)
+        glyph2 = bytes([0b11001010, 0b00111100])
+        mem2[0x3000:0x3002] = glyph2
+        self._run_op(d2, self._fake_pump_factory(d2, mem2), {
+            'OP': 2, 'SRC_ADDR': 0x3000, 'DST_ADDR': 0x4008,
+            'SRC_STRIDE': 0, 'DST_STRIDE': 128, 'WIDTH': 16, 'HEIGHT': 1,
+            'FG_COLOR': fg, 'BG_COLOR': bg, 'BLIT_SRC_WB': 2, 'FORMAT': 2})
+        for c in range(16):
+            bit = (glyph2[c >> 3] >> (7 - (c & 7))) & 1
+            want = fg if bit else bg
+            addr = 0x4008 + 4 * c
+            px = int.from_bytes(mem2[addr:addr + 4], 'little')
+            assert px == want, ('unaligned 32bpp blit', c, hex(px), hex(want))
+        print('PASS GFX2D: IMAGE_BLIT XRGB8888 8x2 + unaligned 16x1')
+
+    def test_fill_rect_rgb888_rejected(self):
+        # 24bpp packed RGB888 is not supported on GFX2D and must be rejected with ERR_PARAM
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 0, 'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 12, 'HEIGHT': 2, 'FG_COLOR': 0x00332211, 'FORMAT': 1},
+            expect_err=ERR_PARAM)
+        print('PASS GFX2D: FILL_RECT RGB888 rejected with ERR_PARAM')
+
+    def test_format_validation(self):
+        # Format > 3 rejected with ERR_PARAM
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 0, 'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 8, 'HEIGHT': 2, 'FG_COLOR': 0, 'FORMAT': 4},
+            expect_err=ERR_PARAM)
+
+        # XRGB8888 IMAGE_BLIT requires 4-byte aligned dst
+        d2 = make()
+        self._run_op(d2, self._fake_pump_factory(d2, mem), {
+            'OP': 2, 'SRC_ADDR': 0x1000, 'DST_ADDR': 0x2002,
+            'SRC_STRIDE': 0, 'DST_STRIDE': 64, 'WIDTH': 8, 'HEIGHT': 1,
+            'FG_COLOR': 0, 'BG_COLOR': 0, 'BLIT_SRC_WB': 1, 'FORMAT': 2},
+            expect_err=ERR_PARAM)
+
+        # RGB888 IMAGE_BLIT rejected with ERR_PARAM
+        d3 = make()
+        self._run_op(d3, self._fake_pump_factory(d3, mem), {
+            'OP': 2, 'SRC_ADDR': 0x1000, 'DST_ADDR': 0x2000,
+            'SRC_STRIDE': 0, 'DST_STRIDE': 64, 'WIDTH': 8, 'HEIGHT': 1,
+            'FG_COLOR': 0, 'BG_COLOR': 0, 'BLIT_SRC_WB': 1, 'FORMAT': 1},
+            expect_err=ERR_PARAM)
+        print('PASS GFX2D: format validation rejects invalid formats and alignments')
+
     def test_address_map(self):
         self.assertEqual(amap.GFX2D_BASE, 0xF80C0000)
         self.assertEqual(amap.GFX2D_ID, 0xAE350601)
