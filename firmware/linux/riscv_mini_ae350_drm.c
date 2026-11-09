@@ -145,7 +145,7 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 			u32 bpp = ae350_drm_bpp(drm->format_id);
 			u32 src_phys = (u32)gem->dma_addr + fb->offsets[0] +
 				       src_y * fb->pitches[0] + src_x * bpp;
-			u32 dst_phys = (u32)drm->dma + src_y * drm->stride + src_x * bpp;
+			u32 dst_phys = (u32)drm->dma;
 
 			if ((src_phys % 32) == (dst_phys % 32) &&
 			    (fb->pitches[0] % 32) == (drm->stride % 32)) {
@@ -153,9 +153,8 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 
 				for (r = 0; r < src_h; r++) {
 					u32 s_va = (u32)(uintptr_t)src_data[0].vaddr +
-						   fb->offsets[0] + (src_y + r) * fb->pitches[0] + src_x * bpp;
-					u32 d_va = (u32)(uintptr_t)drm->cpu +
-						   (src_y + r) * drm->stride + src_x * bpp;
+						   (src_y + r) * fb->pitches[0] + src_x * bpp;
+					u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
 					ae350_cache_clean_range(s_va, src_w * bpp);
 					ae350_cache_clean_range(d_va, src_w * bpp);
 				}
@@ -173,8 +172,7 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 				writel(drm->format_id, drm->gfx + AE350_G_FORMAT);
 				if (!ae350_gfx2d_run(drm->gfx)) {
 					for (r = 0; r < src_h; r++) {
-						u32 d_va = (u32)(uintptr_t)drm->cpu +
-							   (src_y + r) * drm->stride + src_x * bpp;
+						u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
 						ae350_cache_inval_range(d_va, src_w * bpp);
 					}
 					drm_gem_fb_vunmap(fb, src_maps);
