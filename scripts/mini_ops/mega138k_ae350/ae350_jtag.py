@@ -43,6 +43,46 @@ def resolve_reg(name):
 FTDI_SIO = Path('/sys/bus/usb/drivers/ftdi_sio')
 
 
+def ftdi_usb_device_node(selector):
+    """Find /dev/bus/usb/BBB/DDD corresponding to an FTDI serial selector."""
+    if os.name != 'posix' or not selector:
+        return None
+    wanted = str(selector)[7:] if str(selector).startswith('serial:') else str(selector)
+    wanted_base = wanted.rstrip('ABCD')
+    devices_dir = Path('/sys/bus/usb/devices')
+    if not devices_dir.is_dir():
+        return None
+    for dev in sorted(devices_dir.glob('*')):
+        serial_file = dev / 'serial'
+        if not serial_file.is_file():
+            continue
+        try:
+            serial = serial_file.read_text().strip()
+            if wanted.startswith(serial) or (wanted_base and wanted_base == serial):
+                busnum = int((dev / 'busnum').read_text().strip())
+                devnum = int((dev / 'devnum').read_text().strip())
+                node = Path(f'/dev/bus/usb/{busnum:03d}/{devnum:03d}')
+                if node.is_char_device():
+                    return node
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def ensure_usb_device_access(selector, sudo=False):
+    """Ensure FTDI USB device node /dev/bus/usb/BBB/DDD is readable and writable."""
+    if os.name != 'posix' or not selector:
+        return
+    node = ftdi_usb_device_node(selector)
+    if node and not os.access(node, os.R_OK | os.W_OK):
+        if sudo or os.environ.get('MINI_SUDO') == '1':
+            try:
+                subprocess.run(['sudo', '-n', 'chmod', 'a+rw', str(node)],
+                               check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            except (subprocess.CalledProcessError, FileNotFoundError, PermissionError):
+                pass
+
+
 def ftdi_sio_interface(selector, driver=FTDI_SIO):
     """Kernel-bound USB interface behind a D2XX `serial:<device serial><A|B|..>` selector."""
     if os.name == 'nt' or not str(selector).startswith('serial:'):
@@ -83,15 +123,17 @@ def ensure_unbound(selector):
 
 
 class CPUJTAG:
-    def __init__(self, location, dll):
+    def __init__(self, location, dll, sudo=False):
         self.dll = (c.WinDLL if os.name == 'nt' else c.CDLL)(str(dll))
         self.handle = c.c_void_p()
-        selector = str(location)
-        self._driver = ensure_unbound(selector)
+        self.selector = str(location)
+        self.sudo = sudo or os.environ.get('MINI_SUDO') == '1'
+        ensure_usb_device_access(self.selector, sudo=self.sudo)
+        self._driver = ensure_unbound(self.selector)
         self._driver.__enter__()
         try:
-            if selector.startswith('serial:'):
-                serial = selector[7:].encode('ascii')
+            if self.selector.startswith('serial:'):
+                serial = self.selector[7:].encode('ascii')
                 if not serial or len(serial) > 63:
                     raise ValueError('Expected serial:<FTDI interface serial>')
                 self.check(self.dll.FT_OpenEx(c.c_char_p(serial), 1, c.byref(self.handle)))
@@ -130,10 +172,13 @@ class CPUJTAG:
             self._driver.__exit__(None, None, None)
             raise
 
-    @staticmethod
-    def check(status):
+    def check(self, status):
         if status:
-            raise RuntimeError('FTDI D2XX status ' + str(status))
+            node = ftdi_usb_device_node(getattr(self, 'selector', None))
+            extra = ''
+            if node and not os.access(node, os.R_OK | os.W_OK):
+                extra = f' (permission denied on {node}; run with --sudo or configure udev rules)'
+            raise RuntimeError('FTDI D2XX status ' + str(status) + extra)
 
     def call(self, name, *args):
         self.check(getattr(self.dll, name)(self.handle, *args))
@@ -478,7 +523,7 @@ def perform(args):
     if not location:
         location = 'serial:FactoryAIOT ProA' if os.name != 'nt' else '1'
     op.report['cpu_jtag_location'] = location
-    cpu = CPUJTAG(location, dll_path)
+    cpu = CPUJTAG(location, dll_path, sudo=getattr(args, 'sudo', False))
     try:
         dmstatus = cpu.read(0x11)
         halted = bool(dmstatus & (1 << 9))

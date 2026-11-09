@@ -1,4 +1,5 @@
 """One target registry and execution convention for all project builds."""
+import argparse
 import importlib
 import importlib.util
 from pathlib import Path
@@ -36,6 +37,7 @@ def add_targets(parser):
         target.add_argument('--dry-run', action='store_true', help='Resolve a plan without executing build tools')
         target.add_argument('--purpose', default='candidate', help='Purpose recorded with this build request')
         target.add_argument('--workspace', default='default', help='Reusable work area name; use a different name for independent experiments')
+        target.add_argument('--sudo', action='store_true', default=argparse.SUPPRESS, help='Use sudo only for privileged operations if needed')
         if name == 'gateware':
             target.add_argument('--pnr-mode', choices=('auto', 'full', 'place', 'pnr'), default='auto',
                                 help='AE350: auto (default) reuses the workspace\'s compatible successful placement/routing, '

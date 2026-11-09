@@ -22,6 +22,7 @@ def add_commands(sub):
     from scripts.modular.targets import add_targets
     for command in ('build', 'plan'):
         op = sub.add_parser(command, help='Build a target' if command=='build' else 'Resolve a target without execution')
+        op.add_argument('--sudo', action='store_true', default=argparse.SUPPRESS, help='Use sudo only for privileged operations')
         add_targets(op)
     release=sub.add_parser('release',help='Export, verify or create a release')
     releases=release.add_subparsers(dest='release_operation',required=True)

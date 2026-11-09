@@ -48,11 +48,15 @@ def preflight(args):
 @contextmanager
 def server(board, args, file, name):
     """Use the existing server under the explicitly chosen allowed interpreter."""
+    import os
     log_path = board.op.path / (name + '-tftp.log')
+    use_sudo = getattr(args, 'sudo', False) or os.environ.get('MINI_SUDO') == '1'
+    tftp_cmd = [args.tftp_python, '-u', str(ROOT/'scripts/primer20k_vexriscv/bios_tftp.py'),
+        '--bind', args.host_ip, '--file', str(file.resolve()), '--name', name]
+    if use_sudo and sys.platform != 'win32' and hasattr(os, 'geteuid') and os.geteuid() != 0:
+        tftp_cmd = ['sudo', '-n', *tftp_cmd]
     with log_path.open('wb') as log:
-        process = subprocess.Popen([args.tftp_python, '-u', str(ROOT/'scripts/primer20k_vexriscv/bios_tftp.py'),
-            '--bind', args.host_ip, '--file', str(file.resolve()), '--name', name],
-            stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
+        process = subprocess.Popen(tftp_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
         try:
             deadline = time.monotonic() + 5
             while b'TFTP ready' not in log_path.read_bytes():
@@ -63,7 +67,10 @@ def server(board, args, file, name):
         finally:
             if process.poll() is None:
                 process.terminate()
-            process.wait(timeout=5)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
 
 
 def verify(board, args):

@@ -10,10 +10,14 @@ sys.path.insert(0,str(ROOT/"scripts"))
 
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--sudo', action='store_true', default=False,
+                   help='Use sudo only for privileged operations (TFTP port 69, USB permissions)')
     sub=p.add_subparsers(dest='command',required=True)
     from scripts.modular.cli import add_commands
     add_commands(sub)
     board=sub.add_parser('board',help='Observe, recover, run, update or verify the board')
+    board.add_argument('--sudo', action='store_true', default=argparse.SUPPRESS,
+                       help='Use sudo only for privileged operations')
     operations=board.add_subparsers(dest='operation',required=True)
     from scripts.modular.machines import MACHINES
     for name,description in [
@@ -41,6 +45,8 @@ def parser():
         ('jtag','AE350 CPU JTAG debug: status, halt, resume, step, memory/reg access'),
         ('linux','Boot a Linux Image via BIOS/OpenSBI/U-Boot TFTP and verify userspace')]:
         op=operations.add_parser(name,help=description,description=description)
+        op.add_argument('--sudo', action='store_true', default=argparse.SUPPRESS,
+                        help='Use sudo only for privileged operations')
         op.add_argument('--machine', choices=MACHINES,
                         default='mega138k_ae350' if name in ('jtag', 'jtag-test', 'ddr-suite', 'ae350-upload', 'dma-suite', 'io-suite', 'audio-suite', 'video-suite', 'sd-suite', 'bus-suite', 'bootrom', 'bios-install', 'p7-suite', 'usb-suite', 'ethernet-suite') else 'primer20k_vexriscv')
         op.add_argument('--port',default='COM4')
@@ -237,6 +243,9 @@ def main(argv=None):
     if not argv:
         p.print_help();return
     args=p.parse_args(argv)
+    if getattr(args, 'sudo', False):
+        import os
+        os.environ['MINI_SUDO'] = '1'
     if args.command=='board':
         if getattr(args, 'cpu_jtag_location', None) is not None and args.machine != 'mega138k_ae350':
             p.error('--cpu-jtag-location requires --machine mega138k_ae350')

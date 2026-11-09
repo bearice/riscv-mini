@@ -23,8 +23,9 @@ class SessionError(RuntimeError):
 
 
 class HardwareSession:
-    def __init__(self, op, port='COM9', cpu_jtag_location=None, location=None, dry_run=False):
+    def __init__(self, op, port='COM9', cpu_jtag_location=None, location=None, dry_run=False, sudo=False):
         self.op = op
+        self.sudo = sudo or getattr(op, 'sudo', False) or (os.environ.get('MINI_SUDO') == '1')
         self.tools = json.loads((ROOT / '.tools.local.json').read_text(encoding='utf-8'))
         self.port_name = port
         self.cpu_location = cpu_jtag_location
@@ -36,6 +37,7 @@ class HardwareSession:
         self.programmed = None
         self._lock = None
         self._logs = []
+        self._loader_sudo = False
         self.op.report['session'] = dict(port=port, cpu_jtag_location=cpu_jtag_location, dry_run=dry_run)
 
     # -- devices ---------------------------------------------------------
@@ -71,7 +73,8 @@ class HardwareSession:
             self._acquire()
             library = 'ftd2xx.dll' if os.name == 'nt' else 'libftd2xx.so'
             self._cpu = CPUJTAG(self.cpu_location,
-                                Path(self.tools['programmer']).with_name(library))
+                                Path(self.tools['programmer']).with_name(library),
+                                sudo=self.sudo)
         return self._cpu
 
     def halt(self):
@@ -117,9 +120,18 @@ class HardwareSession:
     def check_fpga(self, cable_serial):
         self._acquire()
         base = self.loader_command(cable_serial)
+        from mini_ops.mega138k_ae350.ae350_jtag import ensure_usb_device_access
+        ensure_usb_device_access(cable_serial or self.tools.get('fpga_cable_serial'), sudo=self.sudo)
         detected = subprocess.run([*base, '--detect'], capture_output=True, text=True, timeout=30)
         output = detected.stdout + detected.stderr
         (self.op.path / 'fpga-detect.log').write_text(output)
+        if (detected.returncode or not re.search(r'\b0x0*1081b\b', output, re.I)) and self.sudo and os.name != 'nt':
+            detected_sudo = subprocess.run(['sudo', '-n', *base, '--detect'], capture_output=True, text=True, timeout=30)
+            output_sudo = detected_sudo.stdout + detected_sudo.stderr
+            if not detected_sudo.returncode and re.search(r'\b0x0*1081b\b', output_sudo, re.I):
+                self._loader_sudo = True
+                (self.op.path / 'fpga-detect.log').write_text(output_sudo)
+                return base
         if detected.returncode or not re.search(r'\b0x0*1081b\b', output, re.I):
             raise SessionError('Serial-selected cable does not report the AE350 FPGA target')
         return base
@@ -136,6 +148,8 @@ class HardwareSession:
             # Flash operation has just reattached the kernel FTDI driver.
             base = self.check_fpga(cable_serial)
             command = [*base, '--write-sram', str(fs)]
+            if getattr(self, '_loader_sudo', False):
+                command = ['sudo', '-n', *command]
             result = subprocess.run(command, capture_output=True, text=True, timeout=180)
             (self.op.path / 'sram.log').write_text(result.stdout + result.stderr)
             output = result.stdout + result.stderr
