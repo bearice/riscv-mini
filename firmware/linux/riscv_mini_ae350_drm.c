@@ -135,37 +135,6 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 	if (src_h > drm->height)
 		src_h = drm->height;
 
-	if (drm->gfx && drm->fourcc == fb->format->format &&
-	    drm->format_id != AE350_FMT_RGB888 &&
-	    readl(drm->gfx) == AE350_GFX2D_ID &&
-	    !(readl(drm->gfx + AE350_G_STATUS) & AE350_G_STATUS_BUSY)) {
-		struct drm_gem_dma_object *gem = to_drm_gem_dma_obj(fb->obj[0]);
-
-		if (gem && gem->dma_addr) {
-			u32 bpp = ae350_drm_bpp(drm->format_id);
-			u32 src_phys = (u32)gem->dma_addr + fb->offsets[0] +
-				       src_y * fb->pitches[0] + src_x * bpp;
-			u32 dst_phys = (u32)drm->dma;
-
-			if ((src_phys % 32) == (dst_phys % 32) &&
-			    (fb->pitches[0] % 32) == (drm->stride % 32)) {
-				writel(AE350_GFX_COPY, drm->gfx + AE350_G_OP);
-				writel(src_phys, drm->gfx + AE350_G_SRC_ADDR);
-				writel(dst_phys, drm->gfx + AE350_G_DST_ADDR);
-				writel(fb->pitches[0], drm->gfx + AE350_G_SRC_STRIDE);
-				writel(drm->stride, drm->gfx + AE350_G_DST_STRIDE);
-				writel(src_w, drm->gfx + AE350_G_WIDTH);
-				writel(src_h, drm->gfx + AE350_G_HEIGHT);
-				writel(0, drm->gfx + AE350_G_FG_COLOR);
-				writel(0, drm->gfx + AE350_G_BG_COLOR);
-				writel(0, drm->gfx + AE350_G_BLIT_SRC_WB);
-				writel(drm->format_id, drm->gfx + AE350_G_FORMAT);
-				if (!ae350_gfx2d_run(drm->gfx))
-					goto done;
-			}
-		}
-	}
-
 	drm_rect_init(&clip, src_x, src_y, src_w, src_h);
 	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_data,
 			  fb, &clip, &fmtcnv_state);

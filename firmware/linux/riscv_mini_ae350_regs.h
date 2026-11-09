@@ -81,7 +81,6 @@ enum ae350_gfx2d_reg {
 	AE350_G_COMMANDS	= 72,
 	AE350_G_ERRORS		= 76,
 	AE350_G_CLEAR_ERRORS	= 80,
-	AE350_G_FORMAT		= 84,
 };
 
 /* GFX2D op codes (docs/platforms/mega138k_ae350/gfx2d.md). */

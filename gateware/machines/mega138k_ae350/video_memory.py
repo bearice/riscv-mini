@@ -67,8 +67,6 @@ class DDRMemoryArbiter(LiteXModule):
                 p.wr_data_rdy.eq(active & (grant==i) & memory.cmd_ready & memory.wr_data_rdy),
                 p.rd_data.eq(memory.rd_data),p.rd_data_valid.eq(memory.rd_data_valid & busy & (owner==i))]
             self.sync += [accepted.eq(command & (grant==i)),If(accepted,counts[i].eq(counts[i]+1))]
-        video_waiting = Signal()
-        self.sync += video_waiting.eq(self.video_pending | (busy & (owner==1)))
         waited=Signal(24)
         self.sync += [
             If(~valid & any_pending,valid.eq(1),grant.eq(chosen)),
@@ -76,7 +74,7 @@ class DDRMemoryArbiter(LiteXModule):
             If(command,valid.eq(0),last.eq(grant),If(read,busy.eq(1),owner.eq(grant))),
             If(busy & memory.rd_data_valid,busy.eq(0)),
             If(memory.rd_data_valid & ~busy,self.unexpected_response.eq(1)),
-            If(video.rd_data_valid | ~video_waiting,waited.eq(0))
+            If(video.rd_data_valid | (~self.video_pending & ~(busy & (owner==1))),waited.eq(0))
             .Elif(waited!=0xffffff,waited.eq(waited+1)),
             If(waited>self.max_video_wait,self.max_video_wait.eq(waited))]
 

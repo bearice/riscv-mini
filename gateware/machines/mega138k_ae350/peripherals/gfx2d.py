@@ -27,14 +27,8 @@ OP_FILL_RECT = 0
 OP_COPY_AREA = 1
 OP_IMAGE_BLIT = 2
 
-FMT_RGB565 = 0
-FMT_RGB888 = 1
-FMT_XRGB8888 = 2
-FMT_XRGB1555 = 3
-
 DESC_NAMES = ('OP', 'SRC_ADDR', 'DST_ADDR', 'SRC_STRIDE', 'DST_STRIDE',
-              'WIDTH', 'HEIGHT', 'FG_COLOR', 'BG_COLOR', 'BLIT_SRC_WB',
-              'FORMAT')
+              'WIDTH', 'HEIGHT', 'FG_COLOR', 'BG_COLOR', 'BLIT_SRC_WB')
 
 
 class Gfx2DEngine(LiteXModule):
@@ -56,7 +50,7 @@ class Gfx2DEngine(LiteXModule):
         self.busy = Signal()
 
         op, src_addr, dst_addr, src_stride, dst_stride = desc[:5]
-        width, height, fg, bg, blit_wb, fmt = desc[5:]
+        width, height, fg, bg, blit_wb = desc[5:]
 
         req_sync = [Signal() for _ in range(2)]
         self.sync += [req_sync[0].eq(self.req), req_sync[1].eq(req_sync[0])]
@@ -64,7 +58,6 @@ class Gfx2DEngine(LiteXModule):
 
         row_bytes = Signal(32)
         row = Signal(32)
-        rows_left = Signal(16)
         beat = Signal(32)
         beats = Signal(16)
         elapsed = Signal(max=response_timeout + 1)
@@ -77,7 +70,7 @@ class Gfx2DEngine(LiteXModule):
         limit = Signal(32)      # ddr_size - row_bytes, loaded in INIT
         src_limit = Signal(32)  # copy: ddr_size - row_bytes; blit: ddr_size - blit_wb
         dir_down = Signal()     # copy: src < dst -> iterate backwards (overlap)
-        self.sync += row_bytes.eq(width << Mux(fmt == FMT_XRGB8888, 2, 1))
+        self.sync += row_bytes.eq(width << 1)  # RGB565: 2 bytes/pixel
         # One adder per state (see FSM): ROW_INC adds stride, ROW_SETUP
         # derives geometry from the registered row_start.
         # Row-increment deltas are registered in INIT so ROW_INC is a
@@ -140,35 +133,22 @@ class Gfx2DEngine(LiteXModule):
         bit_cnt = Signal(5)
         copy_data = Signal(256)
         # Replicated pixels are block-aligned; rotate by the row's byte
-        # parity so odd dst/stride keep pixel phase.
+        # parity so odd dst/stride keep pixel phase (pattern period is
+        # one pixel = 2 bytes, so parity rotation wraps the high byte
+        # into byte 0 rather than shifting in zeroes).
         wr_pattern = Signal(256)
         pat_even = Cat(*[fg[:16]] * 16)
         pat_odd = Cat(*[Cat(fg[8:16], fg[0:8])] * 16)
-        pat_16 = Signal(256)
-        self.comb += pat_16.eq(Mux(offset[0], pat_odd, pat_even))
-
-        pat_32_0 = Cat(*[fg[:32]] * 8)
-        pat_32_1 = Cat(*[Cat(fg[24:32], fg[0:24])] * 8)
-        pat_32_2 = Cat(*[Cat(fg[16:32], fg[0:16])] * 8)
-        pat_32_3 = Cat(*[Cat(fg[8:32], fg[0:8])] * 8)
-        pat_32 = Signal(256)
-        self.comb += pat_32.eq(Mux(offset[0:2] == 0, pat_32_0,
-                               Mux(offset[0:2] == 1, pat_32_1,
-                               Mux(offset[0:2] == 2, pat_32_2, pat_32_3))))
-
-        self.comb += wr_pattern.eq(Mux(fmt == FMT_XRGB8888, pat_32, pat_16))
-
-        # Blit expansion: 8 pixels for 32bpp, 16 pixels for 16bpp.
-        blit_pix_per_beat = Signal(5)
-        self.comb += blit_pix_per_beat.eq(Mux(fmt == FMT_XRGB8888, 8, 16))
+        self.comb += wr_pattern.eq(Mux(offset[0], pat_odd, pat_even))
+        # Blit expansion: top 16 bits of bit_buf, MSB-first per byte.
+        # Registered in B_EXP, shifted in B_PREP (two stages for timing).
         blit_expanded = Signal(256)
-        blit_pix_16 = [Mux(bit_buf[23 - j], fg[:16], bg[:16]) for j in range(16)]
-        blit_pix_32 = [Mux(bit_buf[23 - j], fg[:32], bg[:32]) for j in range(8)]
-        self.comb += blit_expanded.eq(Mux(fmt == FMT_XRGB8888, Cat(*blit_pix_32), Cat(*blit_pix_16)))
+        blit_pix = [Mux(bit_buf[23 - j], fg[:16], bg[:16]) for j in range(16)]
+        self.comb += blit_expanded.eq(Cat(*blit_pix))  # pix0 is LSB = first pixel
         blit_exp_reg = Signal(256)
         # No per-beat shift: the dst row byte offset is absorbed at row
-        # setup as doff/bpp dummy pixels in the bit stream (see ROW_SETUP),
-        # so beat slot s of beat i always shows stream pixel.
+        # setup as doff/2 dummy pixels in the bit stream (see ROW_SETUP),
+        # so beat slot s of beat i always shows stream pixel 16i+s.
         blit_shifted = Signal(256)
         self.comb += blit_shifted.eq(blit_exp_reg)
         # Registered outputs: the arbiter mux to the DDR IP must be the
@@ -218,8 +198,7 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), self.ui.wr_data_mask.eq(0xffffffff),
                 self.ui.addr.eq(dst_addr[2:31] & ~Constant(7, 29)),
                 If(start, NextValue(err, 0), NextValue(elapsed, 0),
-                   NextValue(row, 0), NextValue(rows_left, height), NextValue(beat, 0),
-                   NextValue(row_start, dst_addr),
+                   NextValue(row, 0), NextValue(beat, 0), NextValue(row_start, dst_addr),
                    NextValue(src_row_start, src_addr),
                    NextState('INIT')))
         # INIT is split into three states so no single state carries
@@ -265,11 +244,7 @@ class Gfx2DEngine(LiteXModule):
         # here, leaving ROW_SETUP with only per-row range checks.
         # The 32-bit stride compare is pre-registered in INIT2
         # (cmp_dst_stride) so INIT3 only has short cones.
-        bad_blit_dst = Mux(fmt == FMT_XRGB8888,
-                           (dst_addr[0:2] != 0) | (dst_stride[0:2] != 0),
-                           (dst_addr[0] != 0) | (dst_stride[0] != 0))
-        static_bad = ((op > OP_IMAGE_BLIT) | (fmt == FMT_RGB888) | (fmt > FMT_XRGB1555) |
-                      (width == 0) | (height == 0) |
+        static_bad = ((op > OP_IMAGE_BLIT) | (width == 0) | (height == 0) |
                       cmp_dst_stride |
                       ((op == OP_COPY_AREA) &
                        ((src_stride < row_bytes) |
@@ -278,9 +253,8 @@ class Gfx2DEngine(LiteXModule):
                         cmp_right_overlap |
                         unequal_stride_overlap)) |
                       ((op == OP_IMAGE_BLIT) &
-                       ((fmt == FMT_RGB888) |
-                        (blit_wb < (width + 7) >> 3) | (blit_wb > 65535) |
-                        bad_blit_dst)))
+                       ((blit_wb < (width + 7) >> 3) | (blit_wb > 65535) |
+                        (dst_addr[0] != 0) | (dst_stride[0] != 0))))
         fsm.act('INIT3',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(static_bad,
@@ -321,8 +295,6 @@ class Gfx2DEngine(LiteXModule):
                 .Elif((op != OP_FILL_RECT) & (src_row_start > src_limit),
                       NextValue(err, ERR_ADDR), NextState('FINISH'))
                 .Else(NextState('ROW_PASCAL')))
-        last_row = Signal()
-        self.comb += last_row.eq(rows_left == 1)
         fsm.act('ROW_PASCAL',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 *pascal,
@@ -337,17 +309,16 @@ class Gfx2DEngine(LiteXModule):
                       NextValue(src_byte_pending, 0),
                       NextValue(src_bytes_left, blit_wb),
                       NextValue(bit_buf, 0),
-                      NextValue(bit_cnt, Mux(fmt == FMT_XRGB8888, row_start[0:5] >> 2, row_start[0:5] >> 1)),
+                      NextValue(bit_cnt, row_start[0:5] >> 1),  # doff/2 dummy px
                       NextState('B_FETCH'))
                 .Else(NextState('PREP')))
+        last_row = Mux(dir_down & (op == OP_COPY_AREA), row == 0, row == height - 1)
         down = dir_down & (op == OP_COPY_AREA)
         # ROW_INC is declared early (state encoding order) so the
         # row-advance adders sit with the other per-row geometry.
         fsm.act('ROW_INC',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(row, Mux(down, row - 1, row + 1)),
-                NextValue(rows_left, rows_left - 1),
-                NextValue(beat, 0),
+                NextValue(row, Mux(down, row - 1, row + 1)), NextValue(beat, 0),
                 NextValue(row_start, nxt_row_start),
                 NextValue(src_row_start, nxt_src_row_start), NextState('ROW_SETUP'))
         fsm.act('PREP',
@@ -357,7 +328,7 @@ class Gfx2DEngine(LiteXModule):
                 If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
                     If(beats_left == 1,
-                        If(last_row, NextState('FINISH'))
+                        If(row == height - 1, NextState('FINISH'))
                         .Else(NextState('ROW_INC')),
                     ).Else(NextValue(beat, beat + 1),
                              NextValue(beats_left, beats_left - 1),
@@ -401,7 +372,7 @@ class Gfx2DEngine(LiteXModule):
                 ).Else(NextValue(elapsed, elapsed + 1)))
         fsm.act('B_FETCH',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                If(bit_cnt >= blit_pix_per_beat, NextState('B_EXP'))
+                If(bit_cnt >= 16, NextState('B_EXP'))
                 .Elif(src_bytes_left == 0, NextState('B_EXP'))
                 .Elif(bytes_in_beat == 0,
                       NextValue(src_beat_base, src_beat_base + 32),
@@ -450,12 +421,13 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1), self.ui.wr_data_end.eq(1),
                 If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
-                    # Remaining valid bits move below the consumed pixels;
-                    # Buffer is 24b so the last byte's tail never truncates.
-                    NextValue(bit_buf, Mux(fmt == FMT_XRGB8888, bit_buf << 8, bit_buf << 16)),
-                    NextValue(bit_cnt, Mux(bit_cnt > blit_pix_per_beat, bit_cnt - blit_pix_per_beat, 0)),
+                    # Remaining valid bits move below the consumed 16;
+                    # <<16 puts them at the top. Buffer is 24b so the
+                    # last byte's tail never truncates.
+                    NextValue(bit_buf, bit_buf << 16),
+                    NextValue(bit_cnt, Mux(bit_cnt > 16, bit_cnt - 16, 0)),
                     If(beats_left == 1,
-                        If(last_row, NextState('FINISH'))
+                        If(row == height - 1, NextState('FINISH'))
                         .Else(NextState('ROW_INC')),
                     ).Else(NextValue(beat, beat + 1),
                              NextValue(beats_left, beats_left - 1),
