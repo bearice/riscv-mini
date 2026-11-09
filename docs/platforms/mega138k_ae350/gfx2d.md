@@ -1,7 +1,7 @@
-# AE350 2D 像素处理流水线（GFX2D）计划
+# AE350 2D 像素处理流水线（GFX2D）规格与集成
 
-> 适用机器：`mega138k_ae350`。状态：**一期骨架（Step 1）已落地，DDR 数据面未接**。
-> 本文档是计划与寄存器合同；实现状态以代码和构建回执为准，不要把计划当作已验收能力。
+> 适用机器：`mega138k_ae350`。状态：**一期（Step 1–4b）已全链路落地并完成板级实机验收（BIOS TTY / Linux fbdev / DRM / 自测套件通过）**。
+> 本文档是架构设计、寄存器合同与实机验收记录；实现细节与演进以代码和构建回执为准。
 
 ## 1. 目标与非目标
 
@@ -78,7 +78,7 @@ RTL 与生成 C 头共用。首 32 字节遵循平台公共控制头。
 | 0x10 | STATUS | bit0 BUSY；bit1 DONE（W1C）；bit2 ERROR（W1C） |
 | 0x14 | IRQ_STATUS | bit0 DONE 事件锁存（W1C） |
 | 0x18 | IRQ_ENABLE | bit0 事件屏蔽 |
-| 0x1C | LAST_ERROR | 最近错误码（0=无，1=UNSUPPORTED/BUSY，2=ADDR，…） |
+| 0x1C | LAST_ERROR | 最近错误码（0=ERR_NONE，1=ERR_UNSUPPORTED，2=ERR_BUSY，3=ERR_PARAM，4=ERR_ADDR，5=ERR_TIMEOUT） |
 | 0x20 | OP | 0=FILL_RECT，1=COPY_AREA，2=IMAGE_BLIT |
 | 0x24 | SRC_ADDR | 源基址（DDR 物理地址） |
 | 0x28 | DST_ADDR | 目标基址 |
@@ -100,14 +100,18 @@ RTL 与生成 C 头共用。首 32 字节遵循平台公共控制头。
   不产生任何 DDR 流量。Step 2 起改为真正的引擎启动。
 - 所有 W1C/锁存语义同 HPD 中断：新事件优先于同拍清除。
 
-## 5. 地址与格式约束（目标合同，引擎实现时强制）
+## 5. 地址与格式约束（硬件与驱动合同）
 
-- `SRC_ADDR/DST_ADDR`：DDR aperture 内，32B 对齐（与 Video reader 同要求）。
-- `SRC_STRIDE/DST_STRIDE`：32B 对齐，`>= WIDTH * bpp`，`< 64KiB`，整帧不越 aperture。
+- `SRC_ADDR/DST_ADDR`：DDR aperture 内。
+  - `FILL_RECT`：`DST_ADDR` 支持任意字节对齐。非对齐起始由首拍 `first_mask` 处理；奇地址起始由硬件旋转像素模式（`pat_odd`）保证跨 32B beat 边界像素相位无零填充损坏。
+  - `IMAGE_BLIT`：`DST_ADDR` 要求像素对齐（偶字节地址），行内字节偏移在硬件中吸收为 `doff/2` 个 dummy 像素；`SRC_ADDR` 支持任意字节对齐。
+  - `COPY_AREA`：要求 `(src % 32) == (dst % 32)` 且 `(src_stride % 32) == (dst_stride % 32)`。
+- `SRC_STRIDE/DST_STRIDE`：`>= WIDTH * bpp`，`< 64KiB`，整帧不越 aperture。
 - Blit 源为 1bpp packed，`BLIT_SRC_WB >= ceil(WIDTH/8)`；展开按字节内 MSB-first（与 `font5x7` 一致）。
 - 颜色格式一期固定 RGB565（与 BIOS TTY 一致）；RGB888/XRGB8888 在引擎支持后开放。
-- 重叠：`COPY_AREA` 当源/目标同缓冲且 `SRC_ADDR < DST_ADDR` 时引擎从末行向前复制；
-  驱动层不做重叠检测，合同由硬件保证。
+- **重叠处理契约**：
+  - **垂直重叠（下移/跨行）**：当源与目标在同一缓冲且垂直下移（`SRC_ADDR < DST_ADDR` 且 `dy > sy`）时，硬件状态机置 `dir_down=1`，自动从末行向首行反向迭代（row `height-1` 到 0），避免行间覆盖；
+  - **水平重叠（同扫描线右移）**：当在同一扫描线内向右复制（`sy == dy` 且 `sx < dx` 重叠）时，硬件每行内部 beat 递增传输（0 到 N-1），前序写入会覆盖后序未读源数据。**硬件契约**：硬件在 `INIT3` 静态校验中检测同扫描线右移重叠 `(src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)`，直接拒绝并置 `ERR_PARAM`；**驱动契约**：软件驱动（Linux `ae350_fb_copyarea` 等）对 `sy == dy && sx < dx && sx + width > dx` 识别为不可硬件加速场景，自动回退至 `sys_copyarea` 软件处理。
 
 ## 6. 分阶段落地
 
@@ -122,6 +126,7 @@ RTL 与生成 C 头共用。首 32 字节遵循平台公共控制头。
 | **Step 4a 性能优化（本提交）** | 实测 GFX2D 全屏重绘（2400 cell）比 CPU 路径慢（41.3M vs 34.4M cycles），瓶颈是单 op 固定开销：优化后 38.1M cycles（CPU 34.4M，接近持平）：(a) BSP probe 结果缓存（此前每 op 两次 APB 读）；(b) 按行 sync 只清触及的 cache line（cell 此前每 op 清 ~600 行→~30 行），blit 源改为单区 sync；(c) 描述符影子 diff（每 op APB 写 10→~4）；(d) 每 cell 两 op（fill+blit）合并为单次 8×16 blit。引擎本身不慢，DDR 单 beat 握手+CDC 延迟占主导；cell 级 GFX2D≈CPU，真正的加速价值在整屏 fill、COPY_AREA 滚动（单 op 搬 10KB≈30× CPU）等大 rect 操作。 | verify 诊断（2400 cell 逐像素）0 坏；suite 回归 `20261107T151047802650Z` stage=`0xC3100005`（亦验证 diff 跨 op 切换正确）；perf 实测 run `20261107T150920276059Z`：CPU 0x20b485a / GFX2D 0x245b199 cycles（800MHz）。 |
 | **Step 4a TTY 滚动优化（本提交）** | TTY flush 增加滚动检测：grid 在 DECSTBM 区上移 k 行（k=1..8）时，用一次 `COPY_AREA` 搬移像素（640×k*16，src>dst 前向迭代，引擎重叠安全），同步移位 `drawn[]`，diff 只重绘底部 k 行与光标——单行滚动从 ~2400 次 blit 降为 1 次 copy + ~80 次 blit。检测时 REVERSE 位归一化比较（drawn 存的是 post-reverse 格）；未命中则回退全量重绘。TTY 诊断改为同槽位两次 flush 结构使 copy 真正 engage，滚动后逐格像素校验通过。 | TTY 诊断实板通过（run `20261108T015409013435Z-board-ae350-upload`，stage=`0xC3200040`，全部 bad=0，ERRORS=0）；引擎/suite 不变（gateware 沿用 bed245）。 |
 | **Step 4b Linux fbdev 接入（本提交）** | 新内核驱动 `firmware/linux/riscv_mini_ae350_fb.c`（fbdev，`riscv-mini,ae350-video`，RGB565/XRGB1555 固定模式+CUS 自定义模式，双缓冲单次 `frame_bytes*2` 连续分配支持 mmap，GFX2D `fb_fillrect/fb_copyarea/fb_imageblit` 加速——fbcon 坐标按虚拟屏空间 `y/height` 映射 slot、blit 源经 DDR scratch、`fb_sync`/present 用 S/U cache CSR 批量 clean）+ 共享头 `riscv_mini_ae350_regs.h`（寄存器/PLL 搜索/commit/cache-clean/GFX2D 助手）+ `riscv_mini_ae350_drm.c`（simple-pipe DRM + GEM DMA 拷贝 + shmem fbdev emulation，`riscv-mini,ae350-video-drm`）；`install.py` 安装 `FB_AE350_VIDEO`/`DRM_AE350_VIDEO`；DTS `video0` 启用（`status=okay`）并加 `consoleblank=0`；BIOS `services.c` 置 `CCTL_SUEN`（`csrs 0x7ca,0x103`）使 S 模式可用 `ucctlbeginaddr/ucctlcommand(0x80b/0x80c)`；init.c fb 自测动态几何。实板修复两个启动 panic：(1) S 模式用 M-mode cache CSR → illegal instruction；(2) VA 型 cache clean 命令传 DMA 物理地址 → load/store fault，须传 CPU 虚拟地址。 | Linux 6.12.112 构建通过（run `20261108T161708343609Z-build-gfx2d-ae350-fbfix-33ec64`）；实板启动到 shell（run `20261108T165430470478Z-board-ae350-linux`，`fb0: 640x480 RGB565 double-buffered (gfx2d accel)`，fbcon 80x30）；实板串口 `fb` 自测 `SELFTEST fb0 RGB565/mmap/readback/DMA/blank PASS`；GFX2D 加速确认在用（COMMANDS=0x1a0a，ERRORS=0）；MS2109 采集卡捕获到 Linux 绘制的 RGB565 红/绿/蓝三分竖条（mmap 写入 + cache clean 路径打通）。 |
+| **Step 4c PR 审查缺陷修复（本提交）** | 针对 PR #3 代码审查发现进行软硬件防御与缺陷修复：(1) `geo_sum` 扩宽为 7 位，`beats_w` 计算引入完整高位商 `rb_hi5 + geo_sum[5:7]`，防止行跨 beat 时进位截断导致 beat 计数下溢；(2) `C_WSEND` 跨 beat 转移分支中补全 `NextValue(beat_byte, beat_byte + 32)`，修复多 beat COPY_AREA 目标写地址停滞在首块的 bug；(3) `wr_pattern` 由左移 8 位（补 0 破坏边界像素）改为奇偶字节旋转（`pat_odd = Cat(fg[8:16], fg[0:8])`），修复奇目标地址填充跨 32B 边界像素损坏；(4) 同扫描线右移重叠（`sy==dy && sx<dx`）：硬件 `INIT3` 增加 `(src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)` 检测并返回 `ERR_PARAM`，驱动层预先检测并回退 `sys_copyarea`；(5) Linux fbdev 中颜色值与调色板索引映射：`pseudo_palette` 转换，`fb_fillrect` 仅对 `ROP_COPY` 加速（`ROP_XOR` 回退 `sys_fillrect`）；(6) DRM pipe disable 时先通过 `ae350_video_enable(drm->csr, 0)` 确认硬件 scanout 完全停止后再释放 DMA 缓冲区；(7) video 自定义模式在输出关闭停止时允许安全重写寄存器。 | Migen 仿真回归全过（`tests/mega138k_ae350/gfx2d_host_test.py` 覆盖多 beat 拷贝、进位溢出、奇地址旋转、右移重叠拒绝）；C HAL 测试全过；Linux 6.12.112 构建通过；实机验收启动并通过自测套件。 |
 | 附带发现（实板） | CPU 流式写 FB 偶发丢像素：cached 全屏写/读回 307200 像素坏 2 个（首坏 idx 291837）；未 cache 大批量流式写卡死（DDR3AHB 写缓冲与连续写交互）。属平台既有问题、与 GFX2D 无关，BIOS 路径（cache 开）亦受影响——GFX2D 渲染全屏逐像素 0 坏。另：DLM 内结果区在 cache 开时被掩盖，诊断需强制刷回。 | cpu 写测试 run `20261107T150249834830Z` |
 | Step 5 | 二期评估：Alpha Blend（读-改-写 + 混合运算）、Scale（行缓冲 + 最近邻/线性插值） | 按 DE/灰度需求单独立项 |
 

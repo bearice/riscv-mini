@@ -240,13 +240,19 @@ static void ae350_drm_pipe_enable(struct drm_simple_display_pipe *pipe,
 static void ae350_drm_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
 	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+	int ret;
+
+	ret = ae350_video_enable(drm->csr, 0);
+	if (ret) {
+		drm_err(&drm->dev, "scanout disable failed: %d\n", ret);
+		return;
+	}
 
 	if (drm->cpu) {
 		dma_free_coherent(drm->dev.dev, drm->size, drm->cpu, drm->dma);
 		drm->cpu = NULL;
 		drm->size = 0;
 	}
-	ae350_video_enable(drm->csr, 0);
 }
 
 static void ae350_drm_pipe_update(struct drm_simple_display_pipe *pipe,

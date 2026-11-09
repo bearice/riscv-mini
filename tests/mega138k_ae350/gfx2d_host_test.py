@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from migen import Signal
 from migen.sim import run_simulation
 from gateware.machines.mega138k_ae350 import address_map as amap
-from gateware.machines.mega138k_ae350.peripherals.gfx2d import Gfx2D, ERR_NONE, ERR_UNSUPPORTED
+from gateware.machines.mega138k_ae350.peripherals.gfx2d import Gfx2D, ERR_NONE, ERR_UNSUPPORTED, ERR_PARAM
 
 DDR_SIZE = 1 << 20
 
@@ -158,7 +158,26 @@ class Gfx2DHostTest(unittest.TestCase):
             assert mem[base + 2 * w] == 0
         print('PASS GFX2D: FILL_RECT carry sum (off5 + rb_lo5 + 31 > 63)')
 
-    def _run_op(self, d, mem_pump, desc):
+    def test_fill_odd_multi_beat(self):
+        # 32 pixels (64 bytes) at odd destination address 0x2003 with color 0x1234.
+        # Spans multiple DDR beats; verifies wr_pattern byte rotation across
+        # 32-byte beat boundaries (regression test for odd address pattern shift).
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        dst, stride, w, h, fg = 0x2003, 128, 32, 2, 0x1234
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': 0, 'DST_ADDR': dst, 'DST_STRIDE': stride,
+            'WIDTH': w, 'HEIGHT': h, 'FG_COLOR': fg})
+        for r in range(h):
+            base = dst + r * stride
+            for c in range(w):
+                px = mem[base + 2 * c] | (mem[base + 2 * c + 1] << 8)
+                assert px == fg, (r, c, hex(px), hex(fg))
+            assert mem[base - 1] == 0
+            assert mem[base + 2 * w] == 0
+        print('PASS GFX2D: FILL_RECT odd destination multi-beat rotation')
+
+    def _run_op(self, d, mem_pump, desc, expect_err=0):
         reg = amap.GFX2D_REGS
 
         def access(off, data=None):
@@ -189,10 +208,15 @@ class Gfx2DHostTest(unittest.TestCase):
             else:
                 raise AssertionError('op never completed')
             ok, val = yield from access(reg['STATUS'])
-            assert ok and (val & 0b010), val  # DONE
-            assert not (val & 0b100), val  # no ERROR
-            ok, val = yield from access(reg['LAST_ERROR'])
-            assert ok and val == 0, val
+            if expect_err:
+                assert ok and (val & 0b100), val  # ERROR
+                ok, val = yield from access(reg['LAST_ERROR'])
+                assert ok and val == expect_err, (val, expect_err)
+            else:
+                assert ok and (val & 0b010), val  # DONE
+                assert not (val & 0b100), val  # no ERROR
+                ok, val = yield from access(reg['LAST_ERROR'])
+                assert ok and val == 0, val
 
         run_simulation(d, bench(), clocks={'sys': 10, 'ddr': 10})
 
@@ -263,7 +287,15 @@ class Gfx2DHostTest(unittest.TestCase):
             for c in range(32):
                 px = mem3[0x20000 + r * 64 + 2 * c] | (mem3[0x20000 + r * 64 + 2 * c + 1] << 8)
                 assert px == 0x3000 + r * 32 + c, ('multi-beat copy', r, c, px)
-        print('PASS GFX2D: COPY_AREA basic + overlap-down + multi-beat')
+        # Overlapping rightward copy on same row (32 pixels, 64 bytes from 0x10000 to 0x10020):
+        # dst - src = 32 < 64 (row_bytes); must be rejected with ERR_PARAM (regression test).
+        d4 = make()
+        mem4 = bytearray(1 << 20)
+        self._run_op(d4, self._fake_pump_factory(d4, mem4), {
+            'OP': 1, 'SRC_ADDR': 0x10000, 'DST_ADDR': 0x10020,
+            'SRC_STRIDE': 64, 'DST_STRIDE': 64, 'WIDTH': 32, 'HEIGHT': 1},
+            expect_err=ERR_PARAM)
+        print('PASS GFX2D: COPY_AREA basic + overlap-down + multi-beat + reject rightward overlap')
 
     def test_blit(self):
         d = make()

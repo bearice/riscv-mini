@@ -191,7 +191,8 @@ static void ae350_fb_fillrect(struct fb_info *info,
 	u32 dst;
 	u32 color;
 
-	if (ae350_gfx_ready(fb) && rect->width && rect->height) {
+	if (rect->rop == ROP_COPY && ae350_gfx_ready(fb) &&
+	    rect->width && rect->height) {
 		dst = ae350_phys(fb, rect->dx, rect->dy);
 		if (rect->dy + rect->height <=
 		    (rect->dy >= fb->height ? fb->height * 2 : fb->height)) {
@@ -215,6 +216,16 @@ static void ae350_fb_copyarea(struct fb_info *info,
 
 	if (ae350_gfx_ready(fb) && area->width && area->height &&
 	    (area->sy >= fb->height) == (area->dy >= fb->height)) {
+		/*
+		 * When copying rightward within overlapping columns on the same
+		 * scanline, hardware forward beat traversal would overwrite
+		 * source beats before they are read. Fall back to software copy.
+		 */
+		if (area->sy == area->dy && area->sx < area->dx &&
+		    area->sx + area->width > area->dx) {
+			sys_copyarea(info, area);
+			return;
+		}
 		src = ae350_phys(fb, area->sx, area->sy);
 		dst = ae350_phys(fb, area->dx, area->dy);
 		if ((src % 32) == (dst % 32)) {

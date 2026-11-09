@@ -132,11 +132,14 @@ class Gfx2DEngine(LiteXModule):
         bit_buf = Signal(24)
         bit_cnt = Signal(5)
         copy_data = Signal(256)
-        # Replicated pixels are block-aligned; shift by the row's byte
+        # Replicated pixels are block-aligned; rotate by the row's byte
         # parity so odd dst/stride keep pixel phase (pattern period is
-        # one pixel = 2 bytes, so parity shift is sufficient).
+        # one pixel = 2 bytes, so parity rotation wraps the high byte
+        # into byte 0 rather than shifting in zeroes).
         wr_pattern = Signal(256)
-        self.comb += wr_pattern.eq(Cat(*[fg[:16]] * 16) << Cat(Constant(0, 3), offset[0]))
+        pat_even = Cat(*[fg[:16]] * 16)
+        pat_odd = Cat(*[Cat(fg[8:16], fg[0:8])] * 16)
+        self.comb += wr_pattern.eq(Mux(offset[0], pat_odd, pat_even))
         # Blit expansion: top 16 bits of bit_buf, MSB-first per byte.
         # Registered in B_EXP, shifted in B_PREP (two stages for timing).
         blit_expanded = Signal(256)
@@ -209,9 +212,11 @@ class Gfx2DEngine(LiteXModule):
                 NextState('INIT2'))
         # INIT2: row-step direction and 5-bit-domain geometry fold.
         cmp_dst_stride = Signal()
+        cmp_right_overlap = Signal()
         fsm.act('INIT2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(cmp_dst_stride, dst_stride < row_bytes),
+                NextValue(cmp_right_overlap, (src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)),
                 NextValue(dir_down, src_addr < dst_addr),
                 NextValue(delta_dst, Mux((src_addr < dst_addr) & (op == OP_COPY_AREA),
                                          -dst_stride, dst_stride)),
@@ -231,7 +236,8 @@ class Gfx2DEngine(LiteXModule):
                       ((op == OP_COPY_AREA) &
                        ((src_stride < row_bytes) |
                         (src_addr[0:5] != dst_addr[0:5]) |
-                        (src_stride[0:5] != dst_stride[0:5]))) |
+                        (src_stride[0:5] != dst_stride[0:5]) |
+                        cmp_right_overlap)) |
                       ((op == OP_IMAGE_BLIT) &
                        ((blit_wb < (width + 7) >> 3) | (blit_wb > 65535) |
                         (dst_addr[0] != 0) | (dst_stride[0] != 0))))
