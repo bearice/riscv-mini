@@ -51,10 +51,10 @@ static int ae350_present(struct ae350_fb *fb, u32 slot)
 	u32 status = readl(fb->csr + AE350_V_STATUS);
 	int ret;
 
+	ae350_fb_clean(fb, slot);
 	/* If this slot is already active, nothing to do. */
 	if ((status & 1u) && ((status >> 1) & 1u) == slot)
 		return 0;
-	ae350_fb_clean(fb, slot);
 	if (!(readl(fb->csr + 8) & 0x40u)) /* CAP bit6: runtime output */
 		return 0;
 	if (!readl(fb->csr + AE350_V_ENABLE)) {
