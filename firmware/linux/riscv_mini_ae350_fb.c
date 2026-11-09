@@ -22,6 +22,7 @@ struct ae350_fb {
 	void __iomem *gfx;	/* gfx2d accelerator (may be NULL) */
 	struct fb_info *info;
 	u32 format;		/* AE350_FMT_* */
+	u32 bpp;		/* bytes per pixel */
 	u32 mode_index;
 	u32 width;
 	u32 height;
@@ -79,7 +80,7 @@ static int ae350_fb_check_var(struct fb_var_screeninfo *var,
 	if (var->xres != fb->width || var->yres != fb->height ||
 	    var->xres_virtual != fb->width ||
 	    var->yres_virtual != fb->height * 2 ||
-	    var->bits_per_pixel != 16 || var->xoffset ||
+	    var->bits_per_pixel != fb->bpp * 8 || var->xoffset ||
 	    (var->yoffset != 0 && var->yoffset != fb->height) ||
 	    var->grayscale || var->nonstd)
 		return -EINVAL;
@@ -98,7 +99,10 @@ static int ae350_fb_setcolreg(unsigned regno, unsigned red, unsigned green,
 
 	if (regno >= 16)
 		return -EINVAL;
-	if (fb->format == AE350_FMT_XRGB1555)
+	if (fb->format == AE350_FMT_XRGB8888 || fb->format == AE350_FMT_RGB888)
+		fb->palette[regno] =
+			((red >> 8) << 16) | ((green >> 8) << 8) | (blue >> 8);
+	else if (fb->format == AE350_FMT_XRGB1555)
 		fb->palette[regno] =
 			((red >> 11) << 10) | ((green >> 11) << 5) | (blue >> 11);
 	else
@@ -160,14 +164,14 @@ static u32 ae350_phys(struct ae350_fb *fb, u32 x, u32 y)
 {
 	u32 slot = y >= fb->height ? 1 : 0;
 
-	return (u32)fb->dma[slot] + (x + (y - slot * fb->height) * fb->width) * 2;
+	return (u32)fb->dma[slot] + (x + (y - slot * fb->height) * fb->width) * fb->bpp;
 }
 
 static void *ae350_cpu_addr(struct ae350_fb *fb, u32 x, u32 y)
 {
 	u32 slot = y >= fb->height ? 1 : 0;
 
-	return (u8 *)fb->cpu[slot] + (x + (y - slot * fb->height) * fb->width) * 2;
+	return (u8 *)fb->cpu[slot] + (x + (y - slot * fb->height) * fb->width) * fb->bpp;
 }
 
 static void ae350_fb_cctl_rect(struct ae350_fb *fb, u32 x, u32 y,
@@ -181,7 +185,7 @@ static void ae350_fb_cctl_rect(struct ae350_fb *fb, u32 x, u32 y,
 		width = fb->width - x;
 	if (y + height > fb->height * 2)
 		height = fb->height * 2 - y;
-	bytes = width * 2;
+	bytes = width * fb->bpp;
 
 	for (r = 0; r < height; r++) {
 		u32 addr = (u32)(uintptr_t)ae350_cpu_addr(fb, x, y + r);
@@ -225,6 +229,7 @@ static void ae350_gfx_write_desc(struct ae350_fb *fb, u32 op,
 	writel(fg, g + AE350_G_FG_COLOR);
 	writel(bg, g + AE350_G_BG_COLOR);
 	writel(wb, g + AE350_G_BLIT_SRC_WB);
+	writel(fb->format, g + AE350_G_FORMAT);
 }
 
 static int ae350_gfx_ready(struct ae350_fb *fb)
@@ -318,7 +323,8 @@ static void ae350_fb_imageblit(struct fb_info *info,
 		dst = ae350_phys(fb, image->dx, image->dy);
 		bytes_per_row = (image->width + 7) / 8;
 		total = (size_t)bytes_per_row * image->height;
-		if (total <= fb->scratch_size && (dst % 2) == 0 &&
+		if (total <= fb->scratch_size && (dst % fb->bpp) == 0 &&
+		    fb->format != AE350_FMT_RGB888 &&
 		    image->dy + image->height <=
 			(image->dy >= fb->height ? fb->height * 2 : fb->height)) {
 			memcpy(fb->scratch, image->data, total);
@@ -444,16 +450,22 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto release;
 	}
+	static const u8 bpp_table[4] = { 2, 3, 4, 2 };
 	fb->format = AE350_FMT_RGB565;
 	if (!of_property_read_string(dev->of_node, "riscv-mini,format",
 				     &format_str)) {
 		if (!strcmp(format_str, "xrgb1555"))
 			fb->format = AE350_FMT_XRGB1555;
+		else if (!strcmp(format_str, "xrgb8888"))
+			fb->format = AE350_FMT_XRGB8888;
+		else if (!strcmp(format_str, "rgb888"))
+			fb->format = AE350_FMT_RGB888;
 		else if (strcmp(format_str, "rgb565")) {
 			ret = -EINVAL;
 			goto release;
 		}
 	}
+	fb->bpp = bpp_table[fb->format & 3];
 	fb->mode_index = 0;
 	of_property_read_u32(dev->of_node, "riscv-mini,mode", &fb->mode_index);
 	if (of_property_read_u32_array(dev->of_node, "riscv-mini,custom-mode",
@@ -514,7 +526,7 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		fb->width = mode.width;
 		fb->height = mode.height;
 	}
-	fb->stride = fb->width * 2;
+	fb->stride = fb->width * fb->bpp;
 	fb->frame_bytes = fb->stride * fb->height;
 	/* One allocation for both buffers: mmap exposes them contiguously. */
 	fb->cpu[0] = dma_alloc_coherent(dev, fb->frame_bytes * 2, &fb->dma[0],
@@ -577,12 +589,21 @@ static int ae350_fb_probe(struct platform_device *pdev)
 	info->var.xres = info->var.xres_virtual = fb->width;
 	info->var.yres = fb->height;
 	info->var.yres_virtual = fb->height * 2;
-	info->var.bits_per_pixel = 16;
+	info->var.bits_per_pixel = fb->bpp * 8;
 	if (fb->format == AE350_FMT_XRGB1555) {
 		info->var.red = (struct fb_bitfield){10, 5, 0};
 		info->var.green = (struct fb_bitfield){5, 5, 0};
 		info->var.blue = (struct fb_bitfield){0, 5, 0};
 		info->var.transp = (struct fb_bitfield){15, 1, 0};
+	} else if (fb->format == AE350_FMT_XRGB8888) {
+		info->var.red = (struct fb_bitfield){16, 8, 0};
+		info->var.green = (struct fb_bitfield){8, 8, 0};
+		info->var.blue = (struct fb_bitfield){0, 8, 0};
+		info->var.transp = (struct fb_bitfield){24, 8, 0};
+	} else if (fb->format == AE350_FMT_RGB888) {
+		info->var.red = (struct fb_bitfield){16, 8, 0};
+		info->var.green = (struct fb_bitfield){8, 8, 0};
+		info->var.blue = (struct fb_bitfield){0, 8, 0};
 	} else {
 		info->var.red = (struct fb_bitfield){11, 5, 0};
 		info->var.green = (struct fb_bitfield){5, 6, 0};
