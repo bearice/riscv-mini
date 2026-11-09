@@ -124,7 +124,7 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 	ret = drm_gem_fb_vmap(fb, src_maps, src_data);
 	if (ret) {
 		drm_err(&drm->dev, "framebuffer vmap failed: %d\n", ret);
-		goto done;
+		goto free_maps;
 	}
 	src_x = plane_state->src_x >> 16;
 	src_y = plane_state->src_y >> 16;
@@ -145,10 +145,21 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 			u32 bpp = ae350_drm_bpp(drm->format_id);
 			u32 src_phys = (u32)gem->dma_addr + fb->offsets[0] +
 				       src_y * fb->pitches[0] + src_x * bpp;
-			u32 dst_phys = (u32)drm->dma;
+			u32 dst_phys = (u32)drm->dma + src_y * drm->stride + src_x * bpp;
 
 			if ((src_phys % 32) == (dst_phys % 32) &&
 			    (fb->pitches[0] % 32) == (drm->stride % 32)) {
+				u32 r;
+
+				for (r = 0; r < src_h; r++) {
+					u32 s_va = (u32)(uintptr_t)src_data[0].vaddr +
+						   fb->offsets[0] + (src_y + r) * fb->pitches[0] + src_x * bpp;
+					u32 d_va = (u32)(uintptr_t)drm->cpu +
+						   (src_y + r) * drm->stride + src_x * bpp;
+					ae350_cache_clean_range(s_va, src_w * bpp);
+					ae350_cache_clean_range(d_va, src_w * bpp);
+				}
+
 				writel(AE350_GFX_COPY, drm->gfx + AE350_G_OP);
 				writel(src_phys, drm->gfx + AE350_G_SRC_ADDR);
 				writel(dst_phys, drm->gfx + AE350_G_DST_ADDR);
@@ -160,8 +171,15 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 				writel(0, drm->gfx + AE350_G_BG_COLOR);
 				writel(0, drm->gfx + AE350_G_BLIT_SRC_WB);
 				writel(drm->format_id, drm->gfx + AE350_G_FORMAT);
-				if (!ae350_gfx2d_run(drm->gfx))
-					goto done;
+				if (!ae350_gfx2d_run(drm->gfx)) {
+					for (r = 0; r < src_h; r++) {
+						u32 d_va = (u32)(uintptr_t)drm->cpu +
+							   (src_y + r) * drm->stride + src_x * bpp;
+						ae350_cache_inval_range(d_va, src_w * bpp);
+					}
+					drm_gem_fb_vunmap(fb, src_maps);
+					goto free_maps;
+				}
 			}
 		}
 	}
@@ -172,12 +190,12 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 	if (ret)
 		drm_err(&drm->dev, "framebuffer blit failed: %d\n", ret);
 	drm_gem_fb_vunmap(fb, src_maps);
-done:
+	/* VA-type cache command needs the CPU virtual address. */
+	ae350_cache_clean_range((u32)(uintptr_t)drm->cpu, (u32)drm->size);
+free_maps:
 	drm_format_conv_state_release(&fmtcnv_state);
 	kfree(src_data);
 	kfree(src_maps);
-	/* VA-type cache command needs the CPU virtual address. */
-	ae350_cache_clean_range((u32)(uintptr_t)drm->cpu, (u32)drm->size);
 }
 
 static int ae350_drm_present(struct ae350_drm *drm, u32 slot)

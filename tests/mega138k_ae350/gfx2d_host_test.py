@@ -490,6 +490,49 @@ class Gfx2DHostTest(unittest.TestCase):
             expect_err=ERR_PARAM)
         print('PASS GFX2D: format validation rejects invalid formats and alignments')
 
+    def test_height_countdown_not_truncated(self):
+        # Regression test for PR #4 review finding:
+        # HEIGHT > 65535 must not truncate to low 16 bits and finish after 1 row.
+        d = make()
+        reg = amap.GFX2D_REGS
+        mem = bytearray(DDR_SIZE)
+
+        def access(off, data=None):
+            yield [d.off.eq(off), d.write.eq(data is not None),
+                   d.wdata.eq(data or 0), d.selected.eq(1), d.commit.eq(0)]
+            yield
+            yield [d.commit.eq(1)]
+            yield
+            ok = yield d.ok
+            rdata = yield d.rdata
+            yield [d.selected.eq(0), d.commit.eq(0), d.write.eq(0)]
+            yield
+            return ok, rdata
+
+        mem_pump = self._fake_pump_factory(d, mem)
+
+        def bench():
+            yield [d.ui.cmd_ready.eq(1), d.ui.wr_data_rdy.eq(1), d.ui.rd_data_valid.eq(0),
+                   d.ui.rd_data.eq(0)]
+            desc = {'OP': 0, 'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+                    'WIDTH': 1, 'HEIGHT': 65537, 'FG_COLOR': 0x1234}
+            for name, v in desc.items():
+                ok, _ = yield from access(reg[name], v)
+                assert ok, name
+            ok, _ = yield from access(reg['CONTROL'], 1)
+            assert ok
+            # Pump for 25 cycles: row 0 completes and transitions to row 1.
+            # If height was truncated to 16 bits (65537 & 0xffff == 1),
+            # it would have finished after row 0 and busy would be 0!
+            # With 32-bit rows_left, it continues to row 1 and stays busy.
+            for _ in range(25):
+                yield from mem_pump()
+            busy, = yield [d.busy]
+            assert busy, "engine prematurely completed after row 0 due to 16-bit truncation!"
+
+        run_simulation(d, bench(), clocks={'sys': 10, 'ddr': 10})
+        print('PASS GFX2D: 32-bit height countdown does not truncate')
+
     def test_address_map(self):
         self.assertEqual(amap.GFX2D_BASE, 0xF80C0000)
         self.assertEqual(amap.GFX2D_ID, 0xAE350601)

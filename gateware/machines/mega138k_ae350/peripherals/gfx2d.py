@@ -64,7 +64,8 @@ class Gfx2DEngine(LiteXModule):
 
         row_bytes = Signal(32)
         row = Signal(32)
-        rows_left = Signal(16)
+        rows_left = Signal(32)
+        last_row = Signal()
         beat = Signal(32)
         beats = Signal(16)
         elapsed = Signal(max=response_timeout + 1)
@@ -218,7 +219,8 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0), self.ui.wr_data_mask.eq(0xffffffff),
                 self.ui.addr.eq(dst_addr[2:31] & ~Constant(7, 29)),
                 If(start, NextValue(err, 0), NextValue(elapsed, 0),
-                   NextValue(row, 0), NextValue(rows_left, height), NextValue(beat, 0),
+                   NextValue(row, 0), NextValue(rows_left, height),
+                   NextValue(last_row, height == 1), NextValue(beat, 0),
                    NextValue(row_start, dst_addr),
                    NextValue(src_row_start, src_addr),
                    NextState('INIT')))
@@ -321,8 +323,6 @@ class Gfx2DEngine(LiteXModule):
                 .Elif((op != OP_FILL_RECT) & (src_row_start > src_limit),
                       NextValue(err, ERR_ADDR), NextState('FINISH'))
                 .Else(NextState('ROW_PASCAL')))
-        last_row = Signal()
-        self.comb += last_row.eq(rows_left == 1)
         fsm.act('ROW_PASCAL',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 *pascal,
@@ -347,6 +347,7 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(row, Mux(down, row - 1, row + 1)),
                 NextValue(rows_left, rows_left - 1),
+                NextValue(last_row, rows_left == 2),
                 NextValue(beat, 0),
                 NextValue(row_start, nxt_row_start),
                 NextValue(src_row_start, nxt_src_row_start), NextState('ROW_SETUP'))
