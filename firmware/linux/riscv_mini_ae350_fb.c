@@ -138,9 +138,12 @@ static int ae350_fb_pan_display(struct fb_var_screeninfo *var,
 				struct fb_info *info)
 {
 	struct ae350_fb *fb = info->par;
-	u32 slot = var->yoffset ? 1 : 0;
+	u32 slot;
 	int ret;
 
+	if (var->xoffset != 0 || (var->yoffset != 0 && var->yoffset != fb->height))
+		return -EINVAL;
+	slot = var->yoffset ? 1 : 0;
 	ret = ae350_present(fb, slot);
 	if (!ret)
 		fb->active_slot = slot;
@@ -386,7 +389,7 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		mode.h_positive = custom[9];
 		mode.v_positive = custom[10];
 		{
-			static const u8 bpp_table[4] = { 2, 2, 3, 4 };
+			static const u8 bpp_table[4] = { 2, 3, 4, 2 };
 			u32 bpp = bpp_table[fb->format & 3];
 			if (((mode.width * bpp) & 31u) != 0) {
 				ret = -EINVAL;
@@ -486,6 +489,8 @@ static int ae350_fb_probe(struct platform_device *pdev)
 	info->fix.type = FB_TYPE_PACKED_PIXELS;
 	info->fix.visual = FB_VISUAL_TRUECOLOR;
 	info->fix.line_length = fb->stride;
+	info->fix.ypanstep = 1;
+	info->fix.ywrapstep = 0;
 	info->var.xres = info->var.xres_virtual = fb->width;
 	info->var.yres = fb->height;
 	info->var.yres_virtual = fb->height * 2;
@@ -520,9 +525,13 @@ free1:
 	if (fb->scratch)
 		dma_free_coherent(dev, fb->scratch_size, fb->scratch,
 				  fb->scratch_dma);
-	if (fb->cpu[0])
-		dma_free_coherent(dev, fb->frame_bytes * 2, fb->cpu[0],
-				  fb->dma[0]);
+	if (fb->cpu[0]) {
+		if (ae350_video_enable(fb->csr, 0))
+			dev_err(dev, "video stop timed out on probe error\n");
+		else
+			dma_free_coherent(dev, fb->frame_bytes * 2, fb->cpu[0],
+					  fb->dma[0]);
+	}
 release:
 	framebuffer_release(info);
 	return ret;

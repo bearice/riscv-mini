@@ -112,7 +112,7 @@ int ae350_video_set_custom_mode(unsigned width, unsigned height,
     unsigned v_front, unsigned v_sync, unsigned v_back,
     unsigned refresh_millihz, unsigned h_positive, unsigned v_positive,
     enum ae350_video_format format) {
-    static const unsigned char bpp_tbl[4] = {2, 2, 3, 4};
+    static const unsigned char bpp_tbl[4] = {2, 3, 4, 2};
     if((unsigned)format>3u || h_positive>1u || v_positive>1u || h_back>255u ||
        v_front>255u || v_sync>255u || v_back>255u)return AE350_VIDEO_RANGE;
     if(((width * bpp_tbl[(unsigned)format]) & 31u) != 0) return AE350_VIDEO_RANGE;

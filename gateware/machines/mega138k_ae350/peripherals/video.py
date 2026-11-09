@@ -313,12 +313,7 @@ class FabricVideo(LiteXModule):
             cus_row_bytes = Signal(16)
             cus_bad = Signal()
             self.comb += [
-                Case(self.wdata[8:10], {
-                    0: cus_bpp.eq(2),
-                    1: cus_bpp.eq(2),
-                    2: cus_bpp.eq(3),
-                    3: cus_bpp.eq(4),
-                }),
+                Case(self.wdata[8:10], {i: cus_bpp.eq(v) for i, v in enumerate(BYTES_PER_PIXEL)}),
                 cus_row_bytes.eq(self.cus_wh[0:12] * cus_bpp),
                 cus_vco.eq(Constant(50000000) * cus_m8),
                 cus_h_total.eq(self.cus_wh[0:12]+self.cus_h[0:12]+self.cus_h[12:24]+Cat(self.cus_h[24:32],Constant(0,4))),

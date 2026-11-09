@@ -295,7 +295,7 @@ static inline int ae350_video_set_custom_mode(
 	void __iomem *csr, const struct ae350_mode_info *mode, u32 format,
 	const struct ae350_pll_result *pll, u32 pixel_hz)
 {
-	static const u8 bpp_table[4] = { 2, 2, 3, 4 };
+	static const u8 bpp_table[4] = { 2, 3, 4, 2 };
 	u32 bpp = bpp_table[format & 3];
 	u32 h_total = mode->width + mode->h_front + mode->h_sync + mode->h_back;
 	u32 v_total = mode->height + mode->v_front + mode->v_sync + mode->v_back;
