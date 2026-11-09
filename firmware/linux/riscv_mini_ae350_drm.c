@@ -338,8 +338,12 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 
 	if (fb) {
 		int format_id = ae350_drm_format_id(fb->format->format);
+		u32 bpp;
 
 		if (format_id < 0)
+			return -EINVAL;
+		bpp = ae350_drm_bpp(format_id);
+		if (((crtc_state->mode.hdisplay * bpp) & 31u) != 0)
 			return -EINVAL;
 		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff))
 			return -EINVAL;
@@ -382,8 +386,9 @@ static enum drm_mode_status ae350_drm_mode_valid(struct drm_device *dev,
 		if (ae350_drm_match_mode(mode, &info))
 			return MODE_OK;
 	}
-	/* Custom mode validation: row width must be 32-byte aligned for scanout reader */
-	if (((mode->hdisplay * 2) & 31) != 0)
+	/* Custom mode validation: width must be aligned such that at least one supported
+	 * format (up to 4 bytes per pixel) can produce a 32-byte aligned scanout row. */
+	if (((mode->hdisplay * 4) & 31) != 0)
 		return MODE_BAD_WIDTH;
 	h_back = mode->htotal - mode->hsync_end;
 	v_front = mode->vsync_start - mode->vdisplay;
@@ -536,6 +541,7 @@ static int ae350_drm_probe(struct platform_device *pdev)
 	ret = drm_dev_register(dev_drm, 0);
 	if (ret)
 		goto release;
+	platform_set_drvdata(pdev, drm);
 	drm_fbdev_dma_setup(dev_drm, 16);
 	dev_info(dev, "fb%d: KMS %s modes from %u gateware modes\n",
 		 dev_drm->primary->index, DRIVER_NAME,
@@ -546,6 +552,22 @@ release:
 	return ret;
 }
 
+static void ae350_drm_remove(struct platform_device *pdev)
+{
+	struct ae350_drm *drm = platform_get_drvdata(pdev);
+	struct drm_device *dev_drm = &drm->dev;
+
+	drm_dev_unplug(dev_drm);
+	drm_atomic_helper_shutdown(dev_drm);
+}
+
+static void ae350_drm_shutdown(struct platform_device *pdev)
+{
+	struct ae350_drm *drm = platform_get_drvdata(pdev);
+
+	drm_atomic_helper_shutdown(&drm->dev);
+}
+
 static const struct of_device_id ae350_drm_of_match[] = {
 	{ .compatible = "riscv-mini,ae350-video-drm" }, { }
 };
@@ -553,6 +575,8 @@ MODULE_DEVICE_TABLE(of, ae350_drm_of_match);
 
 static struct platform_driver ae350_drm_platform_driver = {
 	.probe = ae350_drm_probe,
+	.remove = ae350_drm_remove,
+	.shutdown = ae350_drm_shutdown,
 	.driver = { .name = "ae350-video-drm",
 		    .of_match_table = ae350_drm_of_match,
 		    .suppress_bind_attrs = true },
