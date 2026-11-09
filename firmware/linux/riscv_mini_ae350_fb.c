@@ -173,7 +173,15 @@ static void *ae350_cpu_addr(struct ae350_fb *fb, u32 x, u32 y)
 static void ae350_fb_cctl_rect(struct ae350_fb *fb, u32 x, u32 y,
 			       u32 width, u32 height, u32 cmd)
 {
-	u32 r, bytes = width * 2;
+	u32 r, bytes;
+
+	if (!width || !height || x >= fb->width || y >= fb->height * 2)
+		return;
+	if (x + width > fb->width)
+		width = fb->width - x;
+	if (y + height > fb->height * 2)
+		height = fb->height * 2 - y;
+	bytes = width * 2;
 
 	for (r = 0; r < height; r++) {
 		u32 addr = (u32)(uintptr_t)ae350_cpu_addr(fb, x, y + r);
@@ -252,6 +260,7 @@ static void ae350_fb_fillrect(struct fb_info *info,
 		}
 	}
 	sys_fillrect(info, rect);
+	ae350_fb_clean_rect(fb, rect->dx, rect->dy, rect->width, rect->height);
 }
 
 static void ae350_fb_copyarea(struct fb_info *info,
@@ -270,6 +279,8 @@ static void ae350_fb_copyarea(struct fb_info *info,
 		if (area->sy == area->dy && area->sx < area->dx &&
 		    area->sx + area->width > area->dx) {
 			sys_copyarea(info, area);
+			ae350_fb_clean_rect(fb, area->dx, area->dy,
+					    area->width, area->height);
 			return;
 		}
 		src = ae350_phys(fb, area->sx, area->sy);
@@ -290,6 +301,7 @@ static void ae350_fb_copyarea(struct fb_info *info,
 		}
 	}
 	sys_copyarea(info, area);
+	ae350_fb_clean_rect(fb, area->dx, area->dy, area->width, area->height);
 }
 
 static void ae350_fb_imageblit(struct fb_info *info,
@@ -331,6 +343,7 @@ static void ae350_fb_imageblit(struct fb_info *info,
 		}
 	}
 	sys_imageblit(info, image);
+	ae350_fb_clean_rect(fb, image->dx, image->dy, image->width, image->height);
 }
 
 static int ae350_fb_sync(struct fb_info *info)
@@ -345,6 +358,21 @@ static int ae350_fb_sync(struct fb_info *info)
 	return 0;
 }
 
+static ssize_t ae350_fb_write(struct fb_info *info, const char __user *buf,
+			      size_t count, loff_t *ppos)
+{
+	struct ae350_fb *fb = info->par;
+	loff_t pos = *ppos;
+	ssize_t ret;
+
+	ret = fb_sys_write(info, buf, count, ppos);
+	if (ret > 0 && pos < fb->frame_bytes * 2) {
+		size_t len = min_t(size_t, ret, fb->frame_bytes * 2 - pos);
+		ae350_cache_clean_range((u32)(uintptr_t)fb->cpu[0] + (u32)pos, len);
+	}
+	return ret;
+}
+
 static const struct fb_ops ae350_fb_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = ae350_fb_check_var,
@@ -357,7 +385,7 @@ static const struct fb_ops ae350_fb_ops = {
 	.fb_imageblit = ae350_fb_imageblit,
 	.fb_sync = ae350_fb_sync,
 	.fb_read = fb_sys_read,
-	.fb_write = fb_sys_write,
+	.fb_write = ae350_fb_write,
 };
 
 static ssize_t dma_status_show(struct device *dev,
