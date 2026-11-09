@@ -295,7 +295,16 @@ class Gfx2DHostTest(unittest.TestCase):
             'OP': 1, 'SRC_ADDR': 0x10000, 'DST_ADDR': 0x10020,
             'SRC_STRIDE': 64, 'DST_STRIDE': 64, 'WIDTH': 32, 'HEIGHT': 1},
             expect_err=ERR_PARAM)
-        print('PASS GFX2D: COPY_AREA basic + overlap-down + multi-beat + reject rightward overlap')
+        # Overlapping unequal-stride copy (Codex regression test):
+        # src 0x2000 stride 128, dst 0x2020 stride 32, w 16 (row_bytes=32), h 4
+        # Spans overlap in memory: must be rejected with ERR_PARAM.
+        d5 = make()
+        mem5 = bytearray(1 << 20)
+        self._run_op(d5, self._fake_pump_factory(d5, mem5), {
+            'OP': 1, 'SRC_ADDR': 0x2000, 'DST_ADDR': 0x2020,
+            'SRC_STRIDE': 128, 'DST_STRIDE': 32, 'WIDTH': 16, 'HEIGHT': 4},
+            expect_err=ERR_PARAM)
+        print('PASS GFX2D: COPY_AREA basic + overlap-down + multi-beat + reject rightward overlap + reject unequal stride overlap')
 
     def test_blit(self):
         d = make()

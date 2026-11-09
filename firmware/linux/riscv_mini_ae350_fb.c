@@ -385,6 +385,14 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		mode.refresh_millihz = custom[8];
 		mode.h_positive = custom[9];
 		mode.v_positive = custom[10];
+		{
+			static const u8 bpp_table[4] = { 2, 2, 3, 4 };
+			u32 bpp = bpp_table[fb->format & 3];
+			if (((mode.width * bpp) & 31u) != 0) {
+				ret = -EINVAL;
+				goto release;
+			}
+		}
 		pixel_hz = (u32)div_u64((u64)(mode.width + mode.h_front +
 					       mode.h_sync + mode.h_back) *
 				     (mode.height + mode.v_front +

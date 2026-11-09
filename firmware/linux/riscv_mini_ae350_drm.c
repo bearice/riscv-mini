@@ -150,6 +150,39 @@ static int ae350_drm_present(struct ae350_drm *drm, u32 slot)
 		0 : -EIO;
 }
 
+static bool ae350_drm_match_mode(const struct drm_display_mode *mode,
+				 const struct ae350_mode_info *info)
+{
+	u32 h_front = mode->hsync_start - mode->hdisplay;
+	u32 h_sync = mode->hsync_end - mode->hsync_start;
+	u32 h_back = mode->htotal - mode->hsync_end;
+	u32 v_front = mode->vsync_start - mode->vdisplay;
+	u32 v_sync = mode->vsync_end - mode->vsync_start;
+	u32 v_back = mode->vtotal - mode->vsync_end;
+	bool h_pos = !!(mode->flags & DRM_MODE_FLAG_PHSYNC);
+	bool v_pos = !!(mode->flags & DRM_MODE_FLAG_PVSYNC);
+	u32 mode_clock_hz = (u32)mode->clock * 1000u;
+	u32 clock_diff = mode_clock_hz > info->actual_pixel_hz ?
+		(mode_clock_hz - info->actual_pixel_hz) :
+		(info->actual_pixel_hz - mode_clock_hz);
+
+	if (info->width != (u32)mode->hdisplay ||
+	    info->height != (u32)mode->vdisplay ||
+	    info->h_total != (u32)mode->htotal ||
+	    info->v_total != (u32)mode->vtotal ||
+	    info->h_front != h_front ||
+	    info->h_sync != h_sync ||
+	    info->h_back != h_back ||
+	    info->v_front != v_front ||
+	    info->v_sync != v_sync ||
+	    info->v_back != v_back ||
+	    info->h_positive != h_pos ||
+	    info->v_positive != v_pos)
+		return false;
+
+	return clock_diff <= 1000u;
+}
+
 static void ae350_drm_pipe_enable(struct drm_simple_display_pipe *pipe,
 				  struct drm_crtc_state *crtc_state,
 				  struct drm_plane_state *plane_state)
@@ -190,13 +223,11 @@ static void ae350_drm_pipe_enable(struct drm_simple_display_pipe *pipe,
 	drm->height = mode->vdisplay;
 	drm->format_id = format_id;
 	drm->fourcc = fb->format->format;
-	/* Find an exact fixed-mode match first (geometry + totals). */
+	/* Find an exact fixed-mode match first (complete timing, sync, and clock). */
 	count = readl(drm->csr + AE350_V_MODE_COUNT);
 	for (i = 0; i < count; i++) {
 		ae350_read_mode_info(drm->csr, i, &info);
-		if (info.width == mode->hdisplay && info.height == mode->vdisplay &&
-		    info.h_total == mode->htotal &&
-		    info.v_total == mode->vtotal)
+		if (ae350_drm_match_mode(mode, &info))
 			break;
 	}
 	ae350_video_stop(drm->csr);
@@ -291,6 +322,7 @@ static enum drm_mode_status ae350_drm_mode_valid(struct drm_device *dev,
 	struct ae350_mode_info info;
 	struct ae350_pll_result pll;
 	u32 h_total, v_total, i, count;
+	u32 h_back, v_front, v_sync, v_back;
 
 	if (mode->hdisplay < 1 || mode->hdisplay > 4095 ||
 	    mode->vdisplay < 1 || mode->vdisplay > 4095)
@@ -304,10 +336,18 @@ static enum drm_mode_status ae350_drm_mode_valid(struct drm_device *dev,
 	count = readl(drm->csr + AE350_V_MODE_COUNT);
 	for (i = 0; i < count; i++) {
 		ae350_read_mode_info(drm->csr, i, &info);
-		if (info.width == mode->hdisplay && info.height == mode->vdisplay &&
-		    info.h_total == h_total && info.v_total == v_total)
+		if (ae350_drm_match_mode(mode, &info))
 			return MODE_OK;
 	}
+	/* Custom mode validation: row width must be 32-byte aligned for scanout reader */
+	if (((mode->hdisplay * 2) & 31) != 0)
+		return MODE_BAD_WIDTH;
+	h_back = mode->htotal - mode->hsync_end;
+	v_front = mode->vsync_start - mode->vdisplay;
+	v_sync = mode->vsync_end - mode->vsync_start;
+	v_back = mode->vtotal - mode->vsync_end;
+	if (h_back > 255 || v_front > 255 || v_sync > 255 || v_back > 255)
+		return MODE_BAD;
 	return ae350_video_pll_search(mode->clock * 1000u, &pll) ?
 		MODE_BAD : MODE_OK;
 }

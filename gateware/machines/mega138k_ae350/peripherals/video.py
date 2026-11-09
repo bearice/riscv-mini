@@ -309,12 +309,22 @@ class FabricVideo(LiteXModule):
             cus_pixdiv, cus_serdiv = self.cus_pll[12:19], self.cus_pll[19:26]
             cus_vco = Signal(37)  # 50e6 * m8
             cus_h_total, cus_v_total = Signal(14), Signal(14)
+            cus_bpp = Signal(3)
+            cus_row_bytes = Signal(16)
             cus_bad = Signal()
             self.comb += [
+                Case(self.wdata[8:10], {
+                    0: cus_bpp.eq(2),
+                    1: cus_bpp.eq(2),
+                    2: cus_bpp.eq(3),
+                    3: cus_bpp.eq(4),
+                }),
+                cus_row_bytes.eq(self.cus_wh[0:12] * cus_bpp),
                 cus_vco.eq(Constant(50000000) * cus_m8),
                 cus_h_total.eq(self.cus_wh[0:12]+self.cus_h[0:12]+self.cus_h[12:24]+Cat(self.cus_h[24:32],Constant(0,4))),
                 cus_v_total.eq(self.cus_wh[16:28]+Cat(self.cus_v[0:8],Constant(0,4))+Cat(self.cus_v[8:16],Constant(0,4))+Cat(self.cus_v[16:24],Constant(0,4))),
                 cus_bad.eq((self.cus_wh[0:12] == 0) | (self.cus_wh[16:28] == 0) |
+                    (cus_row_bytes[:5] != 0) |
                     (cus_h_total >= 4096) | (cus_v_total >= 4096) |
                     (cus_idiv != 1) & (cus_idiv != 2) |
                     (cus_m8 < 16) | (cus_m8 > 1023) |

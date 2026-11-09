@@ -295,6 +295,8 @@ static inline int ae350_video_set_custom_mode(
 	void __iomem *csr, const struct ae350_mode_info *mode, u32 format,
 	const struct ae350_pll_result *pll, u32 pixel_hz)
 {
+	static const u8 bpp_table[4] = { 2, 2, 3, 4 };
+	u32 bpp = bpp_table[format & 3];
 	u32 h_total = mode->width + mode->h_front + mode->h_sync + mode->h_back;
 	u32 v_total = mode->height + mode->v_front + mode->v_sync + mode->v_back;
 	int ret;
@@ -302,6 +304,7 @@ static inline int ae350_video_set_custom_mode(
 	if (format > 3 || mode->h_positive > 1 || mode->v_positive > 1 ||
 	    mode->h_back > 255 || mode->v_front > 255 || mode->v_sync > 255 ||
 	    mode->v_back > 255 || !mode->width || !mode->height ||
+	    ((mode->width * bpp) & 31u) != 0 ||
 	    h_total >= 4096 || v_total >= 4096 || mode->width > 4095 ||
 	    mode->height > 4095 || mode->h_front > 4095 || mode->h_sync > 4095)
 		return AE350_VERR_RANGE;

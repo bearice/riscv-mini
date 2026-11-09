@@ -88,8 +88,14 @@ int ae350_gfx2d_copy_area(uint32_t src, uint32_t src_stride,
                           uint32_t width, uint32_t height) {
     if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
     if (!width || !height) return AE350_GFX2D_PARAM;
-    uint64_t bytes = (uint64_t)dst_stride * (height - 1) + (uint64_t)width * 2;
-    if (bytes > 0xffffffffull) return AE350_GFX2D_ADDR;
+    uint64_t row_bytes = (uint64_t)width * 2;
+    if (src < dst && (dst - src) < row_bytes) return AE350_GFX2D_PARAM;
+    uint64_t src_span = (uint64_t)src_stride * (height - 1) + row_bytes;
+    uint64_t dst_span = (uint64_t)dst_stride * (height - 1) + row_bytes;
+    if (src_stride != dst_stride && (uint64_t)src < (uint64_t)dst + dst_span &&
+        (uint64_t)dst < (uint64_t)src + src_span)
+        return AE350_GFX2D_PARAM;
+    if (dst_span > 0xffffffffull || src_span > 0xffffffffull) return AE350_GFX2D_ADDR;
     if (sync_rect(src, src_stride, width * 2, height) ||
         sync_rect(dst, dst_stride, width * 2, height))
         return AE350_GFX2D_ADDR;

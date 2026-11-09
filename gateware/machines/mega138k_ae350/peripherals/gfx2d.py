@@ -204,24 +204,37 @@ class Gfx2DEngine(LiteXModule):
         # INIT is split into three states so no single state carries
         # the full geometry+validation+CE cone (that cone was the
         # PnR timing critical path). INIT: byte limits (subtractors).
+        src_span = Signal(32)
+        dst_span = Signal(32)
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(limit, ddr_size - row_bytes),
                 NextValue(src_limit, Mux(op == OP_IMAGE_BLIT,
                                          ddr_size - blit_wb, ddr_size - row_bytes)),
+                NextValue(src_span, (height - 1) * src_stride + row_bytes),
+                NextValue(dst_span, (height - 1) * dst_stride + row_bytes),
                 NextState('INIT2'))
         # INIT2: row-step direction and 5-bit-domain geometry fold.
         cmp_dst_stride = Signal()
         cmp_right_overlap = Signal()
+        unequal_stride_overlap = Signal()
+        src_end = Signal(33)
+        dst_end = Signal(33)
+        self.comb += [
+            src_end.eq(src_addr + src_span),
+            dst_end.eq(dst_addr + dst_span),
+        ]
         fsm.act('INIT2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(cmp_dst_stride, dst_stride < row_bytes),
                 NextValue(cmp_right_overlap, (src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)),
-                NextValue(dir_down, src_addr < dst_addr),
-                NextValue(delta_dst, Mux((src_addr < dst_addr) & (op == OP_COPY_AREA),
+                NextValue(unequal_stride_overlap, (src_stride != dst_stride) &
+                          (src_addr < dst_end) & (dst_addr < src_end)),
+                NextValue(dir_down, (src_stride == dst_stride) & (src_addr < dst_addr)),
+                NextValue(delta_dst, Mux((src_stride == dst_stride) & (src_addr < dst_addr) & (op == OP_COPY_AREA),
                                          -dst_stride, dst_stride)),
                 NextValue(delta_src, Mux(op == OP_COPY_AREA,
-                                         Mux(src_addr < dst_addr,
+                                         Mux((src_stride == dst_stride) & (src_addr < dst_addr),
                                              -src_stride, src_stride),
                                          blit_wb)),
                 NextValue(rb_hi5, row_bytes >> 5),
@@ -237,7 +250,8 @@ class Gfx2DEngine(LiteXModule):
                        ((src_stride < row_bytes) |
                         (src_addr[0:5] != dst_addr[0:5]) |
                         (src_stride[0:5] != dst_stride[0:5]) |
-                        cmp_right_overlap)) |
+                        cmp_right_overlap |
+                        unequal_stride_overlap)) |
                       ((op == OP_IMAGE_BLIT) &
                        ((blit_wb < (width + 7) >> 3) | (blit_wb > 65535) |
                         (dst_addr[0] != 0) | (dst_stride[0] != 0))))
