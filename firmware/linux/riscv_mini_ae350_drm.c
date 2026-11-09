@@ -100,12 +100,18 @@ struct ae350_drm {
 };
 
 static void ae350_drm_copy_fb(struct ae350_drm *drm,
-			      struct drm_framebuffer *fb)
+			      struct drm_plane_state *plane_state)
 {
+	struct drm_framebuffer *fb;
 	struct iosys_map dst_map, *src_maps, *src_data;
 	struct drm_format_conv_state fmtcnv_state = DRM_FORMAT_CONV_STATE_INIT;
 	struct drm_rect clip;
+	u32 src_x, src_y, src_w, src_h;
 	int ret;
+
+	if (!drm->cpu || !plane_state || !plane_state->fb)
+		return;
+	fb = plane_state->fb;
 
 	src_maps = kcalloc(4, sizeof(*src_maps), GFP_KERNEL);
 	src_data = kcalloc(4, sizeof(*src_data), GFP_KERNEL);
@@ -120,7 +126,16 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 		drm_err(&drm->dev, "framebuffer vmap failed: %d\n", ret);
 		goto done;
 	}
-	drm_rect_init(&clip, 0, 0, drm->width, drm->height);
+	src_x = plane_state->src_x >> 16;
+	src_y = plane_state->src_y >> 16;
+	src_w = plane_state->src_w >> 16 ? (plane_state->src_w >> 16) : drm->width;
+	src_h = plane_state->src_h >> 16 ? (plane_state->src_h >> 16) : drm->height;
+	if (src_w > drm->width)
+		src_w = drm->width;
+	if (src_h > drm->height)
+		src_h = drm->height;
+
+	drm_rect_init(&clip, src_x, src_y, src_w, src_h);
 	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_data,
 			  fb, &clip, &fmtcnv_state);
 	if (ret)
@@ -270,7 +285,7 @@ static void ae350_drm_pipe_enable(struct drm_simple_display_pipe *pipe,
 		drm_err(dev, "scanout enable failed: %d\n", ret);
 		return;
 	}
-	ae350_drm_copy_fb(drm, fb);
+	ae350_drm_copy_fb(drm, plane_state);
 	if (ae350_drm_present(drm, 0))
 		drm_err(dev, "first present failed\n");
 }
@@ -290,6 +305,8 @@ static void ae350_drm_pipe_disable(struct drm_simple_display_pipe *pipe)
 		dma_free_coherent(drm->dev.dev, drm->size, drm->cpu, drm->dma);
 		drm->cpu = NULL;
 		drm->size = 0;
+		drm->width = 0;
+		drm->height = 0;
 	}
 }
 
@@ -299,8 +316,11 @@ static void ae350_drm_pipe_update(struct drm_simple_display_pipe *pipe,
 	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
 	struct drm_plane_state *plane_state = pipe->plane.state;
 
-	if (plane_state->fb) {
-		ae350_drm_copy_fb(drm, plane_state->fb);
+	if (!drm->cpu)
+		return;
+
+	if (plane_state && plane_state->fb) {
+		ae350_drm_copy_fb(drm, plane_state);
 		if (ae350_drm_present(drm, 0))
 			drm_err(&drm->dev, "frame present failed\n");
 	}
@@ -321,8 +341,10 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 
 		if (format_id < 0)
 			return -EINVAL;
-		if (drm->cpu && (drm->width != (u32)fb->width ||
-				 drm->height != (u32)fb->height ||
+		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff))
+			return -EINVAL;
+		if (drm->cpu && (drm->width != (u32)crtc_state->mode.hdisplay ||
+				 drm->height != (u32)crtc_state->mode.vdisplay ||
 				 drm->format_id != (u32)format_id))
 			crtc_state->mode_changed = true;
 	}
