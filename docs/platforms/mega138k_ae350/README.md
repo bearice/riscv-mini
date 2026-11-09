@@ -6,11 +6,13 @@
 
 控制寄存器与低带宽外设使用 50 MHz sys。大量数据通过与 DDR UI 同时钟的 mem/DDR 通路；新增高吞吐外设应接 DDR UI 仲裁和 DMA/队列，使用必要的 CDC 连接控制面，不通过提高全局 sys 或软件反复搬运 CSR 实现带宽。
 
+当前开发状态见[活动灯与 OHCI 实验交接（2026-11-06）](ohci-led-handoff.md)：活动灯已实物验收，SD/DMA/DDR 回归通过；2026-11-06 复测 OHCI 存储在裸机与 Linux 均通过，交接时的 CSW/CC 失败未复现（间歇性，根因未定位）。
+
 | 主题 | 文档 |
 | --- | --- |
 | 构建 | [目标与增量 PnR](build.md)、[硬核资源说明](gw5ast-hard-ip-usage.md) |
 | 启动与操作 | [平台启动、装载与专项命令](operations.md)、[bootloader](bootloader.md)、[CPU JTAG](jtag.md) |
-| 内存与接口 | [地址合同](address-map.md)、[cache](cache.md)、[DMA](dma.md)、[内存验证合同](memory-validation.md) |
+| 内存与接口 | [地址合同](address-map.md)、[cache](cache.md)、[DMA](dma.md)、[GFX2D 计划](gfx2d.md)、[内存验证合同](memory-validation.md) |
 | 板级设备 | [I/O 与中断](io.md)、[音频与麦克风](audio.md)、[HDMI](video.md)、[原生 SD](sd.md)、[用户 Flash/TWI](management.md)、[Ethernet](ethernet.md)、[P8 开发交接](p8-handoff.md) |
 | BIOS 与应用 | [文件系统、终端和 GW-BASIC](runtime.md) |
 | 能力范围 | [已实现与未交付能力](capabilities.md) |

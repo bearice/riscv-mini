@@ -353,14 +353,21 @@ class DDRSoC(LiteXModule):
         if ae350_map.SFP_PRESENT:
             from gateware.machines.mega138k_ae350.peripherals.ethernet_sfp_10g import EthernetSFP10G
             self.sfp = EthernetSFP10G(platform, platform.request('sfp0'), platform.request('sfp1'))
+        from gateware.machines.mega138k_ae350.peripherals.gfx2d import Gfx2D
+        self.gfx2d = Gfx2D(ddr_size=ae350_map.DDR_SIZE)
         self.ext = AE350Fabric(self.cpu, registers, io_map, ae350_map, video=video, sd=self.sd,
                                flash=self.cpu.flash_apb, usb=self.usb_registers, ethernet=self.ethernet_dma,
-                               sfp=self.sfp)
+                               sfp=self.sfp, gfx2d=self.gfx2d)
         self.video_arbiter = arbiter = ClockDomainsRenamer('ddr')(
-            DDRMemoryArbiter(self.ddr.ui,cpu_ui,video.ui,self.ethernet_dma.memory.ui,self.usb.dma.memory.ui))
+            DDRMemoryArbiter(self.ddr.ui,cpu_ui,video.ui,self.ethernet_dma.memory.ui,self.usb.dma.memory.ui,gfx2d=self.gfx2d.ui))
         self.comb += [arbiter.network_pending.eq(self.ethernet_dma.memory.pending),
-                      arbiter.usb_pending.eq(self.usb.dma.memory.pending)]
+                      arbiter.usb_pending.eq(self.usb.dma.memory.pending),
+                      arbiter.gfx2d_pending.eq(self.gfx2d.engine.busy)]
         self.comb += [self.crg.hdmi_pll.mode.eq(video.mode),
+                      self.crg.hdmi_pll.cus_idiv.eq(video.cus_pll[0:2]),
+                      self.crg.hdmi_pll.cus_m8.eq(video.cus_pll[2:12]),
+                      self.crg.hdmi_pll.cus_pixel_div.eq(video.cus_pll[12:19]),
+                      self.crg.hdmi_pll.cus_serial_div.eq(video.cus_pll[19:26]),
                       self.crg.video_clock_reset.eq(video.clock_reset),
                       video.clock_locked.eq(self.crg.hdmi_pll.locked),
                       arbiter.cpu_pending.eq(self.ddr_port.ui_pending_ddr),

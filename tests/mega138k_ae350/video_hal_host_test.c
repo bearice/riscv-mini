@@ -13,6 +13,37 @@ static uint32_t regs[256],ticks,delay,clean_base,clean_bytes;
 static uint32_t staged_control,staged_base,clean_calls,commit_calls;
 static int frozen,reject,draining,hold_drain,clean_error,mode_frozen;
 
+/* Host GFX2D emulation: run the ops directly on host memory so the TTY
+ * fixture renders through the same blit calls as on hardware. */
+int ae350_gfx2d_probe(void) {return 0;}
+int ae350_gfx2d_wait(unsigned rounds) {(void)rounds;return 0;}
+extern uint8_t tty_packed_glyph[];
+static const uint8_t *map_src(uint32_t s) {
+    return s==(uint32_t)(uintptr_t)tty_packed_glyph ? tty_packed_glyph
+                                                   : (const uint8_t *)(uintptr_t)s;
+}
+int ae350_gfx2d_fill_rect(uint32_t dst,uint32_t st,uint32_t w,uint32_t h,uint16_t c) {
+    uint16_t *p=(uint16_t *)(uintptr_t)dst;unsigned pitch=st/2;
+    for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++)p[y*pitch+x]=c;
+    return 0;
+}
+int ae350_gfx2d_copy_area(uint32_t s,uint32_t ss,uint32_t d,uint32_t ds,uint32_t w,uint32_t h) {
+    uint16_t *sp=(uint16_t *)(uintptr_t)s,*dp=(uint16_t *)(uintptr_t)d;
+    unsigned sp2=ss/2,dp2=ds/2;
+    for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++)dp[y*dp2+x]=sp[y*sp2+x];
+    return 0;
+}
+int ae350_gfx2d_image_blit(uint32_t s,uint32_t wb,uint32_t d,uint32_t ds,
+                          uint32_t w,uint32_t h,uint16_t fg,uint16_t bg) {
+    const uint8_t *sp=map_src(s);
+    uint16_t *dp=(uint16_t *)(uintptr_t)d;unsigned pitch=ds/2;
+    for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++) {
+        unsigned bit=(sp[y*wb+(x>>3)]>>(7-(x&7)))&1;
+        dp[y*pitch+x]=bit?fg:bg;
+    }
+    return 0;
+}
+
 uint32_t ae350_video_test_read(unsigned off) {
     if(off==VIDEO_MODE_STATUS && regs[off/4] && !mode_frozen && --delay==0)regs[off/4]=0;
     if(off==VIDEO_COMMIT && regs[off/4] && !frozen && --delay==0) {
@@ -149,10 +180,29 @@ int main(int argc,char **argv) {
     assert(ae350_video_get_mode(1,&mode)==AE350_VIDEO_RANGE);
     assert(ae350_video_get_mode(0,&mode)==0 && mode.width==640 && mode.v_total==525);
     assert(ae350_video_set_mode(1,AE350_VIDEO_RGB565)==AE350_VIDEO_RANGE);
-    assert(ae350_video_set_mode(0,(enum ae350_video_format)3)==AE350_VIDEO_RANGE);
+    assert(ae350_video_set_mode(0,AE350_VIDEO_XRGB1555)==0);
+    assert(ae350_video_set_mode(0,(enum ae350_video_format)4)==AE350_VIDEO_RANGE);
     assert(ae350_video_set_mode(0,AE350_VIDEO_RGB888)==0);
     assert(!regs[VIDEO_ENABLE/4] && !ae350_video_frame_data(0));
+    { struct ae350_video_mode cm;
+      assert(ae350_video_set_custom_mode(800,600,40,128,88,1,4,23,60000,1,1,
+             AE350_VIDEO_XRGB1555)==AE350_VIDEO_OK);
+      assert(ae350_video_get_mode(AE350_VIDEO_MODE_CUSTOM,&cm)==0 &&
+             cm.width==800 && cm.height==600 && cm.h_total==1056 && cm.v_total==628 &&
+             cm.h_positive==1 && cm.v_positive==1 && cm.pixel_hz>39000000u && cm.pixel_hz<41000000u &&
+             cm.refresh_millihz>59000u && cm.refresh_millihz<61000u);
+      assert(regs[VIDEO_FORMAT/4]==AE350_VIDEO_XRGB1555);
+      assert(ae350_video_set_custom_mode(0,600,0,0,0,0,0,0,60000,0,0,0)==AE350_VIDEO_RANGE);
+      assert(ae350_video_set_custom_mode(800,600,40,128,88,1,4,23,0,0,0,0)==AE350_VIDEO_RANGE);
+      /* Restore RGB888 for the following buffer-configuration checks. */
+      assert(ae350_video_set_mode(0,AE350_VIDEO_RGB888)==0);
+    }
     void *large_a=(void *)0x02000000u,*large_b=(void *)0x02400000u;
+    /* XRGB1555: 2 bpp buffer sizing and cache clean. */
+    assert(ae350_video_set_mode(0,AE350_VIDEO_XRGB1555)==0);
+    assert(ae350_video_init_buffers(large_a,large_b,0)==0);
+    assert(ae350_video_present(0)==0 && clean_bytes==640u*480u*2u);
+    assert(ae350_video_set_mode(0,AE350_VIDEO_RGB888)==0);
     assert(ae350_video_init(a,b,0)==AE350_VIDEO_STATE);
     assert(ae350_video_init_buffers(large_a,large_b,1280)==AE350_VIDEO_ALIGN);
     assert(ae350_video_init_buffers(large_a,large_b,0)==0);

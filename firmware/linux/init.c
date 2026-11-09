@@ -193,12 +193,12 @@ static void framebuffer_test(void)
     long vt = call(56, -100, (long)"/dev/tty0", 2, 0, 0, 0);
     if (vt < 0 || call(29, vt, 0x4b3a, 1, 0, 0, 0)) die("fb graphics VT");
     call(57, vt, 0, 0, 0, 0, 0);
-    enum { WIDTH = 480, HEIGHT = 272, BYTES = WIDTH * HEIGHT * 2 };
     long fd = call(56, -100, (long)"/dev/fb0", 2, 0, 0, 0);
     if (fd < 0) die("fb0 open");
     u32 var[40];
     if (call(29, fd, 0x4600, (long)var, 0, 0, 0) ||
-        var[0] != WIDTH || var[1] != HEIGHT || var[6] != 16) die("fb geometry");
+        !var[0] || !var[1] || var[6] != 16) die("fb geometry");
+    unsigned WIDTH = var[0], HEIGHT = var[1], BYTES = WIDTH * HEIGHT * 2;
     /* fbcon may have panned its virtual canvas before graphics takeover. */
     var[4] = var[5] = 0; var[33] &= ~256u;
     if (call(29, fd, 0x4606, (long)var, 0, 0, 0)) die("fb origin pan");

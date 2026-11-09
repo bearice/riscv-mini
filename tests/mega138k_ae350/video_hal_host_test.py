@@ -26,6 +26,7 @@ class VideoHALTest(unittest.TestCase):
             command=[cc,'-std=c11','-O2','-Wall','-Wextra','-Werror',
                 '-DAE350_VIDEO_HOST_TEST','-DVT_COLS=80','-DVT_ROWS=30',
                 '-I'+str(directory),'-I'+str(bsp/'video'),'-I'+str(bsp/'dma'),
+                '-I'+str(bsp/'gfx2d'),
                 '-I'+str(ROOT/'firmware/bios'),'-I'+str(ROOT/'firmware/common'),
                 '-I'+str(ROOT/'firmware/examples/mega138k_ae350'),
                 str(bsp/'video/ae350_video.c'),str(bsp/'video/ae350_tty.c'),

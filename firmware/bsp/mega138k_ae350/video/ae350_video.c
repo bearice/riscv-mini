@@ -56,7 +56,22 @@ unsigned ae350_video_mode_count(void) {
     return R(0)==AE350_VIDEO_ID && (R(8)&0x40u) ? R(VIDEO_MODE_COUNT):0;
 }
 int ae350_video_get_mode(unsigned mode,struct ae350_video_mode *s) {
-    if(!s || mode>=ae350_video_mode_count())return AE350_VIDEO_RANGE;
+    if(!s)return AE350_VIDEO_RANGE;
+    if(mode==AE350_VIDEO_MODE_CUSTOM) {
+        /* Read back the programmable custom mode from the CUS bank. */
+        uint32_t wh=R(VIDEO_CUS_WH),h=R(VIDEO_CUS_H),v=R(VIDEO_CUS_V);
+        s->width=wh&4095u;s->height=(wh>>16)&4095u;
+        s->h_front=h&4095u;s->h_sync=(h>>12)&4095u;s->h_back=h>>24;
+        s->v_front=v&255u;s->v_sync=(v>>8)&255u;s->v_back=(v>>16)&255u;
+        s->h_positive=(v>>24)&1u;s->v_positive=(v>>25)&1u;
+        s->h_total=s->width+s->h_front+s->h_sync+s->h_back;
+        s->v_total=s->height+s->v_front+s->v_sync+s->v_back;
+        s->pixel_hz=R(VIDEO_CUS_PCLK);s->nominal_pixel_hz=s->pixel_hz;
+        s->refresh_millihz=(uint32_t)(((uint64_t)s->pixel_hz*1000u)/
+            ((uint64_t)s->h_total*s->v_total));
+        return AE350_VIDEO_OK;
+    }
+    if(mode>=ae350_video_mode_count())return AE350_VIDEO_RANGE;
     unsigned off=VIDEO_MODE_INFO_BASE+mode*32u;
     uint32_t geometry=R(off),totals=R(off+8),h=R(off+12),v=R(off+16),flags=R(off+20);
     s->width=geometry&65535u;s->height=geometry>>16;s->pixel_hz=R(off+4);
@@ -81,7 +96,7 @@ int ae350_video_enable(unsigned enable) {
 }
 
 int ae350_video_set_mode(unsigned mode,enum ae350_video_format format) {
-    if(mode>=ae350_video_mode_count() || (unsigned)format>2u)return AE350_VIDEO_RANGE;
+    if(mode>=ae350_video_mode_count() || (unsigned)format>3u)return AE350_VIDEO_RANGE;
     int error=ae350_video_enable(0);
     if(error)return error;
     W(VIDEO_MODE_CONFIG,mode|((unsigned)format<<8));fence();
@@ -90,6 +105,57 @@ int ae350_video_set_mode(unsigned mode,enum ae350_video_format format) {
     while(R(VIDEO_MODE_STATUS)&1u)
         if((uint32_t)(cycle()-start)>400000000u)return AE350_VIDEO_TIMEOUT;
     return R(VIDEO_MODE)==mode && R(VIDEO_FORMAT)==(unsigned)format ? AE350_VIDEO_OK:AE350_VIDEO_STATE;
+}
+
+int ae350_video_set_custom_mode(unsigned width, unsigned height,
+    unsigned h_front, unsigned h_sync, unsigned h_back,
+    unsigned v_front, unsigned v_sync, unsigned v_back,
+    unsigned refresh_millihz, unsigned h_positive, unsigned v_positive,
+    enum ae350_video_format format) {
+    static const unsigned char bpp_tbl[4] = {2, 3, 4, 2};
+    if((unsigned)format>3u || h_positive>1u || v_positive>1u || h_back>255u ||
+       v_front>255u || v_sync>255u || v_back>255u)return AE350_VIDEO_RANGE;
+    if(((width * bpp_tbl[(unsigned)format]) & 31u) != 0) return AE350_VIDEO_RANGE;
+    unsigned h_total=width+h_front+h_sync+h_back;
+    unsigned v_total=height+v_front+v_sync+v_back;
+    if(!width || !height || h_total>=4096u || v_total>=4096u ||
+       width>4095u || height>4095u || h_front>4095u || h_sync>4095u) return AE350_VIDEO_RANGE;
+    /* pixel clock from refresh: total * refresh(mHz) / 1000 */
+    uint64_t pixel=(uint64_t)h_total*v_total*refresh_millihz/1000u;
+    if(pixel==0 || pixel>74250000u)return AE350_VIDEO_RANGE;
+    /* PLL search (mirrors video_modes.pll_config): integer dividers keep
+     * the exact serializer 5:1 relationship; MDIV has eighth steps. */
+    int best=-1;unsigned best_idiv=0,best_m8=0,best_ser=0;
+    for(unsigned idiv=1;idiv<=2;idiv++)for(unsigned ser=2;ser<=25;ser++) {
+        unsigned pixdiv=ser*5u;
+        uint64_t m8=(pixel*pixdiv*idiv*8u+25000000u)/50000000u;
+        uint64_t vco=(uint64_t)50000000u*m8;
+        uint64_t lo=(uint64_t)650000000u*idiv*8u,hi=(uint64_t)1300000000u*idiv*8u;
+        if(m8<16 || m8>1023 || vco<lo || vco>hi)continue;
+        /* error in ppm-ish (actual vs target), avoid div by zero */
+        uint64_t scaled=(uint64_t)pixel*idiv*8u*pixdiv;
+        int64_t err=(int64_t)vco-(int64_t)scaled;
+        if(err<0)err=-err;
+        uint64_t tol=(uint64_t)pixel*idiv*8u*pixdiv/200u; /* 0.5% */
+        if((uint64_t)err>tol)continue;
+        if(best<0 || err<best) {best=err;best_idiv=idiv;best_m8=(unsigned)m8;best_ser=ser;}
+    }
+    if(best<0)return AE350_VIDEO_RANGE;
+    unsigned pixdiv=best_ser*5u;
+    int error=ae350_video_enable(0);
+    if(error)return error;
+    W(VIDEO_CUS_WH,width|((height&4095u)<<16));
+    W(VIDEO_CUS_H,h_front|((h_sync&4095u)<<12)|((h_back&255u)<<24));
+    W(VIDEO_CUS_V,v_front|((v_sync&255u)<<8)|((v_back&255u)<<16)|
+        ((h_positive&1u)<<24)|((v_positive&1u)<<25));
+    W(VIDEO_CUS_PLL,best_idiv|((best_m8&1023u)<<2)|((pixdiv&127u)<<12)|((best_ser&127u)<<19));
+    W(VIDEO_CUS_PCLK,(uint32_t)pixel);fence();
+    W(VIDEO_MODE_CONFIG,AE350_VIDEO_MODE_CUSTOM|((unsigned)format<<8));fence();
+    configured=0;
+    uint32_t start=cycle();
+    while(R(VIDEO_MODE_STATUS)&1u)
+        if((uint32_t)(cycle()-start)>400000000u)return AE350_VIDEO_TIMEOUT;
+    return R(VIDEO_MODE)==AE350_VIDEO_MODE_CUSTOM && R(VIDEO_FORMAT)==(unsigned)format ? AE350_VIDEO_OK:AE350_VIDEO_STATE;
 }
 
 static int wait_pending(void) {
@@ -126,8 +192,9 @@ int ae350_video_init_buffers(void *first,void *second,uint32_t stride) {
     if(!width || !height || width>4096 || height>4096)return AE350_VIDEO_DEVICE;
     if((R(8)&0x40u) && R(VIDEO_MODE_STATUS))return AE350_VIDEO_BUSY;
     unsigned format=current_format();
-    if(format>2)return AE350_VIDEO_DEVICE;
-    unsigned row_bytes=width*(format+2u);
+    if(format>3)return AE350_VIDEO_DEVICE;
+    static const unsigned bpp[]={2,3,4,2}; /* RGB565/RGB888/XRGB8888/XRGB1555 */
+    unsigned row_bytes=width*bpp[format];
     if(!stride)stride=(row_bytes+31u)&~31u;
     if((stride&31u) || stride<row_bytes || stride>=65536u)return AE350_VIDEO_ALIGN;
     uint32_t bytes=stride*height,a=(uint32_t)(uintptr_t)first,b=(uint32_t)(uintptr_t)second;

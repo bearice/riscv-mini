@@ -11,7 +11,8 @@ Board 描述，构建读取本地实现和本地 IP。
 
 HDMI 采用 DVI 兼容 TMDS，每通道固定 8 bit。帧缓冲格式可在运行时选择
 RGB565（16 bpp）、RGB888（24 bpp）或 XRGB8888（32 bpp，X 忽略）；
-RGB888/XRGB8888 在递增内存地址上依次为 B、G、R、可选 X，RGB565 为小端。
+RGB888/XRGB8888 在递增内存地址上依次为 B、G、R、可选 X，RGB565 为小端；
+XRGB1555（16 bpp，X[15]、R[14:10]、G[9:5]、B[4:0]）亦可选用。
 这不是 HDMI 10/12-bit Deep Color。
 
 模式表由 `gateware/machines/mega138k_ae350/video_modes.py` 定义，ID 为表中索引。
@@ -72,7 +73,7 @@ FIFO 最低水位由同步后的 Gray 写计数估计，为保守观察值。
 ## 控制页
 
 地址 `0xf8030000`，ID `0xae350501`，ABI `0x00010000`（major 1）。capability 为 RGB565、双缓冲、
-垂直消隐提交和内建测试图；新增 bit4 RGB888、bit5 XRGB8888、bit6 运行时模式、bit7 HPD、bit8 HPD事件中断。SYSINFO 设备表从 `+0x120` 发布它。
+垂直消隐提交和内建测试图；新增 bit4 RGB888、bit5 XRGB8888、bit6 运行时模式、bit7 HPD、bit8 HPD事件中断、bit9 XRGB1555、bit10 自定义（可编程）模式。SYSINFO 设备表从 `+0x120` 发布它。
 
 | 偏移 | 寄存器 | 语义 |
 | --- | --- | --- |
@@ -89,11 +90,14 @@ FIFO 最低水位由同步后的 Gray 写计数估计，为保守观察值。
 | 64/68 | SEQUENCE/ACTIVE_SEQUENCE | 已提交/已应用序号 |
 | 6c/70 | CANCELLED/ERRORS | 放弃旧帧、busy/非预期响应错误 |
 | 74/78 | CLEAR_ERRORS/REQUEST_OVERFLOW | 写1清理软件提交错误；描述符丢失数 |
-| 7c/80 | MODE/FORMAT | 当前模式 ID、帧缓冲格式 0/1/2，只读 |
+| 7c/80 | MODE/FORMAT | 当前模式 ID、帧缓冲格式 0/1/2/3，只读 |
 | 84 | MODE_CONFIG | 写 mode ID[7:0]、format[9:8] 原子启动切换 |
 | 88/8c | MODE_STATUS/MODE_COUNT | bit0 切换忙；可枚举模式数 |
 | 90 | ENABLE | 独立输出使能，0 禁用 / 1 启用，复位 1 |
 | 94 | HPD | bit0 稳定连接状态，bit1 当前同步电平，只读 |
+| 98/9c/a0 | CUS_WH/CUS_H/CUS_V | 自定义模式几何与时序（见下） |
+| a4 | CUS_PLL | 自定义模式动态 PLL 分频（见下） |
+| a8 | CUS_PCLK | 自定义模式请求像素时钟 Hz（信息性） |
 | 0x100+ID×0x20 | 模式描述 | 每项8个32-bit只读字，见下文 |
 
 寄存器偏移只有 `address_map.py:VIDEO_REGS` 一份定义，RTL、生成 C 头与 BSP
@@ -113,6 +117,24 @@ ENABLE 写入要求 STOPPED=1、pending=0、MODE_STATUS=0；运行中直接关�
 应先提交 run=0 并等待排空。MODE_CONFIG 还必须满足 ENABLE=0，硬件才能接受。
 非法 ID/格式/保留位不被总线接受；忙或仍有所有权的请求置 ERRORS.bit0，保留当前配置。
 禁用输出时提交 run=1 也会被拒绝；run=0 的停止提交仍可执行。
+
+## 自定义（KMS 风格）模式
+
+`MODE_COUNT` 可在 8 以外时把自定义模式索引置为 `len(MODES)`（当前 8）。写
+CUS 寄存器组再以该索引发 MODE_CONFIG 即可切换到任意时序：
+
+| 寄存器 | 位段 |
+| --- | --- |
+| CUS_WH | width[11:0] \| height[27:16] |
+| CUS_H | h_front[11:0] \| h_sync[23:12] \| h_back[31:24]（各 ≤255 后两者第24位起） |
+| CUS_V | v_front[7:0] \| v_sync[15:8] \| v_back[23:16] \| h_positive[24] \| v_positive[25] |
+| CUS_PLL | idiv[1:0]（1/2）\| m8[11:2]（16..1023，50MHz×m8/(idiv×8)=VCO 650MHz..1.3GHz）\| pixel_div[18:12] \| serial_div[25:19]（2..25，且 pixel_div=5×serial_div） |
+| CUS_PCLK | 请求像素时钟（Hz，信息性；PIXEL_HZ 回读它） |
+
+总宽/总高均需 <4096，像素时钟 ≤74.25MHz；不满足任一时 MODE_CONFIG 被拒并置
+ERRORS.bit0，保留当前配置。BSP 的 `ae350_video_set_custom_mode()` 在软件侧计算
+像素时钟并搜索与 `video_modes.pll_config` 等价的动态 PLL 分频组合（整数 5:1
+串行器约束、VCO 650MHz–1.3GHz、≤0.5% 误差），再写 CUS 组并切换。
 
 切换期间同时复位 FIFO 两端和扫描/reader，PLL 先保持复位后重锁。
 重锁后保留复位暖机时间，再等待像素/DDR 域返回本次模式的新序号确认及停止快照确认，

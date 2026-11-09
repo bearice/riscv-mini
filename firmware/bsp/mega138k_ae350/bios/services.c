@@ -168,7 +168,10 @@ void ecall_dispatch(uint32_t *frame) {
 struct board_flash_info bios_flash;
 int bios_flash_status=BUS_DEVICE;
 void bios_runtime_init(void) {
-    __asm__ volatile("csrw 0x7cc,%0\ncsrs 0x7ca,%1"::"r"(23),"r"(3):"memory");
+    /* IC_EN(0)|DC_EN(1)|CCTL_SUEN(8): the S-mode Linux kernel driver
+     * cleans the D-cache through ucctlbeginaddr/ucctlcommand (0x80b/0x80c),
+     * which are only accessible to S/U when CCTL_SUEN is set. */
+    __asm__ volatile("csrw 0x7cc,%0\ncsrs 0x7ca,%1"::"r"(23),"r"(0x103):"memory");
     bios_flash_status=board_flash_init(&bios_flash);
     if(!bios_mount())ae350_bios_info.features|=1u;
     video_ready=!ae350_video_init((uint16_t *)AE350_BIOS_SCANOUT0,(uint16_t *)AE350_BIOS_SCANOUT1,1280);

@@ -55,6 +55,7 @@ begin
  index=(offset/stride)*width+(offset%stride)/step;
  component=(offset%stride)%step;
  if(fmt==0)pixel=index%3==0?16'hf800:index%3==1?16'h07e0:16'h001f;
+ else if(fmt==3)begin begin:blk integer e; e=index&31; pixel=e|(e<<5)|(e<<10); end end
  else pixel=24'h123456+index;
  memory_byte=(pixel>>(component*8))&255;
 end endfunction
@@ -76,6 +77,7 @@ integer index,expected_color;
 always @(posedge hdmi_pix_clk)if(!reset && !mode_busy && de && pixel_enabled)begin
  index=y*width+x;
  if(fmt==0)expected_color=index%3==0?24'h0000ff:index%3==1?24'h00ff00:24'hff0000;
+ else if(fmt==3)begin begin:be integer e,g; e=index&31; g=(e<<3)|(e>>2); expected_color=(g<<16)|(g<<8)|g; end end
  else begin
   expected_color=24'h123456+index;
   expected_color=((expected_color&255)<<16)|(expected_color&65280)|((expected_color>>16)&255);
@@ -101,8 +103,8 @@ integer m,f,before_stop,mode_commands;
 initial begin
  repeat(20)tick;@(negedge sys_clk);sys_rst=0;reset=0;
  await_status(16,16);
- for(m=0;m<3;m=m+1)for(f=0;f<3;f=f+1)begin
-  current_mode=m;fmt=f;step=f+2;width=32*(m+1);height=3+m;
+ for(m=0;m<3;m=m+1)for(f=0;f<4;f=f+1)begin
+  current_mode=m;fmt=f;step=(f==3)?2:(f+2);width=32*(m+1);height=3+m;
   stride=width*step+32;
   // Stopped scanout alone is insufficient while output remains enabled.
   wr(`VIDEO_MODE_CONFIG,m|(f<<8));
@@ -146,7 +148,37 @@ initial begin
   if(commands!=before_stop)$fatal(1,"reads after stop");
   off=`VIDEO_UNDERFLOWS;#1;if(rdata!=0)$fatal(1,"underflow");
  end
- $display("PASS runtime modes, 565/888/8888, burst boundaries, stride, drain and lock");$finish;
+ // Custom mode (index 3 with three patched modes): CUS geometry + PLL,
+ // one rejection for an invalid PLL, then a full switch to 48x4 XRGB1555.
+ current_mode=3;fmt=3;step=2;width=48;height=4;stride=128;
+ wr(`VIDEO_ENABLE,0);
+ wr(`VIDEO_CUS_WH,48|(4<<16));
+ wr(`VIDEO_CUS_H,2|(2<<12)|(2<<24));
+ wr(`VIDEO_CUS_V,1|(1<<8)|(1<<16)|(1<<24)|(1<<25));
+ wr(`VIDEO_CUS_PLL,1|(0<<2)|(50<<12)|(10<<19));
+ wr(`VIDEO_CUS_PCLK,25000000);
+ off=`VIDEO_CUS_WH;#1;if(rdata!=(48|(4<<16)))$fatal(1,"cus_wh readback %x",rdata);
+ off=`VIDEO_CUS_H;#1;if(rdata!=(2|(2<<12)|(2<<24)))$fatal(1,"cus_h readback %x",rdata);
+ off=`VIDEO_CUS_V;#1;if(rdata!=(1|(1<<8)|(1<<16)|(1<<24)|(1<<25)))$fatal(1,"cus_v readback %x",rdata);
+ off=`VIDEO_CUS_PLL;#1;if(rdata!=(1|(0<<2)|(50<<12)|(10<<19)))$fatal(1,"cus_pll readback %x",rdata);
+ off=`VIDEO_CUS_PCLK;#1;if(rdata!=25000000)$fatal(1,"cus_pclk readback %x",rdata);
+ wr(`VIDEO_MODE_CONFIG,3|(3<<8));
+ off=`VIDEO_ERRORS;#1;if(!(rdata&1))$fatal(1,"invalid custom PLL accepted");
+ wr(`VIDEO_CLEAR_ERRORS,1);
+ wr(`VIDEO_CUS_PLL,1|(200<<2)|(50<<12)|(10<<19));
+ mode_commands=commands;run_pix=0;clock_locked=0;
+ wr(`VIDEO_MODE_CONFIG,3|(3<<8));
+ repeat(1500)tick;clock_locked=1;repeat(1500)tick;
+ if(commands!=mode_commands)$fatal(1,"stale descriptor during custom switch");
+ run_pix=1;wait(!mode_busy);repeat(150)tick;
+ off=`VIDEO_GEOMETRY;#1;if(rdata!=(width|(height<<16)))$fatal(1,"custom geometry %x",rdata);
+ off=`VIDEO_FORMAT;#1;if(rdata!=3)$fatal(1,"custom format readback");
+ off=`VIDEO_PIXEL_HZ;#1;if(rdata!=25000000)$fatal(1,"custom pixel clock %x",rdata);
+ wr(`VIDEO_BASE0,32'h100000);wr(`VIDEO_STRIDE,stride);wr(`VIDEO_ENABLE,1);
+ checked=0;wr(`VIDEO_CONTROL,1);wr(`VIDEO_COMMIT,1);await_status(7,1);
+ wait(checked>=width*height*2);
+ wr(`VIDEO_CONTROL,0);wr(`VIDEO_COMMIT,1);await_status(21,16);
+ $display("PASS runtime modes, 565/888/8888/1555, custom mode, burst boundaries, stride, drain and lock");$finish;
 end
 initial begin #10000000;$fatal(1,"timeout");end
 endmodule

@@ -1,13 +1,15 @@
 """AE350 runtime video modes. IDs and byte layouts are part of the video ABI.
 
-RGB888 is packed B,G,R; XRGB8888 is B,G,R,X in increasing byte addresses.
+RGB565 is packed R[15:11],G[10:5],B[4:0]; XRGB1555 is packed
+X[15],R[14:10],G[9:5],B[4:0] (X ignored on the wire). RGB888 is packed
+B,G,R; XRGB8888 is B,G,R,X in increasing byte addresses.
 The wire always carries eight bits per component (DVI compatible TMDS).
 """
 from dataclasses import dataclass
 from fractions import Fraction
 
-RGB565, RGB888, XRGB8888 = range(3)
-BYTES_PER_PIXEL = (2, 3, 4)
+RGB565, RGB888, XRGB8888, XRGB1555 = range(4)
+BYTES_PER_PIXEL = (2, 3, 4, 2)
 
 
 @dataclass(frozen=True)

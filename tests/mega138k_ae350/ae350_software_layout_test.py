@@ -181,7 +181,9 @@ class SoftwareLayoutTests(unittest.TestCase):
             text = subprocess.run(['dtc', '-I', 'dtb', '-O', 'dts', str(dtb)],
                                   check=True, capture_output=True, text=True).stdout
             self.assertIn('reg = <0x00 0x%x>;' % m.OS_MEMORY_BYTES, text)
-            self.assertIn('reg = <0x%x 0x%x>;' % (m.OS_SBI_BASE, m.OS_SBI_BYTES), text)
+            # OpenSBI injects its own no-map reservations (mmode_resv*); the DTB
+            # must not duplicate them (that caused OVERLAP DETECTED in Linux).
+            self.assertNotIn('opensbi@', text)
             self.assertIn('interrupts = <0x%x 0x01>;' % (m.PLIC_EXT_INT_SOURCE_BASE + m.EXT_INT_IO), text)
             bad = work/'bad'
             bad.mkdir()
@@ -192,8 +194,8 @@ class SoftwareLayoutTests(unittest.TestCase):
             with open(work/'bad.log', 'w') as log, self.assertRaises(subprocess.CalledProcessError):
                 opensbi.compile_dtb(SimpleNamespace(root=bad), m, bad, log)
             (bad/'firmware/dts/mega138k_ae350.dts').write_text(
-                source.replace('opensbi@1000000', 'opensbi@1100000'))
-            with open(work/'bad.log', 'w') as log, self.assertRaisesRegex(ValueError, 'opensbi@1100000'):
+                source.replace('plmt0@e6000000', 'plmt0@e6100000'))
+            with open(work/'bad.log', 'w') as log, self.assertRaises(subprocess.CalledProcessError):
                 opensbi.compile_dtb(SimpleNamespace(root=bad), m, bad, log)
 
 
