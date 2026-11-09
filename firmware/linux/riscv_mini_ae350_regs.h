@@ -353,6 +353,19 @@ static inline void ae350_cache_clean_range(u32 addr, u32 bytes)
 	asm volatile("fence" ::: "memory");
 }
 
+static inline void ae350_cache_inval_range(u32 addr, u32 bytes)
+{
+	u32 end = addr + bytes;
+
+	addr &= ~31u;
+	while (addr < end) {
+		asm volatile("csrw 0x80b, %0" :: "r"(addr));
+		asm volatile("csrw 0x80c, %0" :: "r"(0u));
+		addr += 32u;
+	}
+	asm volatile("fence" ::: "memory");
+}
+
 /* GFX2D helpers. STATUS: bit0 busy, bit1 done, bit2 error. */
 #define AE350_G_STATUS_BUSY	1u
 #define AE350_G_STATUS_DONE	2u

@@ -163,6 +163,44 @@ static u32 ae350_phys(struct ae350_fb *fb, u32 x, u32 y)
 	return (u32)fb->dma[slot] + (x + (y - slot * fb->height) * fb->width) * 2;
 }
 
+static void *ae350_cpu_addr(struct ae350_fb *fb, u32 x, u32 y)
+{
+	u32 slot = y >= fb->height ? 1 : 0;
+
+	return (u8 *)fb->cpu[slot] + (x + (y - slot * fb->height) * fb->width) * 2;
+}
+
+static void ae350_fb_cctl_rect(struct ae350_fb *fb, u32 x, u32 y,
+			       u32 width, u32 height, u32 cmd)
+{
+	u32 r, bytes = width * 2;
+
+	for (r = 0; r < height; r++) {
+		u32 addr = (u32)(uintptr_t)ae350_cpu_addr(fb, x, y + r);
+		u32 end = addr + bytes;
+
+		addr &= ~31u;
+		while (addr < end) {
+			asm volatile("csrw 0x80b, %0" :: "r"(addr));
+			asm volatile("csrw 0x80c, %0" :: "r"(cmd));
+			addr += 32u;
+		}
+	}
+	asm volatile("fence" ::: "memory");
+}
+
+static inline void ae350_fb_clean_rect(struct ae350_fb *fb, u32 x, u32 y,
+				       u32 width, u32 height)
+{
+	ae350_fb_cctl_rect(fb, x, y, width, height, 1u);
+}
+
+static inline void ae350_fb_inval_rect(struct ae350_fb *fb, u32 x, u32 y,
+				       u32 width, u32 height)
+{
+	ae350_fb_cctl_rect(fb, x, y, width, height, 0u);
+}
+
 static void ae350_gfx_write_desc(struct ae350_fb *fb, u32 op,
 				 u32 src, u32 dst, u32 src_stride, u32 dst_stride,
 				 u32 width, u32 height, u32 fg, u32 bg, u32 wb)
@@ -199,13 +237,18 @@ static void ae350_fb_fillrect(struct fb_info *info,
 		dst = ae350_phys(fb, rect->dx, rect->dy);
 		if (rect->dy + rect->height <=
 		    (rect->dy >= fb->height ? fb->height * 2 : fb->height)) {
+			ae350_fb_clean_rect(fb, rect->dx, rect->dy,
+					    rect->width, rect->height);
 			color = rect->color < 16 ? ((u32 *)info->pseudo_palette)[rect->color] :
 						   rect->color;
 			ae350_gfx_write_desc(fb, AE350_GFX_FILL, 0, dst, 0,
 					 fb->stride, rect->width, rect->height,
 					 color, 0, 0);
-			if (!ae350_gfx2d_run(fb->gfx))
+			if (!ae350_gfx2d_run(fb->gfx)) {
+				ae350_fb_inval_rect(fb, rect->dx, rect->dy,
+						    rect->width, rect->height);
 				return;
+			}
 		}
 	}
 	sys_fillrect(info, rect);
@@ -232,11 +275,18 @@ static void ae350_fb_copyarea(struct fb_info *info,
 		src = ae350_phys(fb, area->sx, area->sy);
 		dst = ae350_phys(fb, area->dx, area->dy);
 		if ((src % 32) == (dst % 32)) {
+			ae350_fb_clean_rect(fb, area->sx, area->sy,
+					    area->width, area->height);
+			ae350_fb_clean_rect(fb, area->dx, area->dy,
+					    area->width, area->height);
 			ae350_gfx_write_desc(fb, AE350_GFX_COPY, src, dst,
 					 fb->stride, fb->stride, area->width,
 					 area->height, 0, 0, 0);
-			if (!ae350_gfx2d_run(fb->gfx))
+			if (!ae350_gfx2d_run(fb->gfx)) {
+				ae350_fb_inval_rect(fb, area->dx, area->dy,
+						    area->width, area->height);
 				return;
+			}
 		}
 	}
 	sys_copyarea(info, area);
@@ -261,6 +311,8 @@ static void ae350_fb_imageblit(struct fb_info *info,
 			(image->dy >= fb->height ? fb->height * 2 : fb->height)) {
 			memcpy(fb->scratch, image->data, total);
 			ae350_cache_clean_range((u32)(uintptr_t)fb->scratch, total);
+			ae350_fb_clean_rect(fb, image->dx, image->dy,
+					    image->width, image->height);
 			fg = image->fg_color < 16 ? ((u32 *)info->pseudo_palette)[image->fg_color] :
 						    image->fg_color;
 			bg = image->bg_color < 16 ? ((u32 *)info->pseudo_palette)[image->bg_color] :
@@ -271,8 +323,11 @@ static void ae350_fb_imageblit(struct fb_info *info,
 					     image->width, image->height,
 					     fg, bg,
 					     bytes_per_row);
-			if (!ae350_gfx2d_run(fb->gfx))
+			if (!ae350_gfx2d_run(fb->gfx)) {
+				ae350_fb_inval_rect(fb, image->dx, image->dy,
+						    image->width, image->height);
 				return;
+			}
 		}
 	}
 	sys_imageblit(info, image);
