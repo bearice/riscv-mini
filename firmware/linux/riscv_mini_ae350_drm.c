@@ -24,7 +24,7 @@
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_helper.h>
-#include <drm/drm_fbdev_shmem.h>
+#include <drm/drm_fbdev_dma.h>
 #include <drm/drm_format_helper.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_dma_helper.h>
@@ -102,26 +102,33 @@ struct ae350_drm {
 static void ae350_drm_copy_fb(struct ae350_drm *drm,
 			      struct drm_framebuffer *fb)
 {
-	struct iosys_map dst_map, *src_maps;
+	struct iosys_map dst_map, *src_maps, *src_data;
+	struct drm_format_conv_state fmtcnv_state = DRM_FORMAT_CONV_STATE_INIT;
 	struct drm_rect clip;
 	int ret;
 
 	src_maps = kcalloc(4, sizeof(*src_maps), GFP_KERNEL);
-	if (!src_maps)
+	src_data = kcalloc(4, sizeof(*src_data), GFP_KERNEL);
+	if (!src_maps || !src_data) {
+		kfree(src_maps);
+		kfree(src_data);
 		return;
+	}
 	iosys_map_set_vaddr(&dst_map, drm->cpu);
-	ret = drm_gem_fb_vmap(fb, src_maps, NULL);
+	ret = drm_gem_fb_vmap(fb, src_maps, src_data);
 	if (ret) {
 		drm_err(&drm->dev, "framebuffer vmap failed: %d\n", ret);
 		goto done;
 	}
 	drm_rect_init(&clip, 0, 0, drm->width, drm->height);
-	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_maps,
-			  fb, &clip, NULL);
+	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_data,
+			  fb, &clip, &fmtcnv_state);
 	if (ret)
 		drm_err(&drm->dev, "framebuffer blit failed: %d\n", ret);
 	drm_gem_fb_vunmap(fb, src_maps);
 done:
+	drm_format_conv_state_release(&fmtcnv_state);
+	kfree(src_data);
 	kfree(src_maps);
 	/* VA-type cache command needs the CPU virtual address. */
 	ae350_cache_clean_range((u32)(uintptr_t)drm->cpu, (u32)drm->size);
@@ -303,8 +310,22 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 				struct drm_plane_state *plane_state,
 				struct drm_crtc_state *crtc_state)
 {
+	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+	struct drm_framebuffer *fb = plane_state->fb;
+
 	/* No vblank IRQ exists; the atomic core fakes the event. */
 	crtc_state->no_vblank = true;
+
+	if (fb) {
+		int format_id = ae350_drm_format_id(fb->format->format);
+
+		if (format_id < 0)
+			return -EINVAL;
+		if (drm->cpu && (drm->width != (u32)fb->width ||
+				 drm->height != (u32)fb->height ||
+				 drm->format_id != (u32)format_id))
+			crtc_state->mode_changed = true;
+	}
 	return 0;
 }
 
@@ -408,7 +429,7 @@ static const struct drm_connector_funcs ae350_drm_connector_funcs = {
 };
 
 static const struct drm_mode_config_funcs ae350_drm_mode_funcs = {
-	.fb_create = drm_gem_fb_create,
+	.fb_create = drm_gem_fb_create_with_dirty,
 	.mode_valid = ae350_drm_mode_valid,
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
@@ -488,11 +509,12 @@ static int ae350_drm_probe(struct platform_device *pdev)
 					   &drm->connector);
 	if (ret)
 		goto release;
+	drm_plane_enable_fb_damage_clips(&drm->pipe.plane);
 	drm_mode_config_reset(dev_drm);
 	ret = drm_dev_register(dev_drm, 0);
 	if (ret)
 		goto release;
-	drm_fbdev_shmem_setup(dev_drm, 16);
+	drm_fbdev_dma_setup(dev_drm, 16);
 	dev_info(dev, "fb%d: KMS %s modes from %u gateware modes\n",
 		 dev_drm->primary->index, DRIVER_NAME,
 		 readl(drm->csr + AE350_V_MODE_COUNT));
