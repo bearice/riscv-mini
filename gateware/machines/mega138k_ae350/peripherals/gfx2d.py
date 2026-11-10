@@ -731,6 +731,10 @@ class Gfx2DEngine(LiteXModule):
         cmp_src_stride = Signal()
         cmp_blit_wb = Signal()
         cmp_right_overlap = Signal()
+        cmp_stride_equal = Signal()
+        cmp_bpp_equal = Signal()
+        cmp_width_le_1024 = Signal()
+        cmp_addr_lt = Signal()
         unequal_stride_overlap = Signal()
         bad_shader_overlap = Signal()
         mem_overlap = Signal()
@@ -738,38 +742,33 @@ class Gfx2DEngine(LiteXModule):
         src_align_bad = Signal()
         src_end = Signal(33)
         dst_end = Signal(33)
-        self.comb += [
-            src_end.eq(src_addr + src_span),
-            dst_end.eq(dst_addr + dst_span),
-        ]
         cur_mem_overlap = Signal()
         dir_down_step = Signal()
         overlap_safe = Signal()
         self.comb += [
             cur_mem_overlap.eq((src_addr < dst_end) & (dst_addr < src_end)),
             overlap_safe.eq((~scale_en) & (~bilinear_en) &
-                            (src_bpp_shift == dst_bpp_shift) &
-                            (src_stride == dst_stride) &
-                            (width <= 1024)),
+                            cmp_bpp_equal & cmp_stride_equal & cmp_width_le_1024),
             dir_down_step.eq(Mux(op == OP_COPY_AREA,
-                                 (src_stride == dst_stride) & (src_addr < dst_addr),
+                                 cmp_stride_equal & cmp_addr_lt,
                              Mux(op == OP_SHADER,
-                                 uses_src & cur_mem_overlap & overlap_safe &
-                                     (src_addr < dst_addr),
+                                 uses_src & cur_mem_overlap &
+                                     overlap_safe & cmp_addr_lt,
                                  0))),
         ]
         fsm.act('INIT2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(src_end, src_addr + src_span),
+                NextValue(dst_end, dst_addr + dst_span),
                 NextValue(cmp_dst_stride, dst_stride < row_bytes),
                 NextValue(cmp_src_stride, src_stride < src_row_bytes),
                 NextValue(cmp_blit_wb, blit_wb < ((width + 7) >> 3)),
                 NextValue(cmp_right_overlap,
                           (src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)),
-                NextValue(mem_overlap, cur_mem_overlap),
-                NextValue(unequal_stride_overlap, (src_stride != dst_stride) &
-                          cur_mem_overlap),
-                NextValue(bad_shader_overlap,
-                          uses_src & cur_mem_overlap & (~overlap_safe)),
+                NextValue(cmp_stride_equal, src_stride == dst_stride),
+                NextValue(cmp_bpp_equal, src_bpp_shift == dst_bpp_shift),
+                NextValue(cmp_width_le_1024, width <= 1024),
+                NextValue(cmp_addr_lt, src_addr < dst_addr),
                 NextValue(dst_align_bad,
                           Mux(dst_bpp_shift == 2,
                               (dst_addr[0:2] != 0) | (dst_stride[0:2] != 0),
@@ -780,16 +779,20 @@ class Gfx2DEngine(LiteXModule):
                               (src_addr[0:2] != 0) | (src_stride[0:2] != 0),
                               Mux(src_bpp_shift == 1,
                                   (src_addr[0] != 0) | (src_stride[0] != 0), 0))),
-                NextValue(dir_down, dir_down_step),
                 NextValue(row_start_down, dst_addr + dst_step_total),
                 NextValue(src_row_start_down, src_addr + src_step_total),
-                NextValue(delta_dst, Mux(dir_down_step, -dst_stride, dst_stride)),
-                NextValue(delta_src, Mux(op == OP_COPY_AREA,
-                                         Mux(dir_down_step, -src_stride, src_stride),
-                                     Mux(op == OP_IMAGE_BLIT, blit_wb,
-                                         Mux(dir_down_step, -src_stride, src_stride)))),
                 NextValue(rb_hi5, row_bytes >> 5),
                 NextValue(rb_lo5, row_bytes[0:5]),
+                NextState('INIT2B'))
+
+        fsm.act('INIT2B',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(mem_overlap, cur_mem_overlap),
+                NextValue(unequal_stride_overlap,
+                          (~cmp_stride_equal) & cur_mem_overlap),
+                NextValue(bad_shader_overlap,
+                          uses_src & cur_mem_overlap & (~overlap_safe)),
+                NextValue(dir_down, dir_down_step),
                 NextState('INIT3'))
 
         bad_blit_dst = Mux(fmt == FMT_XRGB8888,
@@ -829,6 +832,11 @@ class Gfx2DEngine(LiteXModule):
         )
         fsm.act('INIT3',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(delta_dst, Mux(dir_down, -dst_stride, dst_stride)),
+                NextValue(delta_src, Mux(op == OP_COPY_AREA,
+                                         Mux(dir_down, -src_stride, src_stride),
+                                     Mux(op == OP_IMAGE_BLIT, blit_wb,
+                                         Mux(dir_down, -src_stride, src_stride)))),
                 If(static_bad,
                    NextValue(err, Mux(op > OP_SCALE_BLIT, ERR_UNSUPPORTED, ERR_PARAM)),
                    NextState('FINISH')
