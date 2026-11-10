@@ -428,32 +428,32 @@ class Gfx2DEngine(LiteXModule):
         self.sync += [req_sync[0].eq(self.req), req_sync[1].eq(req_sync[0])]
         start = req_sync[1] != self.ack
 
-        row_bytes = Signal(32)
-        src_row_bytes = Signal(32)
-        row = Signal(32)
-        rows_left = Signal(32)
-        last_row = Signal()
-        beat = Signal(32)
-        beats = Signal(16)
+        row_bytes = Signal(32, reset_less=True)
+        src_row_bytes = Signal(32, reset_less=True)
+        row = Signal(32, reset_less=True)
+        rows_left = Signal(32, reset_less=True)
+        last_row = Signal(reset_less=True)
+        beat = Signal(32, reset_less=True)
+        beats = Signal(16, reset_less=True)
         elapsed = Signal(max=response_timeout + 1)
         elapsed_timeout = Signal()
         self.sync += elapsed_timeout.eq(elapsed >= response_timeout - 1)
         err = Signal(32)
 
-        beat_base = Signal(32)
-        offset = Signal(32)
-        row_start = Signal(32)
-        src_row_start = Signal(32)
-        limit = Signal(32)
-        src_limit = Signal(32)
-        dir_down = Signal()
+        beat_base = Signal(32, reset_less=True)
+        offset = Signal(32, reset_less=True)
+        row_start = Signal(32, reset_less=True)
+        src_row_start = Signal(32, reset_less=True)
+        limit = Signal(32, reset_less=True)
+        src_limit = Signal(32, reset_less=True)
+        dir_down = Signal(reset_less=True)
         self.sync += [
             row_bytes.eq(width << dst_bpp_shift),
             src_row_bytes.eq(width << src_bpp_shift),
         ]
 
-        delta_dst = Signal(32)
-        delta_src = Signal(32)
+        delta_dst = Signal(32, reset_less=True)
+        delta_src = Signal(32, reset_less=True)
         nxt_row_start = Signal(32)
         nxt_src_row_start = Signal(32)
         self.comb += [
@@ -461,11 +461,12 @@ class Gfx2DEngine(LiteXModule):
             nxt_src_row_start.eq(src_row_start + delta_src),
         ]
         beat_byte = Signal(32, reset_less=True)
-        rb_hi5 = Signal(16)
-        rb_lo5 = Signal(5)
+        rb_hi5 = Signal(16, reset_less=True)
+        rb_lo5 = Signal(5, reset_less=True)
         off5 = Signal(5)
         self.comb += off5.eq(row_start[0:5])
-        first_mask, last_mask = Signal(32), Signal(32)
+        first_mask = Signal(32, reset_less=True)
+        last_mask = Signal(32, reset_less=True)
         beats_w = Signal(16)
         geo_sum = Signal(7)
         self.comb += geo_sum.eq(off5 + rb_lo5 + 31)
@@ -477,21 +478,21 @@ class Gfx2DEngine(LiteXModule):
         last_count = Signal(6)
         self.comb += last_count.eq((off5 + rb_lo5 - 1)[0:5] + 1)
         last_bits = [i < last_count for i in range(32)]
-        beats_left = Signal(16)
-        first_beat = Signal()
+        beats_left = Signal(16, reset_less=True)
+        first_beat = Signal(reset_less=True)
         beat_mask = Signal(32)
         self.comb += beat_mask.eq(Mux(first_beat, first_mask,
                                      Mux(beats_left == 1, last_mask, 0xffffffff)))
-        src_beat_base = Signal(32)
-        beat_shift = Signal(256)
-        src_beat_loaded = Signal()
-        src_byte_off = Signal(32)
-        bytes_in_beat = Signal(8)
-        bytes_in_beat_zero = Signal()
-        src_bytes_left = Signal(16)
-        src_bytes_left_zero = Signal()
-        bit_buf = Signal(24)
-        bit_cnt = Signal(5)
+        src_beat_base = Signal(32, reset_less=True)
+        beat_shift = Signal(256, reset_less=True)
+        src_beat_loaded = Signal(reset_less=True)
+        src_byte_off = Signal(32, reset_less=True)
+        bytes_in_beat = Signal(8, reset_less=True)
+        bytes_in_beat_zero = Signal(reset_less=True)
+        src_bytes_left = Signal(16, reset_less=True)
+        src_bytes_left_zero = Signal(reset_less=True)
+        bit_buf = Signal(24, reset_less=True)
+        bit_cnt = Signal(5, reset_less=True)
         copy_data = Signal(256, reset_less=True)
 
         wr_pattern = Signal(256)
@@ -560,27 +561,28 @@ class Gfx2DEngine(LiteXModule):
         ]
 
         # Tile FSM signals
-        tile_x = Signal(16)
-        tile_w = Signal(16)
+        tile_x = Signal(16, reset_less=True)
+        tile_w = Signal(11, reset_less=True)
+        tile_last = Signal(11, reset_less=True)
         t_src_cur_blk = Signal(29, reset_less=True)
-        t_src_beats_left = Signal(16)
-        t_src_off = Signal(5)
+        t_src_beats_left = Signal(16, reset_less=True)
+        t_src_off = Signal(5, reset_less=True)
         t_dst_base_blk = Signal(29, reset_less=True)
         t_dst_cur_blk = Signal(29, reset_less=True)
-        t_dst_beats_left = Signal(16)
-        t_dst_off = Signal(5)
+        t_dst_beats_left = Signal(16, reset_less=True)
+        t_dst_off = Signal(5, reset_less=True)
         t_beat_buf = Signal(256, reset_less=True)
-        t_src_is_first = Signal()
-        t_dst_is_first = Signal()
-        sub_idx = Signal(6)
-        lb_wr_ptr = Signal(11)
+        t_src_is_first = Signal(reset_less=True)
+        t_dst_is_first = Signal(reset_less=True)
+        sub_idx = Signal(6, reset_less=True)
+        lb_wr_ptr = Signal(11, reset_less=True)
 
         # Compute pipeline signals
-        comp_idx = Signal(11)
-        comp_out_idx = Signal(11)
+        comp_idx = Signal(11, reset_less=True)
+        comp_out_idx = Signal(11, reset_less=True)
         comp_pipe_vld = Signal(7)
-        fetch_x = Signal(16)
-        fetch_odd = Signal()
+        fetch_x = Signal(16, reset_less=True)
+        fetch_odd = Signal(reset_less=True)
 
         # Shader ALUs
         self.stage0 = stage0 = ShaderALU(0)
@@ -673,7 +675,11 @@ class Gfx2DEngine(LiteXModule):
         wbuf = Signal(256, reset_less=True)
         wmask = Signal(32, reset_less=True)
         cur_wb_blk = Signal(29, reset_less=True)
-        byte_slot = Signal(6)
+        byte_slot = Signal(6, reset_less=True)
+        byte_full = Signal()
+        self.comb += byte_full.eq(
+            Mux(dst_bpp_shift == 2, byte_slot == 28, byte_slot == 30)
+        )
 
         self.fsm = fsm = FSM(reset_state='IDLE')
         self.comb += [
@@ -720,12 +726,12 @@ class Gfx2DEngine(LiteXModule):
                    NextValue(src_row_start, src_addr),
                    NextState('INIT')))
 
-        src_span = Signal(32)
-        dst_span = Signal(32)
-        src_step_total = Signal(32)
-        dst_step_total = Signal(32)
-        row_start_down = Signal(32)
-        src_row_start_down = Signal(32)
+        src_span = Signal(32, reset_less=True)
+        dst_span = Signal(32, reset_less=True)
+        src_step_total = Signal(32, reset_less=True)
+        dst_step_total = Signal(32, reset_less=True)
+        row_start_down = Signal(32, reset_less=True)
+        src_row_start_down = Signal(32, reset_less=True)
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(limit, ddr_size - row_bytes),
@@ -737,21 +743,21 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(dst_span, (height - 1) * dst_stride + row_bytes),
                 NextState('INIT2'))
 
-        cmp_dst_stride = Signal()
-        cmp_src_stride = Signal()
-        cmp_blit_wb = Signal()
-        cmp_right_overlap = Signal()
-        cmp_stride_equal = Signal()
-        cmp_bpp_equal = Signal()
-        cmp_width_le_1024 = Signal()
-        cmp_addr_lt = Signal()
-        unequal_stride_overlap = Signal()
-        bad_shader_overlap = Signal()
-        mem_overlap = Signal()
-        dst_align_bad = Signal()
-        src_align_bad = Signal()
-        src_end = Signal(33)
-        dst_end = Signal(33)
+        cmp_dst_stride = Signal(reset_less=True)
+        cmp_src_stride = Signal(reset_less=True)
+        cmp_blit_wb = Signal(reset_less=True)
+        cmp_right_overlap = Signal(reset_less=True)
+        cmp_stride_equal = Signal(reset_less=True)
+        cmp_bpp_equal = Signal(reset_less=True)
+        cmp_width_le_1024 = Signal(reset_less=True)
+        cmp_addr_lt = Signal(reset_less=True)
+        unequal_stride_overlap = Signal(reset_less=True)
+        bad_shader_overlap = Signal(reset_less=True)
+        mem_overlap = Signal(reset_less=True)
+        dst_align_bad = Signal(reset_less=True)
+        src_align_bad = Signal(reset_less=True)
+        src_end = Signal(33, reset_less=True)
+        dst_end = Signal(33, reset_less=True)
         cur_mem_overlap = Signal()
         dir_down_step = Signal()
         overlap_safe = Signal()
@@ -1058,7 +1064,8 @@ class Gfx2DEngine(LiteXModule):
 
         fsm.act('T_SETUP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(tile_w, calc_t_w),
+                NextValue(tile_w, calc_t_w[0:11]),
+                NextValue(tile_last, calc_t_w[0:11] - 1),
                 NextValue(t_src_cur_blk, cur_src_byte[2:31] & ~Constant(7, 29)),
                 NextValue(t_src_beats_left,
                           (((cur_src_end[2:31] & ~Constant(7, 29)) -
@@ -1308,7 +1315,6 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_WB_SETUP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(wb_idx, 0),
-                NextValue(wbuf, 0),
                 NextValue(wmask, 0),
                 NextValue(byte_slot, t_dst_off),
                 NextValue(cur_wb_blk, t_dst_base_blk),
@@ -1398,7 +1404,7 @@ class Gfx2DEngine(LiteXModule):
                 Case(byte_slot, wb_cases),
                 NextValue(byte_slot, byte_slot + pix_bytes),
                 NextValue(wb_idx, wb_idx + 1),
-                If((byte_slot + pix_bytes == 32) | (wb_idx == tile_w - 1),
+                If(byte_full | (wb_idx == tile_last),
                     NextState('T_WB_PREP')
                 ).Else(
                     NextState('T_WB_READ')
@@ -1411,7 +1417,6 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_WB_SEND',
                 If(wmask == 0,
                     NextValue(cur_wb_blk, cur_wb_blk + 8),
-                    NextValue(wbuf, 0),
                     NextValue(wmask, 0),
                     NextValue(byte_slot, 0),
                     If(wb_idx == tile_w,
@@ -1426,7 +1431,6 @@ class Gfx2DEngine(LiteXModule):
                     If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                         NextValue(elapsed, 0),
                         NextValue(cur_wb_blk, cur_wb_blk + 8),
-                        NextValue(wbuf, 0),
                         NextValue(wmask, 0),
                         NextValue(byte_slot, 0),
                         If(wb_idx == tile_w,
