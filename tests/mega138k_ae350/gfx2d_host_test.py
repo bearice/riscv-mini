@@ -122,8 +122,8 @@ class Gfx2DHostTest(unittest.TestCase):
             yield from access(reg['CLEAR_ERRORS'], 1)
             ok, val = yield from access(reg['STATUS'])
             assert ok and (val & 0b110) == 0
-            # Unsupported op (3) reports ERR_UNSUPPORTED
-            ok, _ = yield from access(reg['OP'], 3)
+            # Unsupported op (5) reports ERR_UNSUPPORTED
+            ok, _ = yield from access(reg['OP'], 5)
             assert ok
             ok, _ = yield from access(reg['CONTROL'], 1)
             assert ok
@@ -192,6 +192,8 @@ class Gfx2DHostTest(unittest.TestCase):
             yield
             return ok, rdata
 
+        max_cycles = max(5000, desc.get('WIDTH', 0) * desc.get('HEIGHT', 1) * 8 + 2000)
+
         def bench():
             yield [d.ui.cmd_ready.eq(1), d.ui.wr_data_rdy.eq(1), d.ui.rd_data_valid.eq(0),
                    d.ui.rd_data.eq(0)]
@@ -200,7 +202,7 @@ class Gfx2DHostTest(unittest.TestCase):
                 assert ok, name
             ok, _ = yield from access(reg['CONTROL'], 1)
             assert ok
-            for _ in range(5000):
+            for _ in range(max_cycles):
                 yield from mem_pump()
                 busy, = yield [d.busy]
                 if not busy:
@@ -540,9 +542,285 @@ class Gfx2DHostTest(unittest.TestCase):
         self.assertTrue(amap.SYSINFO_CAP & amap.CAP_GFX2D)
         self.assertEqual(amap.GFX2D_EP[0], amap.GFX2D_ID)
         self.assertEqual(amap.GFX2D_EP[1], amap.GFX2D_BASE)
+        self.assertEqual(amap.GFX2D_CAP, 0x0FEF)
+        self.assertTrue(amap.GFX2D_CAP & amap.GFX2D_CAP_SHADER)
         vals = list(amap.GFX2D_REGS.values())
         self.assertEqual(len(set(vals)), len(vals))
         self.assertTrue(all(v % 4 == 0 and 12 <= v < 4096 for v in vals))
+
+    def test_mul_unorm8_exhaustive(self):
+        # Verify hardware MUL_UNORM8 formula ((P + (P >> 8)) >> 8) matches
+        # exact round-to-nearest ((A * B + 127) // 255) for all 65,536 pairs.
+        for a in range(256):
+            for b in range(256):
+                p = a * b + 128
+                hw = (p + (p >> 8)) >> 8
+                ref = (a * b + 127) // 255
+                self.assertEqual(hw, ref, f"Mismatch for a={a}, b={b}")
+        print("PASS GFX2D: MUL_UNORM8 exhaustive 65,536 combinations match exact /255")
+
+    def test_lerp_endpoints(self):
+        # Verify LERP formula ((S - D) * W + (D << 8) + 128) >> 8 preserves endpoints:
+        # alpha = 0 -> DST exact; alpha = 255 -> SRC exact (no pixel darkening).
+        for s in range(256):
+            for d in range(256):
+                # alpha = 0: W = 0
+                w0 = 0 + (0 >> 7)
+                res0 = ((s - d) * w0 + (d << 8) + 128) >> 8
+                self.assertEqual(res0, d, f"LERP alpha=0 mismatch for s={s}, d={d}")
+
+                # alpha = 255: W = 255 + 1 = 256
+                w255 = 255 + (255 >> 7)
+                res255 = ((s - d) * w255 + (d << 8) + 128) >> 8
+                self.assertEqual(res255, s, f"LERP alpha=255 mismatch for s={s}, d={d}")
+        print("PASS GFX2D: LERP endpoints alpha=0->DST and alpha=255->SRC exact")
+
+    def test_shader_blend_argb_to_rgb565(self):
+        # Example 1: Standard Per-Pixel Alpha Blend ARGB8888 -> RGB565
+        # LERP.rgb R0, R0.argb, R1.argb, R0.aaaa (SAT=1)
+        d = make()
+        reg = amap.GFX2D_REGS
+        mem = bytearray(DDR_SIZE)
+
+        inst0_hi = ((0x13 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (0 << 12) | (1 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst0_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0xFF << 12) | (0x8 << 8) | 0)
+
+        src_addr, dst_addr = 0x2000, 0x4000
+        stride_src, stride_dst = 64, 64
+        w, h = 8, 2
+
+        # Src: Semi-transparent red (A=128, R=255, G=0, B=0)
+        # Dst: Solid blue (0x001F)
+        for r in range(h):
+            for c in range(w):
+                mem[src_addr + r * stride_src + c * 4 + 0] = 0x00
+                mem[src_addr + r * stride_src + c * 4 + 1] = 0x00
+                mem[src_addr + r * stride_src + c * 4 + 2] = 0xFF
+                mem[src_addr + r * stride_src + c * 4 + 3] = 0x80
+                mem[dst_addr + r * stride_dst + c * 2 + 0] = 0x1F
+                mem[dst_addr + r * stride_dst + c * 2 + 1] = 0x00
+
+        cfg = 0 | (1 << 4) | (1 << 5) | (1 << 11) | (4 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': stride_src,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': stride_dst,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+
+        # Expected blended pixel: RGB565 0x800F
+        expected_p = (16 << 11) | 15
+        for r in range(h):
+            for c in range(w):
+                p = (mem[dst_addr + r * stride_dst + c * 2] |
+                     (mem[dst_addr + r * stride_dst + c * 2 + 1] << 8))
+                self.assertEqual(p, expected_p)
+        print("PASS GFX2D: OP_SHADER Example 1 (Blend ARGB8888 -> RGB565)")
+
+    def test_shader_color_key_discard(self):
+        # Example 2: Color Key Discard (Magenta -> discard)
+        d = make()
+        reg = amap.GFX2D_REGS
+        mem = bytearray(DDR_SIZE)
+
+        # Stage 0: DISCARD_IF.rgb EQ, SRC.argb, U0.argb
+        inst0_hi = ((0x39 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (4 << 12) | (8 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst0_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0 << 12) | (0 << 8) | 0)
+
+        # Stage 1: MOV.rgb R0, SRC.argb (SAT=1)
+        inst1_hi = ((0x00 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (4 << 12) | (0 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst1_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0 << 12) | (0x8 << 8) | 0)
+
+        src_addr, dst_addr = 0x2000, 0x4000
+        stride_src, stride_dst = 64, 64
+        w, h = 8, 1
+        u0 = 0x00FF00FF  # Magenta key
+
+        for c in range(w):
+            mem[dst_addr + c * 2 + 0] = 0x1F  # Dst initialized to Blue
+            mem[dst_addr + c * 2 + 1] = 0x00
+            if c in (1, 3):
+                # Magenta key
+                mem[src_addr + c * 4 + 0] = 0xFF
+                mem[src_addr + c * 4 + 1] = 0x00
+                mem[src_addr + c * 4 + 2] = 0xFF
+                mem[src_addr + c * 4 + 3] = 0xFF
+            elif c == 2:
+                # Yellow
+                mem[src_addr + c * 4 + 0] = 0x00
+                mem[src_addr + c * 4 + 1] = 0xFF
+                mem[src_addr + c * 4 + 2] = 0xFF
+                mem[src_addr + c * 4 + 3] = 0xFF
+            else:
+                # Green
+                mem[src_addr + c * 4 + 0] = 0x00
+                mem[src_addr + c * 4 + 1] = 0xFF
+                mem[src_addr + c * 4 + 2] = 0x00
+                mem[src_addr + c * 4 + 3] = 0xFF
+
+        cfg = 1 | (1 << 4) | (1 << 11) | (2 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': stride_src,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': stride_dst,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
+            'UNIFORM0': u0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+            'INST1_LO': inst1_lo, 'INST1_HI': inst1_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+
+        p0 = mem[dst_addr + 0] | (mem[dst_addr + 1] << 8)
+        p1 = mem[dst_addr + 2] | (mem[dst_addr + 3] << 8)
+        p2 = mem[dst_addr + 4] | (mem[dst_addr + 5] << 8)
+        p3 = mem[dst_addr + 6] | (mem[dst_addr + 7] << 8)
+        self.assertEqual(p0, 0x07E0)  # Green
+        self.assertEqual(p1, 0x001F)  # Discarded -> Blue preserved
+        self.assertEqual(p2, 0xFFE0)  # Yellow
+        self.assertEqual(p3, 0x001F)  # Discarded -> Blue preserved
+        print("PASS GFX2D: OP_SHADER Example 2 (Color Key Discard)")
+
+    def test_shader_dot3_grayscale(self):
+        # Stage 1 DOT3: RGB -> Luminance Y = 0.299 R + 0.587 G + 0.114 B
+        d = make()
+        reg = amap.GFX2D_REGS
+        mem = bytearray(DDR_SIZE)
+
+        u0 = (0 << 24) | (77 << 16) | (150 << 8) | 29
+        inst0_hi = ((0x00 << 26) | (0 << 24) | (0 << 20) | (0xF << 16) |
+                    (4 << 12) | (0 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst0_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0 << 12) | (0 << 8) | 0)
+
+        inst1_hi = ((0x14 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (0 << 12) | (8 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst1_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0 << 12) | (0x8 << 8) | 0)
+
+        src_addr, dst_addr = 0x2000, 0x4000
+        stride_src, stride_dst = 64, 64
+        w, h = 8, 1
+
+        for c in range(w):
+            mem[src_addr + c * 4 + 0] = 0
+            mem[src_addr + c * 4 + 1] = 128
+            mem[src_addr + c * 4 + 2] = 255
+            mem[src_addr + c * 4 + 3] = 255
+
+        expected_p = ((152 >> 3) << 11) | ((152 >> 2) << 5) | (152 >> 3)
+        cfg = 1 | (1 << 4) | (1 << 11) | (4 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': stride_src,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': stride_dst,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
+            'UNIFORM0': u0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+            'INST1_LO': inst1_lo, 'INST1_HI': inst1_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        for c in range(w):
+            p = mem[dst_addr + c * 2 + 0] | (mem[dst_addr + c * 2 + 1] << 8)
+            self.assertEqual(p, expected_p)
+        print("PASS GFX2D: Stage 1 DOT3 grayscale luminance")
+
+    def test_shader_xrgb_opacity(self):
+        # Verify XRGB8888 source format ignores high byte X and forces A=255.
+        d = make()
+        reg = amap.GFX2D_REGS
+        mem = bytearray(DDR_SIZE)
+
+        # LERP R0, R0.argb, R1.argb, R0.aaaa
+        inst0_hi = ((0x13 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (0 << 12) | (1 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst0_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0xFF << 12) | (0x8 << 8) | 0)
+
+        src_addr, dst_addr = 0x2000, 0x4000
+        stride_src, stride_dst = 64, 64
+        w, h = 8, 1
+
+        for c in range(w):
+            # X = 0x12 (must be ignored, A forced to 255 -> 100% Red)
+            mem[src_addr + c * 4 + 0] = 0x00
+            mem[src_addr + c * 4 + 1] = 0x00
+            mem[src_addr + c * 4 + 2] = 0xFF
+            mem[src_addr + c * 4 + 3] = 0x12
+            # Dst: Blue (0x001F)
+            mem[dst_addr + c * 2 + 0] = 0x1F
+            mem[dst_addr + c * 2 + 1] = 0x00
+
+        # SRC_FORMAT = 2 (XRGB8888)
+        cfg = 0 | (1 << 4) | (1 << 5) | (1 << 11) | (2 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': stride_src,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': stride_dst,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+
+        # Output must be 100% Red (0xF800), NOT blue
+        for c in range(w):
+            p = mem[dst_addr + c * 2 + 0] | (mem[dst_addr + c * 2 + 1] << 8)
+            self.assertEqual(p, 0xF800)
+        print("PASS GFX2D: XRGB8888 forces A=255 opacity")
+
+    def test_shader_width_1280_two_tiles_and_overlap(self):
+        # 1. Non-overlapping two tiles (1024 + 256)
+        d = make()
+        reg = amap.GFX2D_REGS
+        mem = bytearray(DDR_SIZE)
+
+        inst0_hi = ((0x13 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (0 << 12) | (1 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst0_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0xFF << 12) | (0x8 << 8) | 0)
+
+        src_addr, dst_addr = 0x10000, 0x20000
+        stride_src, stride_dst = 1280 * 4, 1280 * 2
+        w, h = 1280, 1
+
+        for c in range(w):
+            mem[src_addr + c * 4 + 0] = 0x00
+            mem[src_addr + c * 4 + 1] = 0x00
+            mem[src_addr + c * 4 + 2] = 0xFF
+            mem[src_addr + c * 4 + 3] = 0x80
+            mem[dst_addr + c * 2 + 0] = 0x1F
+            mem[dst_addr + c * 2 + 1] = 0x00
+
+        cfg = 0 | (1 << 4) | (1 << 5) | (1 << 11) | (4 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': stride_src,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': stride_dst,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+
+        expected_p = (16 << 11) | 15
+        for c in range(w):
+            p = mem[dst_addr + c * 2 + 0] | (mem[dst_addr + c * 2 + 1] << 8)
+            self.assertEqual(p, expected_p)
+        print("PASS GFX2D: OP_SHADER WIDTH=1280 two tiles (1024 + 256) bit-exact")
+
+        # 2. Overlapping buffers with WIDTH > 1024 rejected with ERR_PARAM
+        d2 = make()
+        desc_bad = dict(desc)
+        desc_bad['DST_ADDR'] = src_addr + 100
+        self._run_op(d2, self._fake_pump_factory(d2, mem), desc_bad,
+                     expect_err=ERR_PARAM)
+        print("PASS GFX2D: OP_SHADER WIDTH=1280 overlap rejected with ERR_PARAM")
 
 
 if __name__ == '__main__':
