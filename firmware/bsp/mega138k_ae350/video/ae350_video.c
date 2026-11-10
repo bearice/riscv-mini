@@ -96,7 +96,7 @@ int ae350_video_enable(unsigned enable) {
 }
 
 int ae350_video_set_mode(unsigned mode,enum ae350_video_format format) {
-    if(mode>=ae350_video_mode_count() || (unsigned)format>3u)return AE350_VIDEO_RANGE;
+    if(mode>=ae350_video_mode_count() || (unsigned)format>4u)return AE350_VIDEO_RANGE;
     int error=ae350_video_enable(0);
     if(error)return error;
     W(VIDEO_MODE_CONFIG,mode|((unsigned)format<<8));fence();
@@ -112,8 +112,8 @@ int ae350_video_set_custom_mode(unsigned width, unsigned height,
     unsigned v_front, unsigned v_sync, unsigned v_back,
     unsigned refresh_millihz, unsigned h_positive, unsigned v_positive,
     enum ae350_video_format format) {
-    static const unsigned char bpp_tbl[4] = {2, 3, 4, 2};
-    if((unsigned)format>3u || h_positive>1u || v_positive>1u || h_back>255u ||
+    static const unsigned char bpp_tbl[5] = {2, 3, 4, 2, 1};
+    if((unsigned)format>4u || h_positive>1u || v_positive>1u || h_back>255u ||
        v_front>255u || v_sync>255u || v_back>255u)return AE350_VIDEO_RANGE;
     if(((width * bpp_tbl[(unsigned)format]) & 31u) != 0) return AE350_VIDEO_RANGE;
     unsigned h_total=width+h_front+h_sync+h_back;
@@ -192,8 +192,8 @@ int ae350_video_init_buffers(void *first,void *second,uint32_t stride) {
     if(!width || !height || width>4096 || height>4096)return AE350_VIDEO_DEVICE;
     if((R(8)&0x40u) && R(VIDEO_MODE_STATUS))return AE350_VIDEO_BUSY;
     unsigned format=current_format();
-    if(format>3)return AE350_VIDEO_DEVICE;
-    static const unsigned bpp[]={2,3,4,2}; /* RGB565/RGB888/XRGB8888/XRGB1555 */
+    if(format>4)return AE350_VIDEO_DEVICE;
+    static const unsigned bpp[]={2,3,4,2,1}; /* RGB565/RGB888/XRGB8888/XRGB1555/INDEX8 */
     unsigned row_bytes=width*bpp[format];
     if(!stride)stride=(row_bytes+31u)&~31u;
     if((stride&31u) || stride<row_bytes || stride>=65536u)return AE350_VIDEO_ALIGN;
@@ -240,11 +240,64 @@ int ae350_video_present(unsigned slot) {
         error=ae350_video_enable(1);
         if(error)return error;
     }
-    fence();error=commit(1u|(slot<<1));
+    unsigned cur_bank = (R(VIDEO_CONTROL) >> 2) & 1u;
+    fence();error=commit(1u|(slot<<1)|(cur_bank<<2));
     if(error)return error;
     status=R(VIDEO_STATUS);
     return (status&3u)==(1u|(slot<<1)) && R(VIDEO_ACTIVE_BASE)==bases[slot] ?
         AE350_VIDEO_OK:AE350_VIDEO_STATE;
+}
+
+int ae350_video_present_indexed(unsigned slot,unsigned bank) {
+    if(!configured || slot>1 || bank>1)return AE350_VIDEO_STATE;
+    int error=wait_pending();
+    if(error)return error;
+    uint32_t status=R(VIDEO_STATUS);
+    if((status&1u) && ((status>>1)&1u)==slot) {
+        if(((status>>5)&1u)==bank)return AE350_VIDEO_OK;
+    } else {
+        if(!ae350_video_frame_data(slot))return AE350_VIDEO_BUSY;
+        if(clean(bases[slot],frame_bytes)!=AE350_DMA_OK)return AE350_VIDEO_CACHE;
+    }
+    if((R(8)&0x40u) && !R(VIDEO_ENABLE)) {
+        error=ae350_video_enable(1);
+        if(error)return error;
+    }
+    fence();error=commit(1u|(slot<<1)|(bank<<2));
+    if(error)return error;
+    status=R(VIDEO_STATUS);
+    return (status&3u)==(1u|(slot<<1)) && R(VIDEO_ACTIVE_BASE)==bases[slot] &&
+        ((status>>5)&1u)==bank ? AE350_VIDEO_OK:AE350_VIDEO_STATE;
+}
+
+int ae350_video_set_wrap(uint32_t wrap_start,uint32_t wrap_end) {
+    if(R(0)!=AE350_VIDEO_ID)return AE350_VIDEO_DEVICE;
+    if(wrap_end!=0) {
+        if((wrap_start&31u) || (wrap_end&31u) || wrap_end<=wrap_start)
+            return AE350_VIDEO_ALIGN;
+    }
+    W(VIDEO_WRAP_START,wrap_start);
+    W(VIDEO_WRAP_END,wrap_end);
+    fence();
+    return AE350_VIDEO_OK;
+}
+
+int ae350_video_palette(uint16_t *table,unsigned bank,unsigned count,unsigned readback) {
+    if(!table || bank>1u || count==0 || count>256u)return AE350_VIDEO_RANGE;
+    if(R(0)!=AE350_VIDEO_ID || !(R(8)&0x800u))return AE350_VIDEO_DEVICE;
+    uint32_t base_addr=bank*256u;
+    for(unsigned i=0;i<count;i++) {
+        W(VIDEO_PALETTE_ADDR,base_addr+i);
+        if(readback)table[i]=(uint16_t)R(VIDEO_PALETTE_READBACK);
+        else W(VIDEO_PALETTE_DATA,table[i]);
+    }
+    fence();
+    return AE350_VIDEO_OK;
+}
+
+int ae350_video_palette_active(void) {
+    if(R(0)!=AE350_VIDEO_ID || !(R(8)&0x800u))return AE350_VIDEO_DEVICE;
+    return (int)((R(VIDEO_STATUS)>>5)&1u);
 }
 
 int ae350_video_status(struct ae350_video_status *s) {

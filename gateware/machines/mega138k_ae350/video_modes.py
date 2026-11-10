@@ -8,8 +8,8 @@ The wire always carries eight bits per component (DVI compatible TMDS).
 from dataclasses import dataclass
 from fractions import Fraction
 
-RGB565, RGB888, XRGB8888, XRGB1555 = range(4)
-BYTES_PER_PIXEL = (2, 3, 4, 2)
+RGB565, RGB888, XRGB8888, XRGB1555, INDEX8 = range(5)
+BYTES_PER_PIXEL = (2, 3, 4, 2, 1)
 
 
 @dataclass(frozen=True)

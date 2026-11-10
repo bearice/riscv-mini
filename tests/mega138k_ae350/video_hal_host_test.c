@@ -12,6 +12,7 @@
 static uint32_t regs[256],ticks,delay,clean_base,clean_bytes;
 static uint32_t staged_control,staged_base,clean_calls,commit_calls;
 static int frozen,reject,draining,hold_drain,clean_error,mode_frozen;
+static uint16_t palette_ram[512];
 
 /* Host GFX2D emulation: run the ops directly on host memory so the TTY
  * fixture renders through the same blit calls as on hardware. */
@@ -48,13 +49,15 @@ uint32_t ae350_video_test_read(unsigned off) {
     if(off==VIDEO_MODE_STATUS && regs[off/4] && !mode_frozen && --delay==0)regs[off/4]=0;
     if(off==VIDEO_COMMIT && regs[off/4] && !frozen && --delay==0) {
         regs[off/4]=0;regs[VIDEO_ACTIVE_SEQUENCE/4]=regs[VIDEO_SEQUENCE/4];
-        regs[VIDEO_STATUS/4]=staged_control&3u;
+        regs[VIDEO_STATUS/4]=(staged_control&3u)|(((staged_control>>2)&1u)<<5);
         regs[VIDEO_ACTIVE_BASE/4]=staged_base;
         if(!(staged_control&1u))draining=1;
     }
     if(off==VIDEO_STATUS && draining && !hold_drain) {
         draining=0;regs[off/4]=16;
     }
+    if(off==VIDEO_PALETTE_READBACK)return palette_ram[regs[VIDEO_PALETTE_ADDR/4]&511u];
+    if(off==VIDEO_PALETTE_ACTIVE)return (regs[VIDEO_STATUS/4]>>5)&1u;
     return regs[off/4];
 }
 void ae350_video_test_write(unsigned off,uint32_t value) {
@@ -65,8 +68,11 @@ void ae350_video_test_write(unsigned off,uint32_t value) {
         staged_base=regs[(staged_control&2u)?VIDEO_BASE1/4:VIDEO_BASE0/4];
     } else if(off==VIDEO_MODE_CONFIG) {
         assert(!regs[VIDEO_ENABLE/4] && (regs[VIDEO_STATUS/4]&16u));
-        regs[VIDEO_MODE/4]=value&255u;regs[VIDEO_FORMAT/4]=(value>>8)&3u;
+        regs[VIDEO_MODE/4]=value&255u;regs[VIDEO_FORMAT/4]=(value>>8)&7u;
         regs[VIDEO_MODE_STATUS/4]=1;delay=3;
+    } else if(off==VIDEO_PALETTE_DATA) {
+        palette_ram[regs[VIDEO_PALETTE_ADDR/4]&511u]=(uint16_t)value;
+        regs[VIDEO_PALETTE_ADDR/4]=(regs[VIDEO_PALETTE_ADDR/4]+1u)&511u;
     } else if(off==VIDEO_IRQ_STATUS)regs[off/4]&=~value;
     else regs[off/4]=value;
 }
@@ -181,7 +187,7 @@ int main(int argc,char **argv) {
     assert(ae350_video_get_mode(0,&mode)==0 && mode.width==640 && mode.v_total==525);
     assert(ae350_video_set_mode(1,AE350_VIDEO_RGB565)==AE350_VIDEO_RANGE);
     assert(ae350_video_set_mode(0,AE350_VIDEO_XRGB1555)==0);
-    assert(ae350_video_set_mode(0,(enum ae350_video_format)4)==AE350_VIDEO_RANGE);
+    assert(ae350_video_set_mode(0,(enum ae350_video_format)5)==AE350_VIDEO_RANGE);
     assert(ae350_video_set_mode(0,AE350_VIDEO_RGB888)==0);
     assert(!regs[VIDEO_ENABLE/4] && !ae350_video_frame_data(0));
     { struct ae350_video_mode cm;
@@ -213,10 +219,43 @@ int main(int argc,char **argv) {
     assert(ae350_video_init_buffers(large_a,large_b,0)==0);
     assert(ae350_video_present(1)==0 && clean_bytes==640u*480u*4u);
     assert(ae350_video_status(&status)==0 && status.format==AE350_VIDEO_XRGB8888 && status.output_enabled);
+
+    /* INDEX8: 1 bpp buffer sizing, palette management, and wrap-back. */
+    regs[2]=0x1fff; /* Declare INDEX8 and wrap capabilities. */
+    assert(ae350_video_set_mode(0,AE350_VIDEO_INDEX8)==0);
+    assert(ae350_video_init_buffers(large_a,large_b,0)==0);
+    assert(ae350_video_present(0)==0 && clean_bytes==640u*480u*1u);
+
+    /* Palette programming: bank 0 and bank 1 readback. */
+    uint16_t pal0[256],pal1[256],rb[256];
+    for(unsigned i=0;i<256;i++) {pal0[i]=(uint16_t)(i*0x101u);pal1[i]=(uint16_t)(~i*0x101u);}
+    assert(ae350_video_palette(pal0,0,256,0)==0);
+    assert(ae350_video_palette(pal1,1,256,0)==0);
+    assert(ae350_video_palette(rb,0,256,1)==0 && memcmp(pal0,rb,sizeof pal0)==0);
+    assert(ae350_video_palette(rb,1,256,1)==0 && memcmp(pal1,rb,sizeof pal1)==0);
+    assert(ae350_video_palette(pal0,2,256,0)==AE350_VIDEO_RANGE);
+    assert(ae350_video_palette(pal0,0,0,0)==AE350_VIDEO_RANGE);
+    assert(ae350_video_palette(pal0,0,257,0)==AE350_VIDEO_RANGE);
+
+    /* Present indexed: atomic slot + bank commit. */
+    assert(ae350_video_present_indexed(0,0)==0 && ae350_video_palette_active()==0);
+    assert(ae350_video_present_indexed(1,1)==0 && ae350_video_palette_active()==1);
+    assert(ae350_video_present_indexed(2,0)==AE350_VIDEO_STATE);
+    assert(ae350_video_present_indexed(0,2)==AE350_VIDEO_STATE);
+
+    /* Wrap-back configuration. */
+    assert(ae350_video_set_wrap(0x02000000u,0x02100000u)==0);
+    assert(regs[VIDEO_WRAP_START/4]==0x02000000u && regs[VIDEO_WRAP_END/4]==0x02100000u);
+    assert(ae350_video_set_wrap(0x02000001u,0x02100000u)==AE350_VIDEO_ALIGN);
+    assert(ae350_video_set_wrap(0x02000000u,0x02100001u)==AE350_VIDEO_ALIGN);
+    assert(ae350_video_set_wrap(0x02100000u,0x02000000u)==AE350_VIDEO_ALIGN);
+    assert(ae350_video_set_wrap(0,0)==0);
+    assert(regs[VIDEO_WRAP_START/4]==0 && regs[VIDEO_WRAP_END/4]==0);
+
     mode_frozen=1;
     assert(ae350_video_set_mode(0,AE350_VIDEO_RGB565)==AE350_VIDEO_TIMEOUT);
     assert(!ae350_video_frame_data(0) && !ae350_video_frame_data(1));
     mode_frozen=0;regs[VIDEO_MODE_STATUS/4]=0;
-    puts("PASS video HAL ownership, cache order, bounds, timeout/drain and BIOS TTY rendering");
+    puts("PASS video HAL ownership, cache order, bounds, timeout/drain, palette, wrap and BIOS TTY rendering");
     return 0;
 }
