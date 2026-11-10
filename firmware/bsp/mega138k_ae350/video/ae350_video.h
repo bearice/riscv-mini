@@ -47,13 +47,19 @@ enum {
     VIDEO_CUS_V=AE350_VIDEO_CUS_V,
     VIDEO_CUS_PLL=AE350_VIDEO_CUS_PLL,
     VIDEO_CUS_PCLK=AE350_VIDEO_CUS_PCLK,
+    VIDEO_WRAP_START=AE350_VIDEO_WRAP_START,
+    VIDEO_WRAP_END=AE350_VIDEO_WRAP_END,
+    VIDEO_PALETTE_ADDR=AE350_VIDEO_PALETTE_ADDR,
+    VIDEO_PALETTE_DATA=AE350_VIDEO_PALETTE_DATA,
+    VIDEO_PALETTE_READBACK=AE350_VIDEO_PALETTE_READBACK,
+    VIDEO_PALETTE_ACTIVE=AE350_VIDEO_PALETTE_ACTIVE,
     VIDEO_MODE_INFO_BASE=AE350_VIDEO_MODE_INFO_BASE,
     VIDEO_REQUEST_OVERFLOW=AE350_VIDEO_REQUEST_OVERFLOW
 };
 
 enum ae350_video_format {
     AE350_VIDEO_RGB565=0, AE350_VIDEO_RGB888=1, AE350_VIDEO_XRGB8888=2,
-    AE350_VIDEO_XRGB1555=3
+    AE350_VIDEO_XRGB1555=3, AE350_VIDEO_INDEX8=4
 };
 /* Mode index selecting the programmable custom mode (KMS-style): timings
  * and PLL parameters come from the CUS register bank. */
@@ -102,6 +108,10 @@ struct ae350_video_status {
  * A failed/timed-out stop never releases the buffers to the caller. */
 int ae350_video_init(uint16_t *first,uint16_t *second,uint32_t stride);
 int ae350_video_present(unsigned slot);
+int ae350_video_present_indexed(unsigned slot,unsigned bank);
+int ae350_video_set_wrap(uint32_t wrap_start,uint32_t wrap_end);
+int ae350_video_palette(uint16_t *table,unsigned bank,unsigned count,unsigned readback);
+int ae350_video_palette_active(void);
 int ae350_video_stop(void);
 uint16_t *ae350_video_frame(unsigned slot);
 int ae350_video_status(struct ae350_video_status *status);

@@ -196,7 +196,8 @@ class VideoFrameReader(LiteXModule):
             blocks_per_row = width // 16
         if not runtime:
             blocks = blocks_per_row * height
-        self.request = request = stream.Endpoint([('base', 32), ('stride', 32), ('epoch', 32), ('run', 1)])
+        self.request = request = stream.Endpoint([('base', 32), ('stride', 32), ('epoch', 32), ('run', 1),
+                                                  ('wrap_start', 32), ('wrap_end', 32)])
         self.source = source = stream.Endpoint([('data', 256), ('block', 32), ('epoch', 32)])
         self.pending = Signal()
         self.reserve_next = Signal()
@@ -211,6 +212,12 @@ class VideoFrameReader(LiteXModule):
         epoch = Signal(32)
         address = Signal(32)
         row_base = Signal(32)
+        wrap_start = Signal(32)
+        wrap_end = Signal(32)
+        wrap_enabled = Signal()
+        wrap_valid = Signal()
+        wrap_span = Signal(32)
+        wrapped_row = Signal(32)
         column = Signal(11) if runtime else Signal(max=max(2, blocks_per_row))
         index = Signal(23 if runtime else 32)
         data = Signal(256)
@@ -223,11 +230,13 @@ class VideoFrameReader(LiteXModule):
             ui.wr_data_en.eq(0), ui.wr_data_end.eq(0), ui.wr_data_mask.eq(0xffffffff),
             source.data.eq(data), source.block.eq(index), source.epoch.eq(epoch),
             self.busy.eq(~fsm.ongoing('IDLE')),
+            wrapped_row.eq(row_base + stride - wrap_span),
         ]
 
         def accept():
             return [NextValue(base, request.base), NextValue(stride, request.stride),
                     NextValue(epoch, request.epoch), NextValue(self.enabled, request.run),
+                    NextValue(wrap_start, request.wrap_start), NextValue(wrap_end, request.wrap_end),
                     NextValue(address, request.base),
                     NextValue(row_base, request.base), NextValue(column, 0), NextValue(index, 0),
                     NextValue(elapsed, 0), NextState('EXTENT')]
@@ -240,14 +249,41 @@ class VideoFrameReader(LiteXModule):
             # Inputs are stable from accept() onward; BOUND reads the value
             # sampled in EXTENT, so no FSM-decoded enable is needed.
             self.sync += row_span.eq((height-1)*stride[:16])
-            fsm.act('EXTENT',NextState('BOUND'))
-            fsm.act('BOUND',NextValue(end,base+row_span+row_bytes),NextState('CHECK'))
+            fsm.act('EXTENT', NextValue(wrap_span, request.wrap_end - request.wrap_start), NextState('BOUND'))
+            fsm.act('BOUND',
+                NextValue(end, base + row_span + row_bytes),
+                NextValue(wrap_enabled, wrap_end != 0),
+                NextValue(wrap_valid,
+                    (wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
+                    (wrap_start >= min_base) & (wrap_end <= ram_bytes) &
+                    (wrap_end > wrap_start) &
+                    (wrap_end - wrap_start >= row_bytes) &
+                    (base >= wrap_start) & (base < wrap_end)
+                ),
+                NextState('CHECK')
+            )
         else:
-            fsm.act('EXTENT',NextValue(end,base+(height-1)*stride+row_bytes),NextState('CHECK'))
+            fsm.act('EXTENT',
+                NextValue(end, base + (height-1)*stride + row_bytes),
+                NextValue(wrap_span, request.wrap_end - request.wrap_start),
+                NextState('BOUND')
+            )
+            fsm.act('BOUND',
+                NextValue(wrap_enabled, wrap_end != 0),
+                NextValue(wrap_valid,
+                    (wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
+                    (wrap_start >= min_base) & (wrap_end <= ram_bytes) &
+                    (wrap_end > wrap_start) &
+                    (wrap_end - wrap_start >= row_bytes) &
+                    (base >= wrap_start) & (base < wrap_end)
+                ),
+                NextState('CHECK')
+            )
         fsm.act('CHECK',
             If(~self.enabled, NextState('IDLE'))
             .Elif((base < min_base) | (base[:5] != 0) | (stride < row_bytes) |
-               (stride[:5] != 0) | (stride >= 65536) | (end > ram_bytes),
+               (stride[:5] != 0) | (stride >= 65536) |
+               Mux(wrap_enabled, ~wrap_valid, end > ram_bytes),
                 NextValue(self.address_error, 1), NextState('IDLE'),
             ).Else(NextState('SEND')),
         )
@@ -274,10 +310,22 @@ class VideoFrameReader(LiteXModule):
         fsm.act('DRAIN', If(ui.rd_data_valid, NextState('IDLE')))
         last_block = Signal()
         last_column = Signal()
+        nxt_normal_row = Signal(32)
+        nxt_wrapped_row = Signal(32)
+        nxt_will_wrap = Signal()
+        nxt_row = Signal(32)
+        self.comb += nxt_row.eq(Mux(wrap_enabled & nxt_will_wrap, nxt_wrapped_row, nxt_normal_row))
         # Index/column settle in SEND/READ before PUSH. Reuse their
         # registered terminal flags rather than a subtract/compare CE cone.
-        self.sync += [last_block.eq(index == blocks - 1),
-                      last_column.eq(column == blocks_per_row - 1)]
+        # Next-row addresses are also registered ahead of time so last_column
+        # carries no 32-bit addition or comparator cones.
+        self.sync += [
+            last_block.eq(index == blocks - 1),
+            last_column.eq(column == blocks_per_row - 1),
+            nxt_normal_row.eq(row_base + stride),
+            nxt_wrapped_row.eq(wrapped_row),
+            nxt_will_wrap.eq(row_base + stride >= wrap_end),
+        ]
         self.comb += self.reserve_next.eq(fsm.ongoing('PUSH') & source.ready &
                                          ~request.valid & ~last_block)
         fsm.act('PUSH',
@@ -292,8 +340,9 @@ class VideoFrameReader(LiteXModule):
                     ).Else(
                         NextValue(index, index + 1), NextValue(elapsed, 0),
                         If(last_column,
-                            NextValue(column, 0), NextValue(row_base, row_base + stride),
-                            NextValue(address, row_base + stride),
+                            NextValue(column, 0),
+                            NextValue(row_base, nxt_row),
+                            NextValue(address, nxt_row),
                         ).Else(NextValue(column, column + 1), NextValue(address, address + 32)),
                         NextState('SEND'),
                     ),

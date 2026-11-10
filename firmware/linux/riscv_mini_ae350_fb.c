@@ -97,6 +97,17 @@ static int ae350_fb_setcolreg(unsigned regno, unsigned red, unsigned green,
 {
 	struct ae350_fb *fb = info->par;
 
+	if (fb->format == AE350_FMT_INDEX8) {
+		if (regno >= 256)
+			return -EINVAL;
+		u16 val = ((red >> 11) << 11) | ((green >> 10) << 5) | (blue >> 11);
+		writel(regno, fb->csr + AE350_V_PALETTE_ADDR);
+		writel(val, fb->csr + AE350_V_PALETTE_DATA);
+		if (regno < 16)
+			fb->palette[regno] = regno;
+		return 0;
+	}
+
 	if (regno >= 16)
 		return -EINVAL;
 	if (fb->format == AE350_FMT_XRGB8888 || fb->format == AE350_FMT_RGB888)
@@ -234,7 +245,8 @@ static void ae350_gfx_write_desc(struct ae350_fb *fb, u32 op,
 
 static int ae350_gfx_ready(struct ae350_fb *fb)
 {
-	return fb->gfx && readl(fb->gfx) == AE350_GFX2D_ID &&
+	return fb->gfx && (fb->format <= AE350_FMT_XRGB1555) &&
+		readl(fb->gfx) == AE350_GFX2D_ID &&
 		!(readl(fb->gfx + AE350_G_STATUS) & AE350_G_STATUS_BUSY);
 }
 
@@ -450,7 +462,7 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto release;
 	}
-	static const u8 bpp_table[4] = { 2, 3, 4, 2 };
+	static const u8 bpp_table[] = { 2, 3, 4, 2, 1 };
 	fb->format = AE350_FMT_RGB565;
 	if (!of_property_read_string(dev->of_node, "riscv-mini,format",
 				     &format_str)) {
@@ -460,12 +472,14 @@ static int ae350_fb_probe(struct platform_device *pdev)
 			fb->format = AE350_FMT_XRGB8888;
 		else if (!strcmp(format_str, "rgb888"))
 			fb->format = AE350_FMT_RGB888;
+		else if (!strcmp(format_str, "index8"))
+			fb->format = AE350_FMT_INDEX8;
 		else if (strcmp(format_str, "rgb565")) {
 			ret = -EINVAL;
 			goto release;
 		}
 	}
-	fb->bpp = bpp_table[fb->format & 3];
+	fb->bpp = (fb->format < ARRAY_SIZE(bpp_table)) ? bpp_table[fb->format] : 2;
 	fb->mode_index = 0;
 	of_property_read_u32(dev->of_node, "riscv-mini,mode", &fb->mode_index);
 	if (of_property_read_u32_array(dev->of_node, "riscv-mini,custom-mode",
@@ -484,8 +498,7 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		mode.h_positive = custom[9];
 		mode.v_positive = custom[10];
 		{
-			static const u8 bpp_table[4] = { 2, 3, 4, 2 };
-			u32 bpp = bpp_table[fb->format & 3];
+			u32 bpp = fb->bpp;
 			if (((mode.width * bpp) & 31u) != 0) {
 				ret = -EINVAL;
 				goto release;
@@ -582,7 +595,8 @@ static int ae350_fb_probe(struct platform_device *pdev)
 	info->fix.smem_start = fb->dma[0];
 	info->fix.smem_len = info->screen_size;
 	info->fix.type = FB_TYPE_PACKED_PIXELS;
-	info->fix.visual = FB_VISUAL_TRUECOLOR;
+	info->fix.visual = (fb->format == AE350_FMT_INDEX8) ?
+			   FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
 	info->fix.line_length = fb->stride;
 	info->fix.ypanstep = 1;
 	info->fix.ywrapstep = 0;
@@ -590,7 +604,12 @@ static int ae350_fb_probe(struct platform_device *pdev)
 	info->var.yres = fb->height;
 	info->var.yres_virtual = fb->height * 2;
 	info->var.bits_per_pixel = fb->bpp * 8;
-	if (fb->format == AE350_FMT_XRGB1555) {
+	if (fb->format == AE350_FMT_INDEX8) {
+		info->var.red = (struct fb_bitfield){0, 8, 0};
+		info->var.green = (struct fb_bitfield){0, 8, 0};
+		info->var.blue = (struct fb_bitfield){0, 8, 0};
+		info->var.transp = (struct fb_bitfield){0, 0, 0};
+	} else if (fb->format == AE350_FMT_XRGB1555) {
 		info->var.red = (struct fb_bitfield){10, 5, 0};
 		info->var.green = (struct fb_bitfield){5, 5, 0};
 		info->var.blue = (struct fb_bitfield){0, 5, 0};
@@ -621,7 +640,10 @@ static int ae350_fb_probe(struct platform_device *pdev)
 	}
 	dev_info(dev, "fb%d: %ux%u %s double-buffered at %08x%s\n", info->node,
 		 fb->width, fb->height,
-		 fb->format == AE350_FMT_XRGB1555 ? "XRGB1555" : "RGB565",
+		 fb->format == AE350_FMT_INDEX8 ? "INDEX8" :
+		 (fb->format == AE350_FMT_XRGB8888 ? "XRGB8888" :
+		  (fb->format == AE350_FMT_RGB888 ? "RGB888" :
+		   (fb->format == AE350_FMT_XRGB1555 ? "XRGB1555" : "RGB565"))),
 		 (u32)fb->dma[0], fb->gfx ? " (gfx2d accel)" : "");
 	return 0;
 
