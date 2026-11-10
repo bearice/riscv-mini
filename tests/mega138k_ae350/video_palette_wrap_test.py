@@ -224,6 +224,92 @@ class VideoFrameReaderWrapTest(unittest.TestCase):
 
         run_simulation(m, stimulus())
 
+    def test_row_crossing_wrap_boundary_rejected(self):
+        ui = DDR3UI()
+        # width=32 -> 2 blocks per row = 64 row_bytes
+        reader = VideoFrameReader(ui, width=32, height=2, min_base=0x100000,
+                                  ram_bytes=1 << 24, runtime=False)
+        m = Module()
+        m.submodules.reader = reader
+
+        def stimulus():
+            # Test: base=0x1000a0 with [0x100000, 0x1000c0).
+            # base < wrap_end (0x1000a0 < 0x1000c0), but row_end = 0x1000e0 > wrap_end!
+            # Must be rejected with address_error.
+            yield reader.request.valid.eq(1)
+            yield reader.request.base.eq(0x1000a0)
+            yield reader.request.stride.eq(64)
+            yield reader.request.epoch.eq(1)
+            yield reader.request.run.eq(1)
+            yield reader.request.wrap_start.eq(0x100000)
+            yield reader.request.wrap_end.eq(0x1000c0)
+            yield
+            while not (yield reader.request.ready):
+                yield
+            yield reader.request.valid.eq(0)
+
+            for _ in range(10):
+                yield
+            self.assertEqual((yield reader.address_error), 1)
+
+        run_simulation(m, stimulus())
+
+    def test_wrap_span_from_latched_descriptor(self):
+        ui = DDR3UI()
+        reader = VideoFrameReader(ui, width=32, height=4, min_base=0x100000,
+                                  ram_bytes=1 << 24, runtime=False)
+        m = Module()
+        m.submodules.reader = reader
+        commands = []
+
+        def stimulus():
+            # Accept first descriptor: [0x100000, 0x1000c0), base=0x100080
+            yield reader.request.valid.eq(1)
+            yield reader.request.base.eq(0x100080)
+            yield reader.request.stride.eq(64)
+            yield reader.request.epoch.eq(1)
+            yield reader.request.run.eq(1)
+            yield reader.request.wrap_start.eq(0x100000)
+            yield reader.request.wrap_end.eq(0x1000c0)
+            yield reader.source.ready.eq(1)
+            yield ui.cmd_ready.eq(1)
+
+            yield
+            while not (yield reader.request.ready):
+                yield
+            # Immediately change request endpoint to simulate a next/bogus descriptor
+            # during EXTENT/BOUND cycles.
+            yield reader.request.valid.eq(0)
+            yield reader.request.wrap_start.eq(0x200000)
+            yield reader.request.wrap_end.eq(0x300000)
+
+            blocks_read = 0
+            for _ in range(200):
+                if (yield ui.cmd_en) and (yield ui.cmd_ready):
+                    addr_words = (yield ui.addr)
+                    byte_addr = addr_words << 2
+                    commands.append(byte_addr)
+                    yield
+                    yield ui.rd_data_valid.eq(1)
+                    yield ui.rd_data.eq(0xbeef)
+                    yield
+                    yield ui.rd_data_valid.eq(0)
+                    blocks_read += 1
+                    if blocks_read == 8:
+                        break
+                yield
+
+        run_simulation(m, stimulus())
+        # The reader must have calculated wrap_span from the accepted descriptor (192 bytes),
+        # not the changed request.wrap_end / wrap_start!
+        expected = [
+            0x100080, 0x1000a0,  # Row 0
+            0x100000, 0x100020,  # Row 1 (wrapped by 192 bytes back to 0x100000)
+            0x100040, 0x100060,  # Row 2
+            0x100080, 0x1000a0,  # Row 3
+        ]
+        self.assertEqual(commands, expected)
+
 
 class PaletteMemoryTest(unittest.TestCase):
     def test_palette_ram_write_and_readback(self):

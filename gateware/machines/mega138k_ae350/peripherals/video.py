@@ -429,7 +429,7 @@ class FabricVideo(LiteXModule):
             reservoir=Signal(288)
             available=Signal(6)
             step=Signal(3)
-            word_epoch,pixel_index=Signal(32),Signal(21)
+            word_epoch,pixel_index=Signal(32),Signal(32)
             step_next=Signal(3)
             self.comb += Case(ddr_format,{i:step_next.eq(v) for i,v in enumerate(BYTES_PER_PIXEL)})
             self.sync.video_ddr += step.eq(step_next)
@@ -525,7 +525,17 @@ class FabricVideo(LiteXModule):
         wrap_enabled = Signal()
         wrap_valid = Signal()
         wrap_len_ok = Signal()
-        self.sync += wrap_len_ok.eq(wrap_end - wrap_start >= row_bytes)
+        wrap_row_ok = Signal()
+        wrap_span = Signal(32)
+        wrap_limit = Signal(32)
+        self.comb += [
+            wrap_span.eq(wrap_end - wrap_start),
+            wrap_limit.eq(wrap_end - row_bytes),
+        ]
+        self.sync += [
+            wrap_len_ok.eq(wrap_span >= stride),
+            wrap_row_ok.eq(selected_base <= wrap_limit),
+        ]
         valid_config = Signal()
         self.comb += [
             selected_base.eq(Mux(control[1], base1, base0)),
@@ -534,8 +544,8 @@ class FabricVideo(LiteXModule):
             wrap_valid.eq((wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
                           (wrap_start >= 0x100000) & (wrap_end <= (1 << 30)) &
                           (wrap_end > wrap_start) &
-                          wrap_len_ok &
-                          (selected_base >= wrap_start) & (selected_base < wrap_end)),
+                          wrap_len_ok & wrap_row_ok &
+                          (selected_base >= wrap_start)),
             valid_config.eq(~control[0] | ((selected_base >= 0x100000) & (selected_base[:5] == 0) &
                 (stride >= row_bytes) & (stride < 65536) & (stride[:5] == 0) &
                 Mux(wrap_enabled, wrap_valid, last_byte <= (1 << 30)))),

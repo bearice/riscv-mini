@@ -217,6 +217,7 @@ class VideoFrameReader(LiteXModule):
         wrap_enabled = Signal()
         wrap_valid = Signal()
         wrap_span = Signal(32)
+        wrap_limit = Signal(32)
         wrapped_row = Signal(32)
         column = Signal(11) if runtime else Signal(max=max(2, blocks_per_row))
         index = Signal(23 if runtime else 32)
@@ -249,7 +250,11 @@ class VideoFrameReader(LiteXModule):
             # Inputs are stable from accept() onward; BOUND reads the value
             # sampled in EXTENT, so no FSM-decoded enable is needed.
             self.sync += row_span.eq((height-1)*stride[:16])
-            fsm.act('EXTENT', NextValue(wrap_span, request.wrap_end - request.wrap_start), NextState('BOUND'))
+            fsm.act('EXTENT',
+                NextValue(wrap_span, wrap_end - wrap_start),
+                NextValue(wrap_limit, wrap_end - row_bytes),
+                NextState('BOUND')
+            )
             fsm.act('BOUND',
                 NextValue(end, base + row_span + row_bytes),
                 NextValue(wrap_enabled, wrap_end != 0),
@@ -257,15 +262,16 @@ class VideoFrameReader(LiteXModule):
                     (wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
                     (wrap_start >= min_base) & (wrap_end <= ram_bytes) &
                     (wrap_end > wrap_start) &
-                    (wrap_end - wrap_start >= row_bytes) &
-                    (base >= wrap_start) & (base < wrap_end)
+                    (wrap_span >= stride) &
+                    (base >= wrap_start) & (base <= wrap_limit)
                 ),
                 NextState('CHECK')
             )
         else:
             fsm.act('EXTENT',
                 NextValue(end, base + (height-1)*stride + row_bytes),
-                NextValue(wrap_span, request.wrap_end - request.wrap_start),
+                NextValue(wrap_span, wrap_end - wrap_start),
+                NextValue(wrap_limit, wrap_end - row_bytes),
                 NextState('BOUND')
             )
             fsm.act('BOUND',
@@ -274,8 +280,8 @@ class VideoFrameReader(LiteXModule):
                     (wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
                     (wrap_start >= min_base) & (wrap_end <= ram_bytes) &
                     (wrap_end > wrap_start) &
-                    (wrap_end - wrap_start >= row_bytes) &
-                    (base >= wrap_start) & (base < wrap_end)
+                    (wrap_span >= stride) &
+                    (base >= wrap_start) & (base <= wrap_limit)
                 ),
                 NextState('CHECK')
             )
@@ -324,7 +330,7 @@ class VideoFrameReader(LiteXModule):
             last_column.eq(column == blocks_per_row - 1),
             nxt_normal_row.eq(row_base + stride),
             nxt_wrapped_row.eq(wrapped_row),
-            nxt_will_wrap.eq(row_base + stride >= wrap_end),
+            nxt_will_wrap.eq(row_base + stride > wrap_limit),
         ]
         self.comb += self.reserve_next.eq(fsm.ongoing('PUSH') & source.ready &
                                          ~request.valid & ~last_block)
