@@ -209,21 +209,27 @@ class ShaderALU(LiteXModule):
         p2_pred = Signal(2, reset_less=True)
         p2_sat = Signal(reset_less=True)
 
-        p2_mul_p = [Signal(17, reset_less=True) for _ in range(4)]
-        p2_lerp_prod = [Signal((20, True), reset_less=True) for _ in range(4)]
-        p2_add = [Signal((17, True), reset_less=True) for _ in range(4)]
-        p2_sub = [Signal((17, True), reset_less=True) for _ in range(4)]
-        p2_diff = [Signal((17, True), reset_less=True) for _ in range(4)]
-        p2_min = [Signal((17, True), reset_less=True) for _ in range(4)]
-        p2_max = [Signal((17, True), reset_less=True) for _ in range(4)]
-        p2_clamp = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_add = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_sub = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_diff = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_min = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_max = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_clamp = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_and = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_or = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_xor = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_shl = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_shr = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_mul_unorm = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_mul_scaled = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_muladd = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_lerp = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_match_ch = [Signal(reset_less=True) for _ in range(4)]
+
+        def sat_clamp(val):
+            return Mux(p1_sat,
+                       Mux(val < 0, 0, Mux(val > 255, 255, val)),
+                       val)
 
         for c in range(4):
             s0 = p1_s0[c]
@@ -231,32 +237,62 @@ class ShaderALU(LiteXModule):
             s2 = p1_s2[c]
             lerp_w = Signal(10)
             lerp_diff = Signal((10, True))
+            lerp_prod = Signal((20, True))
+            lerp_res = Signal((17, True))
+            prod_raw = Signal(17)
+            prod_unorm = Signal(16)
+            muladd_res = Signal((17, True))
+            add_val = Signal((17, True))
+            sub_val = Signal((17, True))
+            diff_val = Signal((17, True))
+            min_val = Signal((17, True))
+            max_val = Signal((17, True))
+            clamp_val = Signal((17, True))
+            shl_val = Signal((16, True))
+            shr_val = Signal((16, True))
+            mul_scaled_val = Signal((16, True))
+
             self.comb += [
                 lerp_w.eq(s2[0:8] + (s2[0:8] >> 7)),
                 lerp_diff.eq(s0[0:9] - s1[0:9]),
+                lerp_prod.eq(lerp_diff * lerp_w),
+                lerp_res.eq((lerp_prod + (s1[0:8] << 8) + 128) >> 8),
+                prod_raw.eq(s0[0:8] * s1[0:8] + 128),
+                prod_unorm.eq((prod_raw + (prod_raw >> 8)) >> 8),
+                muladd_res.eq(s2 + prod_unorm),
+                add_val.eq(s0 + s1),
+                sub_val.eq(s0 - s1),
+                diff_val.eq(Mux(s0 >= s1, s0 - s1, s1 - s0)),
+                min_val.eq(Mux(s0 < s1, s0, s1)),
+                max_val.eq(Mux(s0 > s1, s0, s1)),
+                clamp_val.eq(Mux(s0 < s1, s1, Mux(s0 > s2, s2, s0))),
+                shl_val.eq(s0 << p1_imm8[0:4]),
+                shr_val.eq(s0 >> p1_imm8[0:4]),
+                mul_scaled_val.eq((s0 * s1) >> p1_imm8[0:4]),
             ]
             self.sync += [
-                p2_s0[c].eq(s0),
+                p2_s0[c].eq(sat_clamp(s0)),
                 p2_s1[c].eq(s1),
                 p2_s2[c].eq(s2),
                 p2_src[c].eq(p1_src[c]),
                 p2_dst[c].eq(p1_dst[c]),
                 p2_fg[c].eq(p1_fg[c]),
                 p2_bg[c].eq(p1_bg[c]),
-                p2_mul_p[c].eq(s0[0:8] * s1[0:8] + 128),
-                p2_lerp_prod[c].eq(lerp_diff * lerp_w),
-                p2_add[c].eq(s0 + s1),
-                p2_sub[c].eq(s0 - s1),
-                p2_diff[c].eq(Mux(s0 >= s1, s0 - s1, s1 - s0)),
-                p2_min[c].eq(Mux(s0 < s1, s0, s1)),
-                p2_max[c].eq(Mux(s0 > s1, s0, s1)),
-                p2_clamp[c].eq(Mux(s0 < s1, s1, Mux(s0 > s2, s2, s0))),
-                p2_and[c].eq(s0 & s1),
-                p2_or[c].eq(s0 | s1),
-                p2_xor[c].eq(s0 ^ s1),
-                p2_shl[c].eq(s0 << p1_imm8[0:4]),
-                p2_shr[c].eq(s0 >> p1_imm8[0:4]),
-                p2_mul_scaled[c].eq((s0 * s1) >> p1_imm8[0:4]),
+                p2_mul_unorm[c].eq(sat_clamp(prod_unorm)),
+                p2_muladd[c].eq(sat_clamp(muladd_res)),
+                p2_lerp[c].eq(sat_clamp(lerp_res)),
+                p2_add[c].eq(sat_clamp(add_val)),
+                p2_sub[c].eq(sat_clamp(sub_val)),
+                p2_diff[c].eq(sat_clamp(diff_val)),
+                p2_min[c].eq(sat_clamp(min_val)),
+                p2_max[c].eq(sat_clamp(max_val)),
+                p2_clamp[c].eq(sat_clamp(clamp_val)),
+                p2_and[c].eq(sat_clamp(s0 & s1)),
+                p2_or[c].eq(sat_clamp(s0 | s1)),
+                p2_xor[c].eq(sat_clamp(s0 ^ s1)),
+                p2_shl[c].eq(sat_clamp(shl_val)),
+                p2_shr[c].eq(sat_clamp(shr_val)),
+                p2_mul_scaled[c].eq(sat_clamp(mul_scaled_val)),
                 p2_match_ch[c].eq(
                     Mux(p1_sub_op == 0, s0 == s1,
                     Mux(p1_sub_op == 1, s0 != s1,
@@ -267,14 +303,20 @@ class ShaderALU(LiteXModule):
                 self.sync += p2_r[r][c].eq(p1_r[r][c])
 
         if stage_idx == 1:
-            p2_dot3_p0 = Signal(17, reset_less=True)
-            p2_dot3_p1 = Signal(17, reset_less=True)
-            p2_dot3_p2 = Signal(17, reset_less=True)
-            self.sync += [
-                p2_dot3_p0.eq(p1_s0[0][0:8] * p1_s1[0][0:8]),
-                p2_dot3_p1.eq(p1_s0[1][0:8] * p1_s1[1][0:8]),
-                p2_dot3_p2.eq(p1_s0[2][0:8] * p1_s1[2][0:8]),
+            dot3_p0 = Signal(17)
+            dot3_p1 = Signal(17)
+            dot3_p2 = Signal(17)
+            dot3_sum = Signal(19)
+            dot3_res = Signal((17, True))
+            p2_dot3 = Signal((16, True), reset_less=True)
+            self.comb += [
+                dot3_p0.eq(p1_s0[0][0:8] * p1_s1[0][0:8]),
+                dot3_p1.eq(p1_s0[1][0:8] * p1_s1[1][0:8]),
+                dot3_p2.eq(p1_s0[2][0:8] * p1_s1[2][0:8]),
+                dot3_sum.eq(dot3_p0 + dot3_p1 + dot3_p2 + 128),
+                dot3_res.eq(dot3_sum >> 8),
             ]
+            self.sync += p2_dot3.eq(sat_clamp(dot3_res))
 
         self.sync += [
             p2_p.eq(p1_p),
@@ -289,22 +331,9 @@ class ShaderALU(LiteXModule):
         ]
 
         # Pipeline Sub-stage 3 (Outputs r_out, p_out, discard_out)
-        res_ch = [Signal((17, True)) for _ in range(4)]
-        res_sat = [Signal((16, True)) for _ in range(4)]
-
-        if stage_idx == 1:
-            dot3_sum = Signal(19)
-            self.comb += dot3_sum.eq(p2_dot3_p0 + p2_dot3_p1 + p2_dot3_p2 + 128)
+        res_ch = [Signal((16, True)) for _ in range(4)]
 
         for c in range(4):
-            mul_unorm8 = Signal(16)
-            lerp_res = Signal((17, True))
-            self.comb += [
-                mul_unorm8.eq((p2_mul_p[c] + (p2_mul_p[c] >> 8)) >> 8),
-                lerp_res.eq(
-                    (p2_lerp_prod[c] + (p2_s1[c][0:8] << 8) + 128) >> 8
-                ),
-            ]
             cases = {
                 0x00: res_ch[c].eq(p2_s0[c]),
                 0x01: res_ch[c].eq(p2_add[c]),
@@ -313,10 +342,10 @@ class ShaderALU(LiteXModule):
                 0x04: res_ch[c].eq(p2_min[c]),
                 0x05: res_ch[c].eq(p2_max[c]),
                 0x06: res_ch[c].eq(p2_clamp[c]),
-                0x10: res_ch[c].eq(mul_unorm8),
+                0x10: res_ch[c].eq(p2_mul_unorm[c]),
                 0x11: res_ch[c].eq(p2_mul_scaled[c]),
-                0x12: res_ch[c].eq(p2_s2[c] + mul_unorm8),
-                0x13: res_ch[c].eq(lerp_res),
+                0x12: res_ch[c].eq(p2_muladd[c]),
+                0x13: res_ch[c].eq(p2_lerp[c]),
                 0x20: res_ch[c].eq(p2_and[c]),
                 0x21: res_ch[c].eq(p2_or[c]),
                 0x22: res_ch[c].eq(p2_xor[c]),
@@ -324,16 +353,9 @@ class ShaderALU(LiteXModule):
                 0x24: res_ch[c].eq(p2_shr[c]),
             }
             if stage_idx == 1:
-                cases[0x14] = res_ch[c].eq(dot3_sum >> 8)
+                cases[0x14] = res_ch[c].eq(p2_dot3)
             cases["default"] = res_ch[c].eq(p2_s0[c])
             self.comb += Case(p2_opcode, cases)
-            self.comb += [
-                If(p2_sat,
-                    If(res_ch[c] < 0, res_sat[c].eq(0))
-                    .Elif(res_ch[c] > 255, res_sat[c].eq(255))
-                    .Else(res_sat[c].eq(res_ch[c]))
-                ).Else(res_sat[c].eq(res_ch[c]))
-            ]
 
         all_match = Signal()
         self.comb += all_match.eq(
@@ -348,7 +370,7 @@ class ShaderALU(LiteXModule):
                 self.sync += [
                     If(p2_stage_active & p2_pred_ok & (p2_dst_idx == r) &
                        p2_wr_msk[c] & (p2_opcode != 0x38) & (p2_opcode != 0x39),
-                        self.r_out[r][c].eq(res_sat[c])
+                        self.r_out[r][c].eq(res_ch[c])
                     ).Else(
                         self.r_out[r][c].eq(p2_r[r][c])
                     )
@@ -564,6 +586,8 @@ class Gfx2DEngine(LiteXModule):
         tile_x = Signal(16, reset_less=True)
         tile_w = Signal(11, reset_less=True)
         tile_last = Signal(11, reset_less=True)
+        tile_is_last_in_row = Signal(reset_less=True)
+        tile_wb_done = Signal(reset_less=True)
         t_src_cur_blk = Signal(29, reset_less=True)
         t_src_beats_left = Signal(16, reset_less=True)
         t_src_off = Signal(5, reset_less=True)
@@ -751,6 +775,8 @@ class Gfx2DEngine(LiteXModule):
         cmp_bpp_equal = Signal(reset_less=True)
         cmp_width_le_1024 = Signal(reset_less=True)
         cmp_addr_lt = Signal(reset_less=True)
+        overlap_src_lt_dst = Signal(reset_less=True)
+        overlap_dst_lt_src = Signal(reset_less=True)
         unequal_stride_overlap = Signal(reset_less=True)
         bad_shader_overlap = Signal(reset_less=True)
         mem_overlap = Signal(reset_less=True)
@@ -762,7 +788,7 @@ class Gfx2DEngine(LiteXModule):
         dir_down_step = Signal()
         overlap_safe = Signal()
         self.comb += [
-            cur_mem_overlap.eq((src_addr < dst_end) & (dst_addr < src_end)),
+            cur_mem_overlap.eq(overlap_src_lt_dst & overlap_dst_lt_src),
             overlap_safe.eq((~scale_en) & (~bilinear_en) &
                             cmp_bpp_equal & cmp_stride_equal & cmp_width_le_1024),
             dir_down_step.eq(Mux(op == OP_COPY_AREA,
@@ -802,6 +828,12 @@ class Gfx2DEngine(LiteXModule):
                 NextState('INIT2B'))
 
         fsm.act('INIT2B',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(overlap_src_lt_dst, src_addr < dst_end),
+                NextValue(overlap_dst_lt_src, dst_addr < src_end),
+                NextState('INIT2C'))
+
+        fsm.act('INIT2C',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(mem_overlap, cur_mem_overlap),
                 NextValue(unequal_stride_overlap,
@@ -1066,6 +1098,7 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(tile_w, calc_t_w[0:11]),
                 NextValue(tile_last, calc_t_w[0:11] - 1),
+                NextValue(tile_is_last_in_row, (tile_x + calc_t_w >= width)),
                 NextValue(t_src_cur_blk, cur_src_byte[2:31] & ~Constant(7, 29)),
                 NextValue(t_src_beats_left,
                           (((cur_src_end[2:31] & ~Constant(7, 29)) -
@@ -1166,7 +1199,7 @@ class Gfx2DEngine(LiteXModule):
                 ),
                 NextValue(lb_wr_ptr, lb_wr_ptr + 1),
                 NextValue(sub_idx, sub_idx + 1),
-                If(lb_wr_ptr == tile_w - 1,
+                If(lb_wr_ptr == tile_last,
                     NextValue(lb_wr_ptr, 0),
                     If(uses_dst, NextState('T_DST_RREQ'))
                     .Else(NextState('T_COMP_START'))
@@ -1246,7 +1279,7 @@ class Gfx2DEngine(LiteXModule):
                 self.dst_lb_w.dat_w.eq(dst_argb),
                 NextValue(lb_wr_ptr, lb_wr_ptr + 1),
                 NextValue(sub_idx, sub_idx + 1),
-                If(lb_wr_ptr == tile_w - 1,
+                If(lb_wr_ptr == tile_last,
                     NextValue(lb_wr_ptr, 0),
                     NextState('T_COMP_START')
                 ).Elif(sub_idx == dst_max_sub - 1,
@@ -1290,7 +1323,7 @@ class Gfx2DEngine(LiteXModule):
                         stage1.discard_out
                     )),
                     NextValue(comp_out_idx, comp_out_idx + 1),
-                    If(comp_out_idx == tile_w - 1,
+                    If(comp_out_idx == tile_last,
                         NextState('T_WB_SETUP')
                     )
                 ))
@@ -1315,6 +1348,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_WB_SETUP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(wb_idx, 0),
+                NextValue(tile_wb_done, 0),
                 NextValue(wmask, 0),
                 NextValue(byte_slot, t_dst_off),
                 NextValue(cur_wb_blk, t_dst_base_blk),
@@ -1404,6 +1438,7 @@ class Gfx2DEngine(LiteXModule):
                 Case(byte_slot, wb_cases),
                 NextValue(byte_slot, byte_slot + pix_bytes),
                 NextValue(wb_idx, wb_idx + 1),
+                NextValue(tile_wb_done, wb_idx == tile_last),
                 If(byte_full | (wb_idx == tile_last),
                     NextState('T_WB_PREP')
                 ).Else(
@@ -1419,7 +1454,7 @@ class Gfx2DEngine(LiteXModule):
                     NextValue(cur_wb_blk, cur_wb_blk + 8),
                     NextValue(wmask, 0),
                     NextValue(byte_slot, 0),
-                    If(wb_idx == tile_w,
+                    If(tile_wb_done,
                         NextState('T_TILE_NEXT')
                     ).Else(
                         NextState('T_WB_READ')
@@ -1433,7 +1468,7 @@ class Gfx2DEngine(LiteXModule):
                         NextValue(cur_wb_blk, cur_wb_blk + 8),
                         NextValue(wmask, 0),
                         NextValue(byte_slot, 0),
-                        If(wb_idx == tile_w,
+                        If(tile_wb_done,
                             NextState('T_TILE_NEXT')
                         ).Else(
                             NextState('T_WB_READ')
@@ -1446,7 +1481,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_TILE_NEXT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(tile_x, tile_x + tile_w),
-                If(tile_x + tile_w < width,
+                If(~tile_is_last_in_row,
                     NextState('T_SETUP')
                 ).Else(
                     If(last_row, NextState('FINISH'))
