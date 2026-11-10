@@ -139,6 +139,29 @@ class ShaderALU(LiteXModule):
         ]
         s2_vec = apply_swz(s2_raw, swz2)
 
+        inst_is_wb = Signal()
+        is_cmp = Signal()
+        is_discard = Signal()
+        self.comb += [
+            inst_is_wb.eq(
+                stage_active & pred_ok & (opcode != 0x38) & (opcode != 0x39)
+            ),
+            is_cmp.eq(
+                stage_active & pred_ok & ((opcode == 0x38) | (pred == 3))
+            ),
+            is_discard.eq(stage_active & pred_ok & (opcode == 0x39)),
+        ]
+        p1_we = [
+            [Signal(reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p2_we = [
+            [Signal(reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p1_is_cmp = Signal(reset_less=True)
+        p2_is_cmp = Signal(reset_less=True)
+        p1_is_discard = Signal(reset_less=True)
+        p2_is_discard = Signal(reset_less=True)
+
         # Pipeline Sub-stage 1 registers (P1)
         p1_s0 = [Signal((16, True), reset_less=True) for _ in range(4)]
         p1_s1 = [Signal((16, True), reset_less=True) for _ in range(4)]
@@ -152,12 +175,8 @@ class ShaderALU(LiteXModule):
         p1_bg = [Signal((16, True), reset_less=True) for _ in range(4)]
         p1_p = Signal()
         p1_discard = Signal()
-        p1_stage_active = Signal()
-        p1_pred_ok = Signal()
-        p1_dst_idx = Signal(4, reset_less=True)
         p1_wr_msk = Signal(4, reset_less=True)
         p1_opcode = Signal(6, reset_less=True)
-        p1_pred = Signal(2, reset_less=True)
         p1_sat = Signal(reset_less=True)
         p1_sub_op = Signal(2, reset_less=True)
         p1_imm8 = Signal(8, reset_less=True)
@@ -173,16 +192,17 @@ class ShaderALU(LiteXModule):
                 p1_bg[c].eq(self.bg_pix[c]),
             ]
             for r in range(4):
-                self.sync += p1_r[r][c].eq(self.r_in[r][c])
+                self.sync += [
+                    p1_r[r][c].eq(self.r_in[r][c]),
+                    p1_we[r][c].eq(inst_is_wb & (dst_idx == r) & wr_msk[c]),
+                ]
         self.sync += [
             p1_p.eq(self.p_in),
             p1_discard.eq(self.discard_in),
-            p1_stage_active.eq(stage_active),
-            p1_pred_ok.eq(pred_ok),
-            p1_dst_idx.eq(dst_idx),
+            p1_is_cmp.eq(is_cmp),
+            p1_is_discard.eq(is_discard),
             p1_wr_msk.eq(wr_msk),
             p1_opcode.eq(opcode),
-            p1_pred.eq(pred),
             p1_sat.eq(sat),
             p1_sub_op.eq(sub_op),
             p1_imm8.eq(imm8),
@@ -201,12 +221,8 @@ class ShaderALU(LiteXModule):
         p2_bg = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_p = Signal()
         p2_discard = Signal()
-        p2_stage_active = Signal()
-        p2_pred_ok = Signal()
-        p2_dst_idx = Signal(4, reset_less=True)
         p2_wr_msk = Signal(4, reset_less=True)
         p2_opcode = Signal(6, reset_less=True)
-        p2_pred = Signal(2, reset_less=True)
         p2_sat = Signal(reset_less=True)
 
         p2_add = [Signal((16, True), reset_less=True) for _ in range(4)]
@@ -300,7 +316,10 @@ class ShaderALU(LiteXModule):
                 ),
             ]
             for r in range(4):
-                self.sync += p2_r[r][c].eq(p1_r[r][c])
+                self.sync += [
+                    p2_r[r][c].eq(p1_r[r][c]),
+                    p2_we[r][c].eq(p1_we[r][c]),
+                ]
 
         if stage_idx == 1:
             dot3_p0 = Signal(17)
@@ -321,12 +340,10 @@ class ShaderALU(LiteXModule):
         self.sync += [
             p2_p.eq(p1_p),
             p2_discard.eq(p1_discard),
-            p2_stage_active.eq(p1_stage_active),
-            p2_pred_ok.eq(p1_pred_ok),
-            p2_dst_idx.eq(p1_dst_idx),
+            p2_is_cmp.eq(p1_is_cmp),
+            p2_is_discard.eq(p1_is_discard),
             p2_wr_msk.eq(p1_wr_msk),
             p2_opcode.eq(p1_opcode),
-            p2_pred.eq(p1_pred),
             p2_sat.eq(p1_sat),
         ]
 
@@ -367,20 +384,21 @@ class ShaderALU(LiteXModule):
 
         for r in range(4):
             for c in range(4):
-                we = Signal()
-                self.comb += we.eq(
-                    p2_stage_active & p2_pred_ok & (p2_dst_idx == r) &
-                    p2_wr_msk[c] & (p2_opcode != 0x38) & (p2_opcode != 0x39)
-                )
-                self.sync += self.r_out[r][c].eq(Mux(we, res_ch[c], p2_r[r][c]))
+                self.sync += [
+                    If(p2_we[r][c],
+                        self.r_out[r][c].eq(res_ch[c])
+                    ).Else(
+                        self.r_out[r][c].eq(p2_r[r][c])
+                    )
+                ]
 
         self.sync += [
-            If(p2_stage_active & p2_pred_ok & ((p2_opcode == 0x38) | (p2_pred == 3)),
+            If(p2_is_cmp,
                 self.p_out.eq(all_match)
             ).Else(
                 self.p_out.eq(p2_p)
             ),
-            If(p2_stage_active & p2_pred_ok & (p2_opcode == 0x39) & all_match,
+            If(p2_is_discard & all_match,
                 self.discard_out.eq(1)
             ).Else(
                 self.discard_out.eq(p2_discard)
