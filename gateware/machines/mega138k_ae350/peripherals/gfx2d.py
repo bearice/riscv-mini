@@ -54,6 +54,10 @@ class ShaderALU(LiteXModule):
         self.discard_in = Signal()
 
         self.r_out = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
+        self.src_out = [Signal((16, True)) for _ in range(4)]
+        self.dst_out = [Signal((16, True)) for _ in range(4)]
+        self.fg_out = [Signal((16, True)) for _ in range(4)]
+        self.bg_out = [Signal((16, True)) for _ in range(4)]
         self.p_out = Signal()
         self.discard_out = Signal()
 
@@ -133,113 +137,232 @@ class ShaderALU(LiteXModule):
         ]
         s2_vec = apply_swz(s2_raw, swz2)
 
-        res_ch = [Signal((17, True)) for _ in range(4)]
+        # Pipeline Sub-stage 1 registers (P1)
+        p1_s0 = [Signal((16, True)) for _ in range(4)]
+        p1_s1 = [Signal((16, True)) for _ in range(4)]
+        p1_s2 = [Signal((16, True)) for _ in range(4)]
+        p1_r = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
+        p1_src = [Signal((16, True)) for _ in range(4)]
+        p1_dst = [Signal((16, True)) for _ in range(4)]
+        p1_fg = [Signal((16, True)) for _ in range(4)]
+        p1_bg = [Signal((16, True)) for _ in range(4)]
+        p1_p = Signal()
+        p1_discard = Signal()
+        p1_stage_active = Signal()
+        p1_pred_ok = Signal()
+        p1_dst_idx = Signal(4)
+        p1_wr_msk = Signal(4)
+        p1_opcode = Signal(6)
+        p1_pred = Signal(2)
+        p1_sat = Signal()
+        p1_sub_op = Signal(2)
+        p1_imm8 = Signal(8)
+
         for c in range(4):
-            s0 = s0_vec[c]
-            s1 = s1_vec[c]
-            s2 = s2_vec[c]
+            self.sync += [
+                p1_s0[c].eq(s0_vec[c]),
+                p1_s1[c].eq(s1_vec[c]),
+                p1_s2[c].eq(s2_vec[c]),
+                p1_src[c].eq(self.src_pix[c]),
+                p1_dst[c].eq(self.dst_pix[c]),
+                p1_fg[c].eq(self.fg_pix[c]),
+                p1_bg[c].eq(self.bg_pix[c]),
+            ]
+            for r in range(4):
+                self.sync += p1_r[r][c].eq(self.r_in[r][c])
+        self.sync += [
+            p1_p.eq(self.p_in),
+            p1_discard.eq(self.discard_in),
+            p1_stage_active.eq(stage_active),
+            p1_pred_ok.eq(pred_ok),
+            p1_dst_idx.eq(dst_idx),
+            p1_wr_msk.eq(wr_msk),
+            p1_opcode.eq(opcode),
+            p1_pred.eq(pred),
+            p1_sat.eq(sat),
+            p1_sub_op.eq(sub_op),
+            p1_imm8.eq(imm8),
+        ]
 
-            mul_p = Signal(17)
-            self.comb += mul_p.eq(s0[0:8] * s1[0:8] + 128)
-            mul_unorm8 = Signal(16)
-            self.comb += mul_unorm8.eq((mul_p + (mul_p >> 8)) >> 8)
+        # Pipeline Sub-stage 2 registers (P2)
+        p2_s0 = [Signal((16, True)) for _ in range(4)]
+        p2_s1 = [Signal((16, True)) for _ in range(4)]
+        p2_s2 = [Signal((16, True)) for _ in range(4)]
+        p2_r = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
+        p2_src = [Signal((16, True)) for _ in range(4)]
+        p2_dst = [Signal((16, True)) for _ in range(4)]
+        p2_fg = [Signal((16, True)) for _ in range(4)]
+        p2_bg = [Signal((16, True)) for _ in range(4)]
+        p2_p = Signal()
+        p2_discard = Signal()
+        p2_stage_active = Signal()
+        p2_pred_ok = Signal()
+        p2_dst_idx = Signal(4)
+        p2_wr_msk = Signal(4)
+        p2_opcode = Signal(6)
+        p2_pred = Signal(2)
+        p2_sat = Signal()
 
+        p2_mul_p = [Signal(17) for _ in range(4)]
+        p2_lerp_prod = [Signal((20, True)) for _ in range(4)]
+        p2_add = [Signal((17, True)) for _ in range(4)]
+        p2_sub = [Signal((17, True)) for _ in range(4)]
+        p2_diff = [Signal((17, True)) for _ in range(4)]
+        p2_min = [Signal((17, True)) for _ in range(4)]
+        p2_max = [Signal((17, True)) for _ in range(4)]
+        p2_clamp = [Signal((17, True)) for _ in range(4)]
+        p2_and = [Signal((16, True)) for _ in range(4)]
+        p2_or = [Signal((16, True)) for _ in range(4)]
+        p2_xor = [Signal((16, True)) for _ in range(4)]
+        p2_shl = [Signal((16, True)) for _ in range(4)]
+        p2_shr = [Signal((16, True)) for _ in range(4)]
+        p2_mul_scaled = [Signal((16, True)) for _ in range(4)]
+        p2_match_ch = [Signal() for _ in range(4)]
+
+        for c in range(4):
+            s0 = p1_s0[c]
+            s1 = p1_s1[c]
+            s2 = p1_s2[c]
             lerp_w = Signal(10)
             lerp_diff = Signal((10, True))
-            lerp_prod = Signal((20, True))
-            lerp_res = Signal((17, True))
             self.comb += [
                 lerp_w.eq(s2[0:8] + (s2[0:8] >> 7)),
                 lerp_diff.eq(s0[0:9] - s1[0:9]),
-                lerp_prod.eq(lerp_diff * lerp_w),
-                lerp_res.eq((lerp_prod + (s1[0:8] << 8) + 128) >> 8),
             ]
-
-            self.comb += [
-                If(opcode == 0x00, res_ch[c].eq(s0))
-                .Elif(opcode == 0x01, res_ch[c].eq(s0 + s1))
-                .Elif(opcode == 0x02, res_ch[c].eq(s0 - s1))
-                .Elif(opcode == 0x03, res_ch[c].eq(Mux(s0 >= s1, s0 - s1, s1 - s0)))
-                .Elif(opcode == 0x04, res_ch[c].eq(Mux(s0 < s1, s0, s1)))
-                .Elif(opcode == 0x05, res_ch[c].eq(Mux(s0 > s1, s0, s1)))
-                .Elif(opcode == 0x06,
-                      res_ch[c].eq(Mux(s0 < s1, s1, Mux(s0 > s2, s2, s0))))
-                .Elif(opcode == 0x10, res_ch[c].eq(mul_unorm8))
-                .Elif(opcode == 0x11, res_ch[c].eq((s0 * s1) >> imm8[0:4]))
-                .Elif(opcode == 0x12, res_ch[c].eq(s2 + mul_unorm8))
-                .Elif(opcode == 0x13, res_ch[c].eq(lerp_res))
-                .Elif(opcode == 0x20, res_ch[c].eq(s0 & s1))
-                .Elif(opcode == 0x21, res_ch[c].eq(s0 | s1))
-                .Elif(opcode == 0x22, res_ch[c].eq(s0 ^ s1))
-                .Elif(opcode == 0x23, res_ch[c].eq(s0 << imm8[0:4]))
-                .Elif(opcode == 0x24, res_ch[c].eq(s0 >> imm8[0:4]))
+            self.sync += [
+                p2_s0[c].eq(s0),
+                p2_s1[c].eq(s1),
+                p2_s2[c].eq(s2),
+                p2_src[c].eq(p1_src[c]),
+                p2_dst[c].eq(p1_dst[c]),
+                p2_fg[c].eq(p1_fg[c]),
+                p2_bg[c].eq(p1_bg[c]),
+                p2_mul_p[c].eq(s0[0:8] * s1[0:8] + 128),
+                p2_lerp_prod[c].eq(lerp_diff * lerp_w),
+                p2_add[c].eq(s0 + s1),
+                p2_sub[c].eq(s0 - s1),
+                p2_diff[c].eq(Mux(s0 >= s1, s0 - s1, s1 - s0)),
+                p2_min[c].eq(Mux(s0 < s1, s0, s1)),
+                p2_max[c].eq(Mux(s0 > s1, s0, s1)),
+                p2_clamp[c].eq(Mux(s0 < s1, s1, Mux(s0 > s2, s2, s0))),
+                p2_and[c].eq(s0 & s1),
+                p2_or[c].eq(s0 | s1),
+                p2_xor[c].eq(s0 ^ s1),
+                p2_shl[c].eq(s0 << p1_imm8[0:4]),
+                p2_shr[c].eq(s0 >> p1_imm8[0:4]),
+                p2_mul_scaled[c].eq((s0 * s1) >> p1_imm8[0:4]),
+                p2_match_ch[c].eq(
+                    Mux(p1_sub_op == 0, s0 == s1,
+                    Mux(p1_sub_op == 1, s0 != s1,
+                    Mux(p1_sub_op == 2, s0 < s1, s0 >= s1)))
+                ),
             ]
+            for r in range(4):
+                self.sync += p2_r[r][c].eq(p1_r[r][c])
 
         if stage_idx == 1:
-            dot3_p0 = Signal(17)
-            dot3_p1 = Signal(17)
-            dot3_p2 = Signal(17)
-            dot3_sum = Signal(19)
-            self.comb += [
-                dot3_p0.eq(s0_vec[0][0:8] * s1_vec[0][0:8]),
-                dot3_p1.eq(s0_vec[1][0:8] * s1_vec[1][0:8]),
-                dot3_p2.eq(s0_vec[2][0:8] * s1_vec[2][0:8]),
-                dot3_sum.eq(dot3_p0 + dot3_p1 + dot3_p2 + 128),
+            p2_dot3_p0 = Signal(17)
+            p2_dot3_p1 = Signal(17)
+            p2_dot3_p2 = Signal(17)
+            self.sync += [
+                p2_dot3_p0.eq(p1_s0[0][0:8] * p1_s1[0][0:8]),
+                p2_dot3_p1.eq(p1_s0[1][0:8] * p1_s1[1][0:8]),
+                p2_dot3_p2.eq(p1_s0[2][0:8] * p1_s1[2][0:8]),
             ]
-            for c in range(4):
-                self.comb += If(opcode == 0x14, res_ch[c].eq(dot3_sum >> 8))
 
+        self.sync += [
+            p2_p.eq(p1_p),
+            p2_discard.eq(p1_discard),
+            p2_stage_active.eq(p1_stage_active),
+            p2_pred_ok.eq(p1_pred_ok),
+            p2_dst_idx.eq(p1_dst_idx),
+            p2_wr_msk.eq(p1_wr_msk),
+            p2_opcode.eq(p1_opcode),
+            p2_pred.eq(p1_pred),
+            p2_sat.eq(p1_sat),
+        ]
+
+        # Pipeline Sub-stage 3 (Outputs r_out, p_out, discard_out)
+        res_ch = [Signal((17, True)) for _ in range(4)]
         res_sat = [Signal((16, True)) for _ in range(4)]
+
+        if stage_idx == 1:
+            dot3_sum = Signal(19)
+            self.comb += dot3_sum.eq(p2_dot3_p0 + p2_dot3_p1 + p2_dot3_p2 + 128)
+
         for c in range(4):
+            mul_unorm8 = Signal(16)
+            lerp_res = Signal((17, True))
             self.comb += [
-                If(sat,
+                mul_unorm8.eq((p2_mul_p[c] + (p2_mul_p[c] >> 8)) >> 8),
+                lerp_res.eq(
+                    (p2_lerp_prod[c] + (p2_s1[c][0:8] << 8) + 128) >> 8
+                ),
+            ]
+            cases = {
+                0x00: res_ch[c].eq(p2_s0[c]),
+                0x01: res_ch[c].eq(p2_add[c]),
+                0x02: res_ch[c].eq(p2_sub[c]),
+                0x03: res_ch[c].eq(p2_diff[c]),
+                0x04: res_ch[c].eq(p2_min[c]),
+                0x05: res_ch[c].eq(p2_max[c]),
+                0x06: res_ch[c].eq(p2_clamp[c]),
+                0x10: res_ch[c].eq(mul_unorm8),
+                0x11: res_ch[c].eq(p2_mul_scaled[c]),
+                0x12: res_ch[c].eq(p2_s2[c] + mul_unorm8),
+                0x13: res_ch[c].eq(lerp_res),
+                0x20: res_ch[c].eq(p2_and[c]),
+                0x21: res_ch[c].eq(p2_or[c]),
+                0x22: res_ch[c].eq(p2_xor[c]),
+                0x23: res_ch[c].eq(p2_shl[c]),
+                0x24: res_ch[c].eq(p2_shr[c]),
+            }
+            if stage_idx == 1:
+                cases[0x14] = res_ch[c].eq(dot3_sum >> 8)
+            cases["default"] = res_ch[c].eq(p2_s0[c])
+            self.comb += Case(p2_opcode, cases)
+            self.comb += [
+                If(p2_sat,
                     If(res_ch[c] < 0, res_sat[c].eq(0))
                     .Elif(res_ch[c] > 255, res_sat[c].eq(255))
                     .Else(res_sat[c].eq(res_ch[c]))
                 ).Else(res_sat[c].eq(res_ch[c]))
             ]
 
-        match_ch = [Signal() for _ in range(4)]
-        for c in range(4):
-            self.comb += [
-                If(sub_op == 0, match_ch[c].eq(s0_vec[c] == s1_vec[c]))
-                .Elif(sub_op == 1, match_ch[c].eq(s0_vec[c] != s1_vec[c]))
-                .Elif(sub_op == 2, match_ch[c].eq(s0_vec[c] < s1_vec[c]))
-                .Else(match_ch[c].eq(s0_vec[c] >= s1_vec[c]))
-            ]
-
         all_match = Signal()
         self.comb += all_match.eq(
-            (~wr_msk[0] | match_ch[0]) &
-            (~wr_msk[1] | match_ch[1]) &
-            (~wr_msk[2] | match_ch[2]) &
-            (~wr_msk[3] | match_ch[3])
+            (~p2_wr_msk[0] | p2_match_ch[0]) &
+            (~p2_wr_msk[1] | p2_match_ch[1]) &
+            (~p2_wr_msk[2] | p2_match_ch[2]) &
+            (~p2_wr_msk[3] | p2_match_ch[3])
         )
 
         for r in range(4):
             for c in range(4):
-                self.comb += self.r_out[r][c].eq(self.r_in[r][c])
-        self.comb += [
-            self.p_out.eq(self.p_in),
-            self.discard_out.eq(self.discard_in),
-        ]
-
-        for r in range(4):
-            for c in range(4):
-                self.comb += [
-                    If(stage_active & pred_ok & (dst_idx == r) & wr_msk[c] &
-                       (opcode != 0x38) & (opcode != 0x39),
+                self.sync += [
+                    If(p2_stage_active & p2_pred_ok & (p2_dst_idx == r) &
+                       p2_wr_msk[c] & (p2_opcode != 0x38) & (p2_opcode != 0x39),
                         self.r_out[r][c].eq(res_sat[c])
+                    ).Else(
+                        self.r_out[r][c].eq(p2_r[r][c])
                     )
                 ]
 
-        self.comb += [
-            If(stage_active & pred_ok & ((opcode == 0x38) | (pred == 3)),
+        self.sync += [
+            If(p2_stage_active & p2_pred_ok & ((p2_opcode == 0x38) | (p2_pred == 3)),
                 self.p_out.eq(all_match)
+            ).Else(
+                self.p_out.eq(p2_p)
             ),
-            If(stage_active & pred_ok & (opcode == 0x39) & all_match,
+            If(p2_stage_active & p2_pred_ok & (p2_opcode == 0x39) & all_match,
                 self.discard_out.eq(1)
+            ).Else(
+                self.discard_out.eq(p2_discard)
             ),
+            [self.src_out[c].eq(p2_src[c]) for c in range(4)],
+            [self.dst_out[c].eq(p2_dst[c]) for c in range(4)],
+            [self.fg_out[c].eq(p2_fg[c]) for c in range(4)],
+            [self.bg_out[c].eq(p2_bg[c]) for c in range(4)],
         ]
 
 
@@ -455,12 +578,9 @@ class Gfx2DEngine(LiteXModule):
         # Compute pipeline signals
         comp_idx = Signal(11)
         comp_out_idx = Signal(11)
-        comp_vld0 = Signal()
-        comp_vld1 = Signal()
-        comp_vld2 = Signal()
-        comp_odd0 = Signal()
-        comp_x0 = Signal(16)
-        comp_x1 = Signal(16)
+        comp_pipe_vld = Signal(7)
+        fetch_x = Signal(16)
+        fetch_odd = Signal()
 
         # Shader ALUs
         self.stage0 = stage0 = ShaderALU(0)
@@ -485,7 +605,7 @@ class Gfx2DEngine(LiteXModule):
                 ]
 
         # Stage 0 inputs
-        src_raw_lb = Mux(comp_odd0, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)
+        src_raw_lb = Mux(fetch_odd, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)
         src_pix_ch = [
             Cat(src_raw_lb[0:8], Constant(0, 8)),
             Cat(src_raw_lb[8:16], Constant(0, 8)),
@@ -521,7 +641,7 @@ class Gfx2DEngine(LiteXModule):
                 stage0.r_in[1][c].eq(stage0.dst_pix[c]),
             ]
         self.comb += [
-            stage0.r_in[2][0].eq(comp_x0[0:16]),
+            stage0.r_in[2][0].eq(fetch_x[0:16]),
             stage0.r_in[2][1].eq(row[0:16]),
             stage0.r_in[2][2].eq(0),
             stage0.r_in[2][3].eq(0),
@@ -533,46 +653,20 @@ class Gfx2DEngine(LiteXModule):
             stage0.discard_in.eq(0),
         ]
 
-        # Stage 1 pipeline register
-        s1_r = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
-        s1_src = [Signal((16, True)) for _ in range(4)]
-        s1_dst = [Signal((16, True)) for _ in range(4)]
-        s1_fg = [Signal((16, True)) for _ in range(4)]
-        s1_bg = [Signal((16, True)) for _ in range(4)]
-        s1_p = Signal()
-        s1_discard = Signal()
-
+        # Stage 0 to Stage 1 direct pipeline connection
         for c in range(4):
             for r in range(4):
-                self.sync += s1_r[r][c].eq(stage0.r_out[r][c])
-                self.comb += stage1.r_in[r][c].eq(s1_r[r][c])
-            self.sync += [
-                s1_src[c].eq(stage0.src_pix[c]),
-                s1_dst[c].eq(stage0.dst_pix[c]),
-                s1_fg[c].eq(stage0.fg_pix[c]),
-                s1_bg[c].eq(stage0.bg_pix[c]),
-            ]
+                self.comb += stage1.r_in[r][c].eq(stage0.r_out[r][c])
             self.comb += [
-                stage1.src_pix[c].eq(s1_src[c]),
-                stage1.dst_pix[c].eq(s1_dst[c]),
-                stage1.fg_pix[c].eq(s1_fg[c]),
-                stage1.bg_pix[c].eq(s1_bg[c]),
+                stage1.src_pix[c].eq(stage0.src_out[c]),
+                stage1.dst_pix[c].eq(stage0.dst_out[c]),
+                stage1.fg_pix[c].eq(stage0.fg_out[c]),
+                stage1.bg_pix[c].eq(stage0.bg_out[c]),
             ]
-        self.sync += [
-            s1_p.eq(stage0.p_out),
-            s1_discard.eq(stage0.discard_out),
-        ]
         self.comb += [
-            stage1.p_in.eq(s1_p),
-            stage1.discard_in.eq(s1_discard),
+            stage1.p_in.eq(stage0.p_out),
+            stage1.discard_in.eq(stage0.discard_out),
         ]
-
-        # Stage 2 pipeline register -> drives out_lb_w
-        s2_r0 = [Signal((16, True)) for _ in range(4)]
-        s2_discard = Signal()
-        for c in range(4):
-            self.sync += s2_r0[c].eq(stage1.r_out[0][c])
-        self.sync += s2_discard.eq(stage1.discard_out)
 
         # Writeback packer signals
         wb_idx = Signal(11)
@@ -1146,32 +1240,29 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(comp_idx, 0),
                 NextValue(comp_out_idx, 0),
-                NextValue(comp_vld0, 0),
-                NextValue(comp_vld1, 0),
-                NextValue(comp_vld2, 0),
+                NextValue(comp_pipe_vld, 0),
                 NextState('T_COMP_STREAM'))
 
         fsm.act('T_COMP_STREAM',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                # Advance fetch index
                 If(comp_idx < tile_w,
                     NextValue(comp_idx, comp_idx + 1),
-                    NextValue(comp_vld0, 1),
-                    NextValue(comp_x0, tile_x + comp_idx),
-                    NextValue(comp_odd0, comp_idx[0]),
+                    NextValue(fetch_x, tile_x + comp_idx),
+                    NextValue(fetch_odd, comp_idx[0]),
+                    NextValue(comp_pipe_vld,
+                              Cat(Constant(1, 1), comp_pipe_vld[0:6])),
                 ).Else(
-                    NextValue(comp_vld0, 0),
+                    NextValue(comp_pipe_vld,
+                              Cat(Constant(0, 1), comp_pipe_vld[0:6])),
                 ),
-                NextValue(comp_vld1, comp_vld0),
-                NextValue(comp_x1, comp_x0),
-                NextValue(comp_vld2, comp_vld1),
 
-                If(comp_vld2,
+                If(comp_pipe_vld[6],
                     self.out_lb_w.we.eq(1),
                     self.out_lb_w.adr.eq(comp_out_idx),
                     self.out_lb_w.dat_w.eq(Cat(
-                        s2_r0[0][0:8], s2_r0[1][0:8],
-                        s2_r0[2][0:8], s2_r0[3][0:8], s2_discard
+                        stage1.r_out[0][0][0:8], stage1.r_out[0][1][0:8],
+                        stage1.r_out[0][2][0:8], stage1.r_out[0][3][0:8],
+                        stage1.discard_out
                     )),
                     NextValue(comp_out_idx, comp_out_idx + 1),
                     If(comp_out_idx == tile_w - 1,
