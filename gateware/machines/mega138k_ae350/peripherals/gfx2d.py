@@ -367,14 +367,12 @@ class ShaderALU(LiteXModule):
 
         for r in range(4):
             for c in range(4):
-                self.sync += [
-                    If(p2_stage_active & p2_pred_ok & (p2_dst_idx == r) &
-                       p2_wr_msk[c] & (p2_opcode != 0x38) & (p2_opcode != 0x39),
-                        self.r_out[r][c].eq(res_ch[c])
-                    ).Else(
-                        self.r_out[r][c].eq(p2_r[r][c])
-                    )
-                ]
+                we = Signal()
+                self.comb += we.eq(
+                    p2_stage_active & p2_pred_ok & (p2_dst_idx == r) &
+                    p2_wr_msk[c] & (p2_opcode != 0x38) & (p2_opcode != 0x39)
+                )
+                self.sync += self.r_out[r][c].eq(Mux(we, res_ch[c], p2_r[r][c]))
 
         self.sync += [
             If(p2_stage_active & p2_pred_ok & ((p2_opcode == 0x38) | (p2_pred == 3)),
@@ -584,9 +582,9 @@ class Gfx2DEngine(LiteXModule):
 
         # Tile FSM signals
         tile_x = Signal(16, reset_less=True)
+        rem_w = Signal(16, reset_less=True)
         tile_w = Signal(11, reset_less=True)
         tile_last = Signal(11, reset_less=True)
-        tile_is_last_in_row = Signal(reset_less=True)
         tile_wb_done = Signal(reset_less=True)
         t_src_cur_blk = Signal(29, reset_less=True)
         t_src_beats_left = Signal(16, reset_less=True)
@@ -604,9 +602,12 @@ class Gfx2DEngine(LiteXModule):
         # Compute pipeline signals
         comp_idx = Signal(11, reset_less=True)
         comp_out_idx = Signal(11, reset_less=True)
-        comp_pipe_vld = Signal(7)
+        comp_pipe_vld = Signal(8, reset_less=True)
         fetch_x = Signal(16, reset_less=True)
         fetch_odd = Signal(reset_less=True)
+        p0_src_raw = Signal(32, reset_less=True)
+        p0_dst_raw = Signal(32, reset_less=True)
+        p0_fetch_x = Signal(16, reset_less=True)
 
         # Shader ALUs
         self.stage0 = stage0 = ShaderALU(0)
@@ -630,20 +631,23 @@ class Gfx2DEngine(LiteXModule):
                     stage1.uniforms[u][c].eq(u_ch[c]),
                 ]
 
-        # Stage 0 inputs
-        src_raw_lb = Mux(fetch_odd, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)
-        src_pix_ch = [
-            Cat(src_raw_lb[0:8], Constant(0, 8)),
-            Cat(src_raw_lb[8:16], Constant(0, 8)),
-            Cat(src_raw_lb[16:24], Constant(0, 8)),
-            Cat(src_raw_lb[24:32], Constant(0, 8)),
+        # Stage 0 inputs (with P0 Line Buffer pipeline register)
+        self.sync += [
+            p0_src_raw.eq(Mux(fetch_odd, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)),
+            p0_dst_raw.eq(self.dst_lb_r.dat_r),
+            p0_fetch_x.eq(fetch_x),
         ]
-        dst_raw_lb = self.dst_lb_r.dat_r
+        src_pix_ch = [
+            Cat(p0_src_raw[0:8], Constant(0, 8)),
+            Cat(p0_src_raw[8:16], Constant(0, 8)),
+            Cat(p0_src_raw[16:24], Constant(0, 8)),
+            Cat(p0_src_raw[24:32], Constant(0, 8)),
+        ]
         dst_pix_ch = [
-            Cat(dst_raw_lb[0:8], Constant(0, 8)),
-            Cat(dst_raw_lb[8:16], Constant(0, 8)),
-            Cat(dst_raw_lb[16:24], Constant(0, 8)),
-            Cat(dst_raw_lb[24:32], Constant(0, 8)),
+            Cat(p0_dst_raw[0:8], Constant(0, 8)),
+            Cat(p0_dst_raw[8:16], Constant(0, 8)),
+            Cat(p0_dst_raw[16:24], Constant(0, 8)),
+            Cat(p0_dst_raw[24:32], Constant(0, 8)),
         ]
         fg_ch = [
             Cat(fg[0:8], Constant(0, 8)),
@@ -667,7 +671,7 @@ class Gfx2DEngine(LiteXModule):
                 stage0.r_in[1][c].eq(stage0.dst_pix[c]),
             ]
         self.comb += [
-            stage0.r_in[2][0].eq(fetch_x[0:16]),
+            stage0.r_in[2][0].eq(p0_fetch_x[0:16]),
             stage0.r_in[2][1].eq(row[0:16]),
             stage0.r_in[2][2].eq(0),
             stage0.r_in[2][3].eq(0),
@@ -938,6 +942,7 @@ class Gfx2DEngine(LiteXModule):
                       NextState('B_FETCH'))
                 .Elif(op == OP_SHADER,
                       NextValue(tile_x, 0),
+                      NextValue(rem_w, width),
                       NextState('T_SETUP'))
                 .Else(NextState('PREP')))
         down = dir_down
@@ -1043,12 +1048,17 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('B_RD_WAIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(self.ui.rd_data_valid,
-                    NextValue(beat_shift, self.ui.rd_data >>
-                              Cat(Constant(0, 3), src_byte_off[0:5])),
-                    NextValue(src_beat_loaded, 1), NextState('B_FETCH'),
+                    NextValue(elapsed, 0),
+                    NextValue(t_beat_buf, self.ui.rd_data),
+                    NextState('B_RD_ALIGN'),
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
+        fsm.act('B_RD_ALIGN',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(beat_shift, t_beat_buf >>
+                          Cat(Constant(0, 3), src_byte_off[0:5])),
+                NextValue(src_beat_loaded, 1), NextState('B_FETCH'))
         fsm.act('B_EXP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(blit_exp_reg, blit_expanded), NextState('B_PREP'))
@@ -1077,11 +1087,9 @@ class Gfx2DEngine(LiteXModule):
                 ).Else(NextValue(elapsed, elapsed + 1)))
 
         # OP_SHADER Tile FSM
-        cur_w_rem = Signal(16)
         calc_t_w = Signal(16)
         self.comb += [
-            cur_w_rem.eq(width - tile_x),
-            calc_t_w.eq(Mux(cur_w_rem > 1024, 1024, cur_w_rem)),
+            calc_t_w.eq(Mux(rem_w > 1024, 1024, rem_w)),
         ]
         cur_src_byte = Signal(32)
         cur_dst_byte = Signal(32)
@@ -1098,7 +1106,6 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(tile_w, calc_t_w[0:11]),
                 NextValue(tile_last, calc_t_w[0:11] - 1),
-                NextValue(tile_is_last_in_row, (tile_x + calc_t_w >= width)),
                 NextValue(t_src_cur_blk, cur_src_byte[2:31] & ~Constant(7, 29)),
                 NextValue(t_src_beats_left,
                           (((cur_src_end[2:31] & ~Constant(7, 29)) -
@@ -1308,13 +1315,13 @@ class Gfx2DEngine(LiteXModule):
                     NextValue(fetch_x, tile_x + comp_idx),
                     NextValue(fetch_odd, comp_idx[0]),
                     NextValue(comp_pipe_vld,
-                              Cat(Constant(1, 1), comp_pipe_vld[0:6])),
+                              Cat(Constant(1, 1), comp_pipe_vld[0:7])),
                 ).Else(
                     NextValue(comp_pipe_vld,
-                              Cat(Constant(0, 1), comp_pipe_vld[0:6])),
+                              Cat(Constant(0, 1), comp_pipe_vld[0:7])),
                 ),
 
-                If(comp_pipe_vld[6],
+                If(comp_pipe_vld[7],
                     self.out_lb_w.we.eq(1),
                     self.out_lb_w.adr.eq(comp_out_idx),
                     self.out_lb_w.dat_w.eq(Cat(
@@ -1481,11 +1488,12 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_TILE_NEXT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(tile_x, tile_x + tile_w),
-                If(~tile_is_last_in_row,
-                    NextState('T_SETUP')
-                ).Else(
+                NextValue(rem_w, rem_w - tile_w),
+                If(rem_w == tile_w,
                     If(last_row, NextState('FINISH'))
                     .Else(NextState('ROW_INC'))
+                ).Else(
+                    NextState('T_SETUP')
                 ))
 
         fsm.act('FINISH',
