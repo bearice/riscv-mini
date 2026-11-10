@@ -89,7 +89,27 @@ GFX2D_BASE = 0xf80c0000
 GFX2D_ID = 0xae350601
 GFX2D_CAP = 0x6f  # fill, copy, blit, RGB565, XRGB8888, XRGB1555
 EXT_INT_GFX2D = 10
-GFX2D_REGS = dict(CONTROL=12, STATUS=16, IRQ_STATUS=20, IRQ_ENABLE=24, LAST_ERROR=28, OP=32, SRC_ADDR=36, DST_ADDR=40, SRC_STRIDE=44, DST_STRIDE=48, WIDTH=52, HEIGHT=56, FG_COLOR=60, BG_COLOR=64, BLIT_SRC_WB=68, COMMANDS=72, ERRORS=76, CLEAR_ERRORS=80, FORMAT=84)
+GFX2D_REGS = dict(
+    CONTROL=12,
+    STATUS=16,
+    IRQ_STATUS=20,
+    IRQ_ENABLE=24,
+    LAST_ERROR=28,
+    OP=32,
+    SRC_ADDR=36,
+    DST_ADDR=40,
+    SRC_STRIDE=44,
+    DST_STRIDE=48,
+    WIDTH=52,
+    HEIGHT=56,
+    FG_COLOR=60,
+    BG_COLOR=64,
+    BLIT_SRC_WB=68,
+    COMMANDS=72,
+    ERRORS=76,
+    CLEAR_ERRORS=80,
+    FORMAT=84,
+)
 EXT_INT_ETHERNET = 9
 
 USB_BASE = 0xf8060000
@@ -112,9 +132,59 @@ VIDEO_BASE = 4160946176
 
 VIDEO_ID = 2922710273
 
-VIDEO_CAP = 15 | 0x1f0 | 0x600 | 0x1800  # RGB565/888/XRGB8888/XRGB1555, RGB888, XRGB8888, runtime modes, HPD, HPD IRQ, XRGB1555, custom mode, INDEX8 palette, scanout wrap
+# RGB565/888/XRGB8888/XRGB1555, RGB888, XRGB8888, runtime modes,
+# HPD, HPD IRQ, XRGB1555, custom mode, INDEX8 palette, scanout wrap
+VIDEO_CAP = 15 | 0x1f0 | 0x600 | 0x1800
 
-VIDEO_REGS = dict(CONTROL=12, STATUS=16, IRQ_STATUS=20, IRQ_ENABLE=24, LAST_ERROR=28, BASE0=32, BASE1=36, STRIDE=40, COMMIT=44, FRAMES=48, UNDERFLOWS=52, ADDRESS_ERROR=56, TIMEOUT_ERROR=60, ACTIVE_BASE=64, PIXEL_HZ=68, GEOMETRY=72, EPOCH=76, FIFO_MIN=80, MAX_WAIT=84, READS=88, CPU_COMMANDS=92, MISSING=96, SEQUENCE=100, ACTIVE_SEQUENCE=104, CANCELLED=108, ERRORS=112, CLEAR_ERRORS=116, REQUEST_OVERFLOW=120, MODE=124, FORMAT=128, MODE_CONFIG=132, MODE_STATUS=136, MODE_COUNT=140, ENABLE=144, HPD=148, CUS_WH=152, CUS_H=156, CUS_V=160, CUS_PLL=164, CUS_PCLK=168, WRAP_START=172, WRAP_END=176, PALETTE_ADDR=180, PALETTE_DATA=184, PALETTE_READBACK=188, PALETTE_ACTIVE=192, MODE_INFO_BASE=256)
+VIDEO_REGS = dict(
+    CONTROL=12,
+    STATUS=16,
+    IRQ_STATUS=20,
+    IRQ_ENABLE=24,
+    LAST_ERROR=28,
+    BASE0=32,
+    BASE1=36,
+    STRIDE=40,
+    COMMIT=44,
+    FRAMES=48,
+    UNDERFLOWS=52,
+    ADDRESS_ERROR=56,
+    TIMEOUT_ERROR=60,
+    ACTIVE_BASE=64,
+    PIXEL_HZ=68,
+    GEOMETRY=72,
+    EPOCH=76,
+    FIFO_MIN=80,
+    MAX_WAIT=84,
+    READS=88,
+    CPU_COMMANDS=92,
+    MISSING=96,
+    SEQUENCE=100,
+    ACTIVE_SEQUENCE=104,
+    CANCELLED=108,
+    ERRORS=112,
+    CLEAR_ERRORS=116,
+    REQUEST_OVERFLOW=120,
+    MODE=124,
+    FORMAT=128,
+    MODE_CONFIG=132,
+    MODE_STATUS=136,
+    MODE_COUNT=140,
+    ENABLE=144,
+    HPD=148,
+    CUS_WH=152,
+    CUS_H=156,
+    CUS_V=160,
+    CUS_PLL=164,
+    CUS_PCLK=168,
+    WRAP_START=172,
+    WRAP_END=176,
+    PALETTE_ADDR=180,
+    PALETTE_DATA=184,
+    PALETTE_READBACK=188,
+    PALETTE_ACTIVE=192,
+    MODE_INFO_BASE=256,
+)
 
 AUDIO_DATA = 3892314112
 
@@ -219,7 +289,23 @@ FLAG_DMA = 4
 
 FLAG_IRQ = 8
 
-SYSINFO_CAP = CAP_LOOPBACK | CAP_EXT_IRQ | CAP_DMA_REQ | CAP_DMAC_DECLARED | CAP_BOARD_IO | CAP_WS2812 | CAP_SENSE | CAP_AUDIO | CAP_MIC | CAP_VIDEO | CAP_FABRIC_READER | CAP_SD | CAP_FLASH | CAP_I2C | CAP_GFX2D
+SYSINFO_CAP = (
+    CAP_LOOPBACK
+    | CAP_EXT_IRQ
+    | CAP_DMA_REQ
+    | CAP_DMAC_DECLARED
+    | CAP_BOARD_IO
+    | CAP_WS2812
+    | CAP_SENSE
+    | CAP_AUDIO
+    | CAP_MIC
+    | CAP_VIDEO
+    | CAP_FABRIC_READER
+    | CAP_SD
+    | CAP_FLASH
+    | CAP_I2C
+    | CAP_GFX2D
+)
 
 WS2812_ID = 2922709761
 
@@ -243,25 +329,119 @@ DMA_SVC_CAP = CAP_LOOPBACK | CAP_DMA_REQ
 
 REQ_MAP = 256
 
-LOOPBACK_EP = (LOOPBACK_ID, DMA_SVC_BASE, 4096, LOOPBACK_DATA, 4, ABI_VERSION, 0 | 0 << 8 | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16, 0)
+LOOPBACK_EP = (
+    LOOPBACK_ID,
+    DMA_SVC_BASE,
+    4096,
+    LOOPBACK_DATA,
+    4,
+    ABI_VERSION,
+    0 | 0 << 8 | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16,
+    0,
+)
 
-DMAC_EP = (DMAC_ID, DMAC_BASE, 0, 0, 0, 0, 255 | 255 << 8 | FLAG_PRESENT << 16, 0)
+DMAC_EP = (
+    DMAC_ID,
+    DMAC_BASE,
+    0,
+    0,
+    0,
+    0,
+    255 | 255 << 8 | FLAG_PRESENT << 16,
+    0,
+)
 
-WS2812_EP = (WS2812_ID, WS2812_BASE, 4096, 0, 0, ABI_VERSION, 0 | 0 << 8 | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
+WS2812_EP = (
+    WS2812_ID,
+    WS2812_BASE,
+    4096,
+    0,
+    0,
+    ABI_VERSION,
+    0 | 0 << 8 | (FLAG_PRESENT | FLAG_IRQ) << 16,
+    0,
+)
 
-IO_EP = (IO_ID, IO_BASE, 4096, 0, 0, ABI_VERSION, EXT_INT_IO | 0 << 8 | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
+IO_EP = (
+    IO_ID,
+    IO_BASE,
+    4096,
+    0,
+    0,
+    ABI_VERSION,
+    EXT_INT_IO | 0 << 8 | (FLAG_PRESENT | FLAG_IRQ) << 16,
+    0,
+)
 
-SENSE_EP = (SENSE_ID, SENSE_BASE, 4096, 0, 0, ABI_VERSION, 0 | 0 << 8 | FLAG_PRESENT << 16, 0)
+SENSE_EP = (
+    SENSE_ID,
+    SENSE_BASE,
+    4096,
+    0,
+    0,
+    ABI_VERSION,
+    0 | 0 << 8 | FLAG_PRESENT << 16,
+    0,
+)
 
-AUDIO_EP = (AUDIO_ID, AUDIO_BASE, 4096, AUDIO_DATA, 4, ABI_VERSION, EXT_INT_AUDIO | AUDIO_REQ << 8 | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16, AUDIO_DMA_SEL)
+AUDIO_EP = (
+    AUDIO_ID,
+    AUDIO_BASE,
+    4096,
+    AUDIO_DATA,
+    4,
+    ABI_VERSION,
+    EXT_INT_AUDIO
+    | AUDIO_REQ << 8
+    | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16,
+    AUDIO_DMA_SEL,
+)
 
-MIC_EP = (MIC_ID, MIC_BASE, 4096, MIC_DATA, 4, ABI_VERSION, EXT_INT_MIC | MIC_REQ << 8 | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16, MIC_DMA_SEL)
+MIC_EP = (
+    MIC_ID,
+    MIC_BASE,
+    4096,
+    MIC_DATA,
+    4,
+    ABI_VERSION,
+    EXT_INT_MIC
+    | MIC_REQ << 8
+    | (FLAG_PRESENT | FLAG_DATA | FLAG_DMA | FLAG_IRQ) << 16,
+    MIC_DMA_SEL,
+)
 
-VIDEO_EP = (VIDEO_ID, VIDEO_BASE, 4096, 0, 0, ABI_VERSION, EXT_INT_VIDEO | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
+VIDEO_EP = (
+    VIDEO_ID,
+    VIDEO_BASE,
+    4096,
+    0,
+    0,
+    ABI_VERSION,
+    EXT_INT_VIDEO | (FLAG_PRESENT | FLAG_IRQ) << 16,
+    0,
+)
 
-GFX2D_EP = (GFX2D_ID, GFX2D_BASE, 4096, 0, 0, ABI_VERSION, EXT_INT_GFX2D | (FLAG_PRESENT | FLAG_IRQ) << 16, 0)
+GFX2D_EP = (
+    GFX2D_ID,
+    GFX2D_BASE,
+    4096,
+    0,
+    0,
+    ABI_VERSION,
+    EXT_INT_GFX2D | (FLAG_PRESENT | FLAG_IRQ) << 16,
+    0,
+)
 
-SD_EP = (SD_ID, SD_BASE, 4096, SD_TX_DATA, 8, ABI_VERSION, (FLAG_PRESENT | FLAG_DATA | FLAG_DMA) << 16, SD_TX_DMA_SEL | (SD_RX_DMA_SEL << 8))
+SD_EP = (
+    SD_ID,
+    SD_BASE,
+    4096,
+    SD_TX_DATA,
+    8,
+    ABI_VERSION,
+    (FLAG_PRESENT | FLAG_DATA | FLAG_DMA) << 16,
+    SD_TX_DMA_SEL | (SD_RX_DMA_SEL << 8),
+)
 
 SPI_EP = (SPI_ID, SPI_BASE, 0x28, 0, 0, 1, FLAG_PRESENT << 16, 0)
 I2C_EP = (I2C_ID, I2C_BASE, 0x30, 0, 0, 0, FLAG_PRESENT << 16, 0)
@@ -294,7 +474,18 @@ DDR_CODE = 12288
 
 DDR_CODE_MAX = 512000
 
-SUBRANGES = (('ilm.code', ILM_BASE, ILM_CODE_BYTES), ('dlm.private', DLM_BASE, DLM_DATA_BYTES), ('dlm.results', RESULTS_BASE, RESULTS_BYTES), ('dlm.params', LOCAL_PARAMS, LOCAL_PARAMS_BYTES), ('dlm.payload-stack', PAYLOAD_STACK_BOTTOM, PAYLOAD_STACK_TOP - PAYLOAD_STACK_BOTTOM), ('dlm.rom-stack', ROM_STACK_BOTTOM, ROM_STACK_TOP - ROM_STACK_BOTTOM))
+SUBRANGES = (
+    ('ilm.code', ILM_BASE, ILM_CODE_BYTES),
+    ('dlm.private', DLM_BASE, DLM_DATA_BYTES),
+    ('dlm.results', RESULTS_BASE, RESULTS_BYTES),
+    ('dlm.params', LOCAL_PARAMS, LOCAL_PARAMS_BYTES),
+    (
+        'dlm.payload-stack',
+        PAYLOAD_STACK_BOTTOM,
+        PAYLOAD_STACK_TOP - PAYLOAD_STACK_BOTTOM,
+    ),
+    ('dlm.rom-stack', ROM_STACK_BOTTOM, ROM_STACK_TOP - ROM_STACK_BOTTOM),
+)
 
 # Vendor-fixed AE350 windows used by the OS device tree.
 PLIC_SIZE = 0x2000000
@@ -312,10 +503,11 @@ PLIC_EXT_INT_SOURCE_BASE = 10
 # bios = BIOS resident, including loading OS components; app = BIOS-launched
 # application; os = after `boot opensbi`; diag = a ROM-loaded diagnostic payload
 # running instead of the BIOS (image and .bss in the BIOS ranges, payloads linked
-# with the BIOS services also use its buffers, scratch in diag.*). Ranges live in a common phase must
-# be disjoint. Device DMA into a range that is not live in the os phase must be
-# stopped before the handoff. Diagnostics may also address any DDR word as memory
-# under test (geometry, capacity, traversal), never as a reservation.
+# with the BIOS services also use its buffers, scratch in diag.*). Ranges live
+# in a common phase must be disjoint. Device DMA into a range that is not live
+# in the os phase must be stopped before the handoff. Diagnostics may also
+# address any DDR word as memory under test (geometry, capacity, traversal),
+# never as a reservation.
 BIOS_NET_BASE = 0x00100000
 BIOS_NET_BYTES = 0x00010000
 BIOS_APP_BASE = 0x01000000
@@ -411,11 +603,20 @@ class AddressMap:
         self.CPU_HZ = machine.clocks.cpu
         self.DATA_HZ = machine.clocks.data_memory_bus
         from gateware.machines.mega138k_ae350.boot_contract import region_size
-        self.FLASH_BYTES = machine.board.resources[machine.devices.boot_flash].size_bytes
+        self.FLASH_BYTES = machine.board.resources[
+            machine.devices.boot_flash
+        ].size_bytes
         self.ROM_SIZE = region_size(self.FLASH_BYTES)
-        self.USER_FLASH_BYTES = machine.board.resources[machine.devices.flash].size_bytes
+        self.USER_FLASH_BYTES = machine.board.resources[
+            machine.devices.flash
+        ].size_bytes
         # The SFP+ controller is built only when the machine binds both cages.
-        self.SFP_PRESENT = int(bool(getattr(machine.devices, 'sfp0', None) and getattr(machine.devices, 'sfp1', None)))
+        self.SFP_PRESENT = int(
+            bool(
+                getattr(machine.devices, 'sfp0', None)
+                and getattr(machine.devices, 'sfp1', None)
+            )
+        )
         gpio = self.io.gpio_binding()
         self.GPIO_LED_COUNT = gpio['led_count']
         self.GPIO_BUTTON_COUNT = gpio['button_count']
@@ -426,7 +627,34 @@ class AddressMap:
         self.GPIO_BUTTON_MASK = gpio['button_mask']
         self.GPIO_IRQ_MASK = gpio['irq_mask']
         self.ROM_CODE_BYTES = self.ROM_SIZE
-        self.WINDOWS = (('ddr', self.DDR_BASE, self.DDR_SIZE, 'implemented'), ('boot-xip', self.ROM_BASE, self.ROM_SIZE, 'SDK-Flash-U4-offset-0x600000'), ('flash-control', self.FLASH_CTRL_BASE, 4096, 'SDK-FR-APB'), ('sdk-flash-rest', self.ROM_BASE + self.ROM_SIZE, self.XIP_SIZE - self.ROM_SIZE, 'SDK-aperture-capacity-bounds-unqualified'), ('ilm', self.ILM_BASE, self.ILM_SIZE, 'hard-local-memory'), ('dlm', self.DLM_BASE, self.DLM_SIZE, 'hard-local-memory'), ('platform-csr', self.CSR_BASE, self.CSR_SIZE, 'implemented'), ('periph-csr', 4160815104, 524288, 'audio-mic-video-ws2812-board-io'), ('ethernet-csr', self.ETH_BASE, 4096, 'PHY-management-and-DDR-DMA-ring')) + ((('sfp-csr', self.SFP_BASE, 4096, 'SFP-10GBASE-R-controller'),) if self.SFP_PRESENT else ()) + (('ext-ahb', self.EXT_AHB_BASE, self.EXT_AHB_SIZE, 'audio-mic-loopback-data'),)
+        sfp_window = (
+            (('sfp-csr', self.SFP_BASE, 4096, 'SFP-10GBASE-R-controller'),)
+            if self.SFP_PRESENT
+            else ()
+        )
+        self.WINDOWS = (
+            ('ddr', self.DDR_BASE, self.DDR_SIZE, 'implemented'),
+            ('boot-xip', self.ROM_BASE, self.ROM_SIZE, 'SDK-Flash-U4-offset-0x600000'),
+            ('flash-control', self.FLASH_CTRL_BASE, 4096, 'SDK-FR-APB'),
+            (
+                'sdk-flash-rest',
+                self.ROM_BASE + self.ROM_SIZE,
+                self.XIP_SIZE - self.ROM_SIZE,
+                'SDK-aperture-capacity-bounds-unqualified',
+            ),
+            ('ilm', self.ILM_BASE, self.ILM_SIZE, 'hard-local-memory'),
+            ('dlm', self.DLM_BASE, self.DLM_SIZE, 'hard-local-memory'),
+            ('platform-csr', self.CSR_BASE, self.CSR_SIZE, 'implemented'),
+            ('periph-csr', 4160815104, 524288, 'audio-mic-video-ws2812-board-io'),
+            ('ethernet-csr', self.ETH_BASE, 4096, 'PHY-management-and-DDR-DMA-ring'),
+        ) + sfp_window + (
+            (
+                'ext-ahb',
+                self.EXT_AHB_BASE,
+                self.EXT_AHB_SIZE,
+                'audio-mic-loopback-data',
+            ),
+        )
 
     def __getattr__(self, name):
         if name.isupper() and name in globals():
@@ -439,16 +667,200 @@ class AddressMap:
 
     def interface(self):
         binding = self.io.gpio_binding()
-        return dict(ethernet_management=dict(csr=self.ETH_BASE, clock_hz=25000000, backend='clause22-mdio+liteeth-dma-ring', packets=dict(clock_hz=self.machine.clocks.ethernet_tx, mtu=1530, id_offset=0x10, version=2, data_width=32, tx_storage_clock_hz=self.FABRIC_HZ, descriptor_bytes=32, ring_max=256, irq=self.EXT_INT_ETHERNET, io_delays='PHY-TX-RX-2ns', rx_data_delay_ps=self.machine.rtl.ethernet_rx_delay_ps, rx_timing='routed-ddr-input-v1', tx_timing='routed-ddr-skew-v1', transport='DDR-descriptor-rings')), usb=dict(csr=self.USB_BASE, clock_hz=self.machine.clocks.usb, speed='full', backend='OHCI-Wishbone-DDR', irq=14, diagnostic_offsets=[0x100,0x104,0x108]), cpu='ae350-rv32imac', image_version=1, load=self.DDR_CODE, management=dict(spi=dict(csr=self.SPI_BASE,backend='fabric-QSPI',register_abi=1,data_width=4,clock_hz=self.FABRIC_HZ//2,size_bytes=self.USER_FLASH_BYTES,flash='user-U7',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.flash].signals.items()}),i2c=dict(csr=self.I2C_BASE,backend='ATCIIC100',pins={n:list(v.pins) for n,v in self.machine.board.resources[self.machine.devices.i2c].signals.items()},mux=dict(pins=list(self.machine.board.resources[self.machine.devices.twi_mux].signals['sel'].pins),gpio_shift=self.TWI_MUX_GPIO_SHIFT,reset=0))), sd=dict(csr=self.SD_BASE, abi=self.ABI_VERSION, transport='litesdcard-native-4bit', clock_domain='mem', default_hz=25000000, clock_hz=self.DATA_HZ, cdc='retained-APB-AHB-REQ-ACK', dma='hard-DMAC-AHB-FIFO', tx=dict(data=self.SD_TX_DATA,request=self.SD_TX_REQ,selector=self.SD_TX_DMA_SEL), rx=dict(data=self.SD_RX_DATA,request=self.SD_RX_REQ,selector=self.SD_RX_DMA_SEL), pins={name:list(sig.pins) for name,sig in self.machine.board.resources[self.machine.devices.sd].signals.items()}), video=dict(csr=self.VIDEO_BASE, width=640, height=480, format='RGB565', formats=['RGB565','RGB888','XRGB8888','XRGB1555','INDEX8'], modes=[dict(id=i,**asdict(m),actual_pixel_hz=pll_config(m.pixel_hz)['actual_hz']) for i,m in enumerate(MODES)], runtime_modes=True, custom_mode=True, irq=self.EXT_INT_VIDEO, hpd_irq='sticky-W1C-connect-disconnect', pixel_requested_hz=self.machine.clocks.video, serializer_requested_hz=self.machine.clocks.video * 5, pins=self.io.video_binding(), commit='vblank-snapshot', memory='round-robin-single-outstanding-DDR3-UI', abi=self.ABI_VERSION, registers=self.VIDEO_REGS), gfx2d=dict(csr=self.GFX2D_BASE, abi=self.ABI_VERSION, cap=self.GFX2D_CAP, irq=self.EXT_INT_GFX2D, registers=self.GFX2D_REGS, stage=1), audio=dict(pins=self.io.audio_binding(), sample_rate=48000, tx=dict(csr=self.AUDIO_BASE, data=self.AUDIO_DATA, irq=self.EXT_INT_AUDIO, request=self.AUDIO_REQ, selector=self.AUDIO_DMA_SEL, pcm='stereo-s16-le', abi=self.ABI_VERSION), rx=dict(csr=self.MIC_BASE, data=self.MIC_DATA, irq=self.EXT_INT_MIC, request=self.MIC_REQ, selector=self.MIC_DMA_SEL, pcm='mono-s24-in-s32-le', abi=self.ABI_VERSION)), memories=self.WINDOWS, reserved=self.SUBRANGES, registers=dict(ddr_status=self.STATUS_ADDR, calib_cycles=self.CALIB_CYCLES_ADDR, reads=self.READ_COUNT_ADDR, writes=self.WRITE_COUNT_ADDR, write_trace=self.WRITE_TRACE_ADDR, read_trace=self.READ_TRACE_ADDR, gpio=self.GPIO_BASE, ws2812=self.WS2812_BASE, board_io=self.IO_BASE, sense=self.SENSE_BASE, plic=self.PLIC_BASE), gpio=dict(leds=list(binding['led_bits']), buttons=list(binding['button_bits']), inject=binding['inject_bit'], irq_mask=binding['irq_mask'], led_active_low=[int(item) for item in binding['led_active_low']], button_active_low=[int(item) for item in binding['button_active_low']]), loader=dict(max_bytes=self.DDR_CODE_MAX, stack_top=self.PAYLOAD_STACK_TOP), uart=dict(base=self.UART_BASE, baud=115200), capabilities=dict(atomics='none', cache='write-back', loader='ae350-20k-frame-v1', dmac='exported-unproven', ext_ahb='loopback', fabric_reader='RGB565-scanout', board_io='led-register-and-hard-gpio-inputs', ws2812='shared-core', fan='pwm-percent-25khz', temperature='die-quarter-degree'))
+        flash_res = self.machine.board.resources[self.machine.devices.flash]
+        i2c_res = self.machine.board.resources[self.machine.devices.i2c]
+        twi_res = self.machine.board.resources[self.machine.devices.twi_mux]
+        sd_res = self.machine.board.resources[self.machine.devices.sd]
+
+        return dict(
+            ethernet_management=dict(
+                csr=self.ETH_BASE,
+                clock_hz=25000000,
+                backend='clause22-mdio+liteeth-dma-ring',
+                packets=dict(
+                    clock_hz=self.machine.clocks.ethernet_tx,
+                    mtu=1530,
+                    id_offset=0x10,
+                    version=2,
+                    data_width=32,
+                    tx_storage_clock_hz=self.FABRIC_HZ,
+                    descriptor_bytes=32,
+                    ring_max=256,
+                    irq=self.EXT_INT_ETHERNET,
+                    io_delays='PHY-TX-RX-2ns',
+                    rx_data_delay_ps=self.machine.rtl.ethernet_rx_delay_ps,
+                    rx_timing='routed-ddr-input-v1',
+                    tx_timing='routed-ddr-skew-v1',
+                    transport='DDR-descriptor-rings',
+                ),
+            ),
+            usb=dict(
+                csr=self.USB_BASE,
+                clock_hz=self.machine.clocks.usb,
+                speed='full',
+                backend='OHCI-Wishbone-DDR',
+                irq=14,
+                diagnostic_offsets=[0x100, 0x104, 0x108],
+            ),
+            cpu='ae350-rv32imac',
+            image_version=1,
+            load=self.DDR_CODE,
+            management=dict(
+                spi=dict(
+                    csr=self.SPI_BASE,
+                    backend='fabric-QSPI',
+                    register_abi=1,
+                    data_width=4,
+                    clock_hz=self.FABRIC_HZ // 2,
+                    size_bytes=self.USER_FLASH_BYTES,
+                    flash='user-U7',
+                    pins={n: list(v.pins) for n, v in flash_res.signals.items()},
+                ),
+                i2c=dict(
+                    csr=self.I2C_BASE,
+                    backend='ATCIIC100',
+                    pins={n: list(v.pins) for n, v in i2c_res.signals.items()},
+                    mux=dict(
+                        pins=list(twi_res.signals['sel'].pins),
+                        gpio_shift=self.TWI_MUX_GPIO_SHIFT,
+                        reset=0,
+                    ),
+                ),
+            ),
+            sd=dict(
+                csr=self.SD_BASE,
+                abi=self.ABI_VERSION,
+                transport='litesdcard-native-4bit',
+                clock_domain='mem',
+                default_hz=25000000,
+                clock_hz=self.DATA_HZ,
+                cdc='retained-APB-AHB-REQ-ACK',
+                dma='hard-DMAC-AHB-FIFO',
+                tx=dict(
+                    data=self.SD_TX_DATA,
+                    request=self.SD_TX_REQ,
+                    selector=self.SD_TX_DMA_SEL,
+                ),
+                rx=dict(
+                    data=self.SD_RX_DATA,
+                    request=self.SD_RX_REQ,
+                    selector=self.SD_RX_DMA_SEL,
+                ),
+                pins={name: list(sig.pins) for name, sig in sd_res.signals.items()},
+            ),
+            video=dict(
+                csr=self.VIDEO_BASE,
+                width=640,
+                height=480,
+                format='RGB565',
+                formats=['RGB565', 'RGB888', 'XRGB8888', 'XRGB1555', 'INDEX8'],
+                modes=[
+                    dict(
+                        id=i,
+                        **asdict(m),
+                        actual_pixel_hz=pll_config(m.pixel_hz)['actual_hz'],
+                    )
+                    for i, m in enumerate(MODES)
+                ],
+                runtime_modes=True,
+                custom_mode=True,
+                irq=self.EXT_INT_VIDEO,
+                hpd_irq='sticky-W1C-connect-disconnect',
+                pixel_requested_hz=self.machine.clocks.video,
+                serializer_requested_hz=self.machine.clocks.video * 5,
+                pins=self.io.video_binding(),
+                commit='vblank-snapshot',
+                memory='round-robin-single-outstanding-DDR3-UI',
+                abi=self.ABI_VERSION,
+                registers=self.VIDEO_REGS,
+            ),
+            gfx2d=dict(
+                csr=self.GFX2D_BASE,
+                abi=self.ABI_VERSION,
+                cap=self.GFX2D_CAP,
+                irq=self.EXT_INT_GFX2D,
+                registers=self.GFX2D_REGS,
+                stage=1,
+            ),
+            audio=dict(
+                pins=self.io.audio_binding(),
+                sample_rate=48000,
+                tx=dict(
+                    csr=self.AUDIO_BASE,
+                    data=self.AUDIO_DATA,
+                    irq=self.EXT_INT_AUDIO,
+                    request=self.AUDIO_REQ,
+                    selector=self.AUDIO_DMA_SEL,
+                    pcm='stereo-s16-le',
+                    abi=self.ABI_VERSION,
+                ),
+                rx=dict(
+                    csr=self.MIC_BASE,
+                    data=self.MIC_DATA,
+                    irq=self.EXT_INT_MIC,
+                    request=self.MIC_REQ,
+                    selector=self.MIC_DMA_SEL,
+                    pcm='mono-s24-in-s32-le',
+                    abi=self.ABI_VERSION,
+                ),
+            ),
+            memories=self.WINDOWS,
+            reserved=self.SUBRANGES,
+            registers=dict(
+                ddr_status=self.STATUS_ADDR,
+                calib_cycles=self.CALIB_CYCLES_ADDR,
+                reads=self.READ_COUNT_ADDR,
+                writes=self.WRITE_COUNT_ADDR,
+                write_trace=self.WRITE_TRACE_ADDR,
+                read_trace=self.READ_TRACE_ADDR,
+                gpio=self.GPIO_BASE,
+                ws2812=self.WS2812_BASE,
+                board_io=self.IO_BASE,
+                sense=self.SENSE_BASE,
+                plic=self.PLIC_BASE,
+            ),
+            gpio=dict(
+                leds=list(binding['led_bits']),
+                buttons=list(binding['button_bits']),
+                inject=binding['inject_bit'],
+                irq_mask=binding['irq_mask'],
+                led_active_low=[int(item) for item in binding['led_active_low']],
+                button_active_low=[int(item) for item in binding['button_active_low']],
+            ),
+            loader=dict(
+                max_bytes=self.DDR_CODE_MAX,
+                stack_top=self.PAYLOAD_STACK_TOP,
+            ),
+            uart=dict(base=self.UART_BASE, baud=115200),
+            capabilities=dict(
+                atomics='none',
+                cache='write-back',
+                loader='ae350-20k-frame-v1',
+                dmac='exported-unproven',
+                ext_ahb='loopback',
+                fabric_reader='RGB565-scanout',
+                board_io='led-register-and-hard-gpio-inputs',
+                ws2812='shared-core',
+                fan='pwm-percent-25khz',
+                temperature='die-quarter-degree',
+            ),
+        )
 
     def image_abi(self):
         import json
         import zlib
-        return zlib.crc32(json.dumps(self.interface(), sort_keys=True, separators=(',', ':')).encode())
+        payload = json.dumps(self.interface(), sort_keys=True, separators=(',', ':'))
+        return zlib.crc32(payload.encode())
 
     def check(self):
         errors = []
-        if len(set(self.VIDEO_REGS.values())) != len(self.VIDEO_REGS) or any((off < 12 or off >= 4096 or off % 4 for off in self.VIDEO_REGS.values())):
+        if (
+            len(set(self.VIDEO_REGS.values())) != len(self.VIDEO_REGS)
+            or any(
+                off < 12 or off >= 4096 or off % 4
+                for off in self.VIDEO_REGS.values()
+            )
+        ):
             errors.append('invalid video register layout')
         for spans in ([(n, b, s) for (n, b, s, _) in self.WINDOWS], self.SUBRANGES):
             spans = sorted(spans, key=lambda span: span[1])
@@ -459,7 +871,10 @@ class AddressMap:
                 if left[1] + left[2] > right[1]:
                     errors.append('%s overlaps %s' % (left[0], right[0]))
         for (name, base, size) in self.SUBRANGES:
-            (parent, length) = (self.ILM_BASE, self.ILM_SIZE) if name.startswith('ilm.') else (self.DLM_BASE, self.DLM_SIZE)
+            if name.startswith('ilm.'):
+                parent, length = self.ILM_BASE, self.ILM_SIZE
+            else:
+                parent, length = self.DLM_BASE, self.DLM_SIZE
             if not parent <= base < base + size <= parent + length:
                 errors.append('local subrange escapes memory: ' + name)
         if self.DDR_BASE != 0 or self.DDR_CODE + self.DDR_CODE_MAX > self.DDR_SIZE:
@@ -467,9 +882,19 @@ class AddressMap:
         errors.extend(self.check_software_layout())
         if not 0 < self.DATA_HZ < 200000000:
             errors.append('AE350 data clock must be below 200MHz')
-        if not self.EXT_AHB_BASE <= self.LOOPBACK_DATA < self.LOOPBACK_DATA + 4 <= self.EXT_AHB_BASE + self.EXT_AHB_SIZE:
+        if not (
+            self.EXT_AHB_BASE
+            <= self.LOOPBACK_DATA
+            < self.LOOPBACK_DATA + 4
+            <= self.EXT_AHB_BASE + self.EXT_AHB_SIZE
+        ):
             errors.append('loopback data word escapes the extended AHB window')
-        for (name, base) in (('sysinfo', self.SYSINFO_BASE), ('irq', self.IRQ_BASE), ('dma-service', self.DMA_SVC_BASE), ('sense', self.SENSE_BASE)):
+        for (name, base) in (
+            ('sysinfo', self.SYSINFO_BASE),
+            ('irq', self.IRQ_BASE),
+            ('dma-service', self.DMA_SVC_BASE),
+            ('sense', self.SENSE_BASE),
+        ):
             if not self.CSR_BASE <= base < base + 4096 <= self.CSR_BASE + self.CSR_SIZE:
                 errors.append(name + ' page escapes the platform CSR window')
         (periph_base, periph_size) = (4160815104, 524288)
@@ -478,35 +903,65 @@ class AddressMap:
                 errors.append(name + ' page escapes the peripheral CSR window')
         errors.extend([])
         binding = self.io.gpio_binding()
-        expected = {'led count': (self.GPIO_LED_COUNT, binding['led_count']), 'button count': (self.GPIO_BUTTON_COUNT, binding['button_count']), 'led bit': (self.GPIO_LED_BIT, binding['led_bit']), 'button bit': (self.GPIO_BUTTON_BIT, binding['button_bit']), 'inject bit': (self.GPIO_INJECT_BIT, binding['inject_bit']), 'led mask': (self.GPIO_LED_MASK, binding['led_mask']), 'button mask': (self.GPIO_BUTTON_MASK, binding['button_mask']), 'irq mask': (self.GPIO_IRQ_MASK, binding['irq_mask'])}
+        expected = {
+            'led count': (self.GPIO_LED_COUNT, binding['led_count']),
+            'button count': (self.GPIO_BUTTON_COUNT, binding['button_count']),
+            'led bit': (self.GPIO_LED_BIT, binding['led_bit']),
+            'button bit': (self.GPIO_BUTTON_BIT, binding['button_bit']),
+            'inject bit': (self.GPIO_INJECT_BIT, binding['inject_bit']),
+            'led mask': (self.GPIO_LED_MASK, binding['led_mask']),
+            'button mask': (self.GPIO_BUTTON_MASK, binding['button_mask']),
+            'irq mask': (self.GPIO_IRQ_MASK, binding['irq_mask']),
+        }
         for (name, (have, want)) in expected.items():
             if have != want:
                 errors.append('%s does not match board.json' % name)
         described = self.interface()['gpio']
-        if described['leds'] != list(binding['led_bits']) or described['buttons'] != list(binding['button_bits']):
+        if (
+            described['leds'] != list(binding['led_bits'])
+            or described['buttons'] != list(binding['button_bits'])
+        ):
             errors.append('image ABI gpio binding does not match board.json')
-        if described['led_active_low'] != [int(item) for item in binding['led_active_low']]:
+        if described['led_active_low'] != [
+            int(item) for item in binding['led_active_low']
+        ]:
             errors.append('image ABI led polarity does not match board.json')
-        if described['button_active_low'] != [int(item) for item in binding['button_active_low']]:
+        if described['button_active_low'] != [
+            int(item) for item in binding['button_active_low']
+        ]:
             errors.append('image ABI button polarity does not match board.json')
         return errors
 
     def check_software_layout(self):
         """DDR ownership by phase, OS handoff placement and OS virtual windows."""
         errors = []
-        layout = {name: (base, size, phases) for (name, base, size, phases) in self.DDR_LAYOUT}
+        layout = {
+            name: (base, size, phases)
+            for (name, base, size, phases) in self.DDR_LAYOUT
+        }
         if len(layout) != len(self.DDR_LAYOUT):
             errors.append('duplicate DDR layout name')
         for (name, (base, size, phases)) in layout.items():
-            if size <= 0 or base % 4096 or size % 4096 or base + size > self.DDR_BASE + self.DDR_SIZE:
+            if (
+                size <= 0
+                or base % 4096
+                or size % 4096
+                or base + size > self.DDR_BASE + self.DDR_SIZE
+            ):
                 errors.append('invalid DDR range: ' + name)
             if not phases or not set(phases) <= set(self.DDR_PHASES):
                 errors.append('invalid DDR phases: ' + name)
         for phase in self.DDR_PHASES:
-            live = sorted(((base, size, name) for (name, (base, size, phases)) in layout.items() if phase in phases))
+            live = sorted(
+                (base, size, name)
+                for (name, (base, size, phases)) in layout.items()
+                if phase in phases
+            )
             for (left, right) in zip(live, live[1:]):
                 if left[0] + left[1] > right[0]:
-                    errors.append('%s overlaps %s in %s phase' % (left[2], right[2], phase))
+                    errors.append(
+                        '%s overlaps %s in %s phase' % (left[2], right[2], phase)
+                    )
         if not 0 < self.OS_MEMORY_BYTES <= self.DDR_SIZE:
             errors.append('OS memory exceeds DDR')
         for (name, (base, size, phases)) in layout.items():
@@ -514,46 +969,92 @@ class AddressMap:
                 errors.append(name + ' is outside OS memory')
         if self.OS_KERNEL_BASE % self.OS_KERNEL_ALIGN:
             errors.append('kernel load address is not Sv32 megapage aligned')
-        if self.OS_SBI_BYTES & (self.OS_SBI_BYTES - 1) or self.OS_SBI_BASE % self.OS_SBI_BYTES:
+        if (
+            self.OS_SBI_BYTES & (self.OS_SBI_BYTES - 1)
+            or self.OS_SBI_BASE % self.OS_SBI_BYTES
+        ):
             errors.append('OpenSBI region must be a naturally aligned power of two')
         if self.OS_UBOOT_BASE != self.OS_SBI_BASE + self.OS_SBI_BYTES:
-            errors.append('os.uboot must follow os.sbi: FW_PAYLOAD_OFFSET is the os.sbi size')
+            errors.append(
+                'os.uboot must follow os.sbi: FW_PAYLOAD_OFFSET is the os.sbi size'
+            )
         page = self.OS_PAGE_OFFSET
-        kernel_va = (('vmalloc', page - self.OS_VMALLOC_BYTES, self.OS_VMALLOC_BYTES),
-                     ('linear', page, self.OS_MEMORY_BYTES))
+        kernel_va = (
+            ('vmalloc', page - self.OS_VMALLOC_BYTES, self.OS_VMALLOC_BYTES),
+            ('linear', page, self.OS_MEMORY_BYTES),
+        )
         if page + self.OS_MEMORY_BYTES > 1 << 32 or page < self.OS_VMALLOC_BYTES:
             errors.append('OS kernel virtual layout exceeds Sv32')
         (rbase, rsize) = (self.OS_RESERVED_VA_BASE, self.OS_RESERVED_VA_BYTES)
         (vbase, vsize) = kernel_va[0][1:]
-        if rsize <= 0 or rbase % 4096 or rsize % 4096 or rbase < vbase or rbase + rsize > vbase + vsize:
-            errors.append('reserved kernel VA must be a page range inside Linux vmalloc')
-        for (local, lbase, lsize) in (('ilm', self.ILM_BASE, self.ILM_SIZE), ('dlm', self.DLM_BASE, self.DLM_SIZE)):
+        if (
+            rsize <= 0
+            or rbase % 4096
+            or rsize % 4096
+            or rbase < vbase
+            or rbase + rsize > vbase + vsize
+        ):
+            errors.append(
+                'reserved kernel VA must be a page range inside Linux vmalloc'
+            )
+        for (local, lbase, lsize) in (
+            ('ilm', self.ILM_BASE, self.ILM_SIZE),
+            ('dlm', self.DLM_BASE, self.DLM_SIZE),
+        ):
             if lbase < vbase:
-                errors.append('%s window lies below Linux vmalloc (user/fixmap VA) and cannot be kept unmapped' % local)
+                errors.append(
+                    '%s window lies below Linux vmalloc (user/fixmap VA) '
+                    'and cannot be kept unmapped' % local
+                )
             for (window, wbase, wsize) in kernel_va:
-                reserved = window == 'vmalloc' and rbase <= lbase < lbase + lsize <= rbase + rsize
+                reserved = (
+                    window == 'vmalloc'
+                    and rbase <= lbase < lbase + lsize <= rbase + rsize
+                )
                 if lbase < wbase + wsize and wbase < lbase + lsize and not reserved:
-                    errors.append('%s window overlaps Linux %s outside the reserved kernel VA' % (local, window))
+                    errors.append(
+                        '%s window overlaps Linux %s outside the reserved kernel VA'
+                        % (local, window)
+                    )
         return errors
 
     def software_layout(self):
         """Reviewable DDR ownership and OS handoff contract."""
-        return dict(ddr=[dict(name=name, base=base, size=size, phases=list(phases))
-                         for (name, base, size, phases) in self.DDR_LAYOUT],
-                    os=dict(memory=[self.DDR_BASE, self.OS_MEMORY_BYTES], kernel=self.OS_KERNEL_BASE,
-                            sbi=[self.OS_SBI_BASE, self.OS_SBI_BYTES], dtb=self.OS_DTB_BASE,
-                            uboot=[self.OS_UBOOT_BASE, self.OS_UBOOT_BYTES],
-                            firmware_fdt=[self.OS_FIRMWARE_FDT_BASE, self.OS_FIRMWARE_FDT_BYTES],
-                            page_offset=self.OS_PAGE_OFFSET,
-                            vmalloc=[self.OS_PAGE_OFFSET - self.OS_VMALLOC_BYTES, self.OS_VMALLOC_BYTES],
-                            reserved_va=[self.OS_RESERVED_VA_BASE, self.OS_RESERVED_VA_BYTES]))
+        return dict(
+            ddr=[
+                dict(name=name, base=base, size=size, phases=list(phases))
+                for (name, base, size, phases) in self.DDR_LAYOUT
+            ],
+            os=dict(
+                memory=[self.DDR_BASE, self.OS_MEMORY_BYTES],
+                kernel=self.OS_KERNEL_BASE,
+                sbi=[self.OS_SBI_BASE, self.OS_SBI_BYTES],
+                dtb=self.OS_DTB_BASE,
+                uboot=[self.OS_UBOOT_BASE, self.OS_UBOOT_BYTES],
+                firmware_fdt=[self.OS_FIRMWARE_FDT_BASE, self.OS_FIRMWARE_FDT_BYTES],
+                page_offset=self.OS_PAGE_OFFSET,
+                vmalloc=[
+                    self.OS_PAGE_OFFSET - self.OS_VMALLOC_BYTES,
+                    self.OS_VMALLOC_BYTES,
+                ],
+                reserved_va=[self.OS_RESERVED_VA_BASE, self.OS_RESERVED_VA_BYTES],
+            ),
+        )
 
     def dts_header(self):
-        """Integer constants for the C-preprocessed device tree (dtc rejects C suffixes)."""
+        """Integer constants for the C-preprocessed device tree.
+
+        dtc rejects C suffixes.
+        """
         self.require()
-        constants = {name: value for (name, value) in self.constants().items() if isinstance(value, int)}
+        constants = {
+            name: value
+            for (name, value) in self.constants().items()
+            if isinstance(value, int)
+        }
         return '/* Generated from address_map.py. */\n' + ''.join(
-            '#define AE350_%s 0x%x\n' % item for item in sorted(constants.items()))
+            '#define AE350_%s 0x%x\n' % item for item in sorted(constants.items())
+        )
 
     def require(self):
         errors = self.check()
@@ -562,9 +1063,43 @@ class AddressMap:
 
     def c_header(self):
         self.require()
-        constants = {name: value for (name, value) in self.constants().items() if name.isupper() and isinstance(value, int)}
-        return '#pragma once\n/* Generated from ae350_map.py. */\n' + ''.join(('#define AE350_%s 0x%xu\n' % item for item in sorted(constants.items()))) + ''.join(('#define AE350_VIDEO_%s 0x%xu\n' % item for item in sorted(self.VIDEO_REGS.items()))) + ''.join(('#define AE350_GFX2D_%s 0x%xu\n' % item for item in sorted(self.GFX2D_REGS.items()))) + '#define AE350_IMAGE_ABI 0x%08xu\n' % self.image_abi()
+        constants = {
+            name: value
+            for (name, value) in self.constants().items()
+            if name.isupper() and isinstance(value, int)
+        }
+        lines = ['#pragma once', '/* Generated from ae350_map.py. */']
+        for item in sorted(constants.items()):
+            lines.append('#define AE350_%s 0x%xu' % item)
+        for item in sorted(self.VIDEO_REGS.items()):
+            lines.append('#define AE350_VIDEO_%s 0x%xu' % item)
+        for item in sorted(self.GFX2D_REGS.items()):
+            lines.append('#define AE350_GFX2D_%s 0x%xu' % item)
+        lines.append('#define AE350_IMAGE_ABI 0x%08xu' % self.image_abi())
+        return '\n'.join(lines) + '\n'
 
     def ld_fragment(self):
         self.require()
-        return '\n'.join(['/* Generated from ae350_map.py. */', 'MEMORY {', ' rom (rx) : ORIGIN = 0x%x, LENGTH = 0x%x' % (self.ROM_BASE, self.ROM_SIZE), ' ilm (rwx) : ORIGIN = 0x%x, LENGTH = 0x%x' % (self.ILM_BASE, self.ILM_CODE_BYTES), ' dlm (rw) : ORIGIN = 0x%x, LENGTH = 0x%x' % (self.DLM_BASE, self.DLM_DATA_BYTES), ' ddr (rwx) : ORIGIN = 0x%x, LENGTH = 0x%x' % (self.DDR_CODE, self.DDR_CODE_MAX), ' bss (rw) : ORIGIN = 0x%x, LENGTH = 0x%x' % (self.BIOS_BSS_BASE, self.BIOS_BSS_BYTES), '}', '__ilm_base = 0x%x;' % self.ILM_BASE, '__ilm_limit = 0x%x;' % (self.ILM_BASE + self.ILM_SIZE), '__dlm_base = 0x%x;' % self.DLM_BASE, '__dlm_limit = 0x%x;' % (self.DLM_BASE + self.DLM_SIZE), '__local_stack_bottom = 0x%x;' % self.ROM_STACK_BOTTOM, '__local_stack_top = 0x%x;' % self.ROM_STACK_TOP, '__payload_stack_bottom = 0x%x;' % self.PAYLOAD_STACK_BOTTOM, '__payload_stack_top = 0x%x;' % self.PAYLOAD_STACK_TOP]) + '\n'
+        return '\n'.join([
+            '/* Generated from ae350_map.py. */',
+            'MEMORY {',
+            ' rom (rx) : ORIGIN = 0x%x, LENGTH = 0x%x'
+            % (self.ROM_BASE, self.ROM_SIZE),
+            ' ilm (rwx) : ORIGIN = 0x%x, LENGTH = 0x%x'
+            % (self.ILM_BASE, self.ILM_CODE_BYTES),
+            ' dlm (rw) : ORIGIN = 0x%x, LENGTH = 0x%x'
+            % (self.DLM_BASE, self.DLM_DATA_BYTES),
+            ' ddr (rwx) : ORIGIN = 0x%x, LENGTH = 0x%x'
+            % (self.DDR_CODE, self.DDR_CODE_MAX),
+            ' bss (rw) : ORIGIN = 0x%x, LENGTH = 0x%x'
+            % (self.BIOS_BSS_BASE, self.BIOS_BSS_BYTES),
+            '}',
+            '__ilm_base = 0x%x;' % self.ILM_BASE,
+            '__ilm_limit = 0x%x;' % (self.ILM_BASE + self.ILM_SIZE),
+            '__dlm_base = 0x%x;' % self.DLM_BASE,
+            '__dlm_limit = 0x%x;' % (self.DLM_BASE + self.DLM_SIZE),
+            '__local_stack_bottom = 0x%x;' % self.ROM_STACK_BOTTOM,
+            '__local_stack_top = 0x%x;' % self.ROM_STACK_TOP,
+            '__payload_stack_bottom = 0x%x;' % self.PAYLOAD_STACK_BOTTOM,
+            '__payload_stack_top = 0x%x;' % self.PAYLOAD_STACK_TOP,
+        ]) + '\n'
