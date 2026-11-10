@@ -53,11 +53,13 @@ class ShaderALU(LiteXModule):
         self.p_in = Signal()
         self.discard_in = Signal()
 
-        self.r_out = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
-        self.src_out = [Signal((16, True)) for _ in range(4)]
-        self.dst_out = [Signal((16, True)) for _ in range(4)]
-        self.fg_out = [Signal((16, True)) for _ in range(4)]
-        self.bg_out = [Signal((16, True)) for _ in range(4)]
+        self.r_out = [
+            [Signal((16, True), reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        self.src_out = [Signal((16, True), reset_less=True) for _ in range(4)]
+        self.dst_out = [Signal((16, True), reset_less=True) for _ in range(4)]
+        self.fg_out = [Signal((16, True), reset_less=True) for _ in range(4)]
+        self.bg_out = [Signal((16, True), reset_less=True) for _ in range(4)]
         self.p_out = Signal()
         self.discard_out = Signal()
 
@@ -138,25 +140,27 @@ class ShaderALU(LiteXModule):
         s2_vec = apply_swz(s2_raw, swz2)
 
         # Pipeline Sub-stage 1 registers (P1)
-        p1_s0 = [Signal((16, True)) for _ in range(4)]
-        p1_s1 = [Signal((16, True)) for _ in range(4)]
-        p1_s2 = [Signal((16, True)) for _ in range(4)]
-        p1_r = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
-        p1_src = [Signal((16, True)) for _ in range(4)]
-        p1_dst = [Signal((16, True)) for _ in range(4)]
-        p1_fg = [Signal((16, True)) for _ in range(4)]
-        p1_bg = [Signal((16, True)) for _ in range(4)]
+        p1_s0 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p1_s1 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p1_s2 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p1_r = [
+            [Signal((16, True), reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p1_src = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p1_dst = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p1_fg = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p1_bg = [Signal((16, True), reset_less=True) for _ in range(4)]
         p1_p = Signal()
         p1_discard = Signal()
         p1_stage_active = Signal()
         p1_pred_ok = Signal()
-        p1_dst_idx = Signal(4)
-        p1_wr_msk = Signal(4)
-        p1_opcode = Signal(6)
-        p1_pred = Signal(2)
-        p1_sat = Signal()
-        p1_sub_op = Signal(2)
-        p1_imm8 = Signal(8)
+        p1_dst_idx = Signal(4, reset_less=True)
+        p1_wr_msk = Signal(4, reset_less=True)
+        p1_opcode = Signal(6, reset_less=True)
+        p1_pred = Signal(2, reset_less=True)
+        p1_sat = Signal(reset_less=True)
+        p1_sub_op = Signal(2, reset_less=True)
+        p1_imm8 = Signal(8, reset_less=True)
 
         for c in range(4):
             self.sync += [
@@ -185,39 +189,41 @@ class ShaderALU(LiteXModule):
         ]
 
         # Pipeline Sub-stage 2 registers (P2)
-        p2_s0 = [Signal((16, True)) for _ in range(4)]
-        p2_s1 = [Signal((16, True)) for _ in range(4)]
-        p2_s2 = [Signal((16, True)) for _ in range(4)]
-        p2_r = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
-        p2_src = [Signal((16, True)) for _ in range(4)]
-        p2_dst = [Signal((16, True)) for _ in range(4)]
-        p2_fg = [Signal((16, True)) for _ in range(4)]
-        p2_bg = [Signal((16, True)) for _ in range(4)]
+        p2_s0 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_s1 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_s2 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_r = [
+            [Signal((16, True), reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p2_src = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_dst = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_fg = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_bg = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_p = Signal()
         p2_discard = Signal()
         p2_stage_active = Signal()
         p2_pred_ok = Signal()
-        p2_dst_idx = Signal(4)
-        p2_wr_msk = Signal(4)
-        p2_opcode = Signal(6)
-        p2_pred = Signal(2)
-        p2_sat = Signal()
+        p2_dst_idx = Signal(4, reset_less=True)
+        p2_wr_msk = Signal(4, reset_less=True)
+        p2_opcode = Signal(6, reset_less=True)
+        p2_pred = Signal(2, reset_less=True)
+        p2_sat = Signal(reset_less=True)
 
-        p2_mul_p = [Signal(17) for _ in range(4)]
-        p2_lerp_prod = [Signal((20, True)) for _ in range(4)]
-        p2_add = [Signal((17, True)) for _ in range(4)]
-        p2_sub = [Signal((17, True)) for _ in range(4)]
-        p2_diff = [Signal((17, True)) for _ in range(4)]
-        p2_min = [Signal((17, True)) for _ in range(4)]
-        p2_max = [Signal((17, True)) for _ in range(4)]
-        p2_clamp = [Signal((17, True)) for _ in range(4)]
-        p2_and = [Signal((16, True)) for _ in range(4)]
-        p2_or = [Signal((16, True)) for _ in range(4)]
-        p2_xor = [Signal((16, True)) for _ in range(4)]
-        p2_shl = [Signal((16, True)) for _ in range(4)]
-        p2_shr = [Signal((16, True)) for _ in range(4)]
-        p2_mul_scaled = [Signal((16, True)) for _ in range(4)]
-        p2_match_ch = [Signal() for _ in range(4)]
+        p2_mul_p = [Signal(17, reset_less=True) for _ in range(4)]
+        p2_lerp_prod = [Signal((20, True), reset_less=True) for _ in range(4)]
+        p2_add = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_sub = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_diff = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_min = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_max = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_clamp = [Signal((17, True), reset_less=True) for _ in range(4)]
+        p2_and = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_or = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_xor = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_shl = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_shr = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_mul_scaled = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_match_ch = [Signal(reset_less=True) for _ in range(4)]
 
         for c in range(4):
             s0 = p1_s0[c]
@@ -261,9 +267,9 @@ class ShaderALU(LiteXModule):
                 self.sync += p2_r[r][c].eq(p1_r[r][c])
 
         if stage_idx == 1:
-            p2_dot3_p0 = Signal(17)
-            p2_dot3_p1 = Signal(17)
-            p2_dot3_p2 = Signal(17)
+            p2_dot3_p0 = Signal(17, reset_less=True)
+            p2_dot3_p1 = Signal(17, reset_less=True)
+            p2_dot3_p2 = Signal(17, reset_less=True)
             self.sync += [
                 p2_dot3_p0.eq(p1_s0[0][0:8] * p1_s1[0][0:8]),
                 p2_dot3_p1.eq(p1_s0[1][0:8] * p1_s1[1][0:8]),
@@ -454,7 +460,7 @@ class Gfx2DEngine(LiteXModule):
             nxt_row_start.eq(row_start + delta_dst),
             nxt_src_row_start.eq(src_row_start + delta_src),
         ]
-        beat_byte = Signal(32)
+        beat_byte = Signal(32, reset_less=True)
         rb_hi5 = Signal(16)
         rb_lo5 = Signal(5)
         off5 = Signal(5)
@@ -486,7 +492,7 @@ class Gfx2DEngine(LiteXModule):
         src_bytes_left_zero = Signal()
         bit_buf = Signal(24)
         bit_cnt = Signal(5)
-        copy_data = Signal(256)
+        copy_data = Signal(256, reset_less=True)
 
         wr_pattern = Signal(256)
         pat_even = Cat(*[fg[:16]] * 16)
@@ -512,24 +518,18 @@ class Gfx2DEngine(LiteXModule):
         blit_pix_32 = [Mux(bit_buf[23 - j], fg[:32], bg[:32]) for j in range(8)]
         self.comb += blit_expanded.eq(
             Mux(fmt == FMT_XRGB8888, Cat(*blit_pix_32), Cat(*blit_pix_16)))
-        blit_exp_reg = Signal(256)
-        blit_shifted = Signal(256)
+        blit_exp_reg = Signal(256, reset_less=True)
+        blit_shifted = Signal(256, reset_less=True)
         self.comb += blit_shifted.eq(blit_exp_reg)
 
         # Output DDR registers
-        out_addr, out_data, out_mask = Signal(29), Signal(256), Signal(32)
+        out_addr = Signal(29, reset_less=True)
+        out_data = Signal(256, reset_less=True)
+        out_mask = Signal(32, reset_less=True)
         prep_data = Signal(256)
-        self.comb += [
-            self.ui.cmd.eq(0),
-            self.ui.burst.eq(0),
-            self.ui.addr.eq(out_addr),
-            self.ui.wr_data.eq(out_data),
-            self.ui.wr_data_mask.eq(~out_mask),
-            self.ui.wr_data_end.eq(0),
-        ]
         load_out = Signal()
-        self.sync += If(load_out, out_addr.eq(beat_byte[2:31] & ~Constant(7, 29)),
-                        out_data.eq(prep_data), out_mask.eq(beat_mask))
+        is_rd_state = Signal()
+        rd_addr = Signal(29, reset_less=True)
         src_byte = Signal(8)
         self.comb += src_byte.eq(beat_shift[0:8])
         src_byte_q = Signal(8)
@@ -562,14 +562,14 @@ class Gfx2DEngine(LiteXModule):
         # Tile FSM signals
         tile_x = Signal(16)
         tile_w = Signal(16)
-        t_src_cur_blk = Signal(29)
+        t_src_cur_blk = Signal(29, reset_less=True)
         t_src_beats_left = Signal(16)
         t_src_off = Signal(5)
-        t_dst_base_blk = Signal(29)
-        t_dst_cur_blk = Signal(29)
+        t_dst_base_blk = Signal(29, reset_less=True)
+        t_dst_cur_blk = Signal(29, reset_less=True)
         t_dst_beats_left = Signal(16)
         t_dst_off = Signal(5)
-        t_beat_buf = Signal(256)
+        t_beat_buf = Signal(256, reset_less=True)
         t_src_is_first = Signal()
         t_dst_is_first = Signal()
         sub_idx = Signal(6)
@@ -670,29 +670,41 @@ class Gfx2DEngine(LiteXModule):
 
         # Writeback packer signals
         wb_idx = Signal(11)
-        wbuf = Signal(256)
-        wmask = Signal(32)
-        cur_wb_blk = Signal(29)
+        wbuf = Signal(256, reset_less=True)
+        wmask = Signal(32, reset_less=True)
+        cur_wb_blk = Signal(29, reset_less=True)
         byte_slot = Signal(6)
 
         self.fsm = fsm = FSM(reset_state='IDLE')
-        self.comb += load_out.eq(fsm.ongoing('PREP') | fsm.ongoing('C_WPREP') |
-                                 fsm.ongoing('B_PREP') | fsm.ongoing('T_WB_PREP'))
-        self.comb += prep_data.eq(Mux(fsm.ongoing('PREP'), wr_pattern,
-                                 Mux(fsm.ongoing('C_WPREP'), copy_data,
-                                 Mux(fsm.ongoing('T_WB_PREP'), wbuf, blit_shifted))))
-        rd_addr = Signal(29)
-        is_rd_state = Signal()
         self.comb += [
+            load_out.eq(fsm.ongoing('PREP') | fsm.ongoing('C_WPREP') |
+                        fsm.ongoing('B_PREP') | fsm.ongoing('T_WB_PREP')),
+            prep_data.eq(Mux(fsm.ongoing('PREP'), wr_pattern,
+                         Mux(fsm.ongoing('C_WPREP'), copy_data,
+                         Mux(fsm.ongoing('T_WB_PREP'), wbuf, blit_shifted)))),
             is_rd_state.eq(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND') |
                            fsm.ongoing('T_SRC_RREQ') | fsm.ongoing('T_DST_RREQ')),
             self.ui.cmd.eq(Mux(is_rd_state, 1, 0)),
+            self.ui.burst.eq(0),
             self.ui.addr.eq(
                 Mux(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND'), rd_addr,
                 Mux(fsm.ongoing('T_SRC_RREQ'), t_src_cur_blk,
-                Mux(fsm.ongoing('T_DST_RREQ'), t_dst_cur_blk,
-                Mux(fsm.ongoing('T_WB_SEND'), cur_wb_blk, out_addr))))),
+                Mux(fsm.ongoing('T_DST_RREQ'), t_dst_cur_blk, out_addr)))),
+            self.ui.wr_data.eq(out_data),
+            self.ui.wr_data_mask.eq(~out_mask),
+            self.ui.wr_data_end.eq(0),
         ]
+        self.sync += If(load_out,
+            If(fsm.ongoing('T_WB_PREP'),
+                out_addr.eq(cur_wb_blk),
+                out_data.eq(wbuf),
+                out_mask.eq(wmask),
+            ).Else(
+                out_addr.eq(beat_byte[2:31] & ~Constant(7, 29)),
+                out_data.eq(prep_data),
+                out_mask.eq(beat_mask),
+            )
+        )
         rd_base = Signal(32)
         self.comb += rd_base.eq(Mux(fsm.ongoing('B_RD_PREP'), src_beat_base,
                                     src_beat_base + (beat << 5)))
@@ -701,8 +713,6 @@ class Gfx2DEngine(LiteXModule):
         self.comb += self.busy.eq(~fsm.ongoing('IDLE'))
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                self.ui.wr_data_mask.eq(0xffffffff),
-                self.ui.addr.eq(dst_addr[2:31] & ~Constant(7, 29)),
                 If(start, NextValue(err, 0), NextValue(elapsed, 0),
                    NextValue(row, 0), NextValue(rows_left, height),
                    NextValue(last_row, height == 1), NextValue(beat, 0),
@@ -1410,13 +1420,9 @@ class Gfx2DEngine(LiteXModule):
                         NextState('T_WB_READ')
                     )
                 ).Else(
-                    self.ui.cmd.eq(0),
                     self.ui.cmd_en.eq(1),
                     self.ui.wr_data_en.eq(1),
                     self.ui.wr_data_end.eq(1),
-                    self.ui.addr.eq(cur_wb_blk),
-                    self.ui.wr_data.eq(wbuf),
-                    self.ui.wr_data_mask.eq(~wmask),
                     If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                         NextValue(elapsed, 0),
                         NextValue(cur_wb_blk, cur_wb_blk + 8),
@@ -1508,45 +1514,54 @@ class Gfx2D(LiteXModule):
         ack_seen = Signal()
         complete = ack_sync[1] != ack_seen
 
-        reads = {
-            0: amap.GFX2D_ID,
-            4: amap.ABI_VERSION,
-            8: amap.GFX2D_CAP,
-            reg['STATUS']: self.busy | (self.done << 1) | (self.error << 2),
-            reg['IRQ_STATUS']: self.irq_pending,
-            reg['IRQ_ENABLE']: self.irq_enable,
-            reg['LAST_ERROR']: self.last_error,
-            reg['COMMANDS']: self.commands,
-            reg['ERRORS']: self.errors,
-            reg['CLEAR_ERRORS']: 0,
-            reg['LUT_DATA']: 0,
-        }
+        widx = Signal(6)
+        words = [Constant(0, 32) for _ in range(48)]
+        words[0] = Constant(amap.GFX2D_ID, 32)
+        words[1] = Constant(amap.ABI_VERSION, 32)
+        words[2] = Constant(amap.GFX2D_CAP, 32)
+        words[3] = Constant(0, 32)
+        words[4] = self.busy | (self.done << 1) | (self.error << 2)
+        words[5] = self.irq_pending
+        words[6] = self.irq_enable
+        words[7] = self.last_error
         for name, sig in desc.items():
-            reads[reg[name]] = sig
+            words[reg[name] >> 2] = sig
+        words[18] = self.commands
+        words[19] = self.errors
+        words[20] = Constant(0, 32)
+        words[46] = Constant(0, 32)
 
+        grp0 = Array(words[0:16])
+        grp1 = Array(words[16:32])
+        grp2 = Array(words[32:48])
+
+        rdata_grp0 = Signal(32)
+        rdata_grp1 = Signal(32)
+        rdata_grp2 = Signal(32)
         read_ok = Signal()
-        from migen import Case as _Case
-        self.comb += [
-            read_ok.eq(0),
-            self.rdata.eq(0),
-            _Case(self.off, {off: [read_ok.eq(1), self.rdata.eq(value)]
-                            for off, value in reads.items()}),
-        ]
-
-        write_offsets = [
-            reg['CONTROL'], reg['IRQ_ENABLE'], reg['IRQ_STATUS'],
-            reg['CLEAR_ERRORS'], reg['LUT_DATA'],
-        ] + [reg[n] for n in desc]
         is_write_reg = Signal()
-        is_control = Signal()
-        self.comb += [
-            is_write_reg.eq(0),
-            is_control.eq(self.off == reg['CONTROL']),
-            _Case(self.off, {off: is_write_reg.eq(1) for off in write_offsets}),
-        ]
         write_ok = Signal()
+        from migen import Case as _Case
+
         self.comb += [
-            write_ok.eq(is_write_reg & (~is_control | (self.wdata == 1))),
+            widx.eq(self.off[2:8]),
+            rdata_grp0.eq(grp0[widx[0:4]]),
+            rdata_grp1.eq(grp1[widx[0:4]]),
+            rdata_grp2.eq(grp2[widx[0:4]]),
+            If(widx[5],
+                self.rdata.eq(rdata_grp2)
+            ).Elif(widx[4],
+                self.rdata.eq(rdata_grp1)
+            ).Else(
+                self.rdata.eq(rdata_grp0)
+            ),
+            read_ok.eq((self.off[0:2] == 0) & (self.off[8:12] == 0) &
+                       (widx <= 46) & (widx != 3)),
+            is_write_reg.eq((self.off[0:2] == 0) & (self.off[8:12] == 0) &
+                            (widx >= 3) & (widx <= 46) &
+                            (widx != 4) & (widx != 7) &
+                            (widx != 18) & (widx != 19)),
+            write_ok.eq(is_write_reg & ((widx != 3) | (self.wdata == 1))),
             self.ok.eq(self.selected & Mux(self.write, write_ok, read_ok)),
         ]
 
