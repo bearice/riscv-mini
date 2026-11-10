@@ -648,9 +648,11 @@ class Gfx2DEngine(LiteXModule):
             src_end.eq(src_addr + src_span),
             dst_end.eq(dst_addr + dst_span),
         ]
+        cur_mem_overlap = Signal()
         dir_down_step = Signal()
         overlap_safe = Signal()
         self.comb += [
+            cur_mem_overlap.eq((src_addr < dst_end) & (dst_addr < src_end)),
             overlap_safe.eq((~scale_en) & (~bilinear_en) &
                             (src_bpp_shift == dst_bpp_shift) &
                             (src_stride == dst_stride) &
@@ -658,7 +660,7 @@ class Gfx2DEngine(LiteXModule):
             dir_down_step.eq(Mux(op == OP_COPY_AREA,
                                  (src_stride == dst_stride) & (src_addr < dst_addr),
                              Mux(op == OP_SHADER,
-                                 uses_src & mem_overlap & overlap_safe &
+                                 uses_src & cur_mem_overlap & overlap_safe &
                                      (src_addr < dst_addr),
                                  0))),
         ]
@@ -669,12 +671,11 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(cmp_blit_wb, blit_wb < ((width + 7) >> 3)),
                 NextValue(cmp_right_overlap,
                           (src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)),
-                NextValue(mem_overlap, (src_addr < dst_end) & (dst_addr < src_end)),
+                NextValue(mem_overlap, cur_mem_overlap),
                 NextValue(unequal_stride_overlap, (src_stride != dst_stride) &
-                          (src_addr < dst_end) & (dst_addr < src_end)),
+                          cur_mem_overlap),
                 NextValue(bad_shader_overlap,
-                          uses_src & (src_addr < dst_end) &
-                              (dst_addr < src_end) & (~overlap_safe)),
+                          uses_src & cur_mem_overlap & (~overlap_safe)),
                 NextValue(dst_align_bad,
                           Mux(dst_bpp_shift == 2,
                               (dst_addr[0:2] != 0) | (dst_stride[0:2] != 0),
@@ -701,9 +702,9 @@ class Gfx2DEngine(LiteXModule):
                            (dst_addr[0:2] != 0) | (dst_stride[0:2] != 0),
                            (dst_addr[0] != 0) | (dst_stride[0] != 0))
         legacy_fmt_bad = (op < OP_SHADER) & ((fmt == FMT_RGB888) | (fmt > FMT_XRGB1555))
-        dst_fmt_bad = (dst_format == FMT_RGB888) | (dst_format > FMT_INDEX8) | \
-                      (dst_format == FMT_MONO1) | legacy_fmt_bad
-        src_fmt_bad = (src_format == FMT_RGB888) | (src_format > FMT_MONO1)
+        dst_fmt_bad = (dst_format == FMT_RGB888) | (dst_format >= FMT_INDEX8) | \
+                      legacy_fmt_bad
+        src_fmt_bad = (src_format == FMT_RGB888) | (src_format >= FMT_INDEX8)
         cfg_bad = (op == OP_SCALE_BLIT) | scale_en | bilinear_en | (last_stage > 1)
         dim_bad = (width == 0) | (height == 0) | \
                   ((op >= OP_SHADER) & ((width > 16384) | (height > 16384)))
@@ -1259,9 +1260,6 @@ class Gfx2DEngine(LiteXModule):
             ).Elif(dst_format == FMT_ARGB8888,
                 packed_pix.eq(Cat(out_b, out_g, out_r, out_a)),
                 pix_bytes.eq(4)
-            ).Elif(dst_format == FMT_INDEX8,
-                packed_pix.eq(out_b),
-                pix_bytes.eq(1)
             ).Else(
                 packed_pix.eq(Cat(out_b, out_g, out_r, Constant(0xFF, 8))),
                 pix_bytes.eq(4)

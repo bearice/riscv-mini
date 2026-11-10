@@ -822,6 +822,66 @@ class Gfx2DHostTest(unittest.TestCase):
                      expect_err=ERR_PARAM)
         print("PASS GFX2D: OP_SHADER WIDTH=1280 overlap rejected with ERR_PARAM")
 
+    def test_shader_overlap_downward_direction(self):
+        # 3 rows, stride=64, src=0x2000, dst=0x2040 (downward shift by 1 row)
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        w, h, stride = 16, 3, 64
+        src_addr, dst_addr = 0x2000, 0x2040
+
+        # Pass-through shader: R0 = SRC
+        inst0_hi = ((0x0 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (0 << 12) | (1 << 8) | (0 << 4) | (0xE4 >> 4))
+        inst0_lo = (((0xE4 & 0xF) << 28) | (0xE4 << 20) |
+                    (0xFF << 12) | (0x8 << 8) | 0)
+
+        for r in range(h):
+            for c in range(w):
+                val = 0x1000 * (r + 1) + c
+                mem[src_addr + r * stride + 2 * c + 0] = val & 0xFF
+                mem[src_addr + r * stride + 2 * c + 1] = (val >> 8) & 0xFF
+
+        cfg = 0 | (1 << 4) | (0 << 5) | (1 << 11) | (0 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': stride,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': stride,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+
+        for r in range(h):
+            for c in range(w):
+                want = 0x1000 * (r + 1) + c
+                got = (mem[dst_addr + r * stride + 2 * c + 0] |
+                       (mem[dst_addr + r * stride + 2 * c + 1] << 8))
+                self.assertEqual(got, want)
+        print("PASS GFX2D: OP_SHADER downward row overlap runs bottom-up cleanly")
+
+    def test_shader_reject_unimplemented_formats(self):
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        # 1. dst format = FMT_INDEX8 (6)
+        desc = {
+            'OP': 3, 'SHADER_CFG': 0,
+            'SRC_ADDR': 0x1000, 'SRC_STRIDE': 64,
+            'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 16, 'HEIGHT': 1, 'FORMAT': 6,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc,
+                     expect_err=ERR_PARAM)
+
+        # 2. src format = FMT_INDEX8 (6)
+        d2 = make()
+        cfg_src_idx8 = 0 | (1 << 4) | (1 << 11) | (6 << 12)
+        desc2 = dict(desc)
+        desc2['FORMAT'] = 0
+        desc2['SHADER_CFG'] = cfg_src_idx8
+        self._run_op(d2, self._fake_pump_factory(d2, mem), desc2,
+                     expect_err=ERR_PARAM)
+        print("PASS GFX2D: OP_SHADER rejects INDEX8/MONO1 formats with ERR_PARAM")
+
 
 if __name__ == '__main__':
     unittest.main()
