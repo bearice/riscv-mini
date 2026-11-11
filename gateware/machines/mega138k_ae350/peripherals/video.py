@@ -269,6 +269,9 @@ class FabricVideo(LiteXModule):
         self.pixel_output = output = ClockDomainsRenamer('video_pix')(stream.Buffer(
             [('data',pixel_bits),('index',32),('epoch',32)], pipe_valid=True, pipe_ready=True))
         self.palette_lookup = ClockDomainsRenamer('video_pix')(VideoPaletteLookup(palette_read))
+        self.pixel_lookup_buf = lookup_buf = ClockDomainsRenamer('video_pix')(
+            stream.Buffer([('data', pixel_bits), ('index', 32), ('epoch', 32)],
+                          pipe_valid=True, pipe_ready=True))
         active_bank, next_bank = Signal(), Signal()
         self.comb += [output.sink.valid.eq(fifo.readable),
             output.sink.data.eq(fifo.dout[:pixel_bits]),
@@ -278,7 +281,8 @@ class FabricVideo(LiteXModule):
             output.source.connect(self.palette_lookup.sink),
             self.palette_lookup.indexed.eq(pixels.format == 4),
             self.palette_lookup.palette_bank.eq(active_bank),
-            self.palette_lookup.source.connect(pixels.source)]
+            self.palette_lookup.source.connect(lookup_buf.sink),
+            lookup_buf.source.connect(pixels.source)]
 
         base0, base1 = Signal(32), Signal(32)
         stride = Signal(32, reset=width * 2)
