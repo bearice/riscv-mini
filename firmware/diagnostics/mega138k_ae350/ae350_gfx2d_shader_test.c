@@ -158,18 +158,18 @@ int main(void) {
         ae350_dma_sync_for_device(src, stride_src);
         ae350_dma_sync_for_device(dst, stride_dst);
 
-        /* Stage 0: DISCARD_IF SRC == R0 (key in UNIFORM0)
-         * Stage 1: R0 = SRC
+        /* Stage 0: DISCARD_IF.rgb EQ, SRC.argb, U0.argb
+         * Stage 1: MOV.rgb R0, SRC.argb (SAT=1)
          */
-        uint32_t inst0_hi = (0x17u << 26) | (2u << 24) | (7u << 16) |
-                            (1u << 8) | (0xE4u >> 4);
-        uint32_t inst0_lo = ((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
-                            (0x7u << 12) | (0x0u << 8) | 0;
-        uint32_t inst1_hi = (0x00u << 26) | (0u << 24) | (7u << 16) |
-                            (1u << 8) | (0xE4u >> 4);
-        uint32_t inst1_lo = ((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
-                            (0xFu << 12) | (0x8u << 8) | 0;
-        uint32_t cfg = 1u | (1u << 4) | (1u << 11) | (4u << 12);
+        uint32_t inst0_hi = (0x39u << 26) | (0u << 24) | (0u << 20) | (7u << 16) |
+                            (4u << 12) | (8u << 8) | (0u << 4) | (0xE4u >> 4);
+        uint32_t inst0_lo = (((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
+                            (0u << 12) | (0u << 8) | 0);
+        uint32_t inst1_hi = (0x00u << 26) | (0u << 24) | (0u << 20) | (7u << 16) |
+                            (4u << 12) | (0u << 8) | (0u << 4) | (0xE4u >> 4);
+        uint32_t inst1_lo = (((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
+                            (0u << 12) | (0x8u << 8) | 0);
+        uint32_t cfg = 1u | (1u << 4) | (1u << 11) | (2u << 12);
 
         W(AE350_GFX2D_OP, 3);
         W(AE350_GFX2D_SHADER_CFG, cfg);
@@ -211,22 +211,23 @@ int main(void) {
         ae350_dma_sync_for_device(src, stride);
 
         /* Stage 0: R0 = SRC
-         * Stage 1: DOT3 R0 = R0 * UNIFORM0 ([76, 150, 29, 0])
+         * Stage 1: DOT3 R0 = R0 * UNIFORM0 ([B=29, G=150, R=77, A=0])
          */
-        uint32_t inst0_hi = (0x00u << 26) | (0u << 24) | (7u << 16) |
-                            (1u << 8) | (0xE4u >> 4);
-        uint32_t inst0_lo = ((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
-                            (0xFu << 12) | (0x8u << 8) | 0;
-        uint32_t inst1_hi = (0x15u << 26) | (0u << 24) | (2u << 20) |
-                            (7u << 16) | (0u << 12) | (2u << 8) |
+        uint32_t inst0_hi = (0x00u << 26) | (0u << 24) | (0u << 20) |
+                            (0xFu << 16) | (4u << 12) | (0u << 8) |
                             (0u << 4) | (0xE4u >> 4);
-        uint32_t inst1_lo = ((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
-                            (0x7u << 12) | (0x8u << 8) | 0;
+        uint32_t inst0_lo = (((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
+                            (0u << 12) | (0u << 8) | 0);
+        uint32_t inst1_hi = (0x14u << 26) | (0u << 24) | (0u << 20) |
+                            (7u << 16) | (0u << 12) | (8u << 8) |
+                            (0u << 4) | (0xE4u >> 4);
+        uint32_t inst1_lo = (((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
+                            (0u << 12) | (0x8u << 8) | 0);
         uint32_t cfg = 1u | (1u << 4) | (1u << 11) | (0u << 12);
 
         W(AE350_GFX2D_OP, 3);
         W(AE350_GFX2D_SHADER_CFG, cfg);
-        W(AE350_GFX2D_UNIFORM0, 0x001D964Cu); /* [B=76, G=150, R=29, A=0] */
+        W(AE350_GFX2D_UNIFORM0, (0u << 24) | (77u << 16) | (150u << 8) | 29u);
         W(AE350_GFX2D_SRC_ADDR, src);
         W(AE350_GFX2D_SRC_STRIDE, stride);
         W(AE350_GFX2D_DST_ADDR, dst);
@@ -244,11 +245,12 @@ int main(void) {
         if (rc) { slot[STAGE] = 0xC3500006u; return 0; }
         ae350_dma_sync_for_cpu(dst, stride);
 
-        /* 255 * 76 = 19380 -> 19380 / 256 = 75 (0x4B).
-         * Grayscale RGB565: R=9 (75>>3), G=18 (75>>2), B=9 (75>>3)
-         * -> (9 << 11) | (18 << 5) | 9 = 0x4A49
+        /* Pure Red 0xF800 expands to R=255, G=0, B=0.
+         * DOT3 = (255 * 77 + 128) >> 8 = 77 (0x4D).
+         * Grayscale RGB565: R=9 (77>>3), G=19 (77>>2), B=9 (77>>3)
+         * -> (9 << 11) | (19 << 5) | 9 = 0x4A69
          */
-        uint16_t expected = (9u << 11) | (18u << 5) | 9u;
+        uint16_t expected = (9u << 11) | (19u << 5) | 9u;
         unsigned bad = 0;
         for (unsigned i = 0; i < w; i++)
             if (px16(dst + i * 2) != expected) bad++;
@@ -265,10 +267,11 @@ int main(void) {
                 put16(base + r * stride + 2 * c, (uint16_t)(0x3000 + r * 16 + c));
         ae350_dma_sync_for_device(base, 4 * stride);
 
-        uint32_t inst0_hi = (0x00u << 26) | (0u << 24) | (7u << 16) |
-                            (1u << 8) | (0xE4u >> 4);
-        uint32_t inst0_lo = ((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
-                            (0xFu << 12) | (0x8u << 8) | 0;
+        uint32_t inst0_hi = (0x00u << 26) | (0u << 24) | (0u << 20) |
+                            (7u << 16) | (4u << 12) | (0u << 8) |
+                            (0u << 4) | (0xE4u >> 4);
+        uint32_t inst0_lo = (((0xE4u & 0xFu) << 28) | (0xE4u << 20) |
+                            (0u << 12) | (0x8u << 8) | 0);
         uint32_t cfg = 0 | (1u << 4) | (1u << 11) | (0u << 12);
 
         W(AE350_GFX2D_OP, 3);
