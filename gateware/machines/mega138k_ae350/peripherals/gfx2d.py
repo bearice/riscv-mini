@@ -419,17 +419,18 @@ class Gfx2DEngine(LiteXModule):
         self.desc = desc = [Signal(32) for _ in DESC_NAMES]
         self.busy = Signal()
 
-        op, src_addr, dst_addr, src_stride, dst_stride = desc[0:5]
-        width, height, fg, bg, blit_wb, fmt = desc[5:11]
-        shader_cfg = desc[11]
-        src_w, src_h = desc[12], desc[13]
-        uv_start_u, uv_start_v, uv_du_dx, uv_dv_dy = desc[14:18]
-        inst0_lo, inst0_hi = desc[18], desc[19]
-        inst1_lo, inst1_hi = desc[20], desc[21]
-        inst2_lo, inst2_hi = desc[22], desc[23]
-        inst3_lo, inst3_hi = desc[24], desc[25]
-        uniforms_raw = desc[26:34]
-        lut_addr_reg = desc[34]
+        local_desc = [Signal(32, reset_less=True) for _ in DESC_NAMES]
+        op, src_addr, dst_addr, src_stride, dst_stride = local_desc[0:5]
+        width, height, fg, bg, blit_wb, fmt = local_desc[5:11]
+        shader_cfg = local_desc[11]
+        src_w, src_h = local_desc[12], local_desc[13]
+        uv_start_u, uv_start_v, uv_du_dx, uv_dv_dy = local_desc[14:18]
+        inst0_lo, inst0_hi = local_desc[18], local_desc[19]
+        inst1_lo, inst1_hi = local_desc[20], local_desc[21]
+        inst2_lo, inst2_hi = local_desc[22], local_desc[23]
+        inst3_lo, inst3_hi = local_desc[24], local_desc[25]
+        uniforms_raw = local_desc[26:34]
+        lut_addr_reg = local_desc[34]
 
         inst0 = Cat(inst0_lo, inst0_hi)
         inst1 = Cat(inst1_lo, inst1_hi)
@@ -731,18 +732,16 @@ class Gfx2DEngine(LiteXModule):
         )
 
         self.fsm = fsm = FSM(reset_state='IDLE')
+        self.sync += If(fsm.ongoing('IDLE'),
+                        [local_desc[i].eq(desc[i]) for i in range(len(DESC_NAMES))])
         self.comb += [
             is_rd_state.eq(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND') |
                            fsm.ongoing('T_SRC_RREQ') | fsm.ongoing('T_DST_RREQ')),
             self.ui.cmd.eq(Mux(is_rd_state, 1, 0)),
             self.ui.burst.eq(0),
             self.ui.addr.eq(Cat(Constant(0, 3), req_blk)),
-            self.ui.wr_data.eq(
-                Mux(op == OP_SHADER, wbuf,
-                Mux(op == OP_COPY_AREA, copy_data,
-                Mux(op == OP_IMAGE_BLIT, blit_exp_reg, wr_pattern)))
-            ),
-            self.ui.wr_data_mask.eq(~Mux(op == OP_SHADER, wmask, beat_mask)),
+            self.ui.wr_data.eq(out_data),
+            self.ui.wr_data_mask.eq(~out_mask),
             self.ui.wr_data_end.eq(0),
         ]
         rd_base = Signal(32)
@@ -1515,6 +1514,8 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(elapsed, 0),
                 NextValue(out_blk, cur_wb_blk),
                 NextValue(req_blk, cur_wb_blk),
+                NextValue(out_data, wbuf),
+                NextValue(out_mask, wmask),
                 NextState('T_WB_SEND'))
 
         fsm.act('T_WB_SEND',
