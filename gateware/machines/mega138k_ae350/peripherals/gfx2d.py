@@ -511,6 +511,9 @@ class Gfx2DEngine(LiteXModule):
         geo_sum = Signal(7)
         self.comb += geo_sum.eq(off5 + rb_lo5 + 31)
         self.comb += beats_w.eq(rb_hi5 + geo_sum[5:7])
+        beats_w_reg = Signal(16, reset_less=True)
+        first_mask_reg = Signal(32, reset_less=True)
+        last_mask_reg = Signal(32, reset_less=True)
         first_end = Signal(6)
         self.comb += first_end.eq(Mux((rb_hi5 != 0) | (off5 + rb_lo5 >= 32), 32,
                                      off5 + rb_lo5))
@@ -553,8 +556,7 @@ class Gfx2DEngine(LiteXModule):
 
         self.comb += wr_pattern.eq(Mux(fmt == FMT_XRGB8888, pat_32, pat_16))
 
-        blit_pix_per_beat = Signal(5)
-        self.comb += blit_pix_per_beat.eq(Mux(fmt == FMT_XRGB8888, 8, 16))
+        blit_pix_per_beat = Signal(5, reset_less=True)
         blit_expanded = Signal(256)
         blit_pix_16 = [Mux(bit_buf[23 - j], fg[:16], bg[:16]) for j in range(16)]
         blit_pix_32 = [Mux(bit_buf[23 - j], fg[:32], bg[:32]) for j in range(8)]
@@ -766,6 +768,7 @@ class Gfx2DEngine(LiteXModule):
         dst_step_total = Signal(32, reset_less=True)
         row_start_down = Signal(32, reset_less=True)
         src_row_start_down = Signal(32, reset_less=True)
+        width_bytes = Signal(16, reset_less=True)
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(limit, ddr_size - row_bytes),
@@ -773,6 +776,8 @@ class Gfx2DEngine(LiteXModule):
                                          ddr_size - blit_wb, ddr_size - src_row_bytes)),
                 NextValue(src_step_total, (height - 1) * src_stride),
                 NextValue(dst_step_total, (height - 1) * dst_stride),
+                NextValue(blit_pix_per_beat, Mux(fmt == FMT_XRGB8888, 8, 16)),
+                NextValue(width_bytes, (width + 7) >> 3),
                 NextState('INIT2'))
 
         cmp_dst_stride = Signal(reset_less=True)
@@ -814,7 +819,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(src_row_start_down, src_addr + src_step_total),
                 NextValue(cmp_dst_stride, dst_stride < row_bytes),
                 NextValue(cmp_src_stride, src_stride < src_row_bytes),
-                NextValue(cmp_blit_wb, blit_wb < ((width + 7) >> 3)),
+                NextValue(cmp_blit_wb, blit_wb < width_bytes),
                 NextValue(cmp_right_overlap,
                           (src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)),
                 NextValue(cmp_stride_equal, src_stride == dst_stride),
@@ -917,14 +922,14 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(row, height - 1),
                 NextState('ROW_SETUP'))
 
-        pascal = [NextValue(beats, beats_w),
-                  NextValue(beats_left, beats_w),
+        pascal = [NextValue(beats, beats_w_reg),
+                  NextValue(beats_left, beats_w_reg),
                   NextValue(first_beat, 1),
                   NextValue(beat_base, row_start & ~Constant(31, 32)),
                   NextValue(beat_byte, row_start & ~Constant(31, 32)),
                   NextValue(offset, row_start[0:5]),
-                  NextValue(first_mask, Cat(*first_bits)),
-                  NextValue(last_mask, Cat(*last_bits))]
+                  NextValue(first_mask, first_mask_reg),
+                  NextValue(last_mask, last_mask_reg)]
 
         bad_row_addr_reg = Signal(reset_less=True)
         fsm.act('ROW_SETUP',
@@ -932,6 +937,9 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(bad_row_addr_reg,
                           (row_start > limit) |
                           ((op != OP_FILL_RECT) & (src_row_start > src_limit))),
+                NextValue(beats_w_reg, beats_w),
+                NextValue(first_mask_reg, Cat(*first_bits)),
+                NextValue(last_mask_reg, Cat(*last_bits)),
                 NextState('ROW_CHECK'))
         fsm.act('ROW_CHECK',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
@@ -1243,9 +1251,6 @@ class Gfx2DEngine(LiteXModule):
                     self.src_lb_o_w.adr.eq(lb_wr_ptr >> 1),
                     self.src_lb_o_w.dat_w.eq(src_argb),
                 ),
-                NextValue(lb_wr_ptr, lb_wr_ptr + 1),
-                NextValue(sub_idx, sub_idx + 1),
-                NextValue(lb_is_last_pix, lb_wr_ptr + 1 == tile_last),
                 If(lb_is_last_pix,
                     NextValue(lb_wr_ptr, 0),
                     NextValue(lb_is_last_pix, tile_last == 0),
@@ -1253,9 +1258,14 @@ class Gfx2DEngine(LiteXModule):
                         NextValue(req_blk, t_dst_blk),
                         NextState('T_DST_RREQ')
                     ).Else(NextState('T_COMP_START'))
-                ).Elif(sub_idx == src_max_sub - 1,
-                    NextValue(req_blk, t_src_blk),
-                    NextState('T_SRC_RREQ')
+                ).Else(
+                    NextValue(lb_wr_ptr, lb_wr_ptr + 1),
+                    NextValue(sub_idx, sub_idx + 1),
+                    NextValue(lb_is_last_pix, lb_wr_ptr + 1 == tile_last),
+                    If(sub_idx == src_max_sub - 1,
+                        NextValue(req_blk, t_src_blk),
+                        NextState('T_SRC_RREQ')
+                    )
                 ))
 
         # DST prefetch
@@ -1329,16 +1339,18 @@ class Gfx2DEngine(LiteXModule):
                 self.dst_lb_w.we.eq(1),
                 self.dst_lb_w.adr.eq(lb_wr_ptr),
                 self.dst_lb_w.dat_w.eq(dst_argb),
-                NextValue(lb_wr_ptr, lb_wr_ptr + 1),
-                NextValue(sub_idx, sub_idx + 1),
-                NextValue(lb_is_last_pix, lb_wr_ptr + 1 == tile_last),
                 If(lb_is_last_pix,
                     NextValue(lb_wr_ptr, 0),
                     NextValue(lb_is_last_pix, tile_last == 0),
                     NextState('T_COMP_START')
-                ).Elif(sub_idx == dst_max_sub - 1,
-                    NextValue(req_blk, t_dst_blk),
-                    NextState('T_DST_RREQ')
+                ).Else(
+                    NextValue(lb_wr_ptr, lb_wr_ptr + 1),
+                    NextValue(sub_idx, sub_idx + 1),
+                    NextValue(lb_is_last_pix, lb_wr_ptr + 1 == tile_last),
+                    If(sub_idx == dst_max_sub - 1,
+                        NextValue(req_blk, t_dst_blk),
+                        NextState('T_DST_RREQ')
+                    )
                 ))
 
         # Streaming compute
