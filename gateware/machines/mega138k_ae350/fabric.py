@@ -380,7 +380,10 @@ class AE350Fabric(LiteXModule):
         read_pages = [
             (legal & ~write_q & page_sel, val)
             for page_sel, val in [
-                (qspi_page, qspi_rdata),
+                (eth_page, eth_data),
+                (sfp_page, sfp_data),
+                (qspi_page, self.qspi.rdata),
+                (sd_page, sd_rdata),
                 (sysinfo, sys_data),
                 (audio, self.audio.tx_rdata),
                 (mic, self.audio.rx_rdata),
