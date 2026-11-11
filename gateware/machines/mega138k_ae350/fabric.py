@@ -374,10 +374,26 @@ class AE350Fabric(LiteXModule):
         ]
         # At 50MHz decode the captured transaction directly. Only the final
         # APB response is registered; slow SD/Flash pages retain ownership.
-        # For gfx2d, rdata is already zero when unselected; gating by page
-        # avoids compounding with the device error check on the data path.
-        read_pages = [(legal & gfx2d_page if val is gfx2d_rdata else v, val)
-                      for v, val in pages]
+        # For read_data, gate each device read by page and legality.
+        # Excluding write qualification and wdata checks cuts LUT levels
+        # and eliminates the cross-device wdata_q -> read_data_reg path.
+        read_pages = [
+            (legal & ~write_q & page_sel, val)
+            for page_sel, val in [
+                (qspi_page, qspi_rdata),
+                (sysinfo, sys_data),
+                (audio, self.audio.tx_rdata),
+                (mic, self.audio.rx_rdata),
+                (video_page, video_rdata),
+                (gfx2d_page, gfx2d_rdata),
+                (sense, self.sense.rdata),
+                (ws, self.board.ws_rdata),
+                (board, self.board.io_rdata),
+                (irq, irq_data),
+                (ddr, ddr_data),
+                (dma, dma_data),
+            ]
+        ]
         self.comb += [
             read_data.eq(reduce(or_, [Mux(v, val, 0) for v, val in read_pages])),
             error_q.eq(~reduce(or_, [valid for valid, _ in pages])),

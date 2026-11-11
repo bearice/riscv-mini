@@ -518,6 +518,11 @@ class Gfx2DEngine(LiteXModule):
         self.desc = desc = [Signal(32) for _ in DESC_NAMES]
         self.busy = Signal(reset_less=True)
 
+        if pal_port is not None:
+            self.comb += pal_port.adr.eq(0)
+        if lut_port is not None:
+            self.comb += lut_port.adr.eq(0)
+
         local_desc = [Signal(32, reset_less=True) for _ in DESC_NAMES]
         op = local_desc[0][0:4]
         src_addr, dst_addr, src_stride, dst_stride = local_desc[1:5]
@@ -592,6 +597,8 @@ class Gfx2DEngine(LiteXModule):
 
         delta_dst = Signal(32, reset_less=True)
         delta_src = Signal(32, reset_less=True)
+        neg_src_stride = Signal(32, reset_less=True)
+        neg_dst_stride = Signal(32, reset_less=True)
         nxt_row_start_reg = Signal(32, reset_less=True)
         nxt_src_row_start_reg = Signal(32, reset_less=True)
         beat_byte = Signal(32, reset_less=True)
@@ -830,14 +837,32 @@ class Gfx2DEngine(LiteXModule):
         # Writeback packer signals
         wb_idx = Signal(11)
         cur_wb_blk = Signal(26, reset_less=True)
+        nxt_cur_wb_blk = Signal(26, reset_less=True)
         byte_slot = Signal(6, reset_less=True)
         byte_full = Signal()
         self.comb += byte_full.eq(
             Mux(dst_bpp_shift == 2, byte_slot == 28, byte_slot == 30)
         )
 
+        rd_vld_fsm = Signal(name_override="gfx2d_rd_vld_fsm")
+        rd_vld_fsm.attr.add(("syn_keep", 1))
+        rd_vld_buf = Signal(name_override="gfx2d_rd_vld_buf")
+        rd_vld_buf.attr.add(("syn_keep", 1))
+        self.comb += [
+            rd_vld_fsm.eq(self.ui.rd_data_valid),
+            rd_vld_buf.eq(self.ui.rd_data_valid),
+        ]
+
         self.fsm = fsm = FSM(reset_state='IDLE')
         self.sync += [local_desc[i].eq(desc[i]) for i in range(len(DESC_NAMES))]
+        self.sync += [
+            If(fsm.ongoing('C_RWAIT') & rd_vld_buf,
+                copy_data.eq(self.ui.rd_data)),
+            If(fsm.ongoing('B_RD_WAIT') & rd_vld_buf,
+                b_beat_buf.eq(self.ui.rd_data)),
+            If((fsm.ongoing('T_SRC_RWAIT') | fsm.ongoing('T_DST_RWAIT')) & rd_vld_buf,
+                t_beat_buf.eq(self.ui.rd_data)),
+        ]
         self.comb += [
             is_rd_state.eq(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND') |
                            fsm.ongoing('T_SRC_RREQ') | fsm.ongoing('T_DST_RREQ')),
@@ -1000,16 +1025,16 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(unequal_stride_overlap, cur_unequal_stride),
                 NextValue(bad_shader_overlap, cur_bad_shader),
                 NextValue(dir_down, dir_down_step),
+                NextValue(neg_src_stride, -src_stride),
+                NextValue(neg_dst_stride, -dst_stride),
                 NextValue(static_bad_reg, static_bad),
                 NextState('INIT3'))
 
         fsm.act('INIT3',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(delta_dst, Mux(dir_down, -dst_stride, dst_stride)),
-                NextValue(delta_src, Mux(op == OP_COPY_AREA,
-                                         Mux(dir_down, -src_stride, src_stride),
-                                     Mux(op == OP_IMAGE_BLIT, blit_wb,
-                                         Mux(dir_down, -src_stride, src_stride)))),
+                NextValue(delta_dst, Mux(dir_down, neg_dst_stride, dst_stride)),
+                NextValue(delta_src, Mux(op == OP_IMAGE_BLIT, blit_wb,
+                                         Mux(dir_down, neg_src_stride, src_stride))),
                 If(static_bad_reg,
                    NextValue(err, Mux(op > OP_SCALE_BLIT, ERR_UNSUPPORTED, ERR_PARAM)),
                    NextState('FINISH')
@@ -1129,8 +1154,8 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('C_RWAIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(elapsed, elapsed + 1),
-                If(self.ui.rd_data_valid,
-                    NextValue(copy_data, self.ui.rd_data), NextState('C_WPREP'),
+                If(rd_vld_fsm,
+                    NextState('C_WPREP'),
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ))
@@ -1198,8 +1223,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('B_RD_WAIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(elapsed, elapsed + 1),
-                If(self.ui.rd_data_valid,
-                    NextValue(b_beat_buf, self.ui.rd_data),
+                If(rd_vld_fsm,
                     NextValue(b_byte_idx, src_byte_off[0:5]),
                     NextValue(src_beat_loaded, 1), NextState('B_FETCH'),
                 ).Elif(elapsed_timeout,
@@ -1299,8 +1323,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_SRC_RWAIT',
                 self.ui.cmd.eq(0), self.ui.cmd_en.eq(0),
                 NextValue(elapsed, elapsed + 1),
-                If(self.ui.rd_data_valid,
-                    NextValue(t_beat_buf, self.ui.rd_data),
+                If(rd_vld_fsm,
                     NextState('T_SRC_UNPACK')
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH')
@@ -1394,8 +1417,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('T_DST_RWAIT',
                 self.ui.cmd.eq(0), self.ui.cmd_en.eq(0),
                 NextValue(elapsed, elapsed + 1),
-                If(self.ui.rd_data_valid,
-                    NextValue(t_beat_buf, self.ui.rd_data),
+                If(rd_vld_fsm,
                     NextState('T_DST_UNPACK')
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH')
@@ -1469,6 +1491,7 @@ class Gfx2DEngine(LiteXModule):
         ]
 
         comp_active = Signal(reset_less=True)
+        comp_out_last = Signal(reset_less=True)
         fsm.act('T_COMP_START',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(comp_idx, 0),
@@ -1477,6 +1500,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(comp_active, 1),
                 NextValue(comp_rem, tile_w),
                 NextValue(comp_out_rem, tile_w),
+                NextValue(comp_out_last, tile_w == 1),
                 NextState('T_COMP_STREAM'))
 
         fsm.act('T_COMP_STREAM',
@@ -1506,7 +1530,8 @@ class Gfx2DEngine(LiteXModule):
                     )),
                     NextValue(comp_out_idx, comp_out_idx + 1),
                     NextValue(comp_out_rem, comp_out_rem - 1),
-                    If(comp_out_rem == 1,
+                    NextValue(comp_out_last, comp_out_rem == 2),
+                    If(comp_out_last,
                         NextState('T_WB_SETUP')
                     )
                 ))
@@ -1536,6 +1561,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(out_mask, 0),
                 NextValue(byte_slot, t_dst_off),
                 NextValue(cur_wb_blk, t_dst_base_blk),
+                NextValue(nxt_cur_wb_blk, t_dst_base_blk + 1),
                 NextValue(req_blk, t_dst_base_blk),
                 NextValue(wb_is_last_pix, tile_w == 1),
                 NextState('T_WB_READ'))
@@ -1638,11 +1664,12 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(elapsed, 0),
                 NextValue(req_blk, cur_wb_blk),
+                NextValue(nxt_cur_wb_blk, cur_wb_blk + 1),
                 NextState('T_WB_SEND'))
 
         fsm.act('T_WB_SEND',
                 If(out_mask == 0,
-                    NextValue(cur_wb_blk, cur_wb_blk + 1),
+                    NextValue(cur_wb_blk, nxt_cur_wb_blk),
                     NextValue(out_mask, 0),
                     NextValue(byte_slot, 0),
                     If(tile_wb_done,
@@ -1658,7 +1685,7 @@ class Gfx2DEngine(LiteXModule):
                         NextValue(err, ERR_TIMEOUT), NextState('FINISH')
                     ).Elif(self.ui.cmd_ready & self.ui.wr_data_rdy,
                         NextValue(elapsed, 0),
-                        NextValue(cur_wb_blk, cur_wb_blk + 1),
+                        NextValue(cur_wb_blk, nxt_cur_wb_blk),
                         NextValue(out_mask, 0),
                         NextValue(byte_slot, 0),
                         If(tile_wb_done,
