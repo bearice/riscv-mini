@@ -829,8 +829,6 @@ class Gfx2DEngine(LiteXModule):
 
         # Writeback packer signals
         wb_idx = Signal(11)
-        wbuf = Signal(256, reset_less=True)
-        wmask = Signal(32, reset_less=True)
         cur_wb_blk = Signal(26, reset_less=True)
         byte_slot = Signal(6, reset_less=True)
         byte_full = Signal()
@@ -846,8 +844,8 @@ class Gfx2DEngine(LiteXModule):
             self.ui.cmd.eq(Mux(is_rd_state, 1, 0)),
             self.ui.burst.eq(0),
             self.ui.addr.eq(Cat(Constant(0, 3), req_blk)),
-            self.ui.wr_data.eq(Mux(op == OP_SHADER, wbuf, out_data)),
-            self.ui.wr_data_mask.eq(Mux(op == OP_SHADER, ~wmask, ~out_mask)),
+            self.ui.wr_data.eq(out_data),
+            self.ui.wr_data_mask.eq(~out_mask),
             self.ui.wr_data_end.eq(0),
         ]
         rd_base = Signal(32)
@@ -1102,7 +1100,9 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('SEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1),
                 self.ui.wr_data_end.eq(1),
-                If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                If(elapsed_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Elif(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
                     If(is_last_beat,
                         If(last_row, NextState('FINISH'))
@@ -1113,8 +1113,6 @@ class Gfx2DEngine(LiteXModule):
                              NextValue(first_beat, 0),
                              NextValue(beat_byte, nxt_beat_byte),
                              NextState('PREP')),
-                ).Elif(elapsed_timeout,
-                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
 
         fsm.act('C_RPREP',
@@ -1123,10 +1121,10 @@ class Gfx2DEngine(LiteXModule):
                 NextState('C_RSEND'))
         fsm.act('C_RSEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(0),
-                If(self.ui.cmd_ready,
-                    NextValue(elapsed, 0), NextState('C_RWAIT'),
-                ).Elif(elapsed_timeout,
+                If(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Elif(self.ui.cmd_ready,
+                    NextValue(elapsed, 0), NextState('C_RWAIT'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
         fsm.act('C_RWAIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
@@ -1145,7 +1143,9 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('C_WSEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1),
                 self.ui.wr_data_end.eq(1),
-                If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                If(elapsed_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Elif(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
                     If(is_last_beat,
                         If(last_row, NextState('FINISH'))
@@ -1156,8 +1156,6 @@ class Gfx2DEngine(LiteXModule):
                              NextValue(beat_byte, nxt_beat_byte),
                              NextValue(first_beat, 0),
                              NextState('C_RPREP')),
-                ).Elif(elapsed_timeout,
-                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
 
         fsm.act('B_FETCH',
@@ -1192,10 +1190,10 @@ class Gfx2DEngine(LiteXModule):
                 NextState('B_RD_SEND'))
         fsm.act('B_RD_SEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(0),
-                If(self.ui.cmd_ready,
-                    NextValue(elapsed, 0), NextState('B_RD_WAIT'),
-                ).Elif(elapsed_timeout,
+                If(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Elif(self.ui.cmd_ready,
+                    NextValue(elapsed, 0), NextState('B_RD_WAIT'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
         fsm.act('B_RD_WAIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
@@ -1219,7 +1217,9 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('B_WSEND',
                 self.ui.cmd_en.eq(1), self.ui.wr_data_en.eq(1),
                 self.ui.wr_data_end.eq(1),
-                If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                If(elapsed_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
+                ).Elif(self.ui.cmd_ready & self.ui.wr_data_rdy,
                     NextValue(elapsed, 0),
                     NextValue(bit_buf,
                               Mux(fmt == FMT_XRGB8888, bit_buf << 8, bit_buf << 16)),
@@ -1235,8 +1235,6 @@ class Gfx2DEngine(LiteXModule):
                              NextValue(first_beat, 0),
                              NextValue(beat_byte, nxt_beat_byte),
                              NextState('B_FETCH')),
-                ).Elif(elapsed_timeout,
-                    NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
 
         # OP_SHADER Tile FSM
@@ -1287,15 +1285,15 @@ class Gfx2DEngine(LiteXModule):
 
         fsm.act('T_SRC_RREQ',
                 self.ui.cmd.eq(1), self.ui.cmd_en.eq(1),
-                If(self.ui.cmd_ready,
+                If(elapsed_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH')
+                ).Elif(self.ui.cmd_ready,
                     NextValue(elapsed, 0),
                     NextValue(t_src_blk, t_src_blk + 1),
                     NextValue(sub_idx,
                               Mux(t_src_is_first, t_src_off >> src_bpp_shift, 0)),
                     NextValue(t_src_is_first, 0),
                     NextState('T_SRC_RWAIT')
-                ).Elif(elapsed_timeout,
-                    NextValue(err, ERR_TIMEOUT), NextState('FINISH')
                 ).Else(NextValue(elapsed, elapsed + 1)))
 
         fsm.act('T_SRC_RWAIT',
@@ -1382,15 +1380,15 @@ class Gfx2DEngine(LiteXModule):
         # DST prefetch
         fsm.act('T_DST_RREQ',
                 self.ui.cmd.eq(1), self.ui.cmd_en.eq(1),
-                If(self.ui.cmd_ready,
+                If(elapsed_timeout,
+                    NextValue(err, ERR_TIMEOUT), NextState('FINISH')
+                ).Elif(self.ui.cmd_ready,
                     NextValue(elapsed, 0),
                     NextValue(t_dst_blk, t_dst_blk + 1),
                     NextValue(sub_idx,
                               Mux(t_dst_is_first, t_dst_off >> dst_bpp_shift, 0)),
                     NextValue(t_dst_is_first, 0),
                     NextState('T_DST_RWAIT')
-                ).Elif(elapsed_timeout,
-                    NextValue(err, ERR_TIMEOUT), NextState('FINISH')
                 ).Else(NextValue(elapsed, elapsed + 1)))
 
         fsm.act('T_DST_RWAIT',
@@ -1535,7 +1533,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(wb_idx, 0),
                 NextValue(wb_rem, tile_w),
                 NextValue(tile_wb_done, 0),
-                NextValue(wmask, 0),
+                NextValue(out_mask, 0),
                 NextValue(byte_slot, t_dst_off),
                 NextValue(cur_wb_blk, t_dst_base_blk),
                 NextValue(req_blk, t_dst_base_blk),
@@ -1609,17 +1607,17 @@ class Gfx2DEngine(LiteXModule):
             if s % 4 == 0:
                 wb_cases[s] = [
                     If(dst_bpp_shift == 2,
-                        NextValue(wbuf[s*8:(s+4)*8], packed_pix[0:32]),
-                        If(~out_disc, NextValue(wmask[s:s+4], 0xF))
+                        NextValue(out_data[s*8:(s+4)*8], packed_pix[0:32]),
+                        If(~out_disc, NextValue(out_mask[s:s+4], 0xF))
                     ).Else(
-                        NextValue(wbuf[s*8:(s+2)*8], packed_pix[0:16]),
-                        If(~out_disc, NextValue(wmask[s:s+2], 0x3))
+                        NextValue(out_data[s*8:(s+2)*8], packed_pix[0:16]),
+                        If(~out_disc, NextValue(out_mask[s:s+2], 0x3))
                     )
                 ]
             else:
                 wb_cases[s] = [
-                    NextValue(wbuf[s*8:(s+2)*8], packed_pix[0:16]),
-                    If(~out_disc, NextValue(wmask[s:s+2], 0x3))
+                    NextValue(out_data[s*8:(s+2)*8], packed_pix[0:16]),
+                    If(~out_disc, NextValue(out_mask[s:s+2], 0x3))
                 ]
 
         fsm.act('T_WB_PACK',
@@ -1643,9 +1641,9 @@ class Gfx2DEngine(LiteXModule):
                 NextState('T_WB_SEND'))
 
         fsm.act('T_WB_SEND',
-                If(wmask == 0,
+                If(out_mask == 0,
                     NextValue(cur_wb_blk, cur_wb_blk + 1),
-                    NextValue(wmask, 0),
+                    NextValue(out_mask, 0),
                     NextValue(byte_slot, 0),
                     If(tile_wb_done,
                         NextState('T_TILE_NEXT')
@@ -1656,18 +1654,18 @@ class Gfx2DEngine(LiteXModule):
                     self.ui.cmd_en.eq(1),
                     self.ui.wr_data_en.eq(1),
                     self.ui.wr_data_end.eq(1),
-                    If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                    If(elapsed_timeout,
+                        NextValue(err, ERR_TIMEOUT), NextState('FINISH')
+                    ).Elif(self.ui.cmd_ready & self.ui.wr_data_rdy,
                         NextValue(elapsed, 0),
                         NextValue(cur_wb_blk, cur_wb_blk + 1),
-                        NextValue(wmask, 0),
+                        NextValue(out_mask, 0),
                         NextValue(byte_slot, 0),
                         If(tile_wb_done,
                             NextState('T_TILE_NEXT')
                         ).Else(
                             NextState('T_WB_READ')
                         )
-                    ).Elif(elapsed_timeout,
-                        NextValue(err, ERR_TIMEOUT), NextState('FINISH')
                     ).Else(NextValue(elapsed, elapsed + 1))
                 ))
 
@@ -1765,15 +1763,10 @@ class Gfx2D(LiteXModule):
         words[20] = Constant(0, 32)
         words[46] = Constant(0, 32)
 
-        rdata_lo = Signal(32)
-        rdata_hi = Signal(32)
-        lo_cases = {i: rdata_lo.eq(words[i])
-                    for i in range(32)
-                    if not (i == 3 or i == 20)}
-        lo_cases["default"] = rdata_lo.eq(0)
-        hi_cases = {i - 32: rdata_hi.eq(words[i])
-                    for i in range(32, 47)}
-        hi_cases["default"] = rdata_hi.eq(0)
+        rdata_cases = {i: self.rdata.eq(words[i])
+                       for i in range(len(words))
+                       if not (i == 3 or i == 20 or i == 46)}
+        rdata_cases["default"] = self.rdata.eq(0)
 
         read_ok = Signal()
         is_write_reg = Signal()
@@ -1781,9 +1774,7 @@ class Gfx2D(LiteXModule):
 
         self.comb += [
             widx.eq(self.off[2:8]),
-            Case(widx[0:5], lo_cases),
-            Case(widx[0:4], hi_cases),
-            self.rdata.eq(Mux(widx[5], rdata_hi, rdata_lo)),
+            Case(widx, rdata_cases),
             read_ok.eq((self.off[0:2] == 0) & (self.off[8:12] == 0) &
                        (widx <= 46) & (widx != 3)),
             is_write_reg.eq((self.off[0:2] == 0) & (self.off[8:12] == 0) &

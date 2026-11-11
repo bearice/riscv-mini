@@ -374,8 +374,14 @@ class AE350Fabric(LiteXModule):
         ]
         # At 50MHz decode the captured transaction directly. Only the final
         # APB response is registered; slow SD/Flash pages retain ownership.
-        self.comb += [read_data.eq(reduce(or_, [Mux(valid,value,0) for valid,value in pages])),
-                      error_q.eq(~reduce(or_, [valid for valid,_ in pages]))]
+        # For gfx2d, rdata is already zero when unselected; gating by page
+        # avoids compounding with the device error check on the data path.
+        read_pages = [(legal & gfx2d_page if val is gfx2d_rdata else v, val)
+                      for v, val in pages]
+        self.comb += [
+            read_data.eq(reduce(or_, [Mux(v, val, 0) for v, val in read_pages])),
+            error_q.eq(~reduce(or_, [valid for valid, _ in pages])),
+        ]
         control_q,sticky_q,w1c_q,irq_enable_q=(Signal() for _ in range(4))
         self.sync += [
             control_q.eq(legal & dma & (off==0x0c) & write_q & (wdata_q[2:]==0)),
