@@ -225,90 +225,119 @@ class ShaderALU(LiteXModule):
         p2_opcode = Signal(6, reset_less=True)
         p2_sat = Signal(reset_less=True)
 
-        p2_add = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_sub = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_diff = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_min = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_max = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_clamp = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_and = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_or = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_xor = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_shl = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_shr = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_mul_unorm = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_mul_scaled = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_muladd = [Signal((16, True), reset_less=True) for _ in range(4)]
-        p2_lerp = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_arith = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_mult = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p2_logic = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_match_ch = [Signal(reset_less=True) for _ in range(4)]
 
-        def sat_clamp(val):
-            return Mux(p1_sat,
-                       Mux(val < 0, 0, Mux(val > 255, 255, val)),
-                       val)
+        if stage_idx == 1:
+            dot3_p0 = Signal(17)
+            dot3_p1 = Signal(17)
+            dot3_p2 = Signal(17)
+            dot3_sum = Signal(19)
+            dot3_res = Signal((17, True))
+            self.comb += [
+                dot3_p0.eq(p1_s0[0][0:8] * p1_s1[0][0:8]),
+                dot3_p1.eq(p1_s0[1][0:8] * p1_s1[1][0:8]),
+                dot3_p2.eq(p1_s0[2][0:8] * p1_s1[2][0:8]),
+                dot3_sum.eq(dot3_p0 + dot3_p1 + dot3_p2 + 128),
+                dot3_res.eq(dot3_sum >> 8),
+            ]
 
         for c in range(4):
             s0 = p1_s0[c]
             s1 = p1_s1[c]
             s2 = p1_s2[c]
-            lerp_w = Signal(10)
-            lerp_diff = Signal((10, True))
-            lerp_prod = Signal((20, True))
-            lerp_res = Signal((17, True))
-            prod_raw = Signal(17)
-            prod_unorm = Signal(16)
-            muladd_res = Signal((17, True))
+
             add_val = Signal((17, True))
             sub_val = Signal((17, True))
             diff_val = Signal((17, True))
             min_val = Signal((17, True))
             max_val = Signal((17, True))
             clamp_val = Signal((17, True))
+            prod16 = Signal(16)
+            prod_raw = Signal(17)
+            prod_unorm = Signal(16)
+            muladd_res = Signal((17, True))
+            mul_scaled_val = Signal(16)
+            lerp_w = Signal(10)
+            lerp_diff = Signal((10, True))
+            lerp_prod = Signal((20, True))
+            lerp_res = Signal((17, True))
             shl_val = Signal((16, True))
             shr_val = Signal((16, True))
-            mul_scaled_val = Signal((16, True))
 
             self.comb += [
-                lerp_w.eq(s2[0:8] + (s2[0:8] >> 7)),
-                lerp_diff.eq(s0[0:9] - s1[0:9]),
-                lerp_prod.eq(lerp_diff * lerp_w),
-                lerp_res.eq((lerp_prod + (s1[0:8] << 8) + 128) >> 8),
-                prod_raw.eq(s0[0:8] * s1[0:8] + 128),
-                prod_unorm.eq((prod_raw + (prod_raw >> 8)) >> 8),
-                muladd_res.eq(s2 + prod_unorm),
                 add_val.eq(s0 + s1),
                 sub_val.eq(s0 - s1),
                 diff_val.eq(Mux(s0 >= s1, s0 - s1, s1 - s0)),
                 min_val.eq(Mux(s0 < s1, s0, s1)),
                 max_val.eq(Mux(s0 > s1, s0, s1)),
                 clamp_val.eq(Mux(s0 < s1, s1, Mux(s0 > s2, s2, s0))),
+                prod16.eq(s0[0:8] * s1[0:8]),
+                prod_raw.eq(prod16 + 128),
+                prod_unorm.eq((prod_raw + (prod_raw >> 8)) >> 8),
+                muladd_res.eq(s2 + prod_unorm),
+                mul_scaled_val.eq(prod16 >> p1_imm8[0:4]),
+                lerp_w.eq(s2[0:8] + (s2[0:8] >> 7)),
+                lerp_diff.eq(s0[0:9] - s1[0:9]),
+                lerp_prod.eq(lerp_diff * lerp_w),
+                lerp_res.eq((lerp_prod + (s1[0:8] << 8) + 128) >> 8),
                 shl_val.eq(s0 << p1_imm8[0:4]),
                 shr_val.eq(s0 >> p1_imm8[0:4]),
-                mul_scaled_val.eq((s0 * s1) >> p1_imm8[0:4]),
             ]
+
+            arith_mux = Signal((16, True))
+            self.comb += Case(p1_opcode[0:3], {
+                0: arith_mux.eq(s0),
+                1: arith_mux.eq(Mux(p1_sat & (add_val > 255), 255, add_val)),
+                2: arith_mux.eq(Mux(p1_sat,
+                                    Mux(sub_val < 0, 0,
+                                        Mux(sub_val > 255, 255, sub_val)),
+                                    sub_val)),
+                3: arith_mux.eq(diff_val),
+                4: arith_mux.eq(min_val),
+                5: arith_mux.eq(max_val),
+                6: arith_mux.eq(clamp_val),
+                "default": arith_mux.eq(s0),
+            })
+
+            mult_mux = Signal((16, True))
+            mult_cases = {
+                0: mult_mux.eq(prod_unorm),
+                1: mult_mux.eq(Mux(p1_sat & (mul_scaled_val[8:16] != 0),
+                                   255, mul_scaled_val[0:16])),
+                2: mult_mux.eq(Mux(p1_sat & (muladd_res > 255),
+                                   255, muladd_res)),
+                3: mult_mux.eq(lerp_res[0:16]),
+            }
+            if stage_idx == 1:
+                mult_cases[4] = mult_mux.eq(Mux(p1_sat & (dot3_res > 255),
+                                                 255, dot3_res))
+            mult_cases["default"] = mult_mux.eq(prod_unorm)
+            self.comb += Case(p1_opcode[0:3], mult_cases)
+
+            logic_mux = Signal((16, True))
+            self.comb += Case(p1_opcode[0:3], {
+                0: logic_mux.eq(s0 & s1),
+                1: logic_mux.eq(s0 | s1),
+                2: logic_mux.eq(s0 ^ s1),
+                3: logic_mux.eq(Mux(p1_sat & (shl_val > 255), 255, shl_val)),
+                4: logic_mux.eq(shr_val),
+                "default": logic_mux.eq(s0 & s1),
+            })
+
             self.sync += [
-                p2_s0[c].eq(sat_clamp(s0)),
+                p2_s0[c].eq(s0),
                 p2_s1[c].eq(s1),
                 p2_s2[c].eq(s2),
                 p2_src[c].eq(p1_src[c]),
                 p2_dst[c].eq(p1_dst[c]),
                 p2_fg[c].eq(p1_fg[c]),
                 p2_bg[c].eq(p1_bg[c]),
-                p2_mul_unorm[c].eq(sat_clamp(prod_unorm)),
-                p2_muladd[c].eq(sat_clamp(muladd_res)),
-                p2_lerp[c].eq(lerp_res[0:16]),
-                p2_add[c].eq(sat_clamp(add_val)),
-                p2_sub[c].eq(sat_clamp(sub_val)),
-                p2_diff[c].eq(sat_clamp(diff_val)),
-                p2_min[c].eq(sat_clamp(min_val)),
-                p2_max[c].eq(sat_clamp(max_val)),
-                p2_clamp[c].eq(sat_clamp(clamp_val)),
-                p2_and[c].eq(sat_clamp(s0 & s1)),
-                p2_or[c].eq(sat_clamp(s0 | s1)),
-                p2_xor[c].eq(sat_clamp(s0 ^ s1)),
-                p2_shl[c].eq(sat_clamp(shl_val)),
-                p2_shr[c].eq(sat_clamp(shr_val)),
-                p2_mul_scaled[c].eq(sat_clamp(mul_scaled_val)),
+                p2_arith[c].eq(arith_mux),
+                p2_mult[c].eq(mult_mux),
+                p2_logic[c].eq(logic_mux),
                 p2_match_ch[c].eq(
                     Mux(p1_sub_op == 0, s0 == s1,
                     Mux(p1_sub_op == 1, s0 != s1,
@@ -320,22 +349,6 @@ class ShaderALU(LiteXModule):
                     p2_r[r][c].eq(p1_r[r][c]),
                     p2_we[r][c].eq(p1_we[r][c]),
                 ]
-
-        if stage_idx == 1:
-            dot3_p0 = Signal(17)
-            dot3_p1 = Signal(17)
-            dot3_p2 = Signal(17)
-            dot3_sum = Signal(19)
-            dot3_res = Signal((17, True))
-            p2_dot3 = Signal((16, True), reset_less=True)
-            self.comb += [
-                dot3_p0.eq(p1_s0[0][0:8] * p1_s1[0][0:8]),
-                dot3_p1.eq(p1_s0[1][0:8] * p1_s1[1][0:8]),
-                dot3_p2.eq(p1_s0[2][0:8] * p1_s1[2][0:8]),
-                dot3_sum.eq(dot3_p0 + dot3_p1 + dot3_p2 + 128),
-                dot3_res.eq(dot3_sum >> 8),
-            ]
-            self.sync += p2_dot3.eq(sat_clamp(dot3_res))
 
         self.sync += [
             p2_p.eq(p1_p),
@@ -351,28 +364,12 @@ class ShaderALU(LiteXModule):
         res_ch = [Signal((16, True)) for _ in range(4)]
 
         for c in range(4):
-            cases = {
-                0x00: res_ch[c].eq(p2_s0[c]),
-                0x01: res_ch[c].eq(p2_add[c]),
-                0x02: res_ch[c].eq(p2_sub[c]),
-                0x03: res_ch[c].eq(p2_diff[c]),
-                0x04: res_ch[c].eq(p2_min[c]),
-                0x05: res_ch[c].eq(p2_max[c]),
-                0x06: res_ch[c].eq(p2_clamp[c]),
-                0x10: res_ch[c].eq(p2_mul_unorm[c]),
-                0x11: res_ch[c].eq(p2_mul_scaled[c]),
-                0x12: res_ch[c].eq(p2_muladd[c]),
-                0x13: res_ch[c].eq(p2_lerp[c]),
-                0x20: res_ch[c].eq(p2_and[c]),
-                0x21: res_ch[c].eq(p2_or[c]),
-                0x22: res_ch[c].eq(p2_xor[c]),
-                0x23: res_ch[c].eq(p2_shl[c]),
-                0x24: res_ch[c].eq(p2_shr[c]),
-            }
-            if stage_idx == 1:
-                cases[0x14] = res_ch[c].eq(p2_dot3)
-            cases["default"] = res_ch[c].eq(p2_s0[c])
-            self.comb += Case(p2_opcode, cases)
+            self.comb += Case(p2_opcode[4:6], {
+                0: res_ch[c].eq(p2_arith[c]),
+                1: res_ch[c].eq(p2_mult[c]),
+                2: res_ch[c].eq(p2_logic[c]),
+                "default": res_ch[c].eq(p2_s0[c]),
+            })
 
         all_match = Signal()
         self.comb += all_match.eq(
@@ -615,6 +612,8 @@ class Gfx2DEngine(LiteXModule):
         t_dst_is_first = Signal(reset_less=True)
         sub_idx = Signal(6, reset_less=True)
         lb_wr_ptr = Signal(11, reset_less=True)
+        lb_is_last_pix = Signal(reset_less=True)
+        wb_is_last_pix = Signal(reset_less=True)
 
         # Compute pipeline signals
         comp_idx = Signal(11, reset_less=True)
@@ -770,6 +769,8 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(dst_step_total, (height - 1) * dst_stride),
                 NextValue(src_span, (height - 1) * src_stride + src_row_bytes),
                 NextValue(dst_span, (height - 1) * dst_stride + row_bytes),
+                NextValue(rb_hi5, row_bytes >> 5),
+                NextValue(rb_lo5, row_bytes[0:5]),
                 NextState('INIT2'))
 
         cmp_dst_stride = Signal(reset_less=True)
@@ -828,8 +829,6 @@ class Gfx2DEngine(LiteXModule):
                                   (src_addr[0] != 0) | (src_stride[0] != 0), 0))),
                 NextValue(row_start_down, dst_addr + dst_step_total),
                 NextValue(src_row_start_down, src_addr + src_step_total),
-                NextValue(rb_hi5, row_bytes >> 5),
-                NextValue(rb_lo5, row_bytes[0:5]),
                 NextState('INIT2B'))
 
         fsm.act('INIT2B',
@@ -1123,6 +1122,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(tile_w, calc_t_w[0:11]),
                 NextValue(tile_last, calc_t_w[0:11] - 1),
                 NextValue(tile_is_last, rem_w <= 1024),
+                NextValue(lb_is_last_pix, calc_t_w == 1),
                 NextValue(t_src_cur_blk, cur_src_byte[2:31] & ~Constant(7, 29)),
                 NextValue(t_src_beats_left,
                           ((cur_src_byte[0:5] +
@@ -1223,8 +1223,10 @@ class Gfx2DEngine(LiteXModule):
                 ),
                 NextValue(lb_wr_ptr, lb_wr_ptr + 1),
                 NextValue(sub_idx, sub_idx + 1),
-                If(lb_wr_ptr == tile_last,
+                NextValue(lb_is_last_pix, lb_wr_ptr + 1 == tile_last),
+                If(lb_is_last_pix,
                     NextValue(lb_wr_ptr, 0),
+                    NextValue(lb_is_last_pix, tile_last == 0),
                     If(uses_dst, NextState('T_DST_RREQ'))
                     .Else(NextState('T_COMP_START'))
                 ).Elif(sub_idx == src_max_sub - 1,
@@ -1303,8 +1305,10 @@ class Gfx2DEngine(LiteXModule):
                 self.dst_lb_w.dat_w.eq(dst_argb),
                 NextValue(lb_wr_ptr, lb_wr_ptr + 1),
                 NextValue(sub_idx, sub_idx + 1),
-                If(lb_wr_ptr == tile_last,
+                NextValue(lb_is_last_pix, lb_wr_ptr + 1 == tile_last),
+                If(lb_is_last_pix,
                     NextValue(lb_wr_ptr, 0),
+                    NextValue(lb_is_last_pix, tile_last == 0),
                     NextState('T_COMP_START')
                 ).Elif(sub_idx == dst_max_sub - 1,
                     NextState('T_DST_RREQ')
@@ -1381,6 +1385,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(wmask, 0),
                 NextValue(byte_slot, t_dst_off),
                 NextValue(cur_wb_blk, t_dst_base_blk),
+                NextValue(wb_is_last_pix, tile_last == 0),
                 NextState('T_WB_READ'))
 
         fsm.act('T_WB_READ',
@@ -1467,8 +1472,9 @@ class Gfx2DEngine(LiteXModule):
                 Case(byte_slot, wb_cases),
                 NextValue(byte_slot, byte_slot + pix_bytes),
                 NextValue(wb_idx, wb_idx + 1),
-                NextValue(tile_wb_done, wb_idx == tile_last),
-                If(byte_full | (wb_idx == tile_last),
+                NextValue(wb_is_last_pix, wb_idx + 1 == tile_last),
+                NextValue(tile_wb_done, wb_is_last_pix),
+                If(byte_full | wb_is_last_pix,
                     NextState('T_WB_PREP')
                 ).Else(
                     NextState('T_WB_READ')
