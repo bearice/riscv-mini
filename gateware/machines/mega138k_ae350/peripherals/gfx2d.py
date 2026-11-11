@@ -417,7 +417,7 @@ class Gfx2DEngine(LiteXModule):
         self.ack = Signal()
         self.done_err = Signal(32)
         self.desc = desc = [Signal(32) for _ in DESC_NAMES]
-        self.busy = Signal()
+        self.busy = Signal(reset_less=True)
 
         local_desc = [Signal(32, reset_less=True) for _ in DESC_NAMES]
         op, src_addr, dst_addr, src_stride, dst_stride = local_desc[0:5]
@@ -732,8 +732,7 @@ class Gfx2DEngine(LiteXModule):
         )
 
         self.fsm = fsm = FSM(reset_state='IDLE')
-        self.sync += If(fsm.ongoing('IDLE'),
-                        [local_desc[i].eq(desc[i]) for i in range(len(DESC_NAMES))])
+        self.sync += [local_desc[i].eq(desc[i]) for i in range(len(DESC_NAMES))]
         self.comb += [
             is_rd_state.eq(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND') |
                            fsm.ongoing('T_SRC_RREQ') | fsm.ongoing('T_DST_RREQ')),
@@ -750,10 +749,11 @@ class Gfx2DEngine(LiteXModule):
         self.sync += If(fsm.ongoing('C_RPREP') | fsm.ongoing('B_RD_PREP'),
                         rd_blk.eq(rd_base[5:31]),
                         req_blk.eq(rd_base[5:31]))
-        self.comb += self.busy.eq(~fsm.ongoing('IDLE'))
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(self.busy, 0),
                 If(start, NextValue(err, 0), NextValue(elapsed, 0),
+                   NextValue(self.busy, 1),
                    NextValue(row, 0), NextValue(rows_left, height),
                    NextValue(last_row, height == 1), NextValue(beat, 0),
                    NextValue(row_start, dst_addr),
@@ -1562,6 +1562,7 @@ class Gfx2DEngine(LiteXModule):
 
         fsm.act('FINISH',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(self.busy, 0),
                 NextValue(self.done_err, err), NextValue(self.ack, ~self.ack),
                 NextState('IDLE'))
 
