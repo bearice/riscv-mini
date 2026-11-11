@@ -522,7 +522,8 @@ class Gfx2DEngine(LiteXModule):
         self.comb += beat_mask.eq(Mux(first_beat, first_mask,
                                      Mux(beats_left == 1, last_mask, 0xffffffff)))
         src_beat_base = Signal(32, reset_less=True)
-        beat_shift = Signal(256, reset_less=True)
+        b_beat_buf = Signal(256, reset_less=True)
+        b_byte_idx = Signal(5, reset_less=True)
         src_beat_loaded = Signal(reset_less=True)
         src_byte_off = Signal(32, reset_less=True)
         bytes_in_beat = Signal(8, reset_less=True)
@@ -570,7 +571,9 @@ class Gfx2DEngine(LiteXModule):
         is_rd_state = Signal()
         rd_addr = Signal(29, reset_less=True)
         src_byte = Signal(8)
-        self.comb += src_byte.eq(beat_shift[0:8])
+        self.comb += src_byte.eq(
+            Array([b_beat_buf[i*8:(i+1)*8] for i in range(32)])[b_byte_idx]
+        )
         src_byte_q = Signal(8)
         src_byte_pending = Signal()
 
@@ -1049,7 +1052,7 @@ class Gfx2DEngine(LiteXModule):
                       NextValue(src_byte_off, src_byte_off + 1),
                       NextValue(bytes_in_beat, bytes_in_beat - 1),
                       NextValue(bytes_in_beat_zero, bytes_in_beat == 1),
-                      NextValue(beat_shift, beat_shift >> 8),
+                      NextValue(b_byte_idx, b_byte_idx + 1),
                       NextValue(src_bytes_left, src_bytes_left - 1),
                       NextValue(src_bytes_left_zero, src_bytes_left == 1),
                       NextValue(src_byte_pending, 0),
@@ -1067,16 +1070,12 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(self.ui.rd_data_valid,
                     NextValue(elapsed, 0),
-                    NextValue(t_beat_buf, self.ui.rd_data),
-                    NextState('B_RD_ALIGN'),
+                    NextValue(b_beat_buf, self.ui.rd_data),
+                    NextValue(b_byte_idx, src_byte_off[0:5]),
+                    NextValue(src_beat_loaded, 1), NextState('B_FETCH'),
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
                 ).Else(NextValue(elapsed, elapsed + 1)))
-        fsm.act('B_RD_ALIGN',
-                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(beat_shift, t_beat_buf >>
-                          Cat(Constant(0, 3), src_byte_off[0:5])),
-                NextValue(src_beat_loaded, 1), NextState('B_FETCH'))
         fsm.act('B_EXP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(blit_exp_reg, blit_expanded), NextState('B_PREP'))
