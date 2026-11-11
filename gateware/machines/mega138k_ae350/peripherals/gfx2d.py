@@ -737,8 +737,12 @@ class Gfx2DEngine(LiteXModule):
             self.ui.cmd.eq(Mux(is_rd_state, 1, 0)),
             self.ui.burst.eq(0),
             self.ui.addr.eq(Cat(Constant(0, 3), req_blk)),
-            self.ui.wr_data.eq(out_data),
-            self.ui.wr_data_mask.eq(~out_mask),
+            self.ui.wr_data.eq(
+                Mux(op == OP_SHADER, wbuf,
+                Mux(op == OP_COPY_AREA, copy_data,
+                Mux(op == OP_IMAGE_BLIT, blit_exp_reg, wr_pattern)))
+            ),
+            self.ui.wr_data_mask.eq(~Mux(op == OP_SHADER, wmask, beat_mask)),
             self.ui.wr_data_end.eq(0),
         ]
         rd_base = Signal(32)
@@ -770,8 +774,6 @@ class Gfx2DEngine(LiteXModule):
                                          ddr_size - blit_wb, ddr_size - src_row_bytes)),
                 NextValue(src_step_total, (height - 1) * src_stride),
                 NextValue(dst_step_total, (height - 1) * dst_stride),
-                NextValue(src_span, (height - 1) * src_stride + src_row_bytes),
-                NextValue(dst_span, (height - 1) * dst_stride + row_bytes),
                 NextState('INIT2'))
 
         cmp_dst_stride = Signal(reset_less=True)
@@ -807,8 +809,10 @@ class Gfx2DEngine(LiteXModule):
         ]
         fsm.act('INIT2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(src_end, src_addr + src_span),
-                NextValue(dst_end, dst_addr + dst_span),
+                NextValue(src_span, src_step_total + src_row_bytes),
+                NextValue(dst_span, dst_step_total + row_bytes),
+                NextValue(row_start_down, dst_addr + dst_step_total),
+                NextValue(src_row_start_down, src_addr + src_step_total),
                 NextValue(cmp_dst_stride, dst_stride < row_bytes),
                 NextValue(cmp_src_stride, src_stride < src_row_bytes),
                 NextValue(cmp_blit_wb, blit_wb < ((width + 7) >> 3)),
@@ -828,16 +832,20 @@ class Gfx2DEngine(LiteXModule):
                               (src_addr[0:2] != 0) | (src_stride[0:2] != 0),
                               Mux(src_bpp_shift == 1,
                                   (src_addr[0] != 0) | (src_stride[0] != 0), 0))),
-                NextValue(row_start_down, dst_addr + dst_step_total),
-                NextValue(src_row_start_down, src_addr + src_step_total),
                 NextState('INIT2B'))
 
         fsm.act('INIT2B',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(overlap_src_lt_dst, src_addr < dst_end),
-                NextValue(overlap_dst_lt_src, dst_addr < src_end),
+                NextValue(src_end, src_addr + src_span),
+                NextValue(dst_end, dst_addr + dst_span),
                 NextValue(rb_hi5, row_bytes >> 5),
                 NextValue(rb_lo5, row_bytes[0:5]),
+                NextState('INIT2B2'))
+
+        fsm.act('INIT2B2',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(overlap_src_lt_dst, src_addr < dst_end),
+                NextValue(overlap_dst_lt_src, dst_addr < src_end),
                 NextState('INIT2C'))
 
         bad_blit_dst = Mux(fmt == FMT_XRGB8888,
@@ -989,7 +997,6 @@ class Gfx2DEngine(LiteXModule):
                              NextValue(beats_left, beats_left - 1),
                              NextValue(first_beat, 0),
                              NextValue(beat_byte, nxt_beat_byte),
-                             NextValue(req_blk, nxt_beat_byte[5:31]),
                              NextState('PREP')),
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
@@ -1032,7 +1039,6 @@ class Gfx2DEngine(LiteXModule):
                     ).Else(NextValue(beat, beat + 1),
                              NextValue(beats_left, beats_left - 1),
                              NextValue(beat_byte, nxt_beat_byte),
-                             NextValue(req_blk, nxt_beat_byte[5:31]),
                              NextValue(first_beat, 0),
                              NextState('C_RPREP')),
                 ).Elif(elapsed_timeout,
@@ -1113,7 +1119,6 @@ class Gfx2DEngine(LiteXModule):
                              NextValue(beats_left, beats_left - 1),
                              NextValue(first_beat, 0),
                              NextValue(beat_byte, nxt_beat_byte),
-                             NextValue(req_blk, nxt_beat_byte[5:31]),
                              NextState('B_FETCH')),
                 ).Elif(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH'),
@@ -1412,10 +1417,6 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(wb_is_last_pix, tile_last == 0),
                 NextState('T_WB_READ'))
 
-        fsm.act('T_WB_READ',
-                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextState('T_WB_PACK'))
-
         # Pixel dither and pack
         out_b = Signal(8)
         out_g = Signal(8)
@@ -1459,7 +1460,8 @@ class Gfx2DEngine(LiteXModule):
                     Cat(dith_b[3:8], dith_g[3:8], dith_r[3:8], Constant(1, 1))),
                 pix_bytes.eq(2)
             ).Elif(dst_format == FMT_ARGB1555,
-                packed_pix.eq(Cat(dith_b[3:8], dith_g[3:8], dith_r[3:8], out_a >= 128)),
+                packed_pix.eq(
+                    Cat(dith_b[3:8], dith_g[3:8], dith_r[3:8], out_a >= 128)),
                 pix_bytes.eq(2)
             ).Elif(dst_format == FMT_XRGB8888,
                 packed_pix.eq(Cat(out_b, out_g, out_r, Constant(0xFF, 8))),
@@ -1472,6 +1474,10 @@ class Gfx2DEngine(LiteXModule):
                 pix_bytes.eq(4)
             )
         ]
+
+        fsm.act('T_WB_READ',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextState('T_WB_PACK'))
 
         wb_cases = {}
         for s in range(0, 32, 2):
@@ -1509,8 +1515,6 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(elapsed, 0),
                 NextValue(out_blk, cur_wb_blk),
                 NextValue(req_blk, cur_wb_blk),
-                NextValue(out_data, wbuf),
-                NextValue(out_mask, wmask),
                 NextState('T_WB_SEND'))
 
         fsm.act('T_WB_SEND',
@@ -1679,8 +1683,24 @@ class Gfx2D(LiteXModule):
                         ack_seen.eq(ack_sync[1]), self.busy.eq(0), self.done.eq(1),
                         self.error.eq(engine.done_err != 0),
                         self.last_error.eq(engine.done_err),
-                        If(engine.done_err != 0, self.errors.eq(self.errors + 1)),
                         self.irq_pending.eq(1))
+
+        busy_write_err = Signal()
+        self.comb += busy_write_err.eq(
+            go & self.busy &
+            (self.off != reg['IRQ_ENABLE']) &
+            (self.off != reg['IRQ_STATUS']) &
+            (self.off != reg['CLEAR_ERRORS'])
+        )
+        self.sync += [
+            If(busy_write_err,
+                self.errors.eq(self.errors + 1),
+                self.last_error.eq(ERR_BUSY),
+                self.error.eq(1),
+            ).Elif(complete & (engine.done_err != 0),
+                self.errors.eq(self.errors + 1),
+            )
+        ]
 
         lut_wr_act = go & (self.off == reg['LUT_DATA']) & (~self.busy)
         self.comb += [
@@ -1693,26 +1713,21 @@ class Gfx2D(LiteXModule):
         ]
 
         desc_cases = {
-            reg[name]: [If(self.busy, self.errors.eq(self.errors + 1),
-                           self.last_error.eq(ERR_BUSY), self.error.eq(1))
-                        .Else(sig.eq(self.wdata))]
+            reg[name]: [If(~self.busy, sig.eq(self.wdata))]
             for name, sig in desc.items()
         }
         self.sync += If(go, _Case(self.off, {
             reg['CONTROL']: [
-                If(self.busy, self.errors.eq(self.errors + 1),
-                   self.last_error.eq(ERR_BUSY), self.error.eq(1))
-                .Else(self.commands.eq(self.commands + 1), self.busy.eq(1),
-                      self.done.eq(0), self.error.eq(0), self.last_error.eq(ERR_NONE),
-                      self.req.eq(~self.req))],
+                If(~self.busy,
+                   self.commands.eq(self.commands + 1), self.busy.eq(1),
+                   self.done.eq(0), self.error.eq(0), self.last_error.eq(ERR_NONE),
+                   self.req.eq(~self.req))],
             reg['IRQ_ENABLE']: self.irq_enable.eq(self.wdata[0]),
             reg['IRQ_STATUS']: If(self.wdata[0], self.irq_pending.eq(0)),
             reg['CLEAR_ERRORS']: [
                 If(self.wdata[0], self.done.eq(0), self.error.eq(0),
                    self.last_error.eq(ERR_NONE))],
             reg['LUT_DATA']: [
-                If(self.busy, self.errors.eq(self.errors + 1),
-                   self.last_error.eq(ERR_BUSY), self.error.eq(1))
-                .Else(desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],
+                If(~self.busy, desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],
             **desc_cases,
         }))
