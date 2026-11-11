@@ -226,6 +226,8 @@ class AE350Fabric(LiteXModule):
         write_q = Signal()
         strb_q = Signal(4)
         read_data = Signal(32)
+        read_data_reg = Signal(32)
+        error_reg = Signal()
         error_q = Signal()
         off = Signal(12)
         commit = Signal()
@@ -419,14 +421,23 @@ class AE350Fabric(LiteXModule):
                 phase.eq(0),
             ).Elif(wait & ~phase,
                 phase.eq(1),
-            ).Elif(wait & (~sd_page | ~legal | (sd.complete if sd is not None else 1)) &
-                    (~flash_page | ~legal | flash_done) & (~usb_page | ~legal | usb_done),
+                read_data_reg.eq(read_data),
+                error_reg.eq(error_q),
+            ).Elif(wait & (~sd_page | ~legal |
+                           (sd.complete if sd is not None else 1)) &
+                    (~flash_page | ~legal | flash_done) &
+                    (~usb_page | ~legal | usb_done),
                 wait.eq(0),
                 phase.eq(0),
-                cpu.apb_data.eq(Mux(sd_page & legal,sd.rdata if sd is not None else 0,
-                    Mux(flash_page & legal,flash_data, Mux(usb_page & legal, usb.rdata if usb is not None else 0, read_data)))),
-                cpu.apb_slverr.eq(Mux(sd_page & legal,sd.error if sd is not None else 1,
-                    Mux(flash_page & legal,flash_error, Mux(usb_page & legal, usb.error if usb is not None else 1, error_q)))),
+                cpu.apb_data.eq(Mux(sd_page & legal, sd.rdata if sd is not None else 0,
+                    Mux(flash_page & legal, flash_data,
+                        Mux(usb_page & legal, usb.rdata if usb is not None else 0,
+                            read_data_reg)))),
+                cpu.apb_slverr.eq(Mux(sd_page & legal,
+                                      sd.error if sd is not None else 1,
+                    Mux(flash_page & legal, flash_error,
+                        Mux(usb_page & legal,
+                            usb.error if usb is not None else 1, error_reg)))),
                 If(control, self.req_enable.eq(wdata_q[1])),
                 If(commit & irq_enable_q,
                    self.irq_enable.eq(wdata_q[0])),
