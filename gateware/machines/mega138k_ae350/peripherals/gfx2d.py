@@ -325,7 +325,24 @@ class ShaderALU(LiteXModule):
             p2_imm8.eq(p1_imm8),
         ]
 
-        # Pipeline Sub-stage 3 (Outputs r_out, p_out, discard_out)
+        # Pipeline Sub-stage 3 (Post-multiply & ALU Result Muxing)
+        p3_res_ch = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3_r = [
+            [Signal((16, True), reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p3_we = [
+            [Signal(reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p3_src = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3_dst = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3_fg = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3_bg = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3_p = Signal(reset_less=True)
+        p3_discard = Signal(reset_less=True)
+        p3_is_cmp = Signal(reset_less=True)
+        p3_is_discard = Signal(reset_less=True)
+        p3_all_match = Signal(reset_less=True)
+
         res_ch = [Signal((16, True)) for _ in range(4)]
 
         if stage_idx == 1:
@@ -373,6 +390,8 @@ class ShaderALU(LiteXModule):
                 "default": res_ch[c].eq(p2_s0[c]),
             })
 
+            self.sync += p3_res_ch[c].eq(res_ch[c])
+
         all_match = Signal()
         self.comb += all_match.eq(
             (~p2_wr_msk[0] | p2_match_ch[0]) &
@@ -384,28 +403,48 @@ class ShaderALU(LiteXModule):
         for r in range(4):
             for c in range(4):
                 self.sync += [
-                    If(p2_we[r][c],
-                        self.r_out[r][c].eq(res_ch[c])
+                    p3_r[r][c].eq(p2_r[r][c]),
+                    p3_we[r][c].eq(p2_we[r][c]),
+                ]
+
+        self.sync += [
+            p3_p.eq(p2_p),
+            p3_discard.eq(p2_discard),
+            p3_is_cmp.eq(p2_is_cmp),
+            p3_is_discard.eq(p2_is_discard),
+            p3_all_match.eq(all_match),
+            [p3_src[c].eq(p2_src[c]) for c in range(4)],
+            [p3_dst[c].eq(p2_dst[c]) for c in range(4)],
+            [p3_fg[c].eq(p2_fg[c]) for c in range(4)],
+            [p3_bg[c].eq(p2_bg[c]) for c in range(4)],
+        ]
+
+        # Pipeline Sub-stage 4 (Writeback & Pipeline Outputs)
+        for r in range(4):
+            for c in range(4):
+                self.sync += [
+                    If(p3_we[r][c],
+                        self.r_out[r][c].eq(p3_res_ch[c])
                     ).Else(
-                        self.r_out[r][c].eq(p2_r[r][c])
+                        self.r_out[r][c].eq(p3_r[r][c])
                     )
                 ]
 
         self.sync += [
-            If(p2_is_cmp,
-                self.p_out.eq(all_match)
+            If(p3_is_cmp,
+                self.p_out.eq(p3_all_match)
             ).Else(
-                self.p_out.eq(p2_p)
+                self.p_out.eq(p3_p)
             ),
-            If(p2_is_discard & all_match,
+            If(p3_is_discard & p3_all_match,
                 self.discard_out.eq(1)
             ).Else(
-                self.discard_out.eq(p2_discard)
+                self.discard_out.eq(p3_discard)
             ),
-            [self.src_out[c].eq(p2_src[c]) for c in range(4)],
-            [self.dst_out[c].eq(p2_dst[c]) for c in range(4)],
-            [self.fg_out[c].eq(p2_fg[c]) for c in range(4)],
-            [self.bg_out[c].eq(p2_bg[c]) for c in range(4)],
+            [self.src_out[c].eq(p3_src[c]) for c in range(4)],
+            [self.dst_out[c].eq(p3_dst[c]) for c in range(4)],
+            [self.fg_out[c].eq(p3_fg[c]) for c in range(4)],
+            [self.bg_out[c].eq(p3_bg[c]) for c in range(4)],
         ]
 
 
@@ -420,9 +459,11 @@ class Gfx2DEngine(LiteXModule):
         self.busy = Signal(reset_less=True)
 
         local_desc = [Signal(32, reset_less=True) for _ in DESC_NAMES]
-        op, src_addr, dst_addr, src_stride, dst_stride = local_desc[0:5]
-        width, height, fg, bg, blit_wb, fmt = local_desc[5:11]
-        shader_cfg = local_desc[11]
+        op = local_desc[0][0:4]
+        src_addr, dst_addr, src_stride, dst_stride = local_desc[1:5]
+        width, height, fg, bg, blit_wb = local_desc[5:10]
+        fmt = local_desc[10][0:4]
+        shader_cfg = local_desc[11][0:16]
         src_w, src_h = local_desc[12], local_desc[13]
         uv_start_u, uv_start_v, uv_du_dx, uv_dv_dy = local_desc[14:18]
         inst0_lo, inst0_hi = local_desc[18], local_desc[19]
@@ -540,6 +581,7 @@ class Gfx2DEngine(LiteXModule):
         copy_data = Signal(256, reset_less=True)
 
         wr_pattern = Signal(256)
+        fill_pat_reg = Signal(256, reset_less=True)
         pat_even = Cat(*[fg[:16]] * 16)
         pat_odd = Cat(*[Cat(fg[8:16], fg[0:8])] * 16)
         pat_16 = Signal(256)
@@ -626,11 +668,11 @@ class Gfx2DEngine(LiteXModule):
         # Compute pipeline signals
         comp_idx = Signal(11, reset_less=True)
         comp_out_idx = Signal(11, reset_less=True)
-        comp_pipe_vld = Signal(8, reset_less=True)
+        comp_pipe_vld = Signal(10, reset_less=True)
         fetch_x = Signal(16, reset_less=True)
         fetch_odd = Signal(reset_less=True)
-        p0_src_raw = Signal(32, reset_less=True)
-        p0_dst_raw = Signal(32, reset_less=True)
+        p0_src_pix = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p0_dst_pix = [Signal((16, True), reset_less=True) for _ in range(4)]
         p0_fetch_x = Signal(16, reset_less=True)
 
         # Shader ALUs
@@ -656,22 +698,19 @@ class Gfx2DEngine(LiteXModule):
                 ]
 
         # Stage 0 inputs (with P0 Line Buffer pipeline register)
-        self.sync += [
-            p0_src_raw.eq(Mux(fetch_odd, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)),
-            p0_dst_raw.eq(self.dst_lb_r.dat_r),
-            p0_fetch_x.eq(fetch_x),
+        src_lb_dat = Mux(fetch_odd, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)
+        dst_lb_dat = self.dst_lb_r.dat_r
+        src_lb_ch = [
+            Cat(src_lb_dat[0:8], Constant(0, 8)),
+            Cat(src_lb_dat[8:16], Constant(0, 8)),
+            Cat(src_lb_dat[16:24], Constant(0, 8)),
+            Cat(src_lb_dat[24:32], Constant(0, 8)),
         ]
-        src_pix_ch = [
-            Cat(p0_src_raw[0:8], Constant(0, 8)),
-            Cat(p0_src_raw[8:16], Constant(0, 8)),
-            Cat(p0_src_raw[16:24], Constant(0, 8)),
-            Cat(p0_src_raw[24:32], Constant(0, 8)),
-        ]
-        dst_pix_ch = [
-            Cat(p0_dst_raw[0:8], Constant(0, 8)),
-            Cat(p0_dst_raw[8:16], Constant(0, 8)),
-            Cat(p0_dst_raw[16:24], Constant(0, 8)),
-            Cat(p0_dst_raw[24:32], Constant(0, 8)),
+        dst_lb_ch = [
+            Cat(dst_lb_dat[0:8], Constant(0, 8)),
+            Cat(dst_lb_dat[8:16], Constant(0, 8)),
+            Cat(dst_lb_dat[16:24], Constant(0, 8)),
+            Cat(dst_lb_dat[24:32], Constant(0, 8)),
         ]
         fg_ch = [
             Cat(fg[0:8], Constant(0, 8)),
@@ -685,14 +724,21 @@ class Gfx2DEngine(LiteXModule):
             Cat(bg[16:24], Constant(0, 8)),
             Cat(bg[24:32], Constant(0, 8)),
         ]
+        self.sync += [
+            p0_fetch_x.eq(fetch_x),
+            [p0_src_pix[c].eq(Mux(uses_src, src_lb_ch[c], fg_ch[c]))
+             for c in range(4)],
+            [p0_dst_pix[c].eq(Mux(uses_dst, dst_lb_ch[c], bg_ch[c]))
+             for c in range(4)],
+        ]
         for c in range(4):
             self.comb += [
-                stage0.src_pix[c].eq(Mux(uses_src, src_pix_ch[c], fg_ch[c])),
-                stage0.dst_pix[c].eq(Mux(uses_dst, dst_pix_ch[c], bg_ch[c])),
+                stage0.src_pix[c].eq(p0_src_pix[c]),
+                stage0.dst_pix[c].eq(p0_dst_pix[c]),
                 stage0.fg_pix[c].eq(fg_ch[c]),
                 stage0.bg_pix[c].eq(bg_ch[c]),
-                stage0.r_in[0][c].eq(stage0.src_pix[c]),
-                stage0.r_in[1][c].eq(stage0.dst_pix[c]),
+                stage0.r_in[0][c].eq(p0_src_pix[c]),
+                stage0.r_in[1][c].eq(p0_dst_pix[c]),
             ]
         self.comb += [
             stage0.r_in[2][0].eq(p0_fetch_x[0:16]),
@@ -940,9 +986,11 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(beats_w_reg, beats_w),
                 NextValue(first_mask_reg, Cat(*first_bits)),
                 NextValue(last_mask_reg, Cat(*last_bits)),
+                NextValue(offset, row_start[0:5]),
                 NextState('ROW_CHECK'))
         fsm.act('ROW_CHECK',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(fill_pat_reg, wr_pattern),
                 If(bad_row_addr_reg,
                     NextValue(err, ERR_ADDR), NextState('FINISH')
                 ).Else(
@@ -966,7 +1014,7 @@ class Gfx2DEngine(LiteXModule):
                       NextValue(bit_buf, 0),
                       NextValue(bit_cnt,
                                 Mux(fmt == FMT_XRGB8888,
-                                    row_start[0:5] >> 2, row_start[0:5] >> 1)),
+                                    row_start[2:5], row_start[1:5])),
                       NextState('B_FETCH'))
                 .Elif(op == OP_SHADER,
                       NextValue(tile_x, 0),
@@ -989,7 +1037,7 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(out_blk, beat_byte[5:31]),
                 NextValue(req_blk, beat_byte[5:31]),
-                NextValue(out_data, wr_pattern),
+                NextValue(out_data, fill_pat_reg),
                 NextValue(out_mask, beat_mask),
                 NextState('SEND'))
         fsm.act('SEND',
@@ -1377,16 +1425,16 @@ class Gfx2DEngine(LiteXModule):
                     NextValue(fetch_x, tile_x + comp_idx),
                     NextValue(fetch_odd, comp_idx[0]),
                     NextValue(comp_pipe_vld,
-                              Cat(Constant(1, 1), comp_pipe_vld[0:7])),
+                              Cat(Constant(1, 1), comp_pipe_vld[0:9])),
                     If(comp_idx == tile_last,
                         NextValue(comp_active, 0)
                     )
                 ).Else(
                     NextValue(comp_pipe_vld,
-                              Cat(Constant(0, 1), comp_pipe_vld[0:7])),
+                              Cat(Constant(0, 1), comp_pipe_vld[0:9])),
                 ),
 
-                If(comp_pipe_vld[7],
+                If(comp_pipe_vld[9],
                     self.out_lb_w.we.eq(1),
                     self.out_lb_w.adr.eq(comp_out_idx),
                     self.out_lb_w.dat_w.eq(Cat(
