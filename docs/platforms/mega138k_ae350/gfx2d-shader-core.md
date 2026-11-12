@@ -1,7 +1,7 @@
 # AE350 GFX2D 可编程像素着色器核心（GFX2D-PPU）架构设计规格
 
 > 适用机器：`mega138k_ae350`（Tang Mega 138K Pro / Gowin GW5AST-LV138FPG676A）。
-> 状态：**二期（Phase 2 / Step 6）微架构与指令集设计规格（待综合与实板验证预算）**。
+> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）已完成全量 PnR 时序闭合与实机验收；Step 6b/6c 为后续目标预算**。
 > 关联文档：[GFX2D 一期规格与实机验收](gfx2d.md)、[GW5AST 硬核资源说明](gw5ast-hard-ip-usage.md)、[地址映射合同](address-map.md)。
 
 ---
@@ -34,22 +34,23 @@
 
 ---
 
-## 2. GW5AST-138B DSP 与 BSRAM 硬件原语映射预算（待验证预算）
+## 2. GW5AST-138B DSP 与 BSRAM 硬件原语映射预算与实测对比
 
 > [!IMPORTANT]
-> 下表所列 **34 DSP / 11 BSRAM** 与吞吐率指标为 RTL 实现前的**目标架构预算（Target Design Budget）**，最终精确资源占用与最高频率以 Gowin 综合与全量 PnR 回执为准。
+> - **Step 6a（已实测闭合）**：包含行缓冲（`SRC_LB0`、`DST_LB`、`OUT_LB`）、流式解包/打包器、Stage 0..1 核心与 Stage 1 `DOT3` 点积单元。在 Gowin 全量 PnR（Run `20261111T175107778773Z` / Commit `d6d7cfe`）中**实测增量为 +8 BSRAM（整机 143/340，43%）与 +4 DSP（整机 27.5/298，10%）**，`ddr_ui_clk` 100MHz 保持 **0 TNS** 建立/保持全时钟时序闭合，且已完成实机板载 SRAM 验收（Run `20261111T191108626301Z`，7 阶段全部通过）。
+> - **Step 6b / 6c（后续规划预算）**：下表所列的 **34 DSP / 11 BSRAM** 为包含后续 Step 6b（完整 4-Stage、4-Port LUT、INDEX8 PAL）与 Step 6c（48-bit UV 步进、12-DSP 双线性插值）的**二期全量目标架构总预算**。
 
-| 子模块 | 目标 DSP 预算 | 目标 BSRAM (18Kb) | 估计 LUT / FF | 硬件映射与端口配置说明 |
-| :--- | :---: | :---: | :---: | :--- |
-| **1. 48-bit 轴对齐 UV 步进与行缓冲寻址 (AGU)** | **2 DSP** | 0 | ~300 / 350 | 采用 **48-bit `UQ32.16` 无回绕扩展精度**计算 $V_{\text{row}} = V_0 + y \cdot dV_y$、水平切块起点 $U_{\text{first}} = U_0 + x_{\text{start}} \cdot dU_x$ 与末点 $U_{\text{last}}$；行内每拍 48-bit 纯加法累加 $U \leftarrow U + dU_x$ |
-| **2. 双线性 2×2 插值前端 (Bilinear Filter)** | **12 DSP** | 0 | ~450 / 550 | 遵循 `LERP(S, D, w)` 在 $w=0$ 时返回 $D$ 的定义：第一级水平插值 $P_0 = \text{LERP}(P_{10}, P_{00}, u_f)$ 与 $P_1 = \text{LERP}(P_{11}, P_{01}, u_f)$（2 组 × 4 通道 = **8 DSP**）；第二级垂直插值 $P = \text{LERP}(P_1, P_0, v_f)$（1 组 × 4 通道 = **4 DSP**），确保 $u_f = v_f = 0$ 时精确返回左上像素 $P_{00}$，共 **12 DSP** 维持 `II=1` |
-| **3. 4-Stage × 4-Channel SIMD 着色阵列** | **16 DSP** | 0 | ~1,400 / 1,600 | **Stage 0..3（4 级）× 4 通道（R,G,B,A）**，每通道独占 1 个硬核 `MULT27X18 + ALU54D`（共 16 DSP），3 级内部硬核寄存器流水（`AREG/BREG -> MREG -> OREG`） |
-| **4. 专用色度点积辅助单元 (固定于 Stage 1)**| **4 DSP** | 0 | ~200 / 250 | 供 **Stage 1** 执行 `DOT3`（RGB 转灰度或单行矩阵点积 $c_r R + c_g G + c_b B + c_a A$）时提供跨通道并行乘加 |
-| **5. 源图像奇偶行与奇偶列缓存 (`SRC_LB0/1`)** | 0 | **4 BSRAM** | ~300 / 250 | 行槽 0 `SRC_LB0`（偶列 Bank E 1×BSRAM + 奇列 Bank O 1×BSRAM，共 4KiB = 1024×32b）+ 行槽 1 `SRC_LB1`（偶列 Bank E + 奇列 Bank O，共 4KiB）；奇偶列分 Bank 使单拍可无冲突同时读出水平相邻两列 $(u_{\text{idx}}, u_{\text{idx}}+1)$，上下两行槽同时提供 $P_{00}, P_{10}, P_{01}, P_{11}$ |
-| **6. 目标行预取与回写缓冲 (`DST_LB` / `OUT_LB`)**| 0 | **4 BSRAM** | ~250 / 200 | `DST_LB`（2×BSRAM，4KiB = 1024×32b，预取解包后的目标背景像素）+ `OUT_LB`（2×BSRAM，4KiB = 1024×36b，利用 18Kbit BSRAM 的 9-bit 奇偶校验位额外存储每像素 `discard` 标志）；读写物理分离 |
-| **7. 前端 `INDEX8` 专用调色板 (`PAL_RAM`)** | 0 | **1 BSRAM** | ~100 / 100 | 1 个 `256 × 32-bit` SDPB BSRAM，专供 Phase 1 预取流式解包器将 8-bit 索引单拍展开为 `ARGB8888` 存入 `SRC_LB0/1`（与 Stage 2 `LUT_RAM` 物理隔离，零端口争用） |
-| **8. Stage 2 四通道并行查找表 (`LUT_RAM`)** | 0 | **2 BSRAM** | ~150 / 150 | 2 个双端口 DPB BSRAM（配置为 4 个独立 `256 × 8-bit` 读端口），固定供 **Stage 2** 单拍同时执行 R/G/B/A 四通道 `LUT_FETCH`（Gamma/曲线/伪彩色） |
-| **合计（GFX2D-PPU 目标预算）** | **34 DSP** | **11 BSRAM** | **~3,150 / ~3,450** | **占全芯片：DSP 11.4% (34/298)，BSRAM 3.2% (11/340)，LUT 2.3%** |
+| 子模块 | 阶段归属 | 目标 DSP 预算 | 目标 BSRAM (18Kb) | Step 6a 实测增量 | 硬件映射与端口配置说明 |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **1. 48-bit 轴对齐 UV 步进与寻址 (AGU)** | Step 6c | **2 DSP** | 0 | 待实现 (0) | 采用 48-bit `UQ32.16` 无回绕精度计算 $V_{\text{row}}$ 与 $U_{\text{first}}$；行内纯加法累加 |
+| **2. 双线性 2×2 插值前端 (Bilinear)** | Step 6c | **12 DSP** | 0 | 待实现 (0) | 水平插值 8 DSP + 垂直插值 4 DSP，共 12 DSP 维持 `II=1` |
+| **3. 4-Stage × 4-Channel SIMD 着色阵列** | Step 6a/6b | **16 DSP** | 0 | **+0 DSP** (LUT展开/硬核推导) | Step 6a 落地 Stage 0..1；Step 6b 补齐 Stage 2..3 |
+| **4. 专用色度点积辅助单元 (Stage 1 DOT3)**| Step 6a | **4 DSP** | 0 | **+4 DSP** (MULTALU27X18) | 供 **Stage 1** 执行 `DOT3` 跨通道并行乘加运算（实测占用 4 个硬核 DSP） |
+| **5. 源图像奇偶行与奇偶列缓存 (`SRC_LB0/1`)** | Step 6a/6c | 0 | **4 BSRAM** | **+2 BSRAM** (SDPB/SDPX9B) | Step 6a 落地 `SRC_LB0`（2×BSRAM，1024×32b）；Step 6c 补齐 `SRC_LB1` 双行槽 |
+| **6. 目标行与回写缓冲 (`DST_LB` / `OUT_LB`)**| Step 6a | 0 | **4 BSRAM** | **+6 BSRAM** (SDPB/SDPX9B) | `DST_LB`（2×BSRAM，预取目标背景）+ `OUT_LB`（4×BSRAM 组织流水回写缓冲） |
+| **7. 前端 `INDEX8` 专用调色板 (`PAL_RAM`)** | Step 6b | 0 | **1 BSRAM** | 待实现 (0) | 1 个 `256 × 32-bit` SDPB BSRAM，专供预取期展开 INDEX8 像素 |
+| **8. Stage 2 四通道并行查找表 (`LUT_RAM`)** | Step 6b | 0 | **2 BSRAM** | 待实现 (0) | 2 个双端口 DPB BSRAM（4 个独立 `256 × 8-bit` 读端口），专供 Stage 2 查表 |
+| **合计（全量总预算 vs Step 6a 实测）** | - | **34 DSP** | **11 BSRAM** | **+4 DSP / +8 BSRAM** | **Step 6a 实测占全芯片：DSP 10% (27.5/298)，BSRAM 43% (143/340)** |
 
 *(注：因为 Shader 仅 4 条 64-bit 指令，微码存储 `IMEM` 直接采用 `4 × 64-bit = 256 FFs` 分布式寄存器实现，无需消耗 BSRAM，且 4 个 Stage 可同时无冲突直读各自指令。)*
 
