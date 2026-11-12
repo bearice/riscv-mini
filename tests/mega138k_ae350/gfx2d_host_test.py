@@ -925,6 +925,28 @@ class Gfx2DHostTest(unittest.TestCase):
             # c in [0..15] -> RGB565: R=c>>3, G=c>>2, B=c>>3
             want = ((c >> 3) << 11) | ((c >> 2) << 5) | (c >> 3)
             self.assertEqual(got, want)
+
+        # SHL.SAT R0, SRC.aaaa, 8 (255 << 8 = 65280 must saturate to 255, not 0)
+        d3 = make()
+        mem3 = bytearray(DDR_SIZE)
+        for i in range(16):
+            mem3[0x1000 + 4 * i:0x1000 + 4 * (i + 1)] = b'\xff\xff\xff\xff'
+        inst0_hi = ((0x23 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (4 << 12) | (0 << 8) | (0 << 4) | (0xFF >> 4))
+        inst0_lo = (((0xFF & 0xF) << 28) | (0x00 << 20) |
+                    (0 << 12) | (0x8 << 8) | 8)
+        cfg3 = 0 | (1 << 4) | (0 << 5) | (1 << 11) | (4 << 12)
+        desc3 = {
+            'OP': 3, 'SHADER_CFG': cfg3,
+            'SRC_ADDR': 0x1000, 'SRC_STRIDE': 64,
+            'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 16, 'HEIGHT': 1, 'FORMAT': 0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+        }
+        self._run_op(d3, self._fake_pump_factory(d3, mem3), desc3)
+        for c in range(16):
+            got = mem3[0x2000 + 2 * c] | (mem3[0x2000 + 2 * c + 1] << 8)
+            self.assertEqual(got, 0xFFFF, f"SHL.SAT pixel {c} should saturate to 0xFFFF, got {hex(got)}")
         print("PASS GFX2D: R3 unscaled coordinates and SAT clamping verified")
 
 

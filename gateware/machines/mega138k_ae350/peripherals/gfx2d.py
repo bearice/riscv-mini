@@ -247,7 +247,7 @@ class ShaderALU(LiteXModule):
             lerp_w = Signal(10)
             lerp_diff = Signal((17, True))
             lerp_prod = Signal((27, True))
-            shl_val = Signal((16, True))
+            shl_val = Signal((32, True))
             shr_val = Signal((16, True))
 
             self.comb += [
@@ -266,7 +266,7 @@ class ShaderALU(LiteXModule):
             ]
 
             def sat_clamp(val):
-                return Mux(val < 0, 0, Mux(val > 255, 255, val))
+                return Mux(val < 0, 0, Mux(val > 255, 255, val[0:16]))
 
             arith_mux = Signal((16, True))
             self.comb += Case(p1_opcode[0:3], {
@@ -285,7 +285,7 @@ class ShaderALU(LiteXModule):
                 0: logic_mux.eq(s0 & s1),
                 1: logic_mux.eq(s0 | s1),
                 2: logic_mux.eq(s0 ^ s1),
-                3: logic_mux.eq(Mux(p1_sat, sat_clamp(shl_val), shl_val)),
+                3: logic_mux.eq(Mux(p1_sat, sat_clamp(shl_val), shl_val[0:16])),
                 4: logic_mux.eq(Mux(p1_sat, sat_clamp(shr_val), shr_val)),
                 "default": logic_mux.eq(s0 & s1),
             })
