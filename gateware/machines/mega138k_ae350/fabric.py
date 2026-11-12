@@ -226,6 +226,8 @@ class AE350Fabric(LiteXModule):
         write_q = Signal()
         strb_q = Signal(4)
         read_data = Signal(32)
+        read_data_reg = Signal(32)
+        error_reg = Signal()
         error_q = Signal()
         off = Signal(12)
         commit = Signal()
@@ -372,8 +374,33 @@ class AE350Fabric(LiteXModule):
         ]
         # At 50MHz decode the captured transaction directly. Only the final
         # APB response is registered; slow SD/Flash pages retain ownership.
-        self.comb += [read_data.eq(reduce(or_, [Mux(valid,value,0) for valid,value in pages])),
-                      error_q.eq(~reduce(or_, [valid for valid,_ in pages]))]
+        # For read_data, gate each device read by page and legality.
+        # Excluding write qualification and wdata checks cuts LUT levels
+        # and eliminates the cross-device wdata_q -> read_data_reg path.
+        read_pages = [
+            (legal & ~write_q & page_sel, val)
+            for page_sel, val in [
+                (eth_page, eth_data),
+                (sfp_page, sfp_data),
+                (qspi_page, self.qspi.rdata),
+                (sd_page, sd_rdata),
+                (sysinfo, sys_data),
+                (audio, self.audio.tx_rdata),
+                (mic, self.audio.rx_rdata),
+                (video_page, video_rdata),
+                (gfx2d_page, gfx2d_rdata),
+                (sense, self.sense.rdata),
+                (ws, self.board.ws_rdata),
+                (board, self.board.io_rdata),
+                (irq, irq_data),
+                (ddr, ddr_data),
+                (dma, dma_data),
+            ]
+        ]
+        self.comb += [
+            read_data.eq(reduce(or_, [Mux(v, val, 0) for v, val in read_pages])),
+            error_q.eq(~reduce(or_, [valid for valid, _ in pages])),
+        ]
         control_q,sticky_q,w1c_q,irq_enable_q=(Signal() for _ in range(4))
         self.sync += [
             control_q.eq(legal & dma & (off==0x0c) & write_q & (wdata_q[2:]==0)),
@@ -419,14 +446,23 @@ class AE350Fabric(LiteXModule):
                 phase.eq(0),
             ).Elif(wait & ~phase,
                 phase.eq(1),
-            ).Elif(wait & (~sd_page | ~legal | (sd.complete if sd is not None else 1)) &
-                    (~flash_page | ~legal | flash_done) & (~usb_page | ~legal | usb_done),
+                read_data_reg.eq(read_data),
+                error_reg.eq(error_q),
+            ).Elif(wait & (~sd_page | ~legal |
+                           (sd.complete if sd is not None else 1)) &
+                    (~flash_page | ~legal | flash_done) &
+                    (~usb_page | ~legal | usb_done),
                 wait.eq(0),
                 phase.eq(0),
-                cpu.apb_data.eq(Mux(sd_page & legal,sd.rdata if sd is not None else 0,
-                    Mux(flash_page & legal,flash_data, Mux(usb_page & legal, usb.rdata if usb is not None else 0, read_data)))),
-                cpu.apb_slverr.eq(Mux(sd_page & legal,sd.error if sd is not None else 1,
-                    Mux(flash_page & legal,flash_error, Mux(usb_page & legal, usb.error if usb is not None else 1, error_q)))),
+                cpu.apb_data.eq(Mux(sd_page & legal, sd.rdata if sd is not None else 0,
+                    Mux(flash_page & legal, flash_data,
+                        Mux(usb_page & legal, usb.rdata if usb is not None else 0,
+                            read_data_reg)))),
+                cpu.apb_slverr.eq(Mux(sd_page & legal,
+                                      sd.error if sd is not None else 1,
+                    Mux(flash_page & legal, flash_error,
+                        Mux(usb_page & legal,
+                            usb.error if usb is not None else 1, error_reg)))),
                 If(control, self.req_enable.eq(wdata_q[1])),
                 If(commit & irq_enable_q,
                    self.irq_enable.eq(wdata_q[0])),

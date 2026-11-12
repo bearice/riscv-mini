@@ -181,8 +181,10 @@ class EthernetDMA(LiteXModule):
             ~self.wdata[0]|(config_ok & (fault==0)))
         writable=(config_write|prod_write|cons_write|ctrl_write|delay_ctrl_write|delay_data_write|
                   diag_ctrl_write|diag_addr_write|(self.off==0xa4)|(self.off==0xa8))
-        ok_q=Signal();rdata_q=Signal(32);raw_rdata=Signal(32)
-        self.comb += [self.ok.eq(self.selected & ok_q),self.rdata.eq(rdata_q),
+        raw_rdata=Signal(32)
+        self.comb += [
+            self.ok.eq(self.selected & Mux(self.write,writable,reduce(or_,readable))),
+            self.rdata.eq(Mux(self.selected & ~self.write,raw_rdata,0)),
             raw_rdata.eq(0),Case(self.off,{
                 0x10:raw_rdata.eq(0xae350e03),0x14:raw_rdata.eq(self.mtu),
                 0x18:raw_rdata.eq(self.phy_status),0x1c:raw_rdata.eq(self.rx_clock_events),
@@ -206,8 +208,6 @@ class EthernetDMA(LiteXModule):
                 0xa0:raw_rdata.eq(rxcons),0xa4:raw_rdata.eq(irq_pending),
                 0xa8:raw_rdata.eq(irq_enable),0xac:raw_rdata.eq(fault)})]
         self.sync += [
-            ok_q.eq(self.selected & Mux(self.write,writable,reduce(or_,readable))),
-            rdata_q.eq(Mux(self.selected & ~self.write,raw_rdata,0)),
             self.rx_delay_load.eq(0),
             If(self.selected & self.commit & self.ok & self.write,Case(self.off,{
                 0x68:[

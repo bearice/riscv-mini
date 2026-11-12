@@ -128,7 +128,7 @@ def perform_upload(args, selected=None):
             # own reset banner is captured directly. If the banner was missed during
             # programmer disconnect, restart via JTAG when available.
             try:
-                op.record('banner', text=wait_loader(session, build_id, 3.0 if args.cpu_jtag_location else args.timeout))
+                op.record('banner', text=wait_loader(session, build_id, args.timeout))
             except (TimeoutError, RuntimeError):
                 if args.cpu_jtag_location:
                     restart()

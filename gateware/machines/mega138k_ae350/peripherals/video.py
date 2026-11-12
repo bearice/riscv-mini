@@ -160,10 +160,10 @@ class VideoPaletteLookup(LiteXModule):
         have = Signal()
         bypass_data = Signal(32)
         is_indexed_reg = Signal()
-        index_reg = Signal(8)
-        bank_reg = Signal()
         pix_index_reg = Signal(32)
         epoch_reg = Signal(32)
+        held_color = Signal(16)
+        held = Signal()
 
         accept = Signal()
         consume = Signal()
@@ -174,26 +174,30 @@ class VideoPaletteLookup(LiteXModule):
             consume.eq(have & source.ready),
 
             source.valid.eq(have),
-            source.data.eq(Mux(is_indexed_reg, Cat(palette_port.dat_r, Constant(0, 16)), bypass_data)),
+            source.data.eq(Mux(is_indexed_reg,
+                               Cat(Mux(held, held_color, palette_port.dat_r),
+                                   Constant(0, 16)),
+                               bypass_data)),
             source.index.eq(pix_index_reg),
             source.epoch.eq(epoch_reg),
 
-            palette_port.adr.eq(Cat(
-                Mux(accept, sink.data[:8], index_reg),
-                Mux(accept, self.palette_bank, bank_reg)
-            )),
+            palette_port.adr.eq(Cat(sink.data[:8], self.palette_bank)),
         ]
 
         self.sync += [
-            If(consume, have.eq(0)),
             If(accept,
                 have.eq(1),
+                held.eq(0),
                 is_indexed_reg.eq(self.indexed),
                 bypass_data.eq(sink.data),
-                index_reg.eq(sink.data[:8]),
-                bank_reg.eq(self.palette_bank),
                 pix_index_reg.eq(sink.index),
                 epoch_reg.eq(sink.epoch)
+            ).Elif(consume,
+                have.eq(0),
+                held.eq(0)
+            ).Elif(have & ~source.ready & ~held,
+                held.eq(1),
+                held_color.eq(palette_port.dat_r)
             )
         ]
 
