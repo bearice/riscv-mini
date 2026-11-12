@@ -23,7 +23,7 @@ enum {
     ERRORS
 };
 
-#define DONE_STAGE 0xC3500007u
+#define DONE_STAGE 0xC3500010u
 static volatile uint32_t *const slot = (volatile uint32_t *)AE350_RESULTS_BASE;
 
 #define R(off) (*(volatile uint32_t *)(uintptr_t)(AE350_GFX2D_BASE + (off)))
