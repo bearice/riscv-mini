@@ -228,7 +228,7 @@ class ShaderALU(LiteXModule):
         p2_arith = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_logic = [Signal((16, True), reset_less=True) for _ in range(4)]
         p2_prod16 = [Signal(16, reset_less=True) for _ in range(4)]
-        p2_lerp_prod = [Signal((20, True), reset_less=True) for _ in range(4)]
+        p2_lerp_prod = [Signal((27, True), reset_less=True) for _ in range(4)]
         p2_match_ch = [Signal(reset_less=True) for _ in range(4)]
         p2_imm8 = Signal(8, reset_less=True)
 
@@ -245,8 +245,8 @@ class ShaderALU(LiteXModule):
             clamp_val = Signal((17, True))
             prod16 = Signal(16)
             lerp_w = Signal(10)
-            lerp_diff = Signal((10, True))
-            lerp_prod = Signal((20, True))
+            lerp_diff = Signal((17, True))
+            lerp_prod = Signal((27, True))
             shl_val = Signal((16, True))
             shr_val = Signal((16, True))
 
@@ -259,23 +259,23 @@ class ShaderALU(LiteXModule):
                 clamp_val.eq(Mux(s0 < s1, s1, Mux(s0 > s2, s2, s0))),
                 prod16.eq(s0[0:8] * s1[0:8]),
                 lerp_w.eq(s2[0:8] + (s2[0:8] >> 7)),
-                lerp_diff.eq(s0[0:9] - s1[0:9]),
+                lerp_diff.eq(s0 - s1),
                 lerp_prod.eq(lerp_diff * lerp_w),
                 shl_val.eq(s0 << p1_imm8[0:4]),
                 shr_val.eq(s0 >> p1_imm8[0:4]),
             ]
 
+            def sat_clamp(val):
+                return Mux(val < 0, 0, Mux(val > 255, 255, val))
+
             arith_mux = Signal((16, True))
             self.comb += Case(p1_opcode[0:3], {
-                0: arith_mux.eq(s0),
-                1: arith_mux.eq(Mux(p1_sat & (add_val > 255), 255, add_val)),
-                2: arith_mux.eq(Mux(p1_sat,
-                                    Mux(sub_val < 0, 0,
-                                        Mux(sub_val > 255, 255, sub_val)),
-                                    sub_val)),
-                3: arith_mux.eq(diff_val),
-                4: arith_mux.eq(min_val),
-                5: arith_mux.eq(max_val),
+                0: arith_mux.eq(Mux(p1_sat, sat_clamp(s0), s0)),
+                1: arith_mux.eq(Mux(p1_sat, sat_clamp(add_val), add_val)),
+                2: arith_mux.eq(Mux(p1_sat, sat_clamp(sub_val), sub_val)),
+                3: arith_mux.eq(Mux(p1_sat, sat_clamp(diff_val), diff_val)),
+                4: arith_mux.eq(Mux(p1_sat, sat_clamp(min_val), min_val)),
+                5: arith_mux.eq(Mux(p1_sat, sat_clamp(max_val), max_val)),
                 6: arith_mux.eq(clamp_val),
                 "default": arith_mux.eq(s0),
             })
@@ -285,8 +285,8 @@ class ShaderALU(LiteXModule):
                 0: logic_mux.eq(s0 & s1),
                 1: logic_mux.eq(s0 | s1),
                 2: logic_mux.eq(s0 ^ s1),
-                3: logic_mux.eq(Mux(p1_sat & (shl_val > 255), 255, shl_val)),
-                4: logic_mux.eq(shr_val),
+                3: logic_mux.eq(Mux(p1_sat, sat_clamp(shl_val), shl_val)),
+                4: logic_mux.eq(Mux(p1_sat, sat_clamp(shr_val), shr_val)),
                 "default": logic_mux.eq(s0 & s1),
             })
 
@@ -359,13 +359,13 @@ class ShaderALU(LiteXModule):
             prod_raw = Signal(17)
             prod_unorm = Signal(16)
             mul_scaled_val = Signal(16)
-            lerp_res = Signal((17, True))
+            lerp_res = Signal((28, True))
 
             self.comb += [
                 prod_raw.eq(p2_prod16[c] + 128),
                 prod_unorm.eq((prod_raw + (prod_raw >> 8)) >> 8),
                 mul_scaled_val.eq(p2_prod16[c] >> p2_imm8[0:4]),
-                lerp_res.eq((p2_lerp_prod[c] + (p2_s1[c][0:8] << 8) + 128) >> 8),
+                lerp_res.eq((p2_lerp_prod[c] + (p2_s1[c] << 8) + 128) >> 8),
             ]
             self.sync += [
                 p3_prod_unorm[c].eq(prod_unorm),
@@ -554,7 +554,8 @@ class Gfx2DEngine(LiteXModule):
         dst_format = Signal(4)
         self.comb += [
             dst_format.eq(fmt[0:4]),
-            src_format.eq(Mux(src_fmt_override, shader_cfg[12:16], fmt[0:4])),
+            src_format.eq(Mux((op >= OP_SHADER) & src_fmt_override,
+                              shader_cfg[12:16], fmt[0:4])),
         ]
 
         def get_bpp_shift(f):
@@ -811,8 +812,8 @@ class Gfx2DEngine(LiteXModule):
             stage0.r_in[2][1].eq(row[0:16]),
             stage0.r_in[2][2].eq(0),
             stage0.r_in[2][3].eq(0),
-            stage0.r_in[3][0].eq(0),
-            stage0.r_in[3][1].eq(0),
+            stage0.r_in[3][0].eq(p0_fetch_x[0:16]),
+            stage0.r_in[3][1].eq(row[0:16]),
             stage0.r_in[3][2].eq(0),
             stage0.r_in[3][3].eq(0),
             stage0.p_in.eq(0),
@@ -876,7 +877,7 @@ class Gfx2DEngine(LiteXModule):
         rd_base = Signal(32)
         self.comb += rd_base.eq(Mux(fsm.ongoing('B_RD_PREP'), src_beat_base,
                                     src_beat_base + (beat << 5)))
-        height_m1 = Signal(16, reset_less=True)
+        height_m1 = Signal(32, reset_less=True)
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(self.busy, 0),
@@ -895,7 +896,7 @@ class Gfx2DEngine(LiteXModule):
         dst_step_total = Signal(32, reset_less=True)
         row_start_down = Signal(32, reset_less=True)
         src_row_start_down = Signal(32, reset_less=True)
-        width_bytes = Signal(16, reset_less=True)
+        width_bytes = Signal(32, reset_less=True)
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(limit, ddr_size - row_bytes),
@@ -982,9 +983,11 @@ class Gfx2DEngine(LiteXModule):
         bad_blit_dst = Mux(fmt == FMT_XRGB8888,
                            (dst_addr[0:2] != 0) | (dst_stride[0:2] != 0),
                            (dst_addr[0] != 0) | (dst_stride[0] != 0))
+        fmt_hi_bad = local_desc[10][4:32] != 0
+        op_hi_bad = local_desc[0][4:32] != 0
         legacy_fmt_bad = (op < OP_SHADER) & ((fmt == FMT_RGB888) | (fmt > FMT_XRGB1555))
-        dst_fmt_bad = (dst_format == FMT_RGB888) | (dst_format >= FMT_INDEX8) | \
-                      legacy_fmt_bad
+        dst_fmt_bad = fmt_hi_bad | (dst_format == FMT_RGB888) | \
+                      (dst_format >= FMT_INDEX8) | legacy_fmt_bad
         src_fmt_bad = (src_format == FMT_RGB888) | (src_format >= FMT_INDEX8)
         cfg_bad = (op == OP_SCALE_BLIT) | scale_en | bilinear_en | (last_stage > 1)
         dim_bad = (width == 0) | (height == 0) | \
@@ -995,6 +998,7 @@ class Gfx2DEngine(LiteXModule):
 
         static_bad = (
             (op > OP_SCALE_BLIT) |
+            op_hi_bad |
             dim_bad |
             cmp_dst_stride |
             dst_fmt_bad |
@@ -1583,12 +1587,15 @@ class Gfx2DEngine(LiteXModule):
         dith_r = Signal(8)
         dith_g = Signal(8)
         dith_b = Signal(8)
+        dith_g_off = Signal(4)
         self.comb += [
+            dith_g_off.eq(Mux(dst_format == FMT_RGB565,
+                              wb_thresh >> 2, wb_thresh >> 1)),
             If(dither_en,
                 dith_r.eq(Mux(out_r + (wb_thresh >> 1) > 255,
                           255, out_r + (wb_thresh >> 1))),
-                dith_g.eq(Mux(out_g + (wb_thresh >> 2) > 255,
-                          255, out_g + (wb_thresh >> 2))),
+                dith_g.eq(Mux(out_g + dith_g_off > 255,
+                          255, out_g + dith_g_off)),
                 dith_b.eq(Mux(out_b + (wb_thresh >> 1) > 255,
                           255, out_b + (wb_thresh >> 1))),
             ).Else(

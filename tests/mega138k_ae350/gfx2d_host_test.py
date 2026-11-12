@@ -882,6 +882,51 @@ class Gfx2DHostTest(unittest.TestCase):
                      expect_err=ERR_PARAM)
         print("PASS GFX2D: OP_SHADER rejects INDEX8/MONO1 formats with ERR_PARAM")
 
+    def test_validation_rejects_high_bits_in_op_and_format(self):
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        # OP=0x10 rejected with ERR_PARAM
+        desc_bad_op = {
+            'OP': 0x10, 'SRC_ADDR': 0x1000, 'DST_ADDR': 0x2000,
+            'SRC_STRIDE': 64, 'DST_STRIDE': 64, 'WIDTH': 16, 'HEIGHT': 1,
+            'FORMAT': 0,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc_bad_op,
+                     expect_err=ERR_PARAM)
+
+        # FORMAT=0x10 rejected with ERR_PARAM
+        d2 = make()
+        desc_bad_fmt = {
+            'OP': 0, 'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 16, 'HEIGHT': 1, 'FORMAT': 0x10, 'FG_COLOR': 0xFFFF,
+        }
+        self._run_op(d2, self._fake_pump_factory(d2, mem), desc_bad_fmt,
+                     expect_err=ERR_PARAM)
+        print("PASS GFX2D: validation rejects high bits in OP and FORMAT")
+
+    def test_shader_r3_coords_and_sat(self):
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        # MOV.SAT R0, R3.bbbb (X coordinate clamped to [0, 255])
+        inst0_hi = ((0x00 << 26) | (0 << 24) | (0 << 20) | (7 << 16) |
+                    (3 << 12) | (0 << 8) | (0 << 4) | (0x00 >> 4))
+        inst0_lo = (((0x00 & 0xF) << 28) | (0x00 << 20) |
+                    (0 << 12) | (0x8 << 8) | 0)
+        cfg = 0 | (0 << 4) | (0 << 5) | (0 << 11) | (0 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 16, 'HEIGHT': 1, 'FORMAT': 0,
+            'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        for c in range(16):
+            got = mem[0x2000 + 2 * c] | (mem[0x2000 + 2 * c + 1] << 8)
+            # c in [0..15] -> RGB565: R=c>>3, G=c>>2, B=c>>3
+            want = ((c >> 3) << 11) | ((c >> 2) << 5) | (c >> 3)
+            self.assertEqual(got, want)
+        print("PASS GFX2D: R3 unscaled coordinates and SAT clamping verified")
+
 
 if __name__ == '__main__':
     unittest.main()
