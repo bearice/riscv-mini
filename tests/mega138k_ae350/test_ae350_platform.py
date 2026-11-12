@@ -83,7 +83,11 @@ def main():
                 setattr(self,name,Signal(bits))
     video=VideoEndpoint()
     sfp=VideoEndpoint()
-    dut = AE350Fabric(cpu, {0: diag, 4: Signal(32, reset=7)}, io=_io, layout=amap, video=video, sfp=sfp)
+    from gateware.machines.mega138k_ae350.peripherals.ethernet_dma import EthernetDMA
+    ethernet = EthernetDMA()
+    dut = AE350Fabric(cpu, {0: diag, 4: Signal(32, reset=7)}, io=_io, layout=amap,
+                      video=video, sfp=sfp, ethernet=ethernet)
+    dut.submodules.ethernet = ethernet
     dut.comb += [
         sfp.ok.eq(sfp.selected & ((sfp.off == 0) | (sfp.off == 0x40))),
         sfp.rdata.eq(Mux(sfp.off == 0x40, 0xae350001, 0xae35010a)),
@@ -137,6 +141,12 @@ def main():
         check('sfp apb decode', err == 0 and value == 0xae35010a, hex(value))
         err, value, _ = yield from apb(cpu, False, amap.SFP_BASE + 0x40)
         check('sfp1 apb decode', err == 0 and value == 0xae350001, hex(value))
+        err, value, _ = yield from apb(cpu, False, amap.ETH_BASE)
+        check('ethernet management id', err == 0 and value == 0xae350e01, hex(value))
+        err, value, _ = yield from apb(cpu, False, amap.ETH_BASE + 0x10)
+        check('ethernet dma id', err == 0 and value == 0xae350e03, hex(value))
+        err, value, _ = yield from apb(cpu, False, amap.ETH_BASE + 0x14)
+        check('ethernet mtu', err == 0 and value == 1530, hex(value))
         err, _, _ = yield from apb(cpu, False, amap.SYSINFO_BASE + 0x1000)
         check('unmapped apb errors', err == 1, err)
         err, _, _ = yield from apb(cpu, False, amap.DDR_CSR_BASE + 1)
@@ -258,7 +268,7 @@ def main():
             for port in memory.ports:
                 if port.dat_r is None:
                     port.dat_r = Signal(memory.width)
-    run_simulation(fragment, tb(), clocks={'sys': 10})
+    run_simulation(fragment, tb(), clocks={'sys': 10, 'ddr': 10})
     print('RESULT', 'PASS' if not fails else 'FAIL: ' + ','.join(fails))
     return 0 if not fails else 1
 
