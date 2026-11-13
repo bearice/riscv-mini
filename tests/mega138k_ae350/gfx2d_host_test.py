@@ -7,7 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from migen import Signal
 from migen.sim import run_simulation
 from gateware.machines.mega138k_ae350 import address_map as amap
-from gateware.machines.mega138k_ae350.peripherals.gfx2d import Gfx2D, ShaderALU, ERR_NONE, ERR_UNSUPPORTED, ERR_PARAM
+from gateware.machines.mega138k_ae350.peripherals.gfx2d import (
+    Gfx2D, ShaderALU, BilinearFilter, ERR_NONE, ERR_UNSUPPORTED, ERR_PARAM, ERR_ADDR,
+    OP_SHADER, OP_SCALE_BLIT)
 
 DDR_SIZE = 1 << 20
 
@@ -193,7 +195,7 @@ class Gfx2DHostTest(unittest.TestCase):
                 assert px == fg, (fmt, r, hex(px), hex(fg))
         print('PASS GFX2D: FILL_RECT per-row alignment with odd stride')
 
-    def _run_op(self, d, mem_pump, desc, expect_err=0, writes=()):
+    def _run_op(self, d, mem_pump, desc, expect_err=0, writes=(), max_cycles=None):
         reg = amap.GFX2D_REGS
 
         def access(off, data=None):
@@ -208,7 +210,8 @@ class Gfx2DHostTest(unittest.TestCase):
             yield
             return ok, rdata
 
-        max_cycles = max(5000, desc.get('WIDTH', 0) * desc.get('HEIGHT', 1) * 8 + 2000)
+        if max_cycles is None:
+            max_cycles = max(5000, desc.get('WIDTH', 0) * desc.get('HEIGHT', 1) * 8 + 2000)
 
         def bench():
             yield [d.ui.cmd_ready.eq(1), d.ui.wr_data_rdy.eq(1), d.ui.rd_data_valid.eq(0),
@@ -238,12 +241,16 @@ class Gfx2DHostTest(unittest.TestCase):
 
         run_simulation(d, bench(), clocks={'sys': 10, 'ddr': 10})
 
-    def _fake_pump_factory(self, d, mem):
+    def _fake_pump_factory(self, d, mem, reads=None, tile_ws=None):
         def pump():
             yield
             en, wen, addr, data, mask, cmd = yield [d.ui.cmd_en, d.ui.wr_data_en,
                                                     d.ui.addr, d.ui.wr_data,
                                                     d.ui.wr_data_mask, d.ui.cmd]
+            if tile_ws is not None:
+                tw = yield d.engine.tile_w
+                if not tile_ws or tile_ws[-1] != tw:
+                    tile_ws.append(tw)
             yield [d.ui.rd_data_valid.eq(0)]
             if en and wen:
                 base = addr << 2
@@ -252,6 +259,8 @@ class Gfx2DHostTest(unittest.TestCase):
                         mem[base + i] = (data >> (8 * i)) & 0xff
             elif en and cmd == 1:
                 base = addr << 2
+                if reads is not None:
+                    reads.append(base)
                 val = 0
                 for i in range(32):
                     val |= mem[base + i] << (8 * i)
@@ -1200,6 +1209,186 @@ class Gfx2DHostTest(unittest.TestCase):
             want = pal[(0x40 + r * 77) & 0xFF]
             self.assertEqual(got, want, (r, hex(got), hex(want)))
         print("PASS GFX2D: INDEX8 single-pixel tiles expand through PAL_RAM")
+
+    def test_bilinear_filter_unit(self):
+        import random
+        rng = random.Random(6)
+        dut = BilinearFilter()
+        vecs = [[rng.getrandbits(32) for _ in range(4)] +
+                [rng.choice((0, 1, 127, 128, 255, rng.randrange(256))) for _ in range(2)]
+                for _ in range(300)]
+
+        def bench():
+            got = []
+            # Generator writes land on the next edge, so vector i is at the
+            # output after the LATENCY-th following edge.
+            for i in range(len(vecs) + BilinearFilter.LATENCY):
+                if i < len(vecs):
+                    p00, p10, p01, p11, fu, fv = vecs[i]
+                    yield [dut.p00.eq(p00), dut.p10.eq(p10), dut.p01.eq(p01),
+                           dut.p11.eq(p11), dut.wu.eq(fu + (fu >> 7)),
+                           dut.wv.eq(fv + (fv >> 7))]
+                yield
+                if i >= BilinearFilter.LATENCY:
+                    got.append((yield dut.out))
+            got.append((yield dut.out))
+            for k, (p00, p10, p01, p11, fu, fv) in enumerate(vecs):
+                want = bilinear_ref(p00, p10, p01, p11, fu, fv)
+                assert got[k] == want, (k, hex(got[k]), hex(want))
+        run_simulation(dut, bench())
+        print('PASS GFX2D: BilinearFilter matches LERP(LERP(P11,P01,u),LERP(P10,P00,u),v)')
+
+    def _scale_case(self, w, h, sw, sh, u0, du, v0, dv, bil, op=OP_SCALE_BLIT,
+                    src_addr=0x1000, src_stride=64, dst_addr=0x8000, dst_stride=None,
+                    reads=None, tile_ws=None, max_cycles=None):
+        # ARGB8888 texture -> ARGB8888 destination through a MOV shader.
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        dst_stride = dst_stride or 4 * w
+
+        def texel(u, v):
+            return ((u * 37 + v * 101 + 13) & 0xFF) << 24 | ((u * 11 + 7) & 0xFF) << 16 | \
+                   ((v * 29 + u * 3) & 0xFF) << 8 | ((u ^ (v << 3)) & 0xFF)
+        for v in range(sh):
+            for u in range(sw):
+                a = src_addr + v * src_stride + 4 * u
+                mem[a:a + 4] = texel(u, v).to_bytes(4, 'little')
+        cfg = (1 << 4) | (bil << 6) | (1 << 8) | (1 << 11) | (4 << 12)
+        desc = {
+            'OP': op, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': src_stride,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': dst_stride,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 4,
+            'SRC_WIDTH': sw, 'SRC_HEIGHT': sh,
+            'UV_START_U': u0, 'UV_DU_DX': du, 'UV_START_V': v0, 'UV_DV_DY': dv,
+            **inst_regs(enc(0x00, wr=0xF, s0=4)),
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem, reads, tile_ws), desc,
+                     max_cycles=max_cycles)
+        for y in range(h):
+            for x in range(w):
+                want = scale_ref(texel, sw, sh, u0, du, v0, dv, bil, x, y)
+                a = dst_addr + y * dst_stride + 4 * x
+                got = int.from_bytes(mem[a:a + 4], 'little')
+                self.assertEqual(got, want, (bil, x, y, hex(got), hex(want)))
+
+    def test_scale_upscale_row_cache(self):
+        # 2x upscale: V_int = 0,0,1,1,2,2,3,3. Bilinear rows (y0, y1) reuse
+        # the cached slots, so only rows 0,1 / 2 / 3 are ever fetched.
+        for bil in (0, 1):
+            reads = []
+            self._scale_case(12, 8, 6, 4, 0, 0x8000, 0, 0x8000, bil, reads=reads)
+            src_reads = [a for a in reads if 0x1000 <= a < 0x1000 + 4 * 64]
+            self.assertEqual(len(src_reads), 4, (bil, src_reads))
+        # OP_SHADER with SCALE_EN takes the same path.
+        self._scale_case(12, 8, 6, 4, 0x4000, 0x8000, 0x2000, 0x8000, 1, op=OP_SHADER)
+        print('PASS GFX2D: scaled nearest/bilinear upscale bit-exact; row cache hits')
+
+    def test_scale_tile_span_counterexample(self):
+        # U_first=0xFFFF, dU=1+1/65536, bilinear: W=1023 would need a
+        # 1025-pixel span, so the step choice must pick W=1022.
+        tile_ws = []
+        self._scale_case(1100, 1, 1200, 2, 0xFFFF, 0x10001, 0, 0, 1,
+                         src_stride=1200 * 4, dst_addr=0x4000,
+                         tile_ws=tile_ws, max_cycles=20000)
+        self.assertEqual([t for t in tile_ws if t], [1022, 78])
+        print('PASS GFX2D: U_first=0xFFFF dU=0x10001 bilinear tiles as 1022 + 78')
+
+    def test_scale_48bit_uv_no_wrap(self):
+        # U0/V0 = 0xFFFF0000 with unit steps cross 2^32 in UQ16.16; the
+        # 48-bit path keeps clamping to the right/bottom edge.
+        for bil in (0, 1):
+            self._scale_case(4, 3, 8, 4, 0xFFFF0000, 0x10000, 0xFFFF0000, 0x10000, bil)
+        print('PASS GFX2D: 48-bit UV clamps at the edges instead of wrapping')
+
+    def test_scale_downscale_multi_tile(self):
+        # 2x horizontal downscale: W_step=512, so 600 pixels are 512 + 88
+        # and U_first advances across the tile boundary.
+        for bil in (0, 1):
+            tile_ws = []
+            self._scale_case(600, 2, 1210, 4, 0x8000, 0x20000, 0x4000, 0x18000, bil,
+                             src_stride=1210 * 4, dst_addr=0x10000,
+                             tile_ws=tile_ws, max_cycles=40000)
+            self.assertEqual([t for t in tile_ws if t][:2], [512, 88])
+        print('PASS GFX2D: 2x downscale over two tiles (512 + 88) bit-exact')
+
+    def test_scale_r3_coords(self):
+        # MOV.SAT R0, R3 exposes {V_frac, U_frac, V_clamp, U_clamp}.
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        w, h, sw, sh = 8, 2, 12, 3
+        u0, du, v0, dv = 0x00028000, 0x00018000, 0x00014000, 0x00014000
+        cfg = (1 << 4) | (1 << 8) | (1 << 11) | (4 << 12)
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            'OP': OP_SCALE_BLIT, 'SHADER_CFG': cfg,
+            'SRC_ADDR': 0x1000, 'SRC_STRIDE': 64,
+            'DST_ADDR': 0x4000, 'DST_STRIDE': 64,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 4,
+            'SRC_WIDTH': sw, 'SRC_HEIGHT': sh,
+            'UV_START_U': u0, 'UV_DU_DX': du, 'UV_START_V': v0, 'UV_DV_DY': dv,
+            **inst_regs(enc(0x00, wr=0xF, s0=3, sat=1)),
+        })
+        for y in range(h):
+            for x in range(w):
+                U, V = u0 + x * du, v0 + y * dv
+                want = (((V >> 8) & 0xFF) << 24 | ((U >> 8) & 0xFF) << 16 |
+                        min(V >> 16, sh - 1) << 8 | min(U >> 16, sw - 1))
+                a = 0x4000 + y * 64 + 4 * x
+                got = int.from_bytes(mem[a:a + 4], 'little')
+                self.assertEqual(got, want, (x, y, hex(got), hex(want)))
+        print('PASS GFX2D: scaled R3 = {V_frac, U_frac, V_clamp, U_clamp}')
+
+    def test_scale_validation(self):
+        mem = bytearray(DDR_SIZE)
+        base = {
+            'OP': OP_SCALE_BLIT, 'SRC_ADDR': 0x1000, 'SRC_STRIDE': 64,
+            'DST_ADDR': 0x8000, 'DST_STRIDE': 64, 'WIDTH': 8, 'HEIGHT': 2,
+            'FORMAT': 2, 'SRC_WIDTH': 8, 'SRC_HEIGHT': 2,
+            'UV_DU_DX': 0x10000, 'UV_DV_DY': 0x10000,
+            **inst_regs(enc(0x00, wr=0xF, s0=4)),
+        }
+        src, scale, bil = 1 << 4, 1 << 8, 1 << 6
+        cases = [
+            ({'SHADER_CFG': src}, ERR_PARAM),                       # OP 4 without SCALE_EN
+            ({'OP': OP_SHADER, 'SHADER_CFG': scale}, ERR_PARAM),    # SCALE_EN without USES_SRC
+            ({'OP': OP_SHADER, 'SHADER_CFG': src | bil}, ERR_PARAM),  # BILINEAR without SCALE
+            ({'SHADER_CFG': src | scale, 'SRC_WIDTH': 0}, ERR_PARAM),
+            ({'SHADER_CFG': src | scale, 'SRC_HEIGHT': 16385}, ERR_PARAM),
+            ({'SHADER_CFG': src | scale, 'DST_ADDR': 0x1040}, ERR_PARAM),  # overlap
+            ({'SHADER_CFG': src | scale, 'SRC_ADDR': DDR_SIZE - 64}, ERR_ADDR),
+        ]
+        for extra, err in cases:
+            d = make()
+            self._run_op(d, self._fake_pump_factory(d, mem), {**base, **extra},
+                         expect_err=err)
+        self.assertEqual(bytes(mem[0x8000:0x8100]), bytes(0x100))
+        print('PASS GFX2D: scale mode dependencies, SRC dims, overlap and bounds rejected')
+
+
+def lerp8(s, d, a):
+    return ((s - d) * (a + (a >> 7)) + (d << 8) + 128) >> 8
+
+
+def bilinear_ref(p00, p10, p01, p11, fu, fv):
+    out = 0
+    for sh in (0, 8, 16, 24):
+        def ch(p):
+            return (p >> sh) & 0xFF
+        top = lerp8(ch(p10), ch(p00), fu)
+        bot = lerp8(ch(p11), ch(p01), fu)
+        out |= lerp8(bot, top, fv) << sh
+    return out
+
+
+def scale_ref(texel, sw, sh, u0, du, v0, dv, bil, x, y):
+    U, V = u0 + x * du, v0 + y * dv
+    ui, vi = U >> 16, V >> 16
+    u_0, v_0 = min(ui, sw - 1), min(vi, sh - 1)
+    if not bil:
+        return texel(u_0, v_0)
+    u_1, v_1 = min(ui + 1, sw - 1), min(vi + 1, sh - 1)
+    return bilinear_ref(texel(u_0, v_0), texel(u_1, v_0), texel(u_0, v_1),
+                        texel(u_1, v_1), (U >> 8) & 0xFF, (V >> 8) & 0xFF)
 
 
 def enc(op, dst=0, wr=0xF, s0=0, s1=0, s2=0, swz0=0xE4, swz1=0xE4, swz2=0xE4,

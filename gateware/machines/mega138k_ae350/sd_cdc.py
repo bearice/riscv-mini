@@ -14,7 +14,13 @@ class RegisteredFlagAsyncFIFO(Module, _FIFOInterface):
     pointer of the previous cycle. The remote pointer only advances, so a
     flag can only be conservatively stale. The read address and both
     pointer increments then never pass through the pointer comparators.
+
+    With ``prefetch_head`` the output register loads either the current or
+    the following entry, both read at registered pointers, so the reader's
+    pop decode only selects between them and never reaches a storage address.
     """
+    prefetch_head = False
+
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
         depth_bits = log2_int(depth, True)
@@ -39,16 +45,32 @@ class RegisteredFlagAsyncFIFO(Module, _FIFOInterface):
         storage = Memory(self.width, depth)
         self.specials += storage
         wrport = storage.get_port(write_capable=True, read_capable=False, clock_domain="write")
-        rdport = storage.get_port(clock_domain="read")
-        self.specials += wrport, rdport
+        self.specials += wrport
         self.comb += [wrport.adr.eq(produce.q_binary[:-1]), wrport.dat_w.eq(self.din),
-                      wrport.we.eq(produce.ce),
-                      rdport.adr.eq(consume.q_next_binary[:-1]), self.dout.eq(rdport.dat_r)]
+                      wrport.we.eq(produce.ce)]
+        if self.prefetch_head:
+            current = storage.get_port(async_read=True)
+            following = storage.get_port(async_read=True)
+            following_adr = Signal(depth_bits)
+            head = Signal(self.width, reset_less=True)
+            self.specials += current, following
+            self.comb += [current.adr.eq(consume.q_binary[:-1]),
+                          following.adr.eq(following_adr), self.dout.eq(head)]
+            self.sync.read += [following_adr.eq(consume.q_next_binary[:-1] + 1),
+                               head.eq(Mux(consume.ce, following.dat_r, current.dat_r))]
+        else:
+            rdport = storage.get_port(clock_domain="read")
+            self.specials += rdport
+            self.comb += [rdport.adr.eq(consume.q_next_binary[:-1]), self.dout.eq(rdport.dat_r)]
 
 
-def crossing(layout, source, target):
+class PrefetchHeadFIFO(RegisteredFlagAsyncFIFO):
+    prefetch_head = True
+
+
+def crossing(layout, source, target, fifo=RegisteredFlagAsyncFIFO):
     return ClockDomainsRenamer({'write':source,'read':target})(
-        stream._FIFOWrapper(RegisteredFlagAsyncFIFO, layout, 4))
+        stream._FIFOWrapper(fifo, layout, 4))
 
 
 class AHBClockCrossing(LiteXModule):
@@ -111,14 +133,21 @@ class SDClockCrossing(LiteXModule):
             self.sync += If(ack,held.eq(1)).Elif(~synchronized,held.eq(0))
             self.comb += request.eq(synchronized & ~held & ~ack)
         self.requests=crossing([('off',12),('data',32),('write',1)],'sys','mem')
-        self.responses=crossing([('data',32),('error',1)],'mem','sys')
+        # The APB select/commit decode pops the response.
+        self.responses=crossing([('data',32),('error',1)],'mem','sys',PrefetchHeadFIFO)
         req,resp=self.requests,self.responses
-        pending=Signal()
+        # The fabric holds select, commit and the operands until completion,
+        # so the request FIFO's write enable can be a register of its own
+        # instead of the APB page decode.
+        pending,send=Signal(),Signal()
         self.comb += [self.ok.eq(1),self.complete.eq(resp.source.valid),self.error.eq(resp.source.error),
             self.rdata.eq(resp.source.data),req.sink.off.eq(self.off),req.sink.data.eq(self.wdata),
-            req.sink.write.eq(self.write),req.sink.valid.eq(self.selected & self.commit & ~pending),
+            req.sink.write.eq(self.write),req.sink.valid.eq(send),
             resp.source.ready.eq(self.selected & self.commit)]
-        self.sync += If(req.sink.valid & req.sink.ready,pending.eq(1)).Elif(resp.source.valid & resp.source.ready,pending.eq(0))
+        self.sync += [
+            If(send & req.sink.ready,send.eq(0),pending.eq(1))
+            .Elif(self.selected & self.commit & ~pending & ~send,send.eq(1)),
+            If(resp.source.valid & resp.source.ready,pending.eq(0))]
         fsm=FSM(reset_state='IDLE');self.backend=ClockDomainsRenamer('mem')(fsm)
         off,data,result=Signal(12),Signal(32),Signal(32)
         write,error=Signal(),Signal()
@@ -132,5 +161,9 @@ class SDClockCrossing(LiteXModule):
         self.sync.mem += [rdata_q.eq(native.rdata),ok_q.eq(native.ok)]
         fsm.act('DECODE',native.selected.eq(1),NextState('SAMPLE'))
         fsm.act('SAMPLE',native.selected.eq(1),NextValue(result,rdata_q),NextValue(error,~ok_q),NextState('COMMIT'))
-        fsm.act('COMMIT',native.selected.eq(1),native.commit.eq(1),NextState('RESP'))
-        fsm.act('RESP',resp.sink.valid.eq(1),If(resp.sink.ready,NextState('IDLE')))
+        # A dedicated valid register drives the response FIFO's write enable
+        # rather than a decode of the binary FSM state.
+        resp_valid=Signal()
+        self.comb += resp.sink.valid.eq(resp_valid)
+        fsm.act('COMMIT',native.selected.eq(1),native.commit.eq(1),NextValue(resp_valid,1),NextState('RESP'))
+        fsm.act('RESP',If(resp.sink.ready,NextValue(resp_valid,0),NextState('IDLE')))

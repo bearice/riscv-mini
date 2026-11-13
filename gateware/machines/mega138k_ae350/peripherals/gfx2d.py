@@ -1,4 +1,4 @@
-"""GFX2D 2D pixel engine with Phase 2 programmable shader pipeline (Step 6b)."""
+"""GFX2D 2D pixel engine with Phase 2 programmable shader pipeline (Step 6c)."""
 from functools import reduce
 from operator import or_
 
@@ -119,15 +119,19 @@ class ShaderALU(LiteXModule):
         def select_src(idx):
             # FG/BG/U0..U7 operands are static, so resolve them into a local
             # register ahead of the pixel stream.
+            # idx 6/7 = FG/BG and 8..15 = U0..U7; other values are masked by
+            # sel below. An explicit 8:1 + 2:1 tree keeps the mux shallow.
             static = [Signal(8, reset_less=True) for _ in range(4)]
-            static_cases = {
-                6: [static[c].eq(self.fg_pix[c]) for c in range(4)],
-                7: [static[c].eq(self.bg_pix[c]) for c in range(4)],
-            }
-            for u in range(8):
-                static_cases[8 + u] = [
-                    static[c].eq(self.uniforms[u][c]) for c in range(4)]
-            self.sync += Case(idx, static_cases)
+            for c in range(4):
+                uni = Signal(8, reset_less=True)
+                self.sync += uni.eq(
+                    Array([self.uniforms[u][c] for u in range(8)])[idx[0:3]])
+                fgbg = Mux(idx[0], self.bg_pix[c], self.fg_pix[c])
+                self.sync += static[c].eq(Mux(idx[3], uni, fgbg))
+            # A second stage lets the descriptor-side mux sit near the shared
+            # descriptor and this copy near the stage's operand logic.
+            static_q = [Signal(8, reset_less=True) for _ in range(4)]
+            self.sync += [static_q[c].eq(static[c]) for c in range(4)]
 
             # The index is static too, so its decode is registered with the
             # static operand and the pixel path is a single AND-OR level.
@@ -136,7 +140,7 @@ class ShaderALU(LiteXModule):
                 s.attr.add(("syn_maxfan", 16))
             self.sync += [sel[k].eq(idx == k) for k in range(6)]
             self.sync += sel[6].eq(idx >= 6)
-            cands = [*self.r_in, self.src_pix, self.dst_pix, static]
+            cands = [*self.r_in, self.src_pix, self.dst_pix, static_q]
             res = [Signal((16, True)) for _ in range(4)]
             for c in range(4):
                 self.comb += res[c].eq(reduce(or_, [
@@ -299,16 +303,24 @@ class ShaderALU(LiteXModule):
                 return Cat(val[sign], ~val[sign] & (val[8:sign] != 0))
 
             # Saturation selects two range flags alongside the raw result
-            # instead of muxing six separately clamped values.
+            # instead of muxing six separately clamped values. DIFF/MIN/MAX
+            # flags come from their candidates, in parallel with the compare.
+            s0_fl = sat_flags(s0, 15)
+            s1_fl = sat_flags(s1, 15)
+            sub_fl = sat_flags(sub_val, 16)
+            rsub_fl = sat_flags(rsub_val, 16)
             arith_raw = Signal((16, True))
             arith_flags = Signal(2)
             self.comb += Case(p1_opcode[0:3], {
-                0: [arith_raw.eq(s0), arith_flags.eq(sat_flags(s0, 15))],
+                0: [arith_raw.eq(s0), arith_flags.eq(s0_fl)],
                 1: [arith_raw.eq(add_val), arith_flags.eq(sat_flags(add_val, 16))],
-                2: [arith_raw.eq(sub_val), arith_flags.eq(sat_flags(sub_val, 16))],
-                3: [arith_raw.eq(diff_val), arith_flags.eq(sat_flags(diff_val, 16))],
-                4: [arith_raw.eq(min_val), arith_flags.eq(sat_flags(min_val, 16))],
-                5: [arith_raw.eq(max_val), arith_flags.eq(sat_flags(max_val, 16))],
+                2: [arith_raw.eq(sub_val), arith_flags.eq(sub_fl)],
+                3: [arith_raw.eq(diff_val),
+                    arith_flags.eq(Mux(s0_lt_s1, rsub_fl, sub_fl))],
+                4: [arith_raw.eq(min_val),
+                    arith_flags.eq(Mux(s0_lt_s1, s0_fl, s1_fl))],
+                5: [arith_raw.eq(max_val),
+                    arith_flags.eq(Mux(s0_lt_s1, s1_fl, s0_fl))],
                 6: [arith_raw.eq(clamp_val), arith_flags.eq(0)],
                 "default": [arith_raw.eq(s0), arith_flags.eq(0)],
             })
@@ -554,6 +566,78 @@ class ShaderALU(LiteXModule):
         ]
 
 
+class BilinearFilter(LiteXModule):
+    """2x2 texture filter built from the LERP primitive of the shader ISA.
+
+    top = LERP(P10, P00, wu), bot = LERP(P11, P01, wu) and
+    out = LERP(bot, top, wv), with LERP(S, D, w) = ((S - D) * w + (D << 8)
+    + 128) >> 8 per channel and w the expanded 0..256 weight. Zero weights
+    return P00 exactly. out follows the inputs by LATENCY cycles.
+    """
+    LATENCY = 6
+
+    def __init__(self):
+        self.p00 = Signal(32)
+        self.p10 = Signal(32)
+        self.p01 = Signal(32)
+        self.p11 = Signal(32)
+        self.wu = Signal(9)
+        self.wv = Signal(9)
+        self.out = Signal(32, reset_less=True)
+
+        wu1 = Signal(9, reset_less=True)
+        wv_d = [Signal(9, reset_less=True) for _ in range(4)]
+        self.sync += [wu1.eq(self.wu), wv_d[0].eq(self.wv)]
+        self.sync += [wv_d[i].eq(wv_d[i - 1]) for i in range(1, 4)]
+
+        for c in range(4):
+            sl = slice(8 * c, 8 * c + 8)
+            # Differences and pass-through endpoints are registered with no
+            # logic after them so they can sit in the DSP input registers.
+            dt = Signal((9, True), reset_less=True)
+            db = Signal((9, True), reset_less=True)
+            e00 = Signal(8, reset_less=True)
+            e01 = Signal(8, reset_less=True)
+            self.sync += [
+                dt.eq(self.p10[sl] - self.p00[sl]),
+                db.eq(self.p11[sl] - self.p01[sl]),
+                e00.eq(self.p00[sl]),
+                e01.eq(self.p01[sl]),
+            ]
+            pt = Signal((18, True), reset_less=True)
+            pb = Signal((18, True), reset_less=True)
+            e00_q = Signal(8, reset_less=True)
+            e01_q = Signal(8, reset_less=True)
+            self.sync += [
+                pt.eq(dt * wu1),
+                pb.eq(db * wu1),
+                e00_q.eq(e00),
+                e01_q.eq(e01),
+            ]
+            # D << 8 is spelled as an explicit 16-bit Cat: Migen wraps the
+            # unsigned term in a signed concatenation, where a Verilog shift
+            # keeps its operand's 8-bit width and would drop D entirely.
+            top_full = Signal((19, True))
+            bot_full = Signal((19, True))
+            top = Signal(8, reset_less=True)
+            bot = Signal(8, reset_less=True)
+            self.comb += [
+                top_full.eq((pt + Cat(Constant(0, 8), e00_q) + 128) >> 8),
+                bot_full.eq((pb + Cat(Constant(0, 8), e01_q) + 128) >> 8),
+            ]
+            self.sync += [top.eq(top_full[0:8]), bot.eq(bot_full[0:8])]
+
+            dv = Signal((9, True), reset_less=True)
+            top_q = Signal(8, reset_less=True)
+            self.sync += [dv.eq(bot - top), top_q.eq(top)]
+            pv = Signal((18, True), reset_less=True)
+            top_qq = Signal(8, reset_less=True)
+            self.sync += [pv.eq(dv * wv_d[3]), top_qq.eq(top_q)]
+            out_full = Signal((19, True))
+            self.comb += out_full.eq((pv + Cat(Constant(0, 8), top_qq) + 128) >> 8)
+            self.sync += self.out[sl].eq(out_full[0:8])
+
+
 class Gfx2DEngine(LiteXModule):
     def __init__(self, pal_port, lut_ports, ddr_size=1 << 30,
                  response_timeout=1 << 18):
@@ -591,6 +675,37 @@ class Gfx2DEngine(LiteXModule):
         dither_en = shader_cfg[7]
         scale_en = shader_cfg[8]
         src_fmt_override = shader_cfg[11]
+        scaled_comb = (op >= OP_SHADER) & scale_en
+        scaled = Signal(reset_less=True)
+        bil = Signal(reset_less=True)
+        src_w_m1 = Signal(32, reset_less=True)
+        src_h_m1 = Signal(32, reset_less=True)
+        self.sync += [
+            scaled.eq(scaled_comb),
+            bil.eq(scaled_comb & bilinear_en),
+            src_w_m1.eq(src_w - 1),
+            src_h_m1.eq(src_h - 1),
+        ]
+
+        # Scaled tile width: the largest candidate W whose worst-case source
+        # span ((W-1)*dU + 0xFFFF)[47:16] + BILINEAR + 1 fits the 1024-pixel
+        # line buffer, i.e. (W-1)*dU <= (1023 - BILINEAR) << 16, which for
+        # integers is dU <= floor(((1023 - BILINEAR) << 16) / (W-1)). W=1
+        # always fits. Free-running from the descriptor like the other decodes.
+        du = uv_du_dx
+        w_cands = (1024, 1023, 1022, 512, 256, 128, 64, 32, 16)
+        w_pass = []
+        for w in w_cands:
+            p = Signal(reset_less=True)
+            self.sync += p.eq(Mux(bil, du <= ((1022 << 16) // (w - 1)),
+                                  du <= ((1023 << 16) // (w - 1))))
+            w_pass.append(p)
+        w_pick = Constant(1, 11)
+        for w, p in reversed(list(zip(w_cands, w_pass))):
+            w_pick = Mux(p, w, w_pick)
+        w_step = Signal(11, reset_less=True)
+        self.sync += w_step.eq(Mux(scaled, w_pick, 1024))
+
         src_format = Signal(4)
         dst_format = Signal(4)
         # The descriptor is stable before start (see height_m1_q), so the
@@ -639,7 +754,17 @@ class Gfx2DEngine(LiteXModule):
         dir_down = Signal(reset_less=True)
         self.sync += [
             row_bytes.eq(width << dst_bpp_shift),
-            src_row_bytes.eq(width << src_bpp_shift),
+            src_row_bytes.eq(Mux(scaled, src_w, width) << src_bpp_shift),
+        ]
+        # Row address limits are descriptor-derived and first read in
+        # ROW_SETUP, several INIT states after start, so they free-run.
+        src_row_limit = Signal(32, reset_less=True)
+        src_blit_limit = Signal(32, reset_less=True)
+        self.sync += [
+            limit.eq(ddr_size - row_bytes),
+            src_row_limit.eq(ddr_size - src_row_bytes),
+            src_blit_limit.eq(ddr_size - blit_wb),
+            src_limit.eq(Mux(op == OP_IMAGE_BLIT, src_blit_limit, src_row_limit)),
         ]
 
         delta_dst = Signal(32, reset_less=True)
@@ -649,8 +774,10 @@ class Gfx2DEngine(LiteXModule):
         nxt_row_start_reg = Signal(32, reset_less=True)
         nxt_src_row_start_reg = Signal(32, reset_less=True)
         beat_byte = Signal(32, reset_less=True)
-        nxt_beat_byte = Signal(32)
-        self.comb += nxt_beat_byte.eq(Cat(Constant(0, 5), beat_byte[5:32] + 1))
+        # Every write-send state leaves through a PREP state, so beat_byte
+        # never advances on consecutive cycles and its increment is registered.
+        nxt_beat_byte = Signal(32, reset_less=True)
+        self.sync += nxt_beat_byte.eq(Cat(Constant(0, 5), beat_byte[5:32] + 1))
         rb_hi5 = Signal(16, reset_less=True)
         rb_lo5 = Signal(5, reset_less=True)
         # row_start changes only on the cycle before ROW_SETUP, so off5 is
@@ -739,16 +866,19 @@ class Gfx2DEngine(LiteXModule):
         src_byte_q = Signal(8)
         src_byte_pending = Signal()
 
-        # Line Buffers
-        self.src_lb_e = Memory(32, 512, name="src_lb_e")
-        self.src_lb_o = Memory(32, 512, name="src_lb_o")
+        # Line Buffers. SRC_LB holds two source-row slots (slot = row[0]),
+        # each split into even/odd column banks so a bilinear 2x2 fetch
+        # reads both horizontal neighbours of a slot in one cycle.
+        src_lb_w = [[None, None], [None, None]]
+        src_lb_r = [[None, None], [None, None]]
+        for k in range(2):
+            for b, bank in enumerate("eo"):
+                mem = Memory(32, 512, name="src_lb%d_%s" % (k, bank))
+                src_lb_w[k][b] = mem.get_port(write_capable=True, clock_domain="ddr")
+                src_lb_r[k][b] = mem.get_port(clock_domain="ddr")
+                self.specials += mem, src_lb_w[k][b], src_lb_r[k][b]
         self.dst_lb = Memory(32, 1024, name="dst_lb")
         self.out_lb = Memory(33, 1024, name="out_lb")
-
-        self.src_lb_e_w = self.src_lb_e.get_port(write_capable=True, clock_domain="ddr")
-        self.src_lb_o_w = self.src_lb_o.get_port(write_capable=True, clock_domain="ddr")
-        self.src_lb_e_r = self.src_lb_e.get_port(clock_domain="ddr")
-        self.src_lb_o_r = self.src_lb_o.get_port(clock_domain="ddr")
 
         self.dst_lb_w = self.dst_lb.get_port(write_capable=True, clock_domain="ddr")
         self.dst_lb_r = self.dst_lb.get_port(clock_domain="ddr")
@@ -757,8 +887,6 @@ class Gfx2DEngine(LiteXModule):
         self.out_lb_r = self.out_lb.get_port(clock_domain="ddr")
 
         self.specials += [
-            self.src_lb_e, self.src_lb_e_w, self.src_lb_e_r,
-            self.src_lb_o, self.src_lb_o_w, self.src_lb_o_r,
             self.dst_lb, self.dst_lb_w, self.dst_lb_r,
             self.out_lb, self.out_lb_w, self.out_lb_r,
         ]
@@ -766,7 +894,7 @@ class Gfx2DEngine(LiteXModule):
         # Tile FSM signals
         tile_x = Signal(16, reset_less=True)
         rem_w = Signal(16, reset_less=True)
-        tile_w = Signal(11, reset_less=True)
+        self.tile_w = tile_w = Signal(11, reset_less=True)
         lb_rem = Signal(11, reset_less=True)
         comp_rem = Signal(11, reset_less=True)
         comp_out_rem = Signal(11, reset_less=True)
@@ -776,6 +904,10 @@ class Gfx2DEngine(LiteXModule):
         t_src_off = Signal(5, reset_less=True)
         t_dst_base_blk = Signal(26, reset_less=True)
         t_dst_blk = Signal(26, reset_less=True)
+        # T_DST_RREQ is always entered at least one cycle after t_dst_blk
+        # last changed, so its increment can be registered.
+        t_dst_blk_p1 = Signal(26, reset_less=True)
+        self.sync += t_dst_blk_p1.eq(t_dst_blk + 1)
         t_dst_off = Signal(5, reset_less=True)
         t_src_is_first = Signal(reset_less=True)
         t_dst_is_first = Signal(reset_less=True)
@@ -784,15 +916,145 @@ class Gfx2DEngine(LiteXModule):
         lb_is_last_pix = Signal(reset_less=True)
         wb_is_last_pix = Signal(reset_less=True)
 
-        # Compute pipeline signals
+        def delayed(sig, n):
+            for _ in range(n):
+                q = Signal(len(sig), reset_less=True)
+                self.sync += q.eq(sig)
+                sig = q
+            return sig
+
+        # UV state of scaled ops: U(x) = U0 + x*dU and V(y) = V0 + y*dV as
+        # 48-bit UQ32.16, V per row and U at each tile start. The tile-width
+        # bound keeps the integer offset from U_first below 1024 inside a
+        # tile, so a 27-bit accumulator of frac(U_first) + k*dU covers it.
+        v_acc = Signal(48, reset_less=True)
+        u_first = Signal(48, reset_less=True)
+        u_acc = Signal(27, reset_less=True)
+        # V advances once per row, so its next value adds in two 24-bit
+        # halves over two cycles.
+        v_lo = Signal(25, reset_less=True)
+        v_hi = Signal(24, reset_less=True)
+        self.sync += [
+            v_lo.eq(v_acc[0:24] + uv_dv_dy[0:24]),
+            v_hi.eq(v_acc[24:48] + uv_dv_dy[24:32] + v_lo[24]),
+        ]
+        v_nxt = Cat(v_lo[0:24], v_hi)
+
+        # Per-tile source geometry is a free-running pipeline from tile_w,
+        # u_first and v_acc; the tile FSM waits for it in T_SETUP_W.
+        tw_m1 = Signal(10, reset_less=True)
+        mu_a = Signal(10, reset_less=True)
+        mu_b = Signal(32, reset_less=True)
+        mu_lo = Signal(26, reset_less=True)
+        mu_hi = Signal(26, reset_less=True)
+        u_span = Signal(42, reset_less=True)
+        u_last = Signal(48, reset_less=True)
+        u_next = Signal(48, reset_less=True)
+        uf_ge = Signal(reset_less=True)
+        u_base = Signal(14, reset_less=True)
+        u_end_raw = Signal(33, reset_less=True)
+        u_end = Signal(14, reset_less=True)
+        src_span_px = Signal(15, reset_less=True)
+        span_bad = Signal(reset_less=True)
+        span_is1 = Signal(reset_less=True)
+        lim_raw = Signal(14, reset_less=True)
+        lim_c = Signal(11, reset_less=True)
+        # The 32-bit V clamp compare is split into registered halves.
+        v_hi_gt = Signal(reset_less=True)
+        v_hi_eq = Signal(reset_less=True)
+        v_lo_ge = Signal(reset_less=True)
+        v_ge = Signal()
+        self.comb += v_ge.eq(v_hi_gt | (v_hi_eq & v_lo_ge))
+        y0 = Signal(14, reset_less=True)
+        y1 = Signal(14, reset_less=True)
+        top_slot = Signal(reset_less=True)
+        bot_slot = Signal(reset_less=True)
+        wv = Signal(9, reset_less=True)
+        ufi = u_first[16:48]
+        vi = v_acc[16:48]
+        fv = v_acc[8:16]
+        self.sync += [
+            tw_m1.eq(tile_w - 1),
+            mu_a.eq(tw_m1),
+            mu_b.eq(du),
+            mu_lo.eq(mu_a * mu_b[0:16]),
+            mu_hi.eq(mu_a * mu_b[16:32]),
+            u_span.eq(mu_lo + (mu_hi << 16)),
+            u_last.eq(u_first + u_span),
+            u_next.eq(u_last + du),
+            uf_ge.eq(ufi >= src_w_m1),
+            u_base.eq(Mux(uf_ge, src_w_m1, ufi)[0:14]),
+            u_end_raw.eq(u_last[16:48] + bil),
+            u_end.eq(Mux(u_end_raw >= src_w_m1, src_w_m1, u_end_raw)[0:14]),
+            src_span_px.eq(u_end - u_base + 1),
+            span_bad.eq(src_span_px > 1024),
+            span_is1.eq(src_span_px == 1),
+            # Local index limit of the right edge clamp: pixels at or past
+            # it sample SRC_WIDTH-1 and reuse it as their right neighbour.
+            lim_raw.eq(src_w_m1[0:14] - u_base),
+            lim_c.eq(Mux(scaled,
+                     Mux(uf_ge, 0, Mux(lim_raw >= 1024, 1024, lim_raw)), 1024)),
+            v_hi_gt.eq(vi[16:32] > src_h_m1[16:32]),
+            v_hi_eq.eq(vi[16:32] == src_h_m1[16:32]),
+            v_lo_ge.eq(vi[0:16] >= src_h_m1[0:16]),
+            y0.eq(Mux(v_ge, src_h_m1, vi)[0:14]),
+            y1.eq(Mux(bil & ~v_ge, y0 + 1, y0)),
+            top_slot.eq(scaled & y0[0]),
+            bot_slot.eq(scaled & y1[0]),
+            wv.eq(Mux(bil, fv + (fv >> 7), 0)),
+        ]
+
+        # Source row cache tags, one per SRC_LB slot (slot = row[0]).
+        tag_valid = [Signal() for _ in range(2)]
+        tag_row = [Signal(14, reset_less=True) for _ in range(2)]
+        tag_ub = [Signal(14, reset_less=True) for _ in range(2)]
+        tag_ue = [Signal(14, reset_less=True) for _ in range(2)]
+
+        def tag_hit(y):
+            hits = [tag_valid[k] & (tag_row[k] == y) & (tag_ub[k] == u_base) &
+                    (tag_ue[k] >= u_end) for k in range(2)]
+            return Mux(y[0], hits[1], hits[0])
+        hit0 = Signal(reset_less=True)
+        hit1 = Signal(reset_less=True)
+        need_y1 = Signal(reset_less=True)
+        self.sync += [
+            hit0.eq(tag_hit(y0)),
+            hit1.eq(tag_hit(y1)),
+            need_y1.eq(y1 != y0),
+        ]
+
+        # Source row address src_addr + y * SRC_STRIDE + (u_base << bpp),
+        # free-running from load_y; the FSM waits for it in T_SC_ADDR.
+        load_y = Signal(14, reset_less=True)
+        load_slot = Signal(reset_less=True)
+        my_a = Signal(14, reset_less=True)
+        my_b = Signal(32, reset_less=True)
+        my_lo = Signal(30, reset_less=True)
+        my_hi = Signal(16, reset_less=True)
+        y_off = Signal(32, reset_less=True)
+        sc_row_addr = Signal(32, reset_less=True)
+        sc_src_addr = Signal(32, reset_less=True)
+        self.sync += [
+            my_a.eq(load_y),
+            my_b.eq(src_stride),
+            my_lo.eq(my_a * my_b[0:16]),
+            my_hi.eq(my_a * my_b[16:32]),
+            y_off.eq(my_lo + (my_hi << 16)),
+            sc_row_addr.eq(src_addr + y_off),
+            sc_src_addr.eq(sc_row_addr + (u_base << src_bpp_shift)),
+        ]
+        setup_wait = Signal(4, reset_less=True)
+
+        # Compute pipeline signals. The sampling front end adds FE_LAT
+        # cycles ahead of Stage 0.
+        fe_lat = 4 + BilinearFilter.LATENCY
         comp_idx = Signal(11, reset_less=True)
         comp_out_idx = Signal(11, reset_less=True)
-        comp_pipe_vld = Signal(22, reset_less=True)
-        fetch_x = Signal(16, reset_less=True)
-        fetch_odd = Signal(reset_less=True)
+        comp_pipe_vld = Signal(22 + fe_lat, reset_less=True)
         p0_src_pix = [Signal((16, True), reset_less=True) for _ in range(4)]
         p0_dst_pix = [Signal((16, True), reset_less=True) for _ in range(4)]
         p0_fetch_x = Signal(16, reset_less=True)
+        p0_r3 = [Signal(16, reset_less=True) for _ in range(4)]
 
         # Shader ALUs
         self.stage0 = stage0 = ShaderALU(0)
@@ -812,8 +1074,99 @@ class Gfx2DEngine(LiteXModule):
                 self.comb += [stage.uniforms[u][c].eq(u_raw[8*c:8*(c+1)])
                               for c in range(4)]
 
-        # Stage 0 inputs (with P0 Line Buffer pipeline register)
-        src_lb_dat = Mux(fetch_odd, self.src_lb_o_r.dat_r, self.src_lb_e_r.dat_r)
+        # Sampling front end, one pixel per cycle from comp_idx / u_acc:
+        # A) local source index and U fraction, B) right edge clamp,
+        # C) bank addresses, D) bank read, E) 2x2 neighbour select, then the
+        # bilinear filter. Unscaled ops sample local index comp_idx with
+        # zero weights, which returns P00 unchanged.
+        fa_rel = Signal(11, reset_less=True)
+        fa_fu = Signal(8, reset_less=True)
+        fa_x = Signal(16, reset_less=True)
+        self.sync += [
+            fa_rel.eq(Mux(scaled, u_acc[16:27], comp_idx)),
+            fa_fu.eq(Mux(scaled, u_acc[8:16], 0)),
+            fa_x.eq(tile_x + comp_idx),
+        ]
+        fb_i0 = Signal(10, reset_less=True)
+        fb_rc = Signal(reset_less=True)
+        fb_fu = Signal(8, reset_less=True)
+        fb_x = Signal(16, reset_less=True)
+        self.sync += [
+            fb_rc.eq(fa_rel >= lim_c),
+            fb_i0.eq(Mux(fa_rel >= lim_c, lim_c, fa_rel)),
+            fb_fu.eq(fa_fu),
+            fb_x.eq(fa_x),
+        ]
+        # Local index i lives in bank i[0] at address i >> 1, so the pair
+        # (i, i + 1) is even[(i + 1) >> 1] and odd[i >> 1].
+        fc_eadr = Signal(9, reset_less=True)
+        fc_oadr = Signal(9, reset_less=True)
+        fc_odd = Signal(reset_less=True)
+        fc_rc = Signal(reset_less=True)
+        fc_fu = Signal(8, reset_less=True)
+        fc_x = Signal(16, reset_less=True)
+        fc_uc = Signal(14, reset_less=True)
+        self.sync += [
+            fc_eadr.eq((fb_i0 + 1) >> 1),
+            fc_oadr.eq(fb_i0 >> 1),
+            fc_odd.eq(fb_i0[0]),
+            fc_rc.eq(fb_rc),
+            fc_fu.eq(fb_fu),
+            fc_x.eq(fb_x),
+            fc_uc.eq(u_base + fb_i0),
+        ]
+        for k in range(2):
+            self.comb += [
+                src_lb_r[k][0].adr.eq(fc_eadr),
+                src_lb_r[k][1].adr.eq(fc_oadr),
+            ]
+        fd_odd = Signal(reset_less=True)
+        fd_rc = Signal(reset_less=True)
+        fd_fu = Signal(8, reset_less=True)
+        fd_x = Signal(16, reset_less=True)
+        fd_uc = Signal(14, reset_less=True)
+        self.sync += [
+            fd_odd.eq(fc_odd),
+            fd_rc.eq(fc_rc),
+            fd_fu.eq(fc_fu),
+            fd_x.eq(fc_x),
+            fd_uc.eq(fc_uc),
+        ]
+
+        def neighbours(slot):
+            even = Mux(slot, src_lb_r[1][0].dat_r, src_lb_r[0][0].dat_r)
+            odd = Mux(slot, src_lb_r[1][1].dat_r, src_lb_r[0][1].dat_r)
+            left = Mux(fd_odd, odd, even)
+            return left, Mux(fd_rc, left, Mux(fd_odd, even, odd))
+        top_l, top_r = neighbours(top_slot)
+        bot_l, bot_r = neighbours(bot_slot)
+        fe_p = [Signal(32, reset_less=True) for _ in range(4)]
+        fe_wu = Signal(9, reset_less=True)
+        fe_fu = Signal(8, reset_less=True)
+        fe_x = Signal(16, reset_less=True)
+        fe_uc = Signal(14, reset_less=True)
+        self.sync += [
+            fe_p[0].eq(top_l), fe_p[1].eq(top_r),
+            fe_p[2].eq(bot_l), fe_p[3].eq(bot_r),
+            fe_wu.eq(Mux(bil, fd_fu + (fd_fu >> 7), 0)),
+            fe_fu.eq(fd_fu),
+            fe_x.eq(fd_x),
+            fe_uc.eq(fd_uc),
+        ]
+        self.bilinear = bilinear = BilinearFilter()
+        self.comb += [
+            bilinear.p00.eq(fe_p[0]), bilinear.p10.eq(fe_p[1]),
+            bilinear.p01.eq(fe_p[2]), bilinear.p11.eq(fe_p[3]),
+            bilinear.wu.eq(fe_wu), bilinear.wv.eq(wv),
+        ]
+        ff_x = delayed(fe_x, BilinearFilter.LATENCY)
+        ff_uc = delayed(fe_uc, BilinearFilter.LATENCY)
+        ff_fu = delayed(fe_fu, BilinearFilter.LATENCY)
+
+        # Stage 0 inputs (with P0 pipeline register). The DST read trails
+        # comp_idx by FE_LAT cycles so it lands with the filtered source.
+        self.comb += self.dst_lb_r.adr.eq(delayed(comp_idx, fe_lat))
+        src_lb_dat = bilinear.out
         dst_lb_dat = self.dst_lb_r.dat_r
         src_lb_ch = [
             Cat(src_lb_dat[0:8], Constant(0, 8)),
@@ -839,8 +1192,14 @@ class Gfx2DEngine(LiteXModule):
             Cat(bg[16:24], Constant(0, 8)),
             Cat(bg[24:32], Constant(0, 8)),
         ]
+        # R3 = {V_frac, U_frac, V_clamp, U_clamp} on scaled ops and
+        # {0, 0, Y, X} otherwise.
         self.sync += [
-            p0_fetch_x.eq(fetch_x),
+            p0_fetch_x.eq(ff_x),
+            p0_r3[0].eq(Mux(scaled, ff_uc, ff_x)),
+            p0_r3[1].eq(Mux(scaled, y0, row[0:16])),
+            p0_r3[2].eq(Mux(scaled, ff_fu, 0)),
+            p0_r3[3].eq(Mux(scaled, fv, 0)),
             [p0_src_pix[c].eq(Mux(uses_src, src_lb_ch[c], fg_ch[c]))
              for c in range(4)],
             [p0_dst_pix[c].eq(Mux(uses_dst, dst_lb_ch[c], bg_ch[c]))
@@ -866,10 +1225,7 @@ class Gfx2DEngine(LiteXModule):
             stage0.r_in[2][1].eq(row[0:16]),
             stage0.r_in[2][2].eq(0),
             stage0.r_in[2][3].eq(0),
-            stage0.r_in[3][0].eq(p0_fetch_x[0:16]),
-            stage0.r_in[3][1].eq(row[0:16]),
-            stage0.r_in[3][2].eq(0),
-            stage0.r_in[3][3].eq(0),
+            [stage0.r_in[3][c].eq(p0_r3[c]) for c in range(4)],
             stage0.p_in.eq(0),
             stage0.discard_in.eq(0),
         ]
@@ -909,11 +1265,10 @@ class Gfx2DEngine(LiteXModule):
 
         self.fsm = fsm = OneHotFSM(reset_state='IDLE')
         self.sync += [local_desc[i].eq(desc[i]) for i in range(len(DESC_NAMES))]
-        self.sync += [
-            If((fsm.ongoing('C_RWAIT') | fsm.ongoing('B_RD_WAIT') |
-                fsm.ongoing('T_SRC_RWAIT') | fsm.ongoing('T_DST_RWAIT')) & rd_vld_buf,
-                beat_buf.eq(self.ui.rd_data)),
-        ]
+        # Responses arrive only for this engine's single outstanding read,
+        # whose wait state consumes them, so no state decode is needed on
+        # the 256-bit capture enable.
+        self.sync += If(rd_vld_buf, beat_buf.eq(self.ui.rd_data))
         self.comb += [
             is_rd_state.eq(fsm.ongoing('C_RSEND') | fsm.ongoing('B_RD_SEND') |
                            fsm.ongoing('T_SRC_RREQ') | fsm.ongoing('T_DST_RREQ')),
@@ -924,24 +1279,30 @@ class Gfx2DEngine(LiteXModule):
             self.ui.wr_data_mask.eq(~out_mask),
             self.ui.wr_data_end.eq(0),
         ]
+        # The COPY_AREA read address src_beat_base + beat * 32 advances with
+        # beat, and the IMAGE_BLIT source step src_beat_base + 32 is
+        # free-running: src_beat_base never steps on consecutive cycles.
+        c_rd_base = Signal(32, reset_less=True)
+        src_beat_inc = Signal(32, reset_less=True)
+        self.sync += src_beat_inc.eq(src_beat_base + 32)
         rd_base = Signal(32)
-        self.comb += rd_base.eq(Mux(fsm.ongoing('B_RD_PREP'), src_beat_base,
-                                    src_beat_base + (beat << 5)))
+        self.comb += rd_base.eq(Mux(fsm.ongoing('B_RD_PREP'), src_beat_base, c_rd_base))
         # HEIGHT is stable for several cycles before start is seen. Two
         # stages keep the decrement out of the INIT multiplier input
         # register that Gowin absorbs into the DSP.
         height_m1 = Signal(32, reset_less=True)
         height_m1_q = Signal(32, reset_less=True)
         self.sync += [height_m1.eq(height - 1), height_m1_q.eq(height_m1)]
+        # Scaled ops read the whole SRC_WIDTH x SRC_HEIGHT texture.
+        src_rows_m1 = Signal(32, reset_less=True)
+        src_rows_m1_q = Signal(32, reset_less=True)
+        self.sync += [src_rows_m1.eq(Mux(scaled, src_h_m1, height_m1)),
+                      src_rows_m1_q.eq(src_rows_m1)]
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(self.busy, 0),
                 If(start, NextValue(err, 0),
                    NextValue(self.busy, 1),
-                   NextValue(row, 0), NextValue(rows_left, height),
-                   NextValue(last_row, height == 1), NextValue(beat, 0),
-                   NextValue(row_start, dst_addr),
-                   NextValue(src_row_start, src_addr),
                    NextState('INIT')))
 
         src_span = Signal(32, reset_less=True)
@@ -951,12 +1312,17 @@ class Gfx2DEngine(LiteXModule):
         row_start_down = Signal(32, reset_less=True)
         src_row_start_down = Signal(32, reset_less=True)
         width_bytes = Signal(32, reset_less=True)
+        # Per-command row state loads here rather than on IDLE & start, so
+        # start stays out of these wide registers' enables. Nothing reads
+        # them before ROW_SETUP.
         fsm.act('INIT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(limit, ddr_size - row_bytes),
-                NextValue(src_limit, Mux(op == OP_IMAGE_BLIT,
-                                         ddr_size - blit_wb, ddr_size - src_row_bytes)),
-                NextValue(src_step_total, height_m1_q * src_stride),
+                NextValue(row, 0), NextValue(rows_left, height),
+                NextValue(last_row, height == 1), NextValue(beat, 0),
+                NextValue(row_start, dst_addr),
+                NextValue(src_row_start, src_addr),
+                [NextValue(v, 0) for v in tag_valid],
+                NextValue(src_step_total, src_rows_m1_q * src_stride),
                 NextValue(dst_step_total, height_m1_q * dst_stride),
                 NextValue(blit_pix_per_beat, Mux(fmt32, 8, 16)),
                 NextValue(width_bytes, (width + 7) >> 3),
@@ -982,13 +1348,15 @@ class Gfx2DEngine(LiteXModule):
         cur_mem_overlap = Signal()
         dir_down_step = Signal()
         overlap_safe = Signal()
+        dst_src_diff = Signal(32, reset_less=True)
+        self.sync += dst_src_diff.eq(dst_addr - src_addr)
         self.comb += [
             cur_mem_overlap.eq(overlap_src_lt_dst & overlap_dst_lt_src),
             overlap_safe.eq((~scale_en) & (~bilinear_en) &
                             cmp_bpp_equal & cmp_stride_equal & cmp_width_le_1024),
             dir_down_step.eq(Mux(op == OP_COPY_AREA,
                                  cmp_stride_equal & cmp_addr_lt,
-                             Mux(op == OP_SHADER,
+                             Mux(op >= OP_SHADER,
                                  uses_src & cur_mem_overlap &
                                      overlap_safe & cmp_addr_lt,
                                  0))),
@@ -1003,7 +1371,7 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(cmp_src_stride, src_stride < src_row_bytes),
                 NextValue(cmp_blit_wb, blit_wb < width_bytes),
                 NextValue(cmp_right_overlap,
-                          (src_addr < dst_addr) & ((dst_addr - src_addr) < row_bytes)),
+                          (src_addr < dst_addr) & (dst_src_diff < row_bytes)),
                 NextValue(cmp_stride_equal, src_stride == dst_stride),
                 NextValue(cmp_bpp_equal, src_bpp_shift == dst_bpp_shift),
                 NextValue(cmp_width_le_1024, width <= 1024),
@@ -1028,10 +1396,14 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(rb_lo5, row_bytes[0:5]),
                 NextState('INIT2B2'))
 
+        # Scaled ops address source rows directly, so the whole texture is
+        # bounds-checked once instead of per destination row.
+        scaled_src_oob = Signal(reset_less=True)
         fsm.act('INIT2B2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(overlap_src_lt_dst, src_addr < dst_end),
                 NextValue(overlap_dst_lt_src, dst_addr < src_end),
+                NextValue(scaled_src_oob, scaled & (src_end > ddr_size)),
                 NextState('INIT2C'))
 
         bad_blit_dst = Mux(fmt32,
@@ -1055,35 +1427,57 @@ class Gfx2DEngine(LiteXModule):
             inst_bad_terms.append((last_stage >= k) &
                                   reduce(or_, misplaced))
         self.sync += inst_bad.eq(reduce(or_, inst_bad_terms))
-        cfg_bad = (op == OP_SCALE_BLIT) | scale_en | bilinear_en | inst_bad
+        # BILINEAR_EN => SCALE_EN => USES_SRC, and OP_SCALE_BLIT requires
+        # SCALE_EN, so the datapath only ever sees consistent modes.
+        src_dim_bad = (src_w == 0) | (src_w > 16384) | \
+                      (src_h == 0) | (src_h > 16384)
+        cfg_bad = (inst_bad |
+                   ((op == OP_SCALE_BLIT) & ~scale_en) |
+                   (scale_en & ~uses_src) |
+                   (bilinear_en & ~scale_en) |
+                   (scale_en & src_dim_bad))
         dim_bad = (width == 0) | (height == 0) | \
                   ((op >= OP_SHADER) & ((width > 16384) | (height > 16384)))
 
         cur_unequal_stride = (~cmp_stride_equal) & cur_mem_overlap
         cur_bad_shader = uses_src & cur_mem_overlap & (~overlap_safe)
 
+        # Checks of the descriptor alone free-run; INIT2C only ORs them with
+        # the comparisons registered during INIT2..INIT2B2.
+        # Three register levels: local_desc settles at least five cycles
+        # before INIT2C reads desc_bad (IDLE start, INIT .. INIT2B2).
+        desc_bad = Signal(reset_less=True)
+        desc_bad_flags = [Signal(reset_less=True) for _ in range(8)]
+        desc_bad_terms = [Signal(reset_less=True) for _ in range(3)]
+        f = desc_bad_flags
+        self.sync += [
+            f[0].eq((op > OP_SCALE_BLIT) | op_hi_bad),
+            f[1].eq(dim_bad),
+            f[2].eq(dst_fmt_bad),
+            f[3].eq((src_addr[0:5] != dst_addr[0:5]) |
+                    (src_stride[0:5] != dst_stride[0:5])),
+            f[4].eq((fmt == FMT_RGB888) | (blit_wb > 65535) | bad_blit_dst),
+            f[5].eq(cfg_bad),
+            f[6].eq(uses_src & src_fmt_bad),
+            f[7].eq(op >= OP_SHADER),
+            desc_bad_terms[0].eq(f[0] | f[1] | f[2]),
+            desc_bad_terms[1].eq(((op == OP_COPY_AREA) & f[3]) |
+                                 ((op == OP_IMAGE_BLIT) & f[4])),
+            desc_bad_terms[2].eq(f[7] & (f[5] | f[6])),
+            desc_bad.eq(reduce(or_, desc_bad_terms)),
+        ]
         static_bad = (
-            (op > OP_SCALE_BLIT) |
-            op_hi_bad |
-            dim_bad |
+            desc_bad |
             cmp_dst_stride |
-            dst_fmt_bad |
             ((op == OP_COPY_AREA) & (
                 cmp_src_stride |
-                (src_addr[0:5] != dst_addr[0:5]) |
-                (src_stride[0:5] != dst_stride[0:5]) |
                 cmp_right_overlap |
                 cur_unequal_stride
             )) |
-            ((op == OP_IMAGE_BLIT) & (
-                (fmt == FMT_RGB888) |
-                cmp_blit_wb | (blit_wb > 65535) |
-                bad_blit_dst
-            )) |
-            ((op == OP_SHADER) & (
+            ((op == OP_IMAGE_BLIT) & cmp_blit_wb) |
+            ((op >= OP_SHADER) & (
                 dst_align_bad |
-                cfg_bad |
-                (uses_src & (src_fmt_bad | cmp_src_stride | src_align_bad)) |
+                (uses_src & (cmp_src_stride | src_align_bad)) |
                 cur_bad_shader
             ))
         )
@@ -1107,6 +1501,9 @@ class Gfx2DEngine(LiteXModule):
                                          Mux(dir_down, neg_src_stride, src_stride))),
                 If(static_bad_reg,
                    NextValue(err, Mux(op > OP_SCALE_BLIT, ERR_UNSUPPORTED, ERR_PARAM)),
+                   NextState('FINISH')
+                ).Elif(scaled_src_oob,
+                   NextValue(err, ERR_ADDR),
                    NextState('FINISH')
                 ).Elif(dir_down,
                    NextState('C_DOWN_INIT')
@@ -1133,7 +1530,8 @@ class Gfx2DEngine(LiteXModule):
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(bad_row_addr_reg,
                           (row_start > limit) |
-                          ((op != OP_FILL_RECT) & (src_row_start > src_limit))),
+                          ((op != OP_FILL_RECT) & ~scaled &
+                           (src_row_start > src_limit))),
                 NextValue(nxt_row_start_reg, row_start + delta_dst),
                 NextValue(nxt_src_row_start_reg, src_row_start + delta_src),
                 NextState('ROW_CHECK'))
@@ -1150,6 +1548,7 @@ class Gfx2DEngine(LiteXModule):
                 *pascal,
                 If(op == OP_COPY_AREA,
                    NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
+                   NextValue(c_rd_base, src_row_start & ~Constant(31, 32)),
                    NextState('C_RPREP'))
                 .Elif(op == OP_IMAGE_BLIT,
                       NextValue(src_beat_base, src_row_start & ~Constant(31, 32)),
@@ -1165,9 +1564,10 @@ class Gfx2DEngine(LiteXModule):
                                 Mux(fmt32,
                                     row_start[2:5], row_start[1:5])),
                       NextState('B_FETCH'))
-                .Elif(op == OP_SHADER,
+                .Elif(op >= OP_SHADER,
                       NextValue(tile_x, 0),
                       NextValue(rem_w, width),
+                      NextValue(u_first, uv_start_u),
                       NextState('T_SETUP'))
                 .Else(NextState('PREP')))
         down = dir_down
@@ -1181,6 +1581,17 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(row_start, nxt_row_start_reg),
                 NextValue(src_row_start, nxt_src_row_start_reg),
                 NextState('ROW_SETUP'))
+        # V loads one cycle after INIT / ROW_INC from registered strobes, so
+        # the 48-bit enable does not fan out from the FSM state. Nothing
+        # reads V before T_SETUP, and the next ROW_INC is rows away.
+        v_init_q = Signal(reset_less=True)
+        v_inc_q = Signal(reset_less=True)
+        self.sync += [
+            v_init_q.eq(fsm.ongoing('INIT')),
+            v_inc_q.eq(fsm.ongoing('ROW_INC')),
+            If(v_init_q, v_acc.eq(uv_start_v))
+            .Elif(v_inc_q, v_acc.eq(v_nxt)),
+        ]
 
         # Existing OP fast paths
         fsm.act('PREP',
@@ -1242,7 +1653,7 @@ class Gfx2DEngine(LiteXModule):
                 If(bit_cnt >= blit_pix_per_beat, NextState('B_EXP'))
                 .Elif(src_bytes_left_zero, NextState('B_EXP'))
                 .Elif(bytes_in_beat_zero,
-                      NextValue(src_beat_base, src_beat_base + 32),
+                      NextValue(src_beat_base, src_beat_inc),
                       NextValue(src_byte_off, 0), NextValue(bytes_in_beat, 32),
                       NextValue(bytes_in_beat_zero, 0),
                       NextValue(src_beat_loaded, 0),
@@ -1337,6 +1748,7 @@ class Gfx2DEngine(LiteXModule):
             ~elapsed_timeout & self.ui.cmd_ready & self.ui.wr_data_rdy & ~is_last_beat)
         self.sync += If(beat_advance,
             beat.eq(beat + 1),
+            c_rd_base.eq(c_rd_base + 32),
             beats_left.eq(beats_left - 1),
             is_last_beat.eq(beats_left == 2),
             first_beat.eq(0),
@@ -1346,7 +1758,7 @@ class Gfx2DEngine(LiteXModule):
         tile_is_last = Signal(reset_less=True)
         calc_t_w = Signal(16)
         self.comb += [
-            calc_t_w.eq(Mux(rem_w > 1024, 1024, rem_w)),
+            calc_t_w.eq(Mux(rem_w > w_step, w_step, rem_w)),
         ]
         cur_src_byte = Signal(32)
         cur_dst_byte = Signal(32)
@@ -1357,13 +1769,41 @@ class Gfx2DEngine(LiteXModule):
         t_src_addr_reg = Signal(32, reset_less=True)
         t_dst_addr_reg = Signal(32, reset_less=True)
 
+        # Settle time of the free-running tile geometry (tile_w -> span
+        # check) and of the row address pipeline (load_y -> sc_src_addr).
+        geo_wait = 11
+        addr_wait = 6
         fsm.act('T_SETUP',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(tile_w, calc_t_w[0:11]),
-                NextValue(tile_is_last, rem_w <= 1024),
+                NextValue(tile_is_last, rem_w <= w_step),
                 NextValue(t_src_addr_reg, cur_src_byte),
                 NextValue(t_dst_addr_reg, cur_dst_byte),
-                NextState('T_SETUP2'))
+                NextValue(setup_wait, geo_wait),
+                If(scaled,
+                    NextState('T_SETUP_W')
+                ).Else(
+                    NextState('T_SETUP2')
+                ))
+
+        fsm.act('T_SETUP_W',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(setup_wait, setup_wait - 1),
+                If(setup_wait == 0, NextState('T_SETUP_CHK')))
+
+        # The step choice already bounds every tile's span; a tile whose
+        # exact span still exceeds the line buffer falls back to one pixel,
+        # whose span is at most 1 + BILINEAR_EN.
+        fsm.act('T_SETUP_CHK',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                If(span_bad,
+                    NextValue(tile_w, 1),
+                    NextValue(tile_is_last, rem_w == 1),
+                    NextValue(setup_wait, geo_wait),
+                    NextState('T_SETUP_W')
+                ).Else(
+                    NextState('T_SETUP2')
+                ))
 
         fsm.act('T_SETUP2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
@@ -1380,13 +1820,74 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(lb_wr_ptr, 0),
                 NextValue(lb_rem, tile_w),
                 NextValue(lb_is_last_pix, tile_w == 1),
-                If(uses_src,
+                If(scaled,
+                    NextState('T_SC_ROW')
+                ).Elif(uses_src,
                     NextState('T_SRC_RREQ')
                 ).Elif(uses_dst,
-                    NextState('T_DST_RREQ')
+                    NextState('T_DST_START')
                 ).Else(
                     NextState('T_COMP_START')
                 ))
+
+        # Scaled source rows: fetch y0 and (bilinear) y1 into their slots
+        # unless the slot tag already covers this tile's [u_base, u_end].
+        fsm.act('T_SC_ROW',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(setup_wait, addr_wait),
+                If(~hit0,
+                    NextValue(load_y, y0),
+                    NextValue(load_slot, y0[0]),
+                    NextState('T_SC_ADDR')
+                ).Elif(need_y1 & ~hit1,
+                    NextValue(load_y, y1),
+                    NextValue(load_slot, y1[0]),
+                    NextState('T_SC_ADDR')
+                ).Elif(uses_dst,
+                    NextState('T_DST_START')
+                ).Else(
+                    NextState('T_COMP_START')
+                ))
+
+        fsm.act('T_SC_ADDR',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(setup_wait, setup_wait - 1),
+                If(setup_wait == 0, NextState('T_SC_ADDR2')))
+
+        fsm.act('T_SC_ADDR2',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(t_src_blk, sc_src_addr[5:31]),
+                NextValue(t_src_off, sc_src_addr[0:5]),
+                NextValue(t_src_is_first, 1),
+                NextValue(req_blk, sc_src_addr[5:31]),
+                NextValue(lb_wr_ptr, 0),
+                NextValue(lb_rem, src_span_px[0:11]),
+                NextValue(lb_is_last_pix, span_is1),
+                NextState('T_SRC_RREQ'))
+
+        # Tags change here; T_SC_TAG2 lets hit0/hit1 pick them up before
+        # T_SC_ROW decides on the next row.
+        fsm.act('T_SC_TAG',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                [If(load_slot == k,
+                    NextValue(tag_valid[k], 1),
+                    NextValue(tag_row[k], load_y),
+                    NextValue(tag_ub[k], u_base),
+                    NextValue(tag_ue[k], u_end))
+                 for k in range(2)],
+                NextState('T_SC_TAG2'))
+
+        fsm.act('T_SC_TAG2',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextState('T_SC_ROW'))
+
+        fsm.act('T_DST_START',
+                self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(lb_wr_ptr, 0),
+                NextValue(lb_rem, tile_w),
+                NextValue(lb_is_last_pix, tile_w == 1),
+                NextValue(req_blk, t_dst_blk),
+                NextState('T_DST_RREQ'))
 
         fsm.act('T_SRC_RREQ',
                 self.ui.cmd.eq(1), self.ui.cmd_en.eq(1),
@@ -1412,13 +1913,14 @@ class Gfx2DEngine(LiteXModule):
         src_p32 = Signal(32)
         src_p16 = Signal(16)
         src_argb = Signal(32)
-        src_max_sub = Signal(6)
+        src_last_sub = Signal(6, reset_less=True)
+        self.sync += src_last_sub.eq(
+            Mux(src_bpp_shift == 2, 7, Mux(src_bpp_shift == 1, 15, 31)))
         self.comb += [
             src_p32.eq(Array([beat_buf[i*32:(i+1)*32]
                            for i in range(8)])[sub_idx[0:3]]),
             src_p16.eq(Array([beat_buf[i*16:(i+1)*16]
                            for i in range(16)])[sub_idx[0:4]]),
-            src_max_sub.eq(Mux(src_bpp_shift == 2, 8, Mux(src_bpp_shift == 1, 16, 32))),
             If((src_format == FMT_XRGB8888) | (src_format == FMT_ARGB8888),
                 src_argb.eq(Cat(src_p32[0:24],
                                 Mux(src_format == FMT_XRGB8888,
@@ -1457,28 +1959,33 @@ class Gfx2DEngine(LiteXModule):
         s1_ptr = Signal(11, reset_less=True)
         s1_dat = Signal(32, reset_less=True)
         s1_pal = Signal(reset_less=True)
+        s1_slot = Signal(reset_less=True)
         s2_vld = Signal(reset_less=True)
         s2_ptr = Signal(11, reset_less=True)
         s2_dat = Signal(32, reset_less=True)
+        s2_slot = Signal(reset_less=True)
         self.comb += [
             src_p8.eq(Array([beat_buf[i*8:(i+1)*8]
                              for i in range(32)])[sub_idx[0:5]]),
             pal_port.adr.eq(src_p8),
-            self.src_lb_e_w.we.eq(s2_vld & ~s2_ptr[0]),
-            self.src_lb_e_w.adr.eq(s2_ptr >> 1),
-            self.src_lb_e_w.dat_w.eq(s2_dat),
-            self.src_lb_o_w.we.eq(s2_vld & s2_ptr[0]),
-            self.src_lb_o_w.adr.eq(s2_ptr >> 1),
-            self.src_lb_o_w.dat_w.eq(s2_dat),
         ]
+        for k in range(2):
+            for b in range(2):
+                self.comb += [
+                    src_lb_w[k][b].we.eq(s2_vld & (s2_slot == k) & (s2_ptr[0] == b)),
+                    src_lb_w[k][b].adr.eq(s2_ptr >> 1),
+                    src_lb_w[k][b].dat_w.eq(s2_dat),
+                ]
         self.sync += [
             s1_vld.eq(src_wr_req),
             s1_ptr.eq(lb_wr_ptr),
             s1_dat.eq(src_argb),
             s1_pal.eq(src_format == FMT_INDEX8),
+            s1_slot.eq(scaled & load_slot),
             s2_vld.eq(s1_vld),
             s2_ptr.eq(s1_ptr),
             s2_dat.eq(Mux(s1_pal, pal_port.dat_r, s1_dat)),
+            s2_slot.eq(s1_slot),
         ]
 
         fsm.act('T_SRC_UNPACK',
@@ -1488,7 +1995,9 @@ class Gfx2DEngine(LiteXModule):
                     NextValue(lb_wr_ptr, 0),
                     NextValue(lb_rem, tile_w),
                     NextValue(lb_is_last_pix, tile_w == 1),
-                    If(uses_dst,
+                    If(scaled,
+                        NextState('T_SC_TAG')
+                    ).Elif(uses_dst,
                         NextValue(req_blk, t_dst_blk),
                         NextState('T_DST_RREQ')
                     ).Else(NextState('T_SRC_DRAIN'))
@@ -1497,7 +2006,7 @@ class Gfx2DEngine(LiteXModule):
                     NextValue(lb_rem, lb_rem - 1),
                     NextValue(sub_idx, sub_idx + 1),
                     NextValue(lb_is_last_pix, lb_rem == 2),
-                    If(sub_idx == src_max_sub - 1,
+                    If(sub_idx == src_last_sub,
                         NextValue(req_blk, t_src_blk),
                         NextState('T_SRC_RREQ')
                     )
@@ -1514,7 +2023,7 @@ class Gfx2DEngine(LiteXModule):
                 If(elapsed_timeout,
                     NextValue(err, ERR_TIMEOUT), NextState('FINISH')
                 ).Elif(self.ui.cmd_ready,
-                    NextValue(t_dst_blk, t_dst_blk + 1),
+                    NextValue(t_dst_blk, t_dst_blk_p1),
                     NextValue(sub_idx,
                               Mux(t_dst_is_first, t_dst_off >> dst_bpp_shift, 0)),
                     NextValue(t_dst_is_first, 0),
@@ -1532,13 +2041,14 @@ class Gfx2DEngine(LiteXModule):
         dst_p32 = Signal(32)
         dst_p16 = Signal(16)
         dst_argb = Signal(32)
-        dst_max_sub = Signal(6)
+        dst_last_sub = Signal(6, reset_less=True)
+        self.sync += dst_last_sub.eq(
+            Mux(dst_bpp_shift == 2, 7, Mux(dst_bpp_shift == 1, 15, 31)))
         self.comb += [
             dst_p32.eq(Array([beat_buf[i*32:(i+1)*32]
                            for i in range(8)])[sub_idx[0:3]]),
             dst_p16.eq(Array([beat_buf[i*16:(i+1)*16]
                            for i in range(16)])[sub_idx[0:4]]),
-            dst_max_sub.eq(Mux(dst_bpp_shift == 2, 8, Mux(dst_bpp_shift == 1, 16, 32))),
             If((dst_format == FMT_XRGB8888) | (dst_format == FMT_ARGB8888),
                 dst_argb.eq(Cat(dst_p32[0:24],
                                 Mux(dst_format == FMT_XRGB8888,
@@ -1569,11 +2079,26 @@ class Gfx2DEngine(LiteXModule):
             )
         ]
 
+        # DST line-buffer writes trail T_DST_UNPACK by one cycle; compute
+        # reads DST_LB no earlier than T_COMP_STREAM, after the last write.
+        dst_wr_req = Signal()
+        d1_vld = Signal(reset_less=True)
+        d1_ptr = Signal(11, reset_less=True)
+        d1_dat = Signal(32, reset_less=True)
+        self.sync += [
+            d1_vld.eq(dst_wr_req),
+            d1_ptr.eq(lb_wr_ptr),
+            d1_dat.eq(dst_argb),
+        ]
+        self.comb += [
+            self.dst_lb_w.we.eq(d1_vld),
+            self.dst_lb_w.adr.eq(d1_ptr),
+            self.dst_lb_w.dat_w.eq(d1_dat),
+        ]
+
         fsm.act('T_DST_UNPACK',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                self.dst_lb_w.we.eq(1),
-                self.dst_lb_w.adr.eq(lb_wr_ptr),
-                self.dst_lb_w.dat_w.eq(dst_argb),
+                dst_wr_req.eq(1),
                 If(lb_is_last_pix,
                     NextValue(lb_wr_ptr, 0),
                     NextState('T_COMP_START')
@@ -1582,20 +2107,13 @@ class Gfx2DEngine(LiteXModule):
                     NextValue(lb_rem, lb_rem - 1),
                     NextValue(sub_idx, sub_idx + 1),
                     NextValue(lb_is_last_pix, lb_rem == 2),
-                    If(sub_idx == dst_max_sub - 1,
+                    If(sub_idx == dst_last_sub,
                         NextValue(req_blk, t_dst_blk),
                         NextState('T_DST_RREQ')
                     )
                 ))
 
         # Streaming compute
-        comp_pipe_done = Signal()
-        self.comb += [
-            self.src_lb_e_r.adr.eq(comp_idx >> 1),
-            self.src_lb_o_r.adr.eq(comp_idx >> 1),
-            self.dst_lb_r.adr.eq(comp_idx),
-        ]
-
         comp_active = Signal(reset_less=True)
         comp_out_last = Signal(reset_less=True)
         out_r0_sat = [Signal(8) for _ in range(4)]
@@ -1612,26 +2130,27 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(comp_rem, tile_w),
                 NextValue(comp_out_rem, tile_w),
                 NextValue(comp_out_last, tile_w == 1),
+                NextValue(u_acc, u_first[0:16]),
                 NextState('T_COMP_STREAM'))
 
+        pipe_top = len(comp_pipe_vld) - 1
         fsm.act('T_COMP_STREAM',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 If(comp_active,
                     NextValue(comp_idx, comp_idx + 1),
                     NextValue(comp_rem, comp_rem - 1),
-                    NextValue(fetch_x, tile_x + comp_idx),
-                    NextValue(fetch_odd, comp_idx[0]),
+                    NextValue(u_acc, u_acc + du[0:27]),
                     NextValue(comp_pipe_vld,
-                              Cat(Constant(1, 1), comp_pipe_vld[0:21])),
+                              Cat(Constant(1, 1), comp_pipe_vld[0:pipe_top])),
                     If(comp_rem == 1,
                         NextValue(comp_active, 0)
                     )
                 ).Else(
                     NextValue(comp_pipe_vld,
-                              Cat(Constant(0, 1), comp_pipe_vld[0:21])),
+                              Cat(Constant(0, 1), comp_pipe_vld[0:pipe_top])),
                 ),
 
-                If(comp_pipe_vld[21],
+                If(comp_pipe_vld[pipe_top],
                     self.out_lb_w.we.eq(1),
                     self.out_lb_w.adr.eq(comp_out_idx),
                     self.out_lb_w.dat_w.eq(Cat(
@@ -1699,58 +2218,60 @@ class Gfx2DEngine(LiteXModule):
             out_disc.eq(self.out_lb_r.dat_r[32]),
         ]
 
-        dith_r = Signal(8)
-        dith_g = Signal(8)
-        dith_b = Signal(8)
         dith_g_off = Signal(4)
+        # Saturate on the carry of one 9-bit sum rather than a second compare.
+        sum_r = Signal(9)
+        sum_g = Signal(9)
+        sum_b = Signal(9)
         self.comb += [
             dith_g_off.eq(Mux(dst_format == FMT_RGB565,
                               wb_thresh >> 2, wb_thresh >> 1)),
-            If(dither_en,
-                dith_r.eq(Mux(out_r + (wb_thresh >> 1) > 255,
-                          255, out_r + (wb_thresh >> 1))),
-                dith_g.eq(Mux(out_g + dith_g_off > 255,
-                          255, out_g + dith_g_off)),
-                dith_b.eq(Mux(out_b + (wb_thresh >> 1) > 255,
-                          255, out_b + (wb_thresh >> 1))),
-            ).Else(
-                dith_r.eq(out_r),
-                dith_g.eq(out_g),
-                dith_b.eq(out_b),
-            )
+            sum_r.eq(out_r + (wb_thresh >> 1)),
+            sum_g.eq(out_g + dith_g_off),
+            sum_b.eq(out_b + (wb_thresh >> 1)),
+        ]
+
+        # Only the 16-bit formats are dithered. The channels are registered
+        # straight after OUT_LB in T_WB_READ; T_WB_PACK packs them under the
+        # static format select.
+        dith16 = Signal(reset_less=True)
+        ch_r = Signal(8, reset_less=True)
+        ch_g = Signal(8, reset_less=True)
+        ch_b = Signal(8, reset_less=True)
+        ch_a = Signal(8, reset_less=True)
+        out_disc_q = Signal(reset_less=True)
+        self.sync += [
+            dith16.eq(dither_en & ((dst_format == FMT_RGB565) |
+                                   (dst_format == FMT_XRGB1555) |
+                                   (dst_format == FMT_ARGB1555))),
+            ch_r.eq(Mux(dith16, Mux(sum_r[8], 255, sum_r[0:8]), out_r)),
+            ch_g.eq(Mux(dith16, Mux(sum_g[8], 255, sum_g[0:8]), out_g)),
+            ch_b.eq(Mux(dith16, Mux(sum_b[8], 255, sum_b[0:8]), out_b)),
+            ch_a.eq(out_a),
+            out_disc_q.eq(out_disc),
         ]
 
         packed_pix = Signal(32)
         pix_bytes = Signal(4)
         self.comb += [
             If(dst_format == FMT_RGB565,
-                packed_pix.eq(Cat(dith_b[3:8], dith_g[2:8], dith_r[3:8])),
+                packed_pix.eq(Cat(ch_b[3:8], ch_g[2:8], ch_r[3:8])),
                 pix_bytes.eq(2)
             ).Elif(dst_format == FMT_XRGB1555,
                 packed_pix.eq(
-                    Cat(dith_b[3:8], dith_g[3:8], dith_r[3:8], Constant(1, 1))),
+                    Cat(ch_b[3:8], ch_g[3:8], ch_r[3:8], Constant(1, 1))),
                 pix_bytes.eq(2)
             ).Elif(dst_format == FMT_ARGB1555,
                 packed_pix.eq(
-                    Cat(dith_b[3:8], dith_g[3:8], dith_r[3:8], out_a >= 128)),
+                    Cat(ch_b[3:8], ch_g[3:8], ch_r[3:8], ch_a[7])),
                 pix_bytes.eq(2)
-            ).Elif(dst_format == FMT_XRGB8888,
-                packed_pix.eq(Cat(out_b, out_g, out_r, Constant(0xFF, 8))),
-                pix_bytes.eq(4)
             ).Elif(dst_format == FMT_ARGB8888,
-                packed_pix.eq(Cat(out_b, out_g, out_r, out_a)),
+                packed_pix.eq(Cat(ch_b, ch_g, ch_r, ch_a)),
                 pix_bytes.eq(4)
             ).Else(
-                packed_pix.eq(Cat(out_b, out_g, out_r, Constant(0xFF, 8))),
+                packed_pix.eq(Cat(ch_b, ch_g, ch_r, Constant(0xFF, 8))),
                 pix_bytes.eq(4)
             )
-        ]
-
-        packed_pix_q = Signal(32, reset_less=True)
-        out_disc_q = Signal(reset_less=True)
-        self.sync += [
-            packed_pix_q.eq(packed_pix),
-            out_disc_q.eq(out_disc),
         ]
 
         fsm.act('T_WB_READ',
@@ -1762,16 +2283,16 @@ class Gfx2DEngine(LiteXModule):
             if s % 4 == 0:
                 wb_cases[s] = [
                     If(dst_bpp_shift == 2,
-                        NextValue(out_data[s*8:(s+4)*8], packed_pix_q[0:32]),
+                        NextValue(out_data[s*8:(s+4)*8], packed_pix[0:32]),
                         If(~out_disc_q, NextValue(out_mask[s:s+4], 0xF))
                     ).Else(
-                        NextValue(out_data[s*8:(s+2)*8], packed_pix_q[0:16]),
+                        NextValue(out_data[s*8:(s+2)*8], packed_pix[0:16]),
                         If(~out_disc_q, NextValue(out_mask[s:s+2], 0x3))
                     )
                 ]
             else:
                 wb_cases[s] = [
-                    NextValue(out_data[s*8:(s+2)*8], packed_pix_q[0:16]),
+                    NextValue(out_data[s*8:(s+2)*8], packed_pix[0:16]),
                     If(~out_disc_q, NextValue(out_mask[s:s+2], 0x3))
                 ]
 
@@ -1830,8 +2351,9 @@ class Gfx2DEngine(LiteXModule):
 
         fsm.act('T_TILE_NEXT',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                NextValue(tile_x, tile_x + 1024),
-                NextValue(rem_w, rem_w - 1024),
+                NextValue(tile_x, tile_x + tile_w),
+                NextValue(rem_w, rem_w - tile_w),
+                NextValue(u_first, u_next),
                 If(tile_is_last,
                     If(last_row, NextState('FINISH'))
                     .Else(NextState('ROW_INC'))
@@ -1960,7 +2482,15 @@ class Gfx2D(LiteXModule):
             self.ok.eq(self.selected & Mux(self.write, write_ok, read_ok)),
         ]
 
-        go = self.commit & self.selected & self.write & self.ok
+        # The fabric holds a transaction for at least one cycle before its
+        # single commit cycle, so writes decode from local copies and the
+        # register enables do not hang off the shared APB address.
+        off_d = Signal(12, reset_less=True)
+        wdata_d = Signal(32, reset_less=True)
+        write_d = Signal(reset_less=True)
+        self.sync += [off_d.eq(self.off), wdata_d.eq(self.wdata),
+                      write_d.eq(self.selected & self.write & self.ok)]
+        go = self.commit & write_d
 
         self.sync += self.irq.eq(self.irq_pending & self.irq_enable)
 
@@ -1973,9 +2503,9 @@ class Gfx2D(LiteXModule):
         busy_write_err = Signal()
         self.comb += busy_write_err.eq(
             go & self.busy &
-            (self.off != reg['IRQ_ENABLE']) &
-            (self.off != reg['IRQ_STATUS']) &
-            (self.off != reg['CLEAR_ERRORS'])
+            (off_d != reg['IRQ_ENABLE']) &
+            (off_d != reg['IRQ_STATUS']) &
+            (off_d != reg['CLEAR_ERRORS'])
         )
         self.sync += [
             If(busy_write_err,
@@ -1989,7 +2519,7 @@ class Gfx2D(LiteXModule):
 
         # Table writes are registered so the APB decode does not fan out
         # straight into five BSRAM write ports.
-        lut_wr_act = go & (self.off == reg['LUT_DATA']) & (~self.busy)
+        lut_wr_act = go & (off_d == reg['LUT_DATA']) & (~self.busy)
         pal_we_q = Signal()
         lut_we_q = Signal()
         tbl_adr_q = Signal(8, reset_less=True)
@@ -1998,7 +2528,7 @@ class Gfx2D(LiteXModule):
             pal_we_q.eq(lut_wr_act & desc['LUT_ADDR'][8]),
             lut_we_q.eq(lut_wr_act & (~desc['LUT_ADDR'][8])),
             tbl_adr_q.eq(desc['LUT_ADDR'][0:8]),
-            tbl_dat_q.eq(self.wdata),
+            tbl_dat_q.eq(wdata_d),
         ]
         self.comb += [
             pal_w.we.eq(pal_we_q),
@@ -2013,19 +2543,19 @@ class Gfx2D(LiteXModule):
             ]
 
         desc_cases = {
-            reg[name]: [If(~self.busy, sig.eq(self.wdata))]
+            reg[name]: [If(~self.busy, sig.eq(wdata_d))]
             for name, sig in desc.items()
         }
-        self.sync += If(go, Case(self.off, {
+        self.sync += If(go, Case(off_d, {
             reg['CONTROL']: [
                 If(~self.busy,
                    self.commands.eq(self.commands + 1), self.busy.eq(1),
                    self.done.eq(0), self.error.eq(0), self.last_error.eq(ERR_NONE),
                    self.req.eq(~self.req))],
-            reg['IRQ_ENABLE']: self.irq_enable.eq(self.wdata[0]),
-            reg['IRQ_STATUS']: If(self.wdata[0], self.irq_pending.eq(0)),
+            reg['IRQ_ENABLE']: self.irq_enable.eq(wdata_d[0]),
+            reg['IRQ_STATUS']: If(wdata_d[0], self.irq_pending.eq(0)),
             reg['CLEAR_ERRORS']: [
-                If(self.wdata[0], self.done.eq(0), self.error.eq(0),
+                If(wdata_d[0], self.done.eq(0), self.error.eq(0),
                    self.last_error.eq(ERR_NONE))],
             reg['LUT_DATA']: [
                 If(~self.busy, desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],

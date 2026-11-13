@@ -38,7 +38,10 @@ class EthernetDDRPort(LiteXModule):
             ui.wr_data_en.eq(write & ui.cmd_ready & ui.wr_data_rdy),
             If(ui.cmd_ready & (~write|ui.wr_data_rdy),
                 If(write,NextState('RESP')).Else(NextState('READ'))))
-        f.act('READ',If(ui.rd_data_valid,NextValue(result,ui.rd_data),NextState('RESP')))
+        # The arbiter raises rd_data_valid only for this port's own read,
+        # which is outstanding only in READ; the capture needs no state.
+        self.sync.ddr += If(ui.rd_data_valid,result.eq(ui.rd_data))
+        f.act('READ',If(ui.rd_data_valid,NextState('RESP')))
         f.act('RESP',r.sink.valid.eq(1),If(r.sink.ready,NextState('IDLE')))
 
 

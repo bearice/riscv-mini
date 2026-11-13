@@ -19,16 +19,19 @@ def bench():
         yield p.cmd_en.eq(1)
     yield memory.cmd_ready.eq(1)
     yield memory.wr_data_rdy.eq(1)
-    outstanding=None;delay=0;expected=None
+    outstanding=None;delay=0;expected=None;delivered=None
     for cycle in range(800):
+        # Clients see a response one cycle after the controller returns it.
+        seen=[]
+        for index,p in enumerate(ports):
+            if (yield p.rd_data_valid):
+                seen.append(index)
+                assert (yield p.rd_data)==0x12340000+index
+        assert seen==([] if delivered is None else [delivered]),(seen,delivered)
+        delivered=None
         if (yield memory.rd_data_valid):
-            seen=[]
-            for index,p in enumerate(ports):
-                if (yield p.rd_data_valid):
-                    seen.append(index)
-                    assert (yield p.rd_data)==expected
-            assert seen==[outstanding],(seen,outstanding)
             counts[outstanding]+=1
+            delivered=outstanding
             outstanding=None
         yield memory.rd_data_valid.eq(0)
         if delay:
