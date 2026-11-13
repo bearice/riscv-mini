@@ -177,6 +177,22 @@ class Gfx2DHostTest(unittest.TestCase):
             assert mem[base + 2 * w] == 0
         print('PASS GFX2D: FILL_RECT odd destination multi-beat rotation')
 
+    def test_fill_stride_changes_alignment(self):
+        # Strides that change the byte alignment from row to row: each row's
+        # pattern rotation must follow that row's own start offset.
+        for fmt, bpp, stride, fg in ((0, 2, 3, 0x1234), (2, 4, 6, 0x11223344)):
+            d = make()
+            mem = bytearray(DDR_SIZE)
+            dst, h = 0x2000, 4
+            self._run_op(d, self._fake_pump_factory(d, mem), {
+                'OP': 0, 'DST_ADDR': dst, 'DST_STRIDE': stride,
+                'WIDTH': 1, 'HEIGHT': h, 'FG_COLOR': fg, 'FORMAT': fmt})
+            for r in range(h):
+                base = dst + r * stride
+                px = int.from_bytes(mem[base:base + bpp], 'little')
+                assert px == fg, (fmt, r, hex(px), hex(fg))
+        print('PASS GFX2D: FILL_RECT per-row alignment with odd stride')
+
     def _run_op(self, d, mem_pump, desc, expect_err=0, writes=()):
         reg = amap.GFX2D_REGS
 

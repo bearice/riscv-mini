@@ -653,9 +653,9 @@ class Gfx2DEngine(LiteXModule):
         self.comb += nxt_beat_byte.eq(Cat(Constant(0, 5), beat_byte[5:32] + 1))
         rb_hi5 = Signal(16, reset_less=True)
         rb_lo5 = Signal(5, reset_less=True)
-        # row_start changes only on the cycle before ROW_SETUP, and the row
-        # geometry is read in ROW_PASCAL: off5 and the registered geometry
-        # are a free-running two-stage pipeline settled by then.
+        # row_start changes only on the cycle before ROW_SETUP, so off5 is
+        # valid from ROW_CHECK: fill_word is captured there and the row
+        # geometry (one more register stage) is read in ROW_PASCAL.
         off5 = Signal(5, reset_less=True)
         self.sync += off5.eq(row_start[0:5])
         first_mask = Signal(32, reset_less=True)
@@ -1134,12 +1134,12 @@ class Gfx2DEngine(LiteXModule):
                 NextValue(bad_row_addr_reg,
                           (row_start > limit) |
                           ((op != OP_FILL_RECT) & (src_row_start > src_limit))),
-                NextValue(fill_word, fill_word_comb),
                 NextValue(nxt_row_start_reg, row_start + delta_dst),
                 NextValue(nxt_src_row_start_reg, src_row_start + delta_src),
                 NextState('ROW_CHECK'))
         fsm.act('ROW_CHECK',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
+                NextValue(fill_word, fill_word_comb),
                 If(bad_row_addr_reg,
                     NextValue(err, ERR_ADDR), NextState('FINISH')
                 ).Else(
