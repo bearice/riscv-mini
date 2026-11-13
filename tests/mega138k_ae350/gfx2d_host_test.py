@@ -1356,6 +1356,9 @@ class Gfx2DHostTest(unittest.TestCase):
             ({'SHADER_CFG': src | scale, 'SRC_HEIGHT': 16385}, ERR_PARAM),
             ({'SHADER_CFG': src | scale, 'DST_ADDR': 0x1040}, ERR_PARAM),  # overlap
             ({'SHADER_CFG': src | scale, 'SRC_ADDR': DDR_SIZE - 64}, ERR_ADDR),
+            # (SRC_HEIGHT-1) * SRC_STRIDE = 2^32 wraps to 0 in 32 bits.
+            ({'SHADER_CFG': src | scale, 'SRC_WIDTH': 1, 'SRC_HEIGHT': 5,
+              'SRC_STRIDE': 0x40000000, 'UV_START_V': 0x10000}, ERR_ADDR),
         ]
         for extra, err in cases:
             d = make()

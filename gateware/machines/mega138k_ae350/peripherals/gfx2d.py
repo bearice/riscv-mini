@@ -1398,12 +1398,27 @@ class Gfx2DEngine(LiteXModule):
 
         # Scaled ops address source rows directly, so the whole texture is
         # bounds-checked once instead of per destination row.
+        # src_step_total keeps only 32 bits of (SRC_HEIGHT-1) * SRC_STRIDE.
+        # With SRC_HEIGHT <= 16384, a high half (rows * STRIDE[31:16]) below
+        # ceil(ddr_size / 2^16) bounds the product below 2^32, so it did not
+        # wrap; at or above it the texture is past the end of DDR anyway.
+        assert ddr_size <= 1 << 31
+        ext_rows = Signal(14, reset_less=True)
+        ext_stride_hi = Signal(16, reset_less=True)
+        ext_hi = Signal(30, reset_less=True)
+        ext_big = Signal(reset_less=True)
+        self.sync += [
+            ext_rows.eq(src_rows_m1_q[0:14]),
+            ext_stride_hi.eq(src_stride[16:32]),
+            ext_hi.eq(ext_rows * ext_stride_hi),
+            ext_big.eq(ext_hi >= (ddr_size + 0xFFFF) >> 16),
+        ]
         scaled_src_oob = Signal(reset_less=True)
         fsm.act('INIT2B2',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(overlap_src_lt_dst, src_addr < dst_end),
                 NextValue(overlap_dst_lt_src, dst_addr < src_end),
-                NextValue(scaled_src_oob, scaled & (src_end > ddr_size)),
+                NextValue(scaled_src_oob, scaled & (ext_big | (src_end > ddr_size))),
                 NextState('INIT2C'))
 
         bad_blit_dst = Mux(fmt32,
