@@ -9,11 +9,30 @@ from litex.gen import LiteXModule, Open
 from litex.build.io import DDRInput, DDROutput
 from litex.soc.interconnect import stream
 from liteeth.common import eth_phy_description
-from liteeth.phy.parallel.rgmii.gw5 import LiteEthPHYRGMIITX
 
 
 class AE350EthTXPipe(stream.Buffer):
     pass
+
+
+class AE350RGMIITX(LiteXModule):
+    """RGMII TX with a register stage beside the output DDR cells; the MAC
+    converter and gap muxes otherwise route straight across the die."""
+    def __init__(self, pads):
+        self.sink = sink = stream.Endpoint(eth_phy_description(8))
+        tx_ctl = Signal()
+        tx_data = Signal(8, reset_less=True)
+        self.comb += sink.ready.eq(1)
+        self.sync += [tx_ctl.eq(sink.valid), tx_data.eq(sink.data)]
+        for i1, i2, pad in [(tx_ctl, tx_ctl, pads.tx_ctl)] + [
+                (tx_data[i], tx_data[4+i], pads.tx_data[i]) for i in range(4)]:
+            oddr = Signal()
+            self.specials += [
+                DDROutput(clk=ClockSignal('eth_tx'), i1=i1, i2=i2, o=oddr),
+                Instance('IODELAY', p_DYN_DLY_EN='FALSE', p_ADAPT_EN='FALSE',
+                    p_C_STATIC_DLY=0, i_SDTAP=0, i_DLYSTEP=Constant(0, 8), i_VALUE=0,
+                    i_DI=oddr, o_DF=Open(), o_DO=pad),
+            ]
 
 
 class AE350RGMIIRX(LiteXModule):
@@ -115,7 +134,7 @@ class EthernetRGMII(LiteXModule):
             Instance('DFFP',name='ae350_eth_tx_rst_ff1',i_D=tx_rst_meta,i_PRESET=reset,i_CLK=self.cd_eth_tx.clk,o_Q=self.cd_eth_tx.rst),
         ]
         self.specials += AsyncResetSynchronizer(self.cd_eth_rx,reset)
-        self.tx=ClockDomainsRenamer('eth_tx')(LiteEthPHYRGMIITX(pads))
+        self.tx=ClockDomainsRenamer('eth_tx')(AE350RGMIITX(pads))
         self.rx=ClockDomainsRenamer('eth_rx')(AE350RGMIIRX(pads,self.default_rx_taps,self.rx_delay_taps,iodelay_value))
         self.sink,self.source=self.tx.sink,self.rx.source
         from migen.genlib.cdc import PulseSynchronizer

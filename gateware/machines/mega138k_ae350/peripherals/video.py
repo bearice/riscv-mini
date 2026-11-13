@@ -59,16 +59,27 @@ class VideoPixels(LiteXModule):
         pixel = Signal(32 if runtime else 16)
         pattern = Signal(24)
         started = Signal()
+        # One-entry head whose epoch/index matches are registered from
+        # next-state compares: ready and the upstream payload enables never
+        # pass through the 32-bit comparators.
+        head_valid = Signal()
+        head_data = Signal(len(source.data))
+        head_index, head_epoch = Signal(32), Signal(32)
+        epoch_eq, index_eq = Signal(), Signal()
+        epoch_p1, index_p1 = Signal(32, reset=1), Signal(32, reset=1)
+        consume, load = Signal(), Signal()
         self.comb += [
             self.de.eq((x < width) & (y < height)),
             self.vblank.eq(y >= height),
             self.frame_start.eq((x == 0) & (y == height)),
             self.hsync.eq(~((x >= width + h_front) & (x < width + h_front + h_sync)) ^ h_positive),
             self.vsync.eq(~((y >= height + v_front) & (y < height + v_front + v_sync)) ^ v_positive),
-            match.eq(source.valid & (source.epoch == self.epoch) & (source.index == self.index)),
-            source.ready.eq(~self.enabled | self.frame_bad | (source.epoch != self.epoch) |
-                              (self.de & (source.index == self.index))),
-            pixel.eq(Mux(match & ~self.frame_bad, source.data, 0)),
+            match.eq(head_valid & epoch_eq & index_eq),
+            consume.eq(head_valid & (~self.enabled | self.frame_bad | ~epoch_eq |
+                                     (self.de & index_eq))),
+            source.ready.eq(~head_valid | consume),
+            load.eq(source.valid & source.ready),
+            pixel.eq(Mux(match & ~self.frame_bad, head_data, 0)),
             red.eq(Cat(pixel[13:16], pixel[11:16])),
             green.eq(Cat(pixel[9:11], pixel[5:11])),
             blue.eq(Cat(pixel[2:5], pixel[:5])),
@@ -99,14 +110,26 @@ class VideoPixels(LiteXModule):
             ).Elif((self.format == 1) | (self.format == 2),
                 red.eq(pixel[16:24]), green.eq(pixel[8:16]), blue.eq(pixel[:8]))
         self.sync += [
+            If(load, head_data.eq(source.data), head_index.eq(source.index),
+               head_epoch.eq(source.epoch)),
+            If(load, head_valid.eq(1)).Elif(consume, head_valid.eq(0)),
+            epoch_eq.eq(Mux(load,
+                Mux(self.frame_start, source.epoch == epoch_p1, source.epoch == self.epoch),
+                Mux(self.frame_start, head_epoch == epoch_p1, epoch_eq))),
+            If(self.frame_start,
+                index_eq.eq(Mux(load, source.index == 0, head_index == 0)),
+            ).Elif(self.de,
+                index_eq.eq(Mux(load, source.index == index_p1, head_index == index_p1)),
+            ).Elif(load, index_eq.eq(source.index == self.index)),
             If(x == h_total - 1,
                 x.eq(0), If(y == v_total - 1, y.eq(0)).Else(y.eq(y + 1)),
             ).Else(x.eq(x + 1)),
             If(self.frame_start,
-                self.epoch.eq(self.epoch + 1), self.index.eq(0), self.frame_bad.eq(0),
+                self.epoch.eq(self.epoch + 1), epoch_p1.eq(epoch_p1 + 1),
+                self.index.eq(0), index_p1.eq(1), self.frame_bad.eq(0),
                 If(started, self.frames.eq(self.frames + 1)), started.eq(1),
             ).Elif(self.de,
-                self.index.eq(self.index + 1),
+                self.index.eq(self.index + 1), index_p1.eq(index_p1 + 1),
                 If(self.enabled & (~match | self.frame_bad),
                     self.missing_pixels.eq(self.missing_pixels + 1),
                     If(~self.frame_bad, self.underflows.eq(self.underflows + 1)),
@@ -434,6 +457,11 @@ class FabricVideo(LiteXModule):
             available=Signal(6)
             step=Signal(3)
             word_epoch,pixel_index=Signal(32),Signal(32)
+            # 12-bit geometry bounds a frame below 2**24 pixels. The index
+            # counts in two halves; the upper one steps on a registered
+            # terminal flag, so no 32-bit increment chain is needed.
+            index_lo,index_hi,index_lo_max=Signal(8),Signal(16),Signal()
+            self.comb += pixel_index.eq(Cat(index_lo,index_hi))
             step_next=Signal(3)
             self.comb += Case(ddr_format,{i:step_next.eq(v) for i,v in enumerate(BYTES_PER_PIXEL)})
             self.sync.video_ddr += step.eq(step_next)
@@ -448,14 +476,16 @@ class FabricVideo(LiteXModule):
                 fifo.we.eq(buffered.source.valid)]
             self.sync.video_ddr += If(reader.source.valid & reader.source.ready,
                 holding.eq(1),
-                If(reader.source.block==0,
-                    reservoir.eq(reader.source.data),available.eq(32),pixel_index.eq(0),
+                If(reader.first_block,
+                    reservoir.eq(reader.source.data),available.eq(32),
+                    index_lo.eq(0),index_hi.eq(0),index_lo_max.eq(0),
                     word_epoch.eq(reader.source.epoch),
                 ).Else(reservoir.eq(reservoir | (reader.source.data << Cat(Constant(0,3),available[:2]))),
                        available.eq(available+32)),
             ).Elif(holding & buffered.sink.ready,
                 reservoir.eq(reservoir >> Cat(Constant(0,3),step)),available.eq(available-step),
-                pixel_index.eq(pixel_index+1),
+                index_lo.eq(index_lo+1),index_lo_max.eq(index_lo==254),
+                If(index_lo_max,index_hi.eq(index_hi+1)),
                 If(available < Cat(Constant(0,1),step),holding.eq(0)))
         else:
             word = Signal(256)

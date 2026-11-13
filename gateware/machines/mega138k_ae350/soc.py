@@ -168,15 +168,6 @@ class DDRSoC(LiteXModule):
         platform.default_clk_name = 'clk50'
         platform.default_clk_period = 1e9 / board.input_clock_hz
         self.platform = platform
-        # Synchronous one-entry backing RAMs otherwise become hundreds of
-        # FF clock enables. Keep the two same-clock queues in block RAM.
-        platform.toolchain.additional_tcl_commands += [
-            'set ddr_fifo_constraints [open ae350_ddr_fifos.gsc w]',
-            *['puts $ddr_fifo_constraints {INS "ae350_ddr_fifo_%d" syn_ramstyle=block_ram}' % width
-              for width in (REQ_WIDTH, RESP_WIDTH)],
-            'close $ddr_fifo_constraints',
-            'add_file ae350_ddr_fifos.gsc',
-        ]
 
         pads = {
             'addr':    [platform.request('ddr3_addr', i) for i in range(15)],
@@ -445,6 +436,20 @@ class DDRSoC(LiteXModule):
         self.ethernet_mac = ResetInserter(['sys'])(LiteEthMACCore(self.ethernet_phy,32,with_sys_datapath=True,with_store_and_forward=True,tx_cdc_depth=8))
         self.comb += self.ethernet_mac.reset_sys.eq(~eth.reset_n)
         add_mac_timing_buffers(self.ethernet_mac,platform)
+        # GowinSynthesis reads only the last added GSC file, which is the
+        # Ethernet one, so every synthesis rule is appended to it.
+        # SUG550 §5.17: Gowin otherwise packs the GFX2D FSM state decode into
+        # synchronous pROMs whose clock-to-out misses ddr_ui_clk. The design
+        # has no intentional ROMs, so keep every ROM in logic.
+        # Synchronous one-entry DDR backing RAMs otherwise become hundreds of
+        # FF clock enables. Keep the two same-clock queues in block RAM.
+        platform.toolchain.additional_tcl_commands += [
+            'set syn_constraints [open ae350_ethernet.gsc a]',
+            'puts $syn_constraints {GLOBAL syn_romstyle=logic}',
+            *['puts $syn_constraints {INS "ae350_ddr_fifo_%d" syn_ramstyle=block_ram}' % width
+              for width in (REQ_WIDTH, RESP_WIDTH)],
+            'close $syn_constraints',
+        ]
         if self.sfp is not None:
             self.comb += [
                 If(self.sfp.dma_sel == 1,
@@ -590,6 +595,14 @@ class DDRSoC(LiteXModule):
                 '-group [get_clocks {ddr_clk_ref}]' +
                 (' -group [get_clocks {xgmii_clk}] -group [get_clocks {ge_clk}] -group [get_clocks {serdes1_tx_clk}] -group [get_clocks {serdes1_rx_clk}] -group [get_clocks {serdes2_tx_clk}] -group [get_clocks {serdes2_rx_clk}]'
                  if self.sfp is not None else ''),
+                # The global top-100 list is dominated by ddr_ui_clk; keep the
+                # APB/fabric domain's worst paths visible as well.
+                'report_timing -setup -from_clock [get_clocks {sys_clk}] '
+                '-to_clock [get_clocks {sys_clk}] -max_paths 50 -max_common_paths 2',
+                # One path per endpoint so wide buses do not hide the other
+                # ddr_ui_clk logic families.
+                'report_timing -setup -from_clock [get_clocks {ddr_ui_clk}] '
+                '-to_clock [get_clocks {ddr_ui_clk}] -max_paths 800 -max_common_paths 1',
             ]
             with open(name, 'a') as f:
                 f.write('\n' + '\n'.join(extra) + '\n')

@@ -1,6 +1,7 @@
 """Transaction arbitration for the untagged, single-beat DDR3 user interface."""
-from migen import Constant, FSM, If, Mux, NextState, NextValue, Signal
+from migen import Constant, If, Mux, NextState, NextValue, Signal
 from litex.gen import LiteXModule
+from gateware.machines.mega138k_ae350.onehot_fsm import OneHotFSM
 from litex.soc.interconnect import stream
 
 
@@ -10,6 +11,11 @@ class DDRMemoryArbiter(LiteXModule):
     A single arbitration level avoids a ready/command/ready cone through
     cascaded arbiters. An accepted untagged read keeps its owner until its
     actual response, regardless of a client's subsequent pending level.
+
+    Accepted commands are posted into one output register that alone drives
+    the DDR controller. Client readiness therefore depends only on arbiter
+    registers, never on the controller's ready or another client's command.
+    A port is regranted at most every other cycle either way.
     """
     def __init__(self,memory,cpu,video,network,usb=None,gfx2d=None):
         from migen import Array, Cat, Case
@@ -46,35 +52,60 @@ class DDRMemoryArbiter(LiteXModule):
         selected_pending=Array(pending)[grant]
         def select(field):return Array([getattr(p,field) for p in ports])[grant]
         read=Signal()
+        out_valid=Signal();out_read=Signal(reset_less=True);issued=Signal()
+        out={field:Signal(len(getattr(memory,field)),reset_less=True)
+             for field in ('addr','cmd','wr_data','wr_data_mask')}
+        # Per-port readiness and response ownership are registered from the
+        # next arbiter state, so each client's handshake starts at one FF.
+        ready=[Signal() for _ in ports];own=[Signal() for _ in ports]
+        hit=[Signal() for _ in ports]
+        valid_next=Signal();grant_next=Signal(id_bits)
+        busy_next=Signal();out_valid_next=Signal()
         self.comb += [any_pending.eq(Cat(*pending)!=0),
             Case(last,{i:chosen.eq(value) for i,value in choices.items()}),
             # The registered grant owns readiness. Pending selects the next
             # grant; cmd_en remains the validity qualifier for acceptance.
-            active.eq(valid & ~busy),read.eq(select('cmd')==1),
-            memory.addr.eq(select('addr')),memory.cmd.eq(select('cmd')),memory.burst.eq(0),
-            memory.wr_data.eq(select('wr_data')),memory.wr_data_mask.eq(select('wr_data_mask')),
-            memory.wr_data_en.eq(active & ~read & select('cmd_en') & select('wr_data_en') &
-                                memory.cmd_ready & memory.wr_data_rdy),
+            active.eq(Cat(*ready)!=0),read.eq(select('cmd')==1),
+            # Writers raise cmd_en together with their data only after seeing
+            # ready, so readiness must not depend on either enable.
+            command.eq(Cat(*[r & p.cmd_en for r,p in zip(ready,ports)])!=0),
+            valid_next.eq(valid),grant_next.eq(grant),
+            If(~valid & any_pending,valid_next.eq(1),grant_next.eq(chosen)),
+            If(valid & ~selected_pending,valid_next.eq(0)),
+            If(command,valid_next.eq(0)),
+            busy_next.eq(busy),
+            If(command & read,busy_next.eq(1)),
+            If(busy & memory.rd_data_valid,busy_next.eq(0)),
+            out_valid_next.eq(out_valid),
+            If(command,out_valid_next.eq(1)).Elif(issued,out_valid_next.eq(0)),
+            *[getattr(memory,field).eq(value) for field,value in out.items()],
+            memory.burst.eq(0),
+            memory.cmd_en.eq(out_valid & (out_read | memory.wr_data_rdy)),
+            memory.wr_data_en.eq(out_valid & ~out_read & memory.cmd_ready & memory.wr_data_rdy),
             memory.wr_data_end.eq(memory.wr_data_en),
-            memory.cmd_en.eq(active & select('cmd_en') & (read | (select('wr_data_en') & memory.wr_data_rdy))),
-            command.eq(memory.cmd_en & memory.cmd_ready)]
+            issued.eq(memory.cmd_en & memory.cmd_ready)]
+        # The payload loads whenever the slot is free, so its enable is a
+        # register and not the selected client's command decode.
+        self.sync += [
+            If(~out_valid,*[value.eq(select(field)) for field,value in out.items()],
+               out_read.eq(read)),
+            out_valid.eq(out_valid_next)]
         for i,p in enumerate(ports):
-            accepted=Signal()
             # Once granted, this port's command is the selected command.
-            # Decode locally so the read-only video port's ready does not
-            # depend on the other clients' command mux.
-            self.comb += [p.cmd_ready.eq(active & (grant==i) & memory.cmd_ready & ((p.cmd==1)|memory.wr_data_rdy)),
-                p.wr_data_rdy.eq(active & (grant==i) & memory.cmd_ready & memory.wr_data_rdy),
-                p.rd_data.eq(memory.rd_data),p.rd_data_valid.eq(memory.rd_data_valid & busy & (owner==i))]
-            self.sync += [accepted.eq(command & (grant==i)),If(accepted,counts[i].eq(counts[i]+1))]
+            self.comb += [p.cmd_ready.eq(ready[i]),p.wr_data_rdy.eq(ready[i]),
+                p.rd_data.eq(memory.rd_data),p.rd_data_valid.eq(memory.rd_data_valid & own[i])]
+            self.sync += [
+                ready[i].eq(valid_next & ~busy_next & ~out_valid_next & (grant_next==i)),
+                If(command & read & ready[i],own[i].eq(1))
+                .Elif(memory.rd_data_valid,own[i].eq(0)),
+                hit[i].eq(command & ready[i]),
+                If(hit[i],counts[i].eq(counts[i]+1))]
         video_waiting = Signal()
-        self.sync += video_waiting.eq(self.video_pending | (busy & (owner==1)))
+        self.sync += video_waiting.eq(self.video_pending | own[1])
         waited=Signal(24)
         self.sync += [
-            If(~valid & any_pending,valid.eq(1),grant.eq(chosen)),
-            If(valid & ~selected_pending,valid.eq(0)),
-            If(command,valid.eq(0),last.eq(grant),If(read,busy.eq(1),owner.eq(grant))),
-            If(busy & memory.rd_data_valid,busy.eq(0)),
+            valid.eq(valid_next),grant.eq(grant_next),busy.eq(busy_next),
+            If(command,last.eq(grant),If(read,owner.eq(grant))),
             If(memory.rd_data_valid & ~busy,self.unexpected_response.eq(1)),
             If(video.rd_data_valid | ~video_waiting,waited.eq(0))
             .Elif(waited!=0xffffff,waited.eq(waited+1)),
@@ -200,6 +231,8 @@ class VideoFrameReader(LiteXModule):
                                                   ('wrap_start', 32), ('wrap_end', 32)])
         self.source = source = stream.Endpoint([('data', 256), ('block', 32), ('epoch', 32)])
         self.pending = Signal()
+        # Registered source.block == 0, valid whenever source.valid is.
+        self.first_block = Signal()
         self.reserve_next = Signal()
         self.address_error = Signal()
         self.timeout_error = Signal()
@@ -224,7 +257,7 @@ class VideoFrameReader(LiteXModule):
         data = Signal(256)
         elapsed = Signal(max=response_timeout + 1)
         end = Signal(33)
-        self.fsm = fsm = FSM(reset_state='IDLE')
+        self.fsm = fsm = OneHotFSM(reset_state='IDLE')
         self.comb += [
             ui.cmd.eq(1), ui.burst.eq(0),
             ui.addr.eq(address[2:31] & ~Constant(7, 29)),
@@ -293,10 +326,13 @@ class VideoFrameReader(LiteXModule):
                 NextValue(self.address_error, 1), NextState('IDLE'),
             ).Else(NextState('SEND')),
         )
+        # A request superseding SEND or PUSH work is a cancellation.
+        self.sync += If((fsm.ongoing('SEND') | fsm.ongoing('PUSH')) & request.valid,
+                        self.cancelled.eq(self.cancelled + 1))
         fsm.act('SEND',
             request.ready.eq(1),
             If(request.valid,
-                NextValue(self.cancelled, self.cancelled + 1), *accept(),
+                *accept(),
             ).Else(
                 self.pending.eq(1), ui.cmd_en.eq(1),
                 If(ui.cmd_ready,
@@ -326,6 +362,7 @@ class VideoFrameReader(LiteXModule):
         # Next-row addresses are also registered ahead of time so last_column
         # carries no 32-bit addition or comparator cones.
         self.sync += [
+            self.first_block.eq(index == 0),
             last_block.eq(index == blocks - 1),
             last_column.eq(column == blocks_per_row - 1),
             nxt_normal_row.eq(row_base + stride),
@@ -337,7 +374,7 @@ class VideoFrameReader(LiteXModule):
         fsm.act('PUSH',
             request.ready.eq(1),
             If(request.valid,
-                NextValue(self.cancelled, self.cancelled + 1), *accept(),
+                *accept(),
             ).Else(
                 source.valid.eq(1),
                 If(source.ready,

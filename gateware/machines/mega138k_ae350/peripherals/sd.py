@@ -90,13 +90,16 @@ class WordFIFO(LiteXModule):
         self.level=Signal(max=depth+1)
         head,tail=Signal(max=depth),Signal(max=depth)
         words=Array(Signal(34) for _ in range(depth))
-        self.comb += [self.sink.ready.eq(self.level<depth),self.source.valid.eq(self.level!=0),
+        # Registered flags keep the level comparators off the word enables.
+        full,empty=Signal(),Signal(reset=1)
+        self.comb += [self.sink.ready.eq(~full),self.source.valid.eq(~empty),
             self.source.data.eq(words[head][:32]),self.source.first.eq(words[head][32]),self.source.last.eq(words[head][33])]
         push=self.sink.valid & self.sink.ready
         pop=self.source.valid & self.source.ready
         self.sync += [If(push,words[tail].eq(Cat(self.sink.data,self.sink.first,self.sink.last)),tail.eq(tail+1)),
                       If(pop,head.eq(head+1)),
-                      If(push & ~pop,self.level.eq(self.level+1)).Elif(pop & ~push,self.level.eq(self.level-1))]
+                      If(push & ~pop,self.level.eq(self.level+1),full.eq(self.level==depth-1),empty.eq(0)
+                      ).Elif(pop & ~push,self.level.eq(self.level-1),empty.eq(self.level==1),full.eq(0))]
 
 
 class SDDataPath(LiteXModule):
