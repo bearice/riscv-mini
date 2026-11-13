@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from migen import Signal
 from migen.sim import run_simulation
 from gateware.machines.mega138k_ae350 import address_map as amap
-from gateware.machines.mega138k_ae350.peripherals.gfx2d import Gfx2D, ERR_NONE, ERR_UNSUPPORTED, ERR_PARAM
+from gateware.machines.mega138k_ae350.peripherals.gfx2d import Gfx2D, ShaderALU, ERR_NONE, ERR_UNSUPPORTED, ERR_PARAM
 
 DDR_SIZE = 1 << 20
 
@@ -177,7 +177,23 @@ class Gfx2DHostTest(unittest.TestCase):
             assert mem[base + 2 * w] == 0
         print('PASS GFX2D: FILL_RECT odd destination multi-beat rotation')
 
-    def _run_op(self, d, mem_pump, desc, expect_err=0):
+    def test_fill_stride_changes_alignment(self):
+        # Strides that change the byte alignment from row to row: each row's
+        # pattern rotation must follow that row's own start offset.
+        for fmt, bpp, stride, fg in ((0, 2, 3, 0x1234), (2, 4, 6, 0x11223344)):
+            d = make()
+            mem = bytearray(DDR_SIZE)
+            dst, h = 0x2000, 4
+            self._run_op(d, self._fake_pump_factory(d, mem), {
+                'OP': 0, 'DST_ADDR': dst, 'DST_STRIDE': stride,
+                'WIDTH': 1, 'HEIGHT': h, 'FG_COLOR': fg, 'FORMAT': fmt})
+            for r in range(h):
+                base = dst + r * stride
+                px = int.from_bytes(mem[base:base + bpp], 'little')
+                assert px == fg, (fmt, r, hex(px), hex(fg))
+        print('PASS GFX2D: FILL_RECT per-row alignment with odd stride')
+
+    def _run_op(self, d, mem_pump, desc, expect_err=0, writes=()):
         reg = amap.GFX2D_REGS
 
         def access(off, data=None):
@@ -197,7 +213,7 @@ class Gfx2DHostTest(unittest.TestCase):
         def bench():
             yield [d.ui.cmd_ready.eq(1), d.ui.wr_data_rdy.eq(1), d.ui.rd_data_valid.eq(0),
                    d.ui.rd_data.eq(0)]
-            for name, v in desc.items():
+            for name, v in list(writes) + list(desc.items()):
                 ok, _ = yield from access(reg[name], v)
                 assert ok, name
             ok, _ = yield from access(reg['CONTROL'], 1)
@@ -575,6 +591,103 @@ class Gfx2DHostTest(unittest.TestCase):
                 self.assertEqual(res255, s, f"LERP alpha=255 mismatch for s={s}, d={d}")
         print("PASS GFX2D: LERP endpoints alpha=0->DST and alpha=255->SRC exact")
 
+    def test_shader_alu_arith_and_compare(self):
+        # Directly drive one ALU stage with signed operands that leave the
+        # unorm8 range, covering SAT and every CMP_SET sub-op.
+        import random
+        rng = random.Random(0x6B)
+        edges = [-32768, -256, -1, 0, 1, 127, 255, 256, 32767]
+
+        def s16(v):
+            v &= 0xFFFF
+            return v - 0x10000 if v & 0x8000 else v
+
+        def sat(v):
+            return 0 if v < 0 else 255 if v > 255 else v
+
+        arith = {
+            0x00: lambda a, b, c: a,
+            0x01: lambda a, b, c: a + b,
+            0x02: lambda a, b, c: a - b,
+            0x03: lambda a, b, c: abs(a - b),
+            0x04: lambda a, b, c: min(a, b),
+            0x05: lambda a, b, c: max(a, b),
+            0x06: lambda a, b, c: min(max(a, b), c),
+        }
+        logic = {
+            0x20: lambda a, b, k: a & b,
+            0x21: lambda a, b, k: a | b,
+            0x22: lambda a, b, k: a ^ b,
+            0x23: lambda a, b, k: a << k,
+            0x24: lambda a, b, k: a >> k,
+        }
+        cmps = [lambda a, b: a == b, lambda a, b: a != b,
+                lambda a, b: a < b, lambda a, b: a >= b]
+
+        def operands(lo_le_hi):
+            vals = [[rng.choice(edges) if rng.random() < 0.4 else
+                     rng.randint(-32768, 32767) for _ in range(3)]
+                    for _ in range(4)]
+            if lo_le_hi:
+                for v in vals:
+                    v[1], v[2] = min(v[1], v[2]), max(v[1], v[2])
+            return vals
+
+        cases = []
+        for op in arith:
+            for s in (0, 1):
+                if op == 0x06 and s:
+                    continue
+                for _ in range(24):
+                    cases.append(('arith', op, s, 0, operands(op == 0x06)))
+        for op in logic:
+            for s in (0, 1):
+                for k in range(16):
+                    for _ in range(2 if op >= 0x23 else 1):
+                        cases.append(('logic', op, s, k, operands(False)))
+        for sub_op in range(4):
+            for _ in range(24):
+                vals = operands(False)
+                if rng.random() < 0.5:
+                    for v in vals:
+                        v[1] = v[0]
+                cases.append(('cmp', 0x38, 0, sub_op, vals))
+
+        alu = ShaderALU(0)
+
+        def gen():
+            yield alu.last_stage.eq(0)
+            yield alu.p_in.eq(0)
+            yield alu.discard_in.eq(0)
+            for kind, op, s, arg, vals in cases:
+                lo, hi = enc(op, dst=0, wr=0xF, s0=1, s1=2, s2=3, sat=s,
+                             sub_op=arg if kind == 'cmp' else 0,
+                             imm=arg if kind == 'logic' else 0)
+                yield alu.inst.eq((hi << 32) | lo)
+                for c in range(4):
+                    for r in range(3):
+                        yield alu.r_in[r + 1][c].eq(vals[c][r])
+                for _ in range(8):
+                    yield
+                if kind in ('arith', 'logic'):
+                    for c in range(4):
+                        a, b, cc = vals[c]
+                        if kind == 'arith':
+                            want = arith[op](a, b, cc)
+                        else:
+                            want = logic[op](a, b, arg)
+                        want = sat(want) if s and op != 0x06 and op not in (
+                            0x20, 0x21, 0x22) else s16(want)
+                        got = yield alu.r_out[0][c]
+                        self.assertEqual(got, want, (hex(op), s, arg, vals[c]))
+                else:
+                    want = int(all(cmps[arg](v[0], v[1]) for v in vals))
+                    got = yield alu.p_out
+                    self.assertEqual(got, want, (arg, vals))
+
+        run_simulation(alu, gen())
+        print("PASS GFX2D: ALU arithmetic, SAT and CMP_SET sub-ops")
+
     def test_shader_blend_argb_to_rgb565(self):
         # Example 1: Standard Per-Pixel Alpha Blend ARGB8888 -> RGB565
         # LERP.rgb R0, R0.argb, R1.argb, R0.aaaa (SAT=1)
@@ -872,15 +985,15 @@ class Gfx2DHostTest(unittest.TestCase):
         self._run_op(d, self._fake_pump_factory(d, mem), desc,
                      expect_err=ERR_PARAM)
 
-        # 2. src format = FMT_INDEX8 (6)
+        # 2. src format = FMT_MONO1 (7)
         d2 = make()
-        cfg_src_idx8 = 0 | (1 << 4) | (1 << 11) | (6 << 12)
+        cfg_src_mono = 0 | (1 << 4) | (1 << 11) | (7 << 12)
         desc2 = dict(desc)
         desc2['FORMAT'] = 0
-        desc2['SHADER_CFG'] = cfg_src_idx8
+        desc2['SHADER_CFG'] = cfg_src_mono
         self._run_op(d2, self._fake_pump_factory(d2, mem), desc2,
                      expect_err=ERR_PARAM)
-        print("PASS GFX2D: OP_SHADER rejects INDEX8/MONO1 formats with ERR_PARAM")
+        print("PASS GFX2D: OP_SHADER rejects INDEX8 dst / MONO1 src with ERR_PARAM")
 
     def test_validation_rejects_high_bits_in_op_and_format(self):
         d = make()
@@ -948,6 +1061,174 @@ class Gfx2DHostTest(unittest.TestCase):
             got = mem3[0x2000 + 2 * c] | (mem3[0x2000 + 2 * c + 1] << 8)
             self.assertEqual(got, 0xFFFF, f"SHL.SAT pixel {c} should saturate to 0xFFFF, got {hex(got)}")
         print("PASS GFX2D: R3 unscaled coordinates and SAT clamping verified")
+
+    def test_shader_4stage_index8_dot3_lut_lerp(self):
+        # Example 3: INDEX8 -> PAL_RAM -> MOV -> DOT3 -> LUT_FETCH -> LERP(DST)
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        pal = [pal_entry(i) for i in range(256)]
+        lut = [lut_entry(i) for i in range(256)]
+        writes = ([('LUT_ADDR', 0x100)] + [('LUT_DATA', v) for v in pal] +
+                  [('LUT_ADDR', 0)] + [('LUT_DATA', v) for v in lut])
+
+        src_addr, src_stride = 0x2003, 61
+        dst_addr, dst_stride = 0x4000, 256
+        w, h = 40, 2
+        u0, u1 = 0x004D961D, 0xC0C0C0C0
+        for r in range(h):
+            for c in range(w):
+                mem[src_addr + r * src_stride + c] = (r * 7 + c * 13) & 0xFF
+                dpx = 0x10000000 * ((c + r) & 0xF) | (c * 0x10203) & 0xFFFFFF
+                mem[dst_addr + r * dst_stride + 4 * c:
+                    dst_addr + r * dst_stride + 4 * c + 4] = dpx.to_bytes(4, 'little')
+        golden = {}
+        for r in range(h):
+            for c in range(w):
+                s = split_argb(pal[mem[src_addr + r * src_stride + c]])
+                dpx = split_argb(int.from_bytes(
+                    mem[dst_addr + r * dst_stride + 4 * c:
+                        dst_addr + r * dst_stride + 4 * c + 4], 'little'))
+                y = min(255, (s[1] * 77 + s[2] * 150 + s[3] * 29 + 128) >> 8)
+                mapped = split_argb(lut[y])
+                wgt = 0xC0 + (0xC0 >> 7)
+                out = [s[0]] + [((mapped[k] - dpx[k]) * wgt + (dpx[k] << 8) + 128) >> 8
+                                for k in (1, 2, 3)]
+                golden[(r, c)] = (out[0] << 24) | (out[1] << 16) | (out[2] << 8) | out[3]
+
+        i0 = enc(0x00, wr=0xF, s0=4)
+        i1 = enc(0x14, wr=0x7, s0=0, s1=8, sat=1)
+        i2 = enc(0x30, wr=0x7, s0=0)
+        i3 = enc(0x13, wr=0x7, s0=0, s1=5, s2=9, swz2=0xFF, sat=1)
+        cfg = 3 | (1 << 4) | (1 << 5) | (1 << 11) | (6 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': src_stride,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': dst_stride,
+            'WIDTH': w, 'HEIGHT': h, 'FORMAT': 4,
+            'UNIFORM0': u0, 'UNIFORM1': u1,
+            **inst_regs(i0, i1, i2, i3),
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, writes=writes)
+        for (r, c), want in golden.items():
+            a = dst_addr + r * dst_stride + 4 * c
+            got = int.from_bytes(mem[a:a + 4], 'little')
+            self.assertEqual(got, want, (r, c, hex(got), hex(want)))
+        print("PASS GFX2D: 4-stage INDEX8/PAL -> DOT3 -> LUT_FETCH -> LERP bit-exact")
+
+    def test_shader_4stage_predicate_chain(self):
+        # P set in Stage 0 must survive Stages 1..2 and gate Stage 3.
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        src_addr, dst_addr, w = 0x2000, 0x4000, 16
+        fg = 0x00123456
+        for c in range(w):
+            px = (c << 16) | ((200 + c) << 8) | (c * 16)
+            mem[src_addr + 4 * c:src_addr + 4 * c + 4] = px.to_bytes(4, 'little')
+        i0 = enc(0x38, wr=0x1, s0=4, s1=8, sub_op=2)
+        i1 = enc(0x01, wr=0x7, s0=4, use_imm=1, imm=10, sat=1)
+        i2 = enc(0x02, wr=0x7, s0=0, use_imm=1, imm=3, sat=1)
+        i3 = enc(0x00, wr=0x7, s0=6, pred=1)
+        cfg = 3 | (1 << 4) | (1 << 11) | (2 << 12)
+        desc = {
+            'OP': 3, 'SHADER_CFG': cfg,
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': 64,
+            'DST_ADDR': dst_addr, 'DST_STRIDE': 64,
+            'WIDTH': w, 'HEIGHT': 1, 'FORMAT': 2,
+            'FG_COLOR': fg, 'UNIFORM0': 100,
+            **inst_regs(i0, i1, i2, i3),
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        for c in range(w):
+            if c * 16 < 100:
+                want = 0xFF000000 | fg
+            else:
+                r, g, b = (min(255, v + 10) - 3 for v in (c, 200 + c, c * 16))
+                want = 0xFF000000 | (r << 16) | (g << 8) | b
+            got = int.from_bytes(mem[dst_addr + 4 * c:dst_addr + 4 * c + 4], 'little')
+            self.assertEqual(got, want, (c, hex(got), hex(want)))
+        print("PASS GFX2D: 4-stage predicate chain (CMP_SET -> ADD -> SUB -> MOV IF_TRUE)")
+
+    def test_shader_stage_placement_validation(self):
+        mem = bytearray(DDR_SIZE)
+        base = {
+            'OP': 3, 'SRC_ADDR': 0x1000, 'SRC_STRIDE': 64,
+            'DST_ADDR': 0x2000, 'DST_STRIDE': 64,
+            'WIDTH': 8, 'HEIGHT': 1, 'FORMAT': 2,
+        }
+        mov = enc(0x00, wr=0xF, s0=4)
+        # LUT_FETCH outside Stage 2 while active
+        d = make()
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            **base, 'SHADER_CFG': 3 | (1 << 4),
+            **inst_regs(enc(0x30, s0=4), mov, mov, mov)}, expect_err=ERR_PARAM)
+        # DOT3 outside Stage 1 while active
+        d = make()
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            **base, 'SHADER_CFG': 3 | (1 << 4),
+            **inst_regs(mov, mov, mov, enc(0x14, s0=4, s1=8))}, expect_err=ERR_PARAM)
+        # Misplaced opcode beyond LAST_STAGE is ignored; Stage 3 is bypassed
+        d = make()
+        fg = 0x00ABCDEF
+        self._run_op(d, self._fake_pump_factory(d, mem), {
+            **base, 'SHADER_CFG': 2 | (1 << 4), 'FG_COLOR': fg,
+            **inst_regs(mov, mov, enc(0x00, wr=0x7, s0=6),
+                        enc(0x30, wr=0xF, s0=4))})
+        for c in range(8):
+            got = int.from_bytes(mem[0x2000 + 4 * c:0x2000 + 4 * c + 4], 'little')
+            self.assertEqual(got, 0xFF000000 | fg, (c, hex(got)))
+        print("PASS GFX2D: DOT3/LUT_FETCH stage placement validated; inactive stages bypassed")
+
+    def test_shader_index8_single_pixel_tiles(self):
+        # WIDTH=1 makes the trailing PAL -> SRC_LB write land right before compute.
+        d = make()
+        mem = bytearray(DDR_SIZE)
+        pal = [pal_entry(i) for i in range(256)]
+        writes = [('LUT_ADDR', 0x100)] + [('LUT_DATA', v) for v in pal]
+        src_addr, src_stride, h = 0x3005, 33, 3
+        for r in range(h):
+            mem[src_addr + r * src_stride] = (0x40 + r * 77) & 0xFF
+        desc = {
+            'OP': 3, 'SHADER_CFG': 0 | (1 << 4) | (1 << 11) | (6 << 12),
+            'SRC_ADDR': src_addr, 'SRC_STRIDE': src_stride,
+            'DST_ADDR': 0x5000, 'DST_STRIDE': 32,
+            'WIDTH': 1, 'HEIGHT': h, 'FORMAT': 4,
+            **inst_regs(enc(0x00, wr=0xF, s0=4)),
+        }
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, writes=writes)
+        for r in range(h):
+            got = int.from_bytes(mem[0x5000 + 32 * r:0x5000 + 32 * r + 4], 'little')
+            want = pal[(0x40 + r * 77) & 0xFF]
+            self.assertEqual(got, want, (r, hex(got), hex(want)))
+        print("PASS GFX2D: INDEX8 single-pixel tiles expand through PAL_RAM")
+
+
+def enc(op, dst=0, wr=0xF, s0=0, s1=0, s2=0, swz0=0xE4, swz1=0xE4, swz2=0xE4,
+        sat=0, use_imm=0, sub_op=0, imm=0, pred=0):
+    v = ((op << 58) | (pred << 56) | (dst << 52) | (wr << 48) | (s0 << 44) |
+         (s1 << 40) | (s2 << 36) | (swz0 << 28) | (swz1 << 20) | (swz2 << 12) |
+         (sat << 11) | (use_imm << 10) | (sub_op << 8) | imm)
+    return v & 0xFFFFFFFF, v >> 32
+
+
+def inst_regs(*insts):
+    regs = {}
+    for k, (lo, hi) in enumerate(insts):
+        regs['INST%d_LO' % k] = lo
+        regs['INST%d_HI' % k] = hi
+    return regs
+
+
+def split_argb(v):
+    return [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF]
+
+
+def pal_entry(i):
+    return (((i * 37 + 11) & 0xFF) << 24) | (((i * 3) & 0xFF) << 16) | \
+           (((i * 5 + 17) & 0xFF) << 8) | (255 - i)
+
+
+def lut_entry(i):
+    return ((i ^ 0x5A) << 24) | (min(255, 2 * i) << 16) | (((i * i) >> 8) << 8) | (255 - i)
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 # AE350 GFX2D 可编程像素着色器核心（GFX2D-PPU）架构设计规格
 
 > 适用机器：`mega138k_ae350`（Tang Mega 138K Pro / Gowin GW5AST-LV138FPG676A）。
-> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）已完成全量 PnR 时序闭合与实机验收；Step 6b/6c 为后续目标预算**。
+> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）与 Step 6b（完整 4-Stage、`PAL_RAM`、4 通道 `LUT_RAM`）已完成全量 PnR 时序闭合与实机验收；Step 6c 为后续目标预算**。
 > 关联文档：[GFX2D 一期规格与实机验收](gfx2d.md)、[GW5AST 硬核资源说明](gw5ast-hard-ip-usage.md)、[地址映射合同](address-map.md)。
 
 ---
@@ -38,19 +38,20 @@
 
 > [!IMPORTANT]
 > - **Step 6a（已实测闭合）**：包含行缓冲（`SRC_LB0`、`DST_LB`、`OUT_LB`）、流式解包/打包器、Stage 0..1 核心与 Stage 1 `DOT3` 点积单元。在 Gowin 全量 PnR（Run `20261111T175107778773Z` / Commit `d6d7cfe`）中**实测增量为 +8 BSRAM（整机 143/340，43%）与 +4 DSP（整机 27.5/298，10%）**，`ddr_ui_clk` 100MHz 保持 **0 TNS** 建立/保持全时钟时序闭合，且已完成实机板载 SRAM 验收（Run `20261111T191108626301Z`，7 阶段全部通过）。
-> - **Step 6b / 6c（后续规划预算）**：下表所列的 **34 DSP / 11 BSRAM** 为包含后续 Step 6b（完整 4-Stage、4-Port LUT、INDEX8 PAL）与 Step 6c（48-bit UV 步进、12-DSP 双线性插值）的**二期全量目标架构总预算**。
+> - **Step 6b（已实测闭合）**：Stage 2..3、`PAL_RAM` 与 4×`256×8` `LUT_RAM`。全量 PnR（Run `20261113T010649048418Z`）相对 Step 6a **实测增量为 +20 DSP（整机 47.5/298，16%）与 +44 BSRAM（整机 187/340，55%）**；BSRAM 增量同时包含 DDR3 读/请求 FIFO 改用 `block_ram`（避免 LUT RAM 在 100MHz 下的时序问题）。全部时钟 setup/hold **0 TNS**（`ddr_ui_clk` 100.04MHz，`sys_clk` 50.16MHz），时序收敛全部来自 RTL 结构修改，未调整 PnR seed/选项。实机 SRAM 验收（Run `20261113T014213929850Z` 上传，`20261113T014251800531Z` JTAG 读回）结果字 `0xC3500020`，全部 BAD 计数为 0。
+> - **Step 6c（后续规划预算）**：下表所列的 **34 DSP / 11 BSRAM** 为二期全量目标架构的原始预算，Step 6c（48-bit UV 步进、12-DSP 双线性插值）尚未实现。
 
-| 子模块 | 阶段归属 | 目标 DSP 预算 | 目标 BSRAM (18Kb) | Step 6a 实测增量 | 硬件映射与端口配置说明 |
+| 子模块 | 阶段归属 | 目标 DSP 预算 | 目标 BSRAM (18Kb) | Step 6a/6b 实测增量 | 硬件映射与端口配置说明 |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **1. 48-bit 轴对齐 UV 步进与寻址 (AGU)** | Step 6c | **2 DSP** | 0 | 待实现 (0) | 采用 48-bit `UQ32.16` 无回绕精度计算 $V_{\text{row}}$ 与 $U_{\text{first}}$；行内纯加法累加 |
 | **2. 双线性 2×2 插值前端 (Bilinear)** | Step 6c | **12 DSP** | 0 | 待实现 (0) | 水平插值 8 DSP + 垂直插值 4 DSP，共 12 DSP 维持 `II=1` |
-| **3. 4-Stage × 4-Channel SIMD 着色阵列** | Step 6a/6b | **16 DSP** | 0 | **+0 DSP** (LUT展开/硬核推导) | Step 6a 落地 Stage 0..1；Step 6b 补齐 Stage 2..3 |
+| **3. 4-Stage × 4-Channel SIMD 着色阵列** | Step 6a/6b | **16 DSP** | 0 | 6a **+0 DSP**；6b 整机 **+20 DSP** | Step 6a 落地 Stage 0..1；Step 6b 补齐 Stage 2..3（乘法由综合映射到硬核 DSP） |
 | **4. 专用色度点积辅助单元 (Stage 1 DOT3)**| Step 6a | **4 DSP** | 0 | **+4 DSP** (MULTALU27X18) | 供 **Stage 1** 执行 `DOT3` 跨通道并行乘加运算（实测占用 4 个硬核 DSP） |
 | **5. 源图像奇偶行与奇偶列缓存 (`SRC_LB0/1`)** | Step 6a/6c | 0 | **4 BSRAM** | **+2 BSRAM** (SDPB/SDPX9B) | Step 6a 落地 `SRC_LB0`（2×BSRAM，1024×32b）；Step 6c 补齐 `SRC_LB1` 双行槽 |
 | **6. 目标行与回写缓冲 (`DST_LB` / `OUT_LB`)**| Step 6a | 0 | **4 BSRAM** | **+6 BSRAM** (SDPB/SDPX9B) | `DST_LB`（2×BSRAM，预取目标背景）+ `OUT_LB`（4×BSRAM 组织流水回写缓冲） |
-| **7. 前端 `INDEX8` 专用调色板 (`PAL_RAM`)** | Step 6b | 0 | **1 BSRAM** | 待实现 (0) | 1 个 `256 × 32-bit` SDPB BSRAM，专供预取期展开 INDEX8 像素 |
-| **8. Stage 2 四通道并行查找表 (`LUT_RAM`)** | Step 6b | 0 | **2 BSRAM** | 待实现 (0) | 2 个双端口 DPB BSRAM（4 个独立 `256 × 8-bit` 读端口），专供 Stage 2 查表 |
-| **合计（全量总预算 vs Step 6a 实测）** | - | **34 DSP** | **11 BSRAM** | **+4 DSP / +8 BSRAM** | **Step 6a 实测占全芯片：DSP 10% (27.5/298)，BSRAM 43% (143/340)** |
+| **7. 前端 `INDEX8` 专用调色板 (`PAL_RAM`)** | Step 6b | 0 | **1 BSRAM** | 已实现（计入 6b 整机增量） | 1 个 `256 × 32-bit` SDPB BSRAM，专供预取期展开 INDEX8 像素 |
+| **8. Stage 2 四通道并行查找表 (`LUT_RAM`)** | Step 6b | 0 | **2 BSRAM** | 已实现（计入 6b 整机增量） | 4 个独立 `256 × 8-bit` 查找表，专供 Stage 2 查表 |
+| **合计（全量总预算 vs 实测）** | - | **34 DSP** | **11 BSRAM** | 6a **+4 DSP / +8 BSRAM**；6b **+20 DSP / +44 BSRAM**（含 DDR FIFO `block_ram`） | **Step 6b 实测占全芯片：DSP 16% (47.5/298)，BSRAM 55% (187/340)** |
 
 *(注：因为 Shader 仅 4 条 64-bit 指令，微码存储 `IMEM` 直接采用 `4 × 64-bit = 256 FFs` 分布式寄存器实现，无需消耗 BSRAM，且 4 个 Stage 可同时无冲突直读各自指令。)*
 
@@ -79,7 +80,7 @@ flowchart TD
             SRC_LB["SRC_LB0 (行槽0: 偶列1B + 奇列1B = 2x BSRAM)<br/>SRC_LB1 (行槽1: 偶列1B + 奇列1B = 2x BSRAM)<br/>带独立三维标签: {valid, row_y, u_base, u_end}"]
             DST_LB["DST_LB (目标背景行 1024x32b, 2x BSRAM)"]
             OUT_LB["OUT_LB (着色结果行 1024x36b, 2x BSRAM)<br/>含每像素 1-bit discard 标志"]
-            LUT_RAM["Stage 2 专用 4-Port LUT_RAM (2x DPB BSRAM)<br/>4 通道独立 256x8b 单拍查表"]
+            LUT_RAM["Stage 2 专用 LUT_RAM (4x 256x8b SDP BSRAM)<br/>4 通道独立 256x8b 单拍查表"]
         end
 
         subgraph Frontend["Phase 2 前端: UV 寻址与双线性插值 (14x DSP, II=1)"]
@@ -235,7 +236,7 @@ $$\text{Tag}_k = \{ \text{valid}_k\ (1\text{b}),\ \text{row\_y}_k\ (14\text{b}),
    - DDR 每次读回 1 个 256-bit（32B）Beat 锁存入 `BEAT_SR` 移位寄存器，以 `1 像素/拍` 解包为 `32-bit ARGB8888` 写入 `SRC_LB0/1` 或 `DST_LB`（其中 `INDEX8` 经专用 `PAL_RAM` 展开）。
    - 进入 `SRC_LB0/1` 和 `DST_LB` 的数据已经是解包好的 32-bit `ARGB8888` 像素，Phase 2 计算期间双线性读取 4 个邻居与 Stage 2 执行 `LUT_FETCH` 零端口争用，100% 保证 Phase 2 恒定 `II=1`。
 2. **Phase 2 — 100MHz 零停顿流式计算（Streaming Shader Execution，`II=1`）**：
-   - 连续发射 $W_{\text{tile}}$ 个像素（耗时 $W_{\text{tile}} + 16$ 拍），每拍产出 1 个 `32-bit ARGB8888` 结果像素及 1-bit `discard` 标志，顺序写入 `OUT_LB[0 .. W_tile - 1]`。
+   - 连续发射 $W_{\text{tile}}$ 个像素（耗时 $W_{\text{tile}} + 22$ 拍：4 Stage × 5 子级 + 读行缓冲 1 拍 + 写 `OUT_LB` 1 拍），每拍产出 1 个 `32-bit ARGB8888` 结果像素及 1-bit `discard` 标志，顺序写入 `OUT_LB[0 .. W_tile - 1]`。
 3. **Phase 3 — 流式打包、跨块边界对齐与尾拍部分 Beat 提交（Pack-on-Writeback & Tail Flush）**：
    - **字节偏移对齐与掩码初始化**：
      设当前 Tile 的目标起始字节地址为 $\text{tile\_dst\_addr} = \text{row\_start} + (x_{\text{start}} \ll \text{dst\_bpp\_shift})$。
@@ -359,7 +360,7 @@ $$\text{LERP}(S, D, \alpha) = \big( (S - D) \times W(\alpha) + (D \ll 8) + 128 \
 | | `DOT3` | `0x14` | **仅 Stage 1** | **4× DSP** (Stage 1) | $D_c = (S_{0,r} S_{1,r} + S_{0,g} S_{1,g} + S_{0,b} S_{1,b} + 128) \gg 8$ （跨通道点积） |
 | **位运算与查表** | `AND` / `OR` / `XOR` | `0x20..22`| Stage 0..3 | LUT | $D_c = S_{0,c} \ \& \ / \ \| \ / \ \oplus \ S_{1,c}$ |
 | | `SHL` / `SHR`| `0x23/24`| Stage 0..3 | 桶形移位器 | $D_c = S_{0,c} \ll \text{IMM8}[3:0]$ / $S_{0,c} \gg \text{IMM8}[3:0]$ |
-| | `LUT_FETCH` | `0x30` | **仅 Stage 2** | **2× DPB BSRAM** (Stage 2) | $D_c = \text{LUT\_RAM}_c[\text{clamp}(S_{0,c}, 0, 255)]$ （4 通道并行独立 256×8b 查表） |
+| | `LUT_FETCH` | `0x30` | **仅 Stage 2** | **4× 256×8b SDP BSRAM** (Stage 2) | $D_c = \text{LUT\_RAM}_c[\text{clamp}(S_{0,c}, 0, 255)]$ （4 通道并行独立 256×8b 查表） |
 | **条件与裁剪** | `CMP_SET` | `0x38` | Stage 0..3 | 比较器 | $P = \bigwedge_{c \in \text{MSK}} (S_{0,c} \ \text{op}\ S_{1,c})$ |
 | | `DISCARD_IF`| `0x39` | Stage 0..3 | 掩码控制 | 若 $\bigwedge_{c \in \text{MSK}} (S_{0,c} \ \text{op}\ S_{1,c})$ 成立，置当前像素 `discard = 1` |
 
@@ -494,15 +495,15 @@ $$\text{LERP}(S, D, \alpha) = \big( (S - D) \times W(\alpha) + (D \ll 8) + 128 \
 1. **640×480 @ `ARGB8888` 源 → `RGB565` 目标（`1:1` Per-pixel Alpha Blend，`USES_SRC=1, USES_DST=1`）**：
    - 每行 `WIDTH = 640 <= 1024`（单 Tile）：
    - **Phase 1（预取 + 拆包写入 `SRC_LB` & `DST_LB`）**：源行 `640` 像素拆包（`640` 拍 + 首拍握手 `~20` 拍）+ 目标行 `640` 像素拆包（`640` 拍 + `~15` 拍）$\approx 1,315\text{ 拍}$（*不含多主设备仲裁停顿*）。
-   - **Phase 2（4-Stage 流式着色计算，`II=1`）**：$640 + 16\text{ (流水线深度)} = 656\text{ 拍}$。
+   - **Phase 2（4-Stage 流式着色计算，`II=1`）**：$640 + 22\text{ (流水线深度)} = 662\text{ 拍}$。
    - **Phase 3（从 `OUT_LB` 读出打包为 256b Beat 并写回 DDR）**：`640` 像素打包（`640` 拍 + `~15` 拍）$\approx 655\text{ 拍}$。
-   - **单行理想周期**：$\approx 2,626\text{ cycles}$（`26.26 us`）；**480 行理想总耗时**：$\approx \mathbf{12.60\text{ ms}}$（无仲裁停顿下约 `~79.3 FPS`）。
+   - **单行理想周期**：$\approx 2,632\text{ cycles}$（`26.32 us`）；**480 行理想总耗时**：$\approx \mathbf{12.63\text{ ms}}$（无仲裁停顿下约 `~79.2 FPS`）。
 
 2. **640×480 @ `XRGB8888` 源 → `RGB565` 目标（`1:1` 单源滤镜 / ColorKey，`USES_SRC=1, USES_DST=0`）**：
-   - 无需预取 `DST_LB`：单行理想耗时 $\approx 660 + 656 + 655 = 1,971\text{ cycles}$（`19.71 us`）；**480 行理想总耗时**：$\approx \mathbf{9.46\text{ ms}}$（无仲裁停顿下约 `~105.7 FPS`）。
+   - 无需预取 `DST_LB`：单行理想耗时 $\approx 660 + 662 + 655 = 1,977\text{ cycles}$（`19.77 us`）；**480 行理想总耗时**：$\approx \mathbf{9.49\text{ ms}}$（无仲裁停顿下约 `~105.4 FPS`）。
 
 3. **1280×720 @ `XRGB8888` 源 → `XRGB8888` 目标（`1:1` 720p 单源滤镜，`USES_SRC=1, USES_DST=0`）**：
-   - 每行 `1280` 像素切分为 2 个 Tile（`1024 + 256`）：单行理想耗时 $\approx 1320 + 1312 + 1320 = 3,952\text{ cycles}$（`39.52 us`）；**720 行理想总耗时**：$\approx \mathbf{28.45\text{ ms}}$（无仲裁停顿下约 `~35.1 FPS`）。
+   - 每行 `1280` 像素切分为 2 个 Tile（`1024 + 256`）：单行理想耗时 $\approx 1320 + 1324 + 1320 = 3,964\text{ cycles}$（`39.64 us`）；**720 行理想总耗时**：$\approx \mathbf{28.54\text{ ms}}$（无仲裁停顿下约 `~35.0 FPS`）。
 
 ---
 
@@ -511,6 +512,6 @@ $$\text{LERP}(S, D, \alpha) = \big( (S - D) \times W(\alpha) + (D \ll 8) + 128 \
 | 阶段 | 核心交付内容 | 验证与收敛门禁 |
 | :--- | :--- | :--- |
 | **Step 6a：ABI 扩展、重叠安全校验、行缓冲切块与 Stage 0..1 核心** | 1. 在 `address_map.py` 扩展 `GFX2D_CAP` (`0x0FEF`) 与 `SHADER_CFG` 等寄存器；<br/>2. 实现 `INIT3` 重叠安全校验（仅允许无缩放同格式同 stride 且 `WIDTH<=1024` 的单块原位/垂直逆序操作，其余重叠一律返回 `ERR_PARAM`）；<br/>3. 实现 `SRC_LB0`、`DST_LB`、`OUT_LB`、Phase 1 流式拆包、Phase 3 流式打包（含 4×4 Bayer Dither）与 `MAX_TILE_PIXELS=1024` 分块状态机；<br/>4. 落地 Stage 0..1（含 `MUL_UNORM8`、`LERP`、`DISCARD_IF` 与 Stage 1 `DOT3`）。 | 1. 单元测试验证 `MUL_UNORM8` 全 65536 组合精确 `/255`、`LERP` 端点无损、`XRGB` 默认不透明、`WIDTH=1280` 跨块重叠拒绝与非重叠双块正确性；<br/>2. Gowin PnR `ddr_ui_clk` (100MHz) 0 TNS。 |
-| **Step 6b：完整 4-Stage 流水线与 `PAL_RAM` / `LUT_RAM`** | 1. 补齐 Stage 2..3、前端 `INDEX8` 专用 `PAL_RAM`（1×BSRAM）与 Stage 2 专用 4-Port `LUT_RAM`（2×BSRAM）；<br/>2. 验证单趟 `INDEX8 解包 -> Stage 1 DOT3 -> Stage 2 LUT_FETCH -> Stage 3 LERP` 组合流水。 | Host 仿真与实板 SRAM 验收示例 1/2/3 全链路像素级 Bit-Exact 一致性。 |
+| **Step 6b：完整 4-Stage 流水线与 `PAL_RAM` / `LUT_RAM`** | 1. 补齐 Stage 2..3、前端 `INDEX8` 专用 `PAL_RAM`（1×BSRAM）与 Stage 2 专用 4-Port `LUT_RAM`（2×BSRAM）；<br/>2. 验证单趟 `INDEX8 解包 -> Stage 1 DOT3 -> Stage 2 LUT_FETCH -> Stage 3 LERP` 组合流水。 | Host 仿真与实板 SRAM 验收示例 1/2/3 全链路像素级 Bit-Exact 一致性。**已完成**：Host 28 项通过，全时钟 0 TNS，实机结果字 `0xC3500020`。 |
 | **Step 6c：48-bit 防回绕 UV 缩放、逐块精确跨度门禁与 12-DSP 双线性插值** | 1. 实现 48-bit `UQ32.16` 无回绕 UV 步进器与单调边界 Clamp；<br/>2. 实现含 `+0xFFFF` 最坏小数进位上界的步长选档与 `TILE_SETUP` 逐块真实 `U_first` 跨度门禁；<br/>3. 实现 `SRC_LB0/1` 奇偶行+奇偶列双 Bank 组织、三维标签 `{valid, row_y, u_base, u_end}` 命中逻辑与 12-DSP 双线性插值前端（`OP_SCALE_BLIT`）。 | Host 仿真与实板专项回归：<br/>- 反例验证：`U_first=0x0000FFFF, dU_x=0x00010001, BILINEAR=1` 自动选定 `W_tile=1022`（`src_span=1024` 不越界）；<br/>- 溢出验证：`U0=0xFFFF0000, dU_x=0x10000` 在 48-bit 下平滑 Clamp 于右边界不回绕；<br/>- 全时钟 0 TNS。 |
 | **Step 6d：BSP / Linux 驱动接入** | 在 `ae350_gfx2d.c` 与 Linux DRM/fbdev 中暴露 `ae350_gfx2d_blend`、`ae350_gfx2d_scale` 接口。 | 板级实体 HDMI 显示器 60Hz 验收。 |

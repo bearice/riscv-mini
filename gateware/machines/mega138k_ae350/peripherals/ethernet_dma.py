@@ -8,6 +8,7 @@ Stopping drains accepted transactions; no read is cancelled or reassigned.
 """
 from migen import *
 from litex.gen import LiteXModule
+from gateware.machines.mega138k_ae350.onehot_fsm import OneHotFSM
 from litex.soc.interconnect import stream
 from liteeth.common import eth_phy_description
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI
@@ -20,19 +21,23 @@ class EthernetDDRPort(LiteXModule):
         self.pending=Signal()
         self.requests=q=crossing([('addr',32),('write',1),('data',256),('mask',32)],'sys','ddr')
         self.responses=r=crossing([('data',256)],'ddr','sys')
-        f=FSM(reset_state='IDLE');self.backend=ClockDomainsRenamer('ddr')(f)
+        f=OneHotFSM(reset_state='IDLE');self.backend=ClockDomainsRenamer('ddr')(f)
         addr,data,mask=Signal(32),Signal(256),Signal(32)
         write=Signal();result=Signal(256)
         self.comb += [ui.addr.eq(addr[2:31]),ui.cmd.eq(Mux(write,0,1)),ui.burst.eq(0),
             ui.wr_data.eq(data),ui.wr_data_mask.eq(mask),ui.wr_data_end.eq(ui.wr_data_en),
             r.sink.data.eq(result)]
-        f.act('IDLE',q.source.ready.eq(1),If(q.source.valid,
+        # IDLE samples the request head every cycle, so neither the CDC valid
+        # nor the arbiter's ready enables the 256-bit registers. Write
+        # acknowledgements carry stale data that no client reads.
+        f.act('IDLE',q.source.ready.eq(1),
             NextValue(addr,q.source.addr),NextValue(data,q.source.data),
-            NextValue(mask,q.source.mask),NextValue(write,q.source.write),NextState('SEND')))
+            NextValue(mask,q.source.mask),NextValue(write,q.source.write),
+            If(q.source.valid,NextState('SEND')))
         f.act('SEND',self.pending.eq(1),ui.cmd_en.eq(~write|ui.wr_data_rdy),
             ui.wr_data_en.eq(write & ui.cmd_ready & ui.wr_data_rdy),
             If(ui.cmd_ready & (~write|ui.wr_data_rdy),
-                If(write,NextValue(result,0),NextState('RESP')).Else(NextState('READ'))))
+                If(write,NextState('RESP')).Else(NextState('READ'))))
         f.act('READ',If(ui.rd_data_valid,NextValue(result,ui.rd_data),NextState('RESP')))
         f.act('RESP',r.sink.valid.eq(1),If(r.sink.ready,NextState('IDLE')))
 
@@ -207,9 +212,14 @@ class EthernetDMA(LiteXModule):
                 0x94:raw_rdata.eq(txprod),0x98:raw_rdata.eq(txcons),0x9c:raw_rdata.eq(rxprod),
                 0xa0:raw_rdata.eq(rxcons),0xa4:raw_rdata.eq(irq_pending),
                 0xa8:raw_rdata.eq(irq_enable),0xac:raw_rdata.eq(fault)})]
+        # The fabric samples ok for the response one cycle before commit and
+        # holds the access stable; committing on that sample keeps the ring
+        # arithmetic off every register enable and matches the response.
+        ok_q=Signal()
         self.sync += [
+            ok_q.eq(self.ok),
             self.rx_delay_load.eq(0),
-            If(self.selected & self.commit & self.ok & self.write,Case(self.off,{
+            If(self.selected & self.commit & ok_q & self.write,Case(self.off,{
                 0x68:[
                     self.rx_delay_taps[0].eq(self.wdata[:8]),
                     If(self.wdata[31],*[self.rx_delay_taps[i].eq(self.wdata[:8]) for i in range(1,5)]),

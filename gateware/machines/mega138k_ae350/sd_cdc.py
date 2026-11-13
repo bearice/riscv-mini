@@ -1,13 +1,54 @@
 """Retained APB/AHB SD transactions across the sys/mem clock domains."""
 from migen import *
-from migen.genlib.cdc import MultiReg
+from migen.genlib.cdc import MultiReg, GrayCounter
+from migen.genlib.fifo import _FIFOInterface
 from litex.gen import LiteXModule
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.ahb import AHBInterface
 
 
+class RegisteredFlagAsyncFIFO(Module, _FIFOInterface):
+    """Migen AsyncFIFO with registered readable/writable flags.
+
+    Each flag compares the next local pointer with the synchronized remote
+    pointer of the previous cycle. The remote pointer only advances, so a
+    flag can only be conservatively stale. The read address and both
+    pointer increments then never pass through the pointer comparators.
+    """
+    def __init__(self, width, depth):
+        _FIFOInterface.__init__(self, width, depth)
+        depth_bits = log2_int(depth, True)
+        produce = ClockDomainsRenamer("write")(GrayCounter(depth_bits+1))
+        consume = ClockDomainsRenamer("read")(GrayCounter(depth_bits+1))
+        self.submodules += produce, consume
+        self.comb += [produce.ce.eq(self.writable & self.we),
+                      consume.ce.eq(self.readable & self.re)]
+        produce_rdomain = Signal(depth_bits+1)
+        produce.q.attr.add("no_retiming")
+        self.specials += MultiReg(produce.q, produce_rdomain, "read")
+        consume_wdomain = Signal(depth_bits+1)
+        consume.q.attr.add("no_retiming")
+        self.specials += MultiReg(consume.q, consume_wdomain, "write")
+        self.writable.reset = Constant(1)
+        p = produce.q_next
+        full = (p[-1] != consume_wdomain[-1]) & (p[-2] != consume_wdomain[-2])
+        if depth_bits > 1:
+            full = full & (p[:-2] == consume_wdomain[:-2])
+        self.sync.write += self.writable.eq(~full)
+        self.sync.read += self.readable.eq(consume.q_next != produce_rdomain)
+        storage = Memory(self.width, depth)
+        self.specials += storage
+        wrport = storage.get_port(write_capable=True, read_capable=False, clock_domain="write")
+        rdport = storage.get_port(clock_domain="read")
+        self.specials += wrport, rdport
+        self.comb += [wrport.adr.eq(produce.q_binary[:-1]), wrport.dat_w.eq(self.din),
+                      wrport.we.eq(produce.ce),
+                      rdport.adr.eq(consume.q_next_binary[:-1]), self.dout.eq(rdport.dat_r)]
+
+
 def crossing(layout, source, target):
-    return ClockDomainsRenamer({'write':source,'read':target})(stream.AsyncFIFO(layout,depth=4))
+    return ClockDomainsRenamer({'write':source,'read':target})(
+        stream._FIFOWrapper(RegisteredFlagAsyncFIFO, layout, 4))
 
 
 class AHBClockCrossing(LiteXModule):
@@ -85,6 +126,11 @@ class SDClockCrossing(LiteXModule):
                       resp.sink.data.eq(result),resp.sink.error.eq(error)]
         fsm.act('IDLE',req.source.ready.eq(1),If(req.source.valid,
             NextValue(off,req.source.off),NextValue(data,req.source.data),NextValue(write,req.source.write),NextState('DECODE')))
-        fsm.act('DECODE',native.selected.eq(1),NextValue(result,native.rdata),NextValue(error,~native.ok),NextState('COMMIT'))
+        # The native read mux settles into free-running registers during
+        # DECODE; SAMPLE captures them, keeping the mux off the enables.
+        rdata_q,ok_q=Signal(32),Signal()
+        self.sync.mem += [rdata_q.eq(native.rdata),ok_q.eq(native.ok)]
+        fsm.act('DECODE',native.selected.eq(1),NextState('SAMPLE'))
+        fsm.act('SAMPLE',native.selected.eq(1),NextValue(result,rdata_q),NextValue(error,~ok_q),NextState('COMMIT'))
         fsm.act('COMMIT',native.selected.eq(1),native.commit.eq(1),NextState('RESP'))
         fsm.act('RESP',resp.sink.valid.eq(1),If(resp.sink.ready,NextState('IDLE')))

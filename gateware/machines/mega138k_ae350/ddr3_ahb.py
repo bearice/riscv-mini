@@ -63,6 +63,7 @@ from migen import *
 from migen.genlib.fifo import AsyncFIFO, SyncFIFO, SyncFIFOBuffered
 from migen.genlib.cdc import MultiReg
 from litex.gen import LiteXModule
+from gateware.machines.mega138k_ae350.onehot_fsm import OneHotFSM
 
 
 def SameClockFIFO(width, depth):
@@ -541,10 +542,15 @@ class DDR3AHB(LiteXModule):
                 NextValue(owned_burst, bus.burst),
                 NextValue(owned_prot, bus.prot),
                 NextValue(owned_trans, bus.trans),
-                NextValue(owned_wdata, bus.wdata),
+                capture_wdata(),
             ]
 
-        fsm = FSM(reset_state="ADDRESS")
+        def capture_wdata():
+            # Owned data is read only after a capture set saved_wdata, so a
+            # spare sample is harmless and keeps flush decisions off its enable.
+            return NextValue(owned_wdata, bus.wdata)
+
+        fsm = OneHotFSM(reset_state="ADDRESS")
         self.fsm = fsm
         fsm.act("DECODE",
             *accept(owned_trans, owned_addr, owned_write, owned_size, owned_burst,
@@ -591,6 +597,7 @@ class DDR3AHB(LiteXModule):
             # BUSY and an in-block sequential write keep the buffer open.
             # An owned transfer waits here with HREADY low, then runs from its
             # captured phase rather than the live bus.
+            If(bus.trans[1] & ~owned, capture_wdata()),
             If(must_flush,
                If(bus.trans[1] & ~owned, *capture()),
                NextValue(retire, 0),
@@ -909,7 +916,7 @@ class _UIEngine(LiteXModule):
         line_mask = Signal(32)
         rd_block = Signal(256)
         counter = Signal(max=ui_timeout + 2)
-        self.state = uistate = FSM(reset_state="IDLE")
+        self.state = uistate = OneHotFSM(reset_state="IDLE")
         if pending_out is not None:
             self.comb += pending_out.eq(uistate.ongoing('SEND'))
         wr_bytes = Signal(32)
@@ -976,7 +983,6 @@ class _UIEngine(LiteXModule):
                 NextValue(line, req.dout[_REQ_LINE]),
                 NextValue(line_data, req.dout[_REQ_LINE_DATA]),
                 NextValue(line_mask, req.dout[_REQ_LINE_MASK]),
-                NextValue(counter, 0),
                 NextState("SEND"),
             ),
         )
@@ -992,17 +998,21 @@ class _UIEngine(LiteXModule):
             ui.wr_data_end.eq(write_accept),
             If(is_write,
                 If(~write_accept,
-                    If(counter == ui_timeout, NextState("FAIL")).Else(NextValue(counter, counter + 1)),
+                    If(counter == ui_timeout, NextState("FAIL")),
                 ).Else(NextState("WPUSH")),
             ).Else(
                 If(~ui.cmd_ready,
-                    If(counter == ui_timeout, NextState("FAIL")).Else(NextValue(counter, counter + 1)),
-                ).Else(
-                    NextValue(counter, 0),
-                    NextState("WAITDATA"),
-                ),
+                    If(counter == ui_timeout, NextState("FAIL")),
+                ).Else(NextState("WAITDATA")),
             ),
         )
+        # The watchdog counts in SEND and WAITDATA and clears on the read
+        # command handshake or in any other state; FAIL is entered at
+        # ui_timeout, so the counter never exceeds ui_timeout + 1.
+        counting = Signal()
+        self.comb += counting.eq(uistate.ongoing("SEND") | uistate.ongoing("WAITDATA"))
+        self.sync += If(~counting | (uistate.ongoing("SEND") & ~is_write & ui.cmd_ready),
+                        counter.eq(0)).Else(counter.eq(counter + 1))
         uistate.act("WPUSH",
             resp.din.eq(Cat(Constant(0, 256), Constant(0, 1))),
             resp.we.eq(1),
@@ -1017,8 +1027,6 @@ class _UIEngine(LiteXModule):
                 NextState("PUSH"),
             ).Elif(counter == ui_timeout,
                 NextState("FAIL"),
-            ).Else(
-                NextValue(counter, counter + 1),
             ),
         )
         uistate.act("PUSH",

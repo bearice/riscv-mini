@@ -225,7 +225,6 @@ class AE350Fabric(LiteXModule):
         wdata_q = Signal(32)
         write_q = Signal()
         strb_q = Signal(4)
-        read_data = Signal(32)
         read_data_reg = Signal(32)
         error_reg = Signal()
         error_q = Signal()
@@ -397,8 +396,11 @@ class AE350Fabric(LiteXModule):
                 (dma, dma_data),
             ]
         ]
+        # Each gated page read is registered beside its device; the OR across
+        # the chip runs in the completion cycle instead of after the decode.
+        read_regs = [Signal(32, reset_less=True) for _ in read_pages]
         self.comb += [
-            read_data.eq(reduce(or_, [Mux(v, val, 0) for v, val in read_pages])),
+            read_data_reg.eq(reduce(or_, read_regs)),
             error_q.eq(~reduce(or_, [valid for valid, _ in pages])),
         ]
         control_q,sticky_q,w1c_q,irq_enable_q=(Signal() for _ in range(4))
@@ -446,7 +448,7 @@ class AE350Fabric(LiteXModule):
                 phase.eq(0),
             ).Elif(wait & ~phase,
                 phase.eq(1),
-                read_data_reg.eq(read_data),
+                *[r.eq(Mux(v, val, 0)) for r, (v, val) in zip(read_regs, read_pages)],
                 error_reg.eq(error_q),
             ).Elif(wait & (~sd_page | ~legal |
                            (sd.complete if sd is not None else 1)) &

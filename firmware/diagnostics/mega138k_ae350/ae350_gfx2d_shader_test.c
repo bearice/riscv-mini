@@ -1,6 +1,8 @@
-/* GFX2D Shader Core On-Board Acceptance Suite (Step 6a).
+/* GFX2D Shader Core On-Board Acceptance Suite (Step 6a/6b).
  * Tests GFX2D CAP flags, legacy OP regression, ARGB8888->RGB565 blend,
- * color-key discard, Stage 1 DOT3 grayscale, and downward row overlap.
+ * color-key discard, Stage 1 DOT3 grayscale, downward row overlap, the
+ * 4-stage INDEX8/PAL -> DOT3 -> LUT_FETCH -> LERP chain, a 4-stage
+ * predicate chain and DOT3/LUT_FETCH stage placement rejection.
  */
 #include <stdint.h>
 #include "ae350_address_map.h"
@@ -20,10 +22,13 @@ enum {
     DOT3_BAD,
     OVLP_BAD,
     COMMANDS,
-    ERRORS
+    ERRORS,
+    LUT4_BAD,
+    PRED_BAD,
+    PLACE_RC
 };
 
-#define DONE_STAGE 0xC3500010u
+#define DONE_STAGE 0xC3500020u
 static volatile uint32_t *const slot = (volatile uint32_t *)AE350_RESULTS_BASE;
 
 #define R(off) (*(volatile uint32_t *)(uintptr_t)(AE350_GFX2D_BASE + (off)))
@@ -40,6 +45,13 @@ static void put32(uint32_t addr, uint32_t v) {
     *(volatile uint32_t *)(uintptr_t)addr = v;
 }
 
+static void put8(uint32_t addr, uint8_t v) {
+    *(volatile uint8_t *)(uintptr_t)addr = v;
+}
+static uint32_t px32(uint32_t addr) {
+    return *(volatile uint32_t *)(uintptr_t)addr;
+}
+
 static int wait_gfx2d(void) {
     for (unsigned i = 0; i < 100000; i++) {
         uint32_t st = R(AE350_GFX2D_STATUS);
@@ -47,6 +59,41 @@ static int wait_gfx2d(void) {
         if (st & 2u) return 0;
     }
     return -1;
+}
+
+#define SWZ_ID 0xE4u
+#define SWZ_AAAA 0xFFu
+#define F_SAT 0x8u
+#define F_IMM 0x4u
+#define INST_HI(op, pred, dst, wr, s0, s1, s2, swz0) \
+    (((uint32_t)(op) << 26) | ((uint32_t)(pred) << 24) | ((uint32_t)(dst) << 20) | \
+     ((uint32_t)(wr) << 16) | ((uint32_t)(s0) << 12) | ((uint32_t)(s1) << 8) | \
+     ((uint32_t)(s2) << 4) | ((uint32_t)(swz0) >> 4))
+#define INST_LO(swz0, swz1, swz2, flags, imm) \
+    ((((uint32_t)(swz0) & 0xFu) << 28) | ((uint32_t)(swz1) << 20) | \
+     ((uint32_t)(swz2) << 12) | ((uint32_t)(flags) << 8) | (uint32_t)(imm))
+
+static void load_insts(const uint32_t inst[8]) {
+    W(AE350_GFX2D_INST0_LO, inst[0]); W(AE350_GFX2D_INST0_HI, inst[1]);
+    W(AE350_GFX2D_INST1_LO, inst[2]); W(AE350_GFX2D_INST1_HI, inst[3]);
+    W(AE350_GFX2D_INST2_LO, inst[4]); W(AE350_GFX2D_INST2_HI, inst[5]);
+    W(AE350_GFX2D_INST3_LO, inst[6]); W(AE350_GFX2D_INST3_HI, inst[7]);
+}
+
+static uint32_t pal_entry(unsigned i) {
+    return (((i * 37u + 11u) & 0xFFu) << 24) | (((i * 3u) & 0xFFu) << 16) |
+           (((i * 5u + 17u) & 0xFFu) << 8) | (255u - i);
+}
+static uint32_t lut_entry(unsigned i) {
+    unsigned r = 2u * i > 255u ? 255u : 2u * i;
+    return ((i ^ 0x5Au) << 24) | (r << 16) | (((i * i) >> 8) << 8) | (255u - i);
+}
+static uint32_t lut_dst_px(unsigned r, unsigned c) {
+    return (0x10000000u * ((c + r) & 0xFu)) | ((c * 0x10203u) & 0xFFFFFFu);
+}
+static unsigned lerp8(int s, int d, unsigned a) {
+    int w = (int)(a + (a >> 7));
+    return (unsigned)(((s - d) * w + (d << 8) + 128) >> 8);
 }
 
 int main(void) {
@@ -299,6 +346,157 @@ int main(void) {
             }
         slot[OVLP_BAD] = bad;
         if (bad) { slot[STAGE] = 0xC3500007u; return 0; }
+    }
+
+    /* 8. Step 6b Example 3: INDEX8 -> PAL_RAM -> MOV -> DOT3 -> LUT_FETCH -> LERP */
+    {
+        uint32_t src = SCRATCH + 0xA003, dst = SCRATCH + 0xB000;
+        uint32_t w = 40, h = 4, stride_src = 61, stride_dst = 256;
+        for (unsigned r = 0; r < h; r++)
+            for (unsigned c = 0; c < w; c++) {
+                put8(src + r * stride_src + c, (uint8_t)((r * 7u + c * 13u) & 0xFFu));
+                put32(dst + r * stride_dst + c * 4, lut_dst_px(r, c));
+            }
+        ae350_dma_sync_for_device(src & ~31u, stride_src * h + 32);
+        ae350_dma_sync_for_device(dst, stride_dst * h);
+
+        W(AE350_GFX2D_LUT_ADDR, 0x100u);
+        for (unsigned i = 0; i < 256; i++) W(AE350_GFX2D_LUT_DATA, pal_entry(i));
+        W(AE350_GFX2D_LUT_ADDR, 0u);
+        for (unsigned i = 0; i < 256; i++) W(AE350_GFX2D_LUT_DATA, lut_entry(i));
+
+        static const uint32_t inst[8] = {
+            /* MOV.argb R0, SRC */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x00, 0, 0, 0xF, 4, 0, 0, SWZ_ID),
+            /* DOT3.rgb R0, R0, U0 (SAT) */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, F_SAT, 0), INST_HI(0x14, 0, 0, 0x7, 0, 8, 0, SWZ_ID),
+            /* LUT_FETCH.rgb R0, R0 */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x30, 0, 0, 0x7, 0, 0, 0, SWZ_ID),
+            /* LERP.rgb R0, R0, DST, U1.aaaa (SAT) */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_AAAA, F_SAT, 0), INST_HI(0x13, 0, 0, 0x7, 0, 5, 9, SWZ_ID),
+        };
+        W(AE350_GFX2D_OP, 3);
+        W(AE350_GFX2D_SHADER_CFG, 3u | (1u << 4) | (1u << 5) | (1u << 11) | (6u << 12));
+        W(AE350_GFX2D_UNIFORM0, 0x004D961Du);
+        W(AE350_GFX2D_UNIFORM1, 0xC0C0C0C0u);
+        W(AE350_GFX2D_SRC_ADDR, src);
+        W(AE350_GFX2D_SRC_STRIDE, stride_src);
+        W(AE350_GFX2D_DST_ADDR, dst);
+        W(AE350_GFX2D_DST_STRIDE, stride_dst);
+        W(AE350_GFX2D_WIDTH, w);
+        W(AE350_GFX2D_HEIGHT, h);
+        W(AE350_GFX2D_FORMAT, 4); /* ARGB8888 dst */
+        load_insts(inst);
+        W(AE350_GFX2D_CONTROL, 1);
+
+        int rc = wait_gfx2d();
+        if (rc) { slot[STAGE] = 0xC3500008u; slot[LUT4_BAD] = 0x80000000u | (uint32_t)rc; return 0; }
+        ae350_dma_sync_for_cpu(dst, stride_dst * h);
+
+        unsigned bad = 0;
+        for (unsigned r = 0; r < h; r++)
+            for (unsigned c = 0; c < w; c++) {
+                uint32_t s = pal_entry((r * 7u + c * 13u) & 0xFFu);
+                uint32_t d = lut_dst_px(r, c);
+                unsigned sa = s >> 24, sr = (s >> 16) & 0xFFu;
+                unsigned sg = (s >> 8) & 0xFFu, sb = s & 0xFFu;
+                unsigned y = (sr * 77u + sg * 150u + sb * 29u + 128u) >> 8;
+                if (y > 255u) y = 255u;
+                uint32_t m = lut_entry(y);
+                uint32_t want = (sa << 24) |
+                    (lerp8((int)((m >> 16) & 0xFFu), (int)((d >> 16) & 0xFFu), 0xC0u) << 16) |
+                    (lerp8((int)((m >> 8) & 0xFFu), (int)((d >> 8) & 0xFFu), 0xC0u) << 8) |
+                    lerp8((int)(m & 0xFFu), (int)(d & 0xFFu), 0xC0u);
+                if (px32(dst + r * stride_dst + c * 4) != want) bad++;
+            }
+        slot[LUT4_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC3500008u; return 0; }
+    }
+
+    /* 9. Step 6b: predicate set in Stage 0 gates Stage 3 */
+    {
+        uint32_t src = SCRATCH + 0xC000, dst = SCRATCH + 0xC800;
+        uint32_t w = 16, fg = 0x00123456u;
+        for (unsigned c = 0; c < w; c++)
+            put32(src + c * 4, (c << 16) | ((200u + c) << 8) | (c * 16u));
+        for (unsigned c = 0; c < w; c++) put32(dst + c * 4, 0);
+        ae350_dma_sync_for_device(src, 64);
+        ae350_dma_sync_for_device(dst, 64);
+
+        static const uint32_t inst[8] = {
+            /* CMP_SET.b LT, SRC, U0 */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 2, 0), INST_HI(0x38, 0, 0, 0x1, 4, 8, 0, SWZ_ID),
+            /* ADD.rgb R0, SRC, #10 (SAT) */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, F_SAT | F_IMM, 10), INST_HI(0x01, 0, 0, 0x7, 4, 0, 0, SWZ_ID),
+            /* SUB.rgb R0, R0, #3 (SAT) */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, F_SAT | F_IMM, 3), INST_HI(0x02, 0, 0, 0x7, 0, 0, 0, SWZ_ID),
+            /* MOV.rgb R0, FG if P */
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x00, 1, 0, 0x7, 6, 0, 0, SWZ_ID),
+        };
+        W(AE350_GFX2D_OP, 3);
+        W(AE350_GFX2D_SHADER_CFG, 3u | (1u << 4) | (1u << 11) | (2u << 12));
+        W(AE350_GFX2D_FG_COLOR, fg);
+        W(AE350_GFX2D_UNIFORM0, 100u);
+        W(AE350_GFX2D_SRC_ADDR, src);
+        W(AE350_GFX2D_SRC_STRIDE, 64);
+        W(AE350_GFX2D_DST_ADDR, dst);
+        W(AE350_GFX2D_DST_STRIDE, 64);
+        W(AE350_GFX2D_WIDTH, w);
+        W(AE350_GFX2D_HEIGHT, 1);
+        W(AE350_GFX2D_FORMAT, 2); /* XRGB8888 dst */
+        load_insts(inst);
+        W(AE350_GFX2D_CONTROL, 1);
+
+        int rc = wait_gfx2d();
+        if (rc) { slot[STAGE] = 0xC3500009u; slot[PRED_BAD] = 0x80000000u | (uint32_t)rc; return 0; }
+        ae350_dma_sync_for_cpu(dst, 64);
+
+        unsigned bad = 0;
+        for (unsigned c = 0; c < w; c++) {
+            uint32_t want;
+            if (c * 16u < 100u) {
+                want = 0xFF000000u | fg;
+            } else {
+                unsigned v[3] = { c, 200u + c, c * 16u };
+                for (unsigned k = 0; k < 3; k++)
+                    v[k] = (v[k] + 10u > 255u ? 255u : v[k] + 10u) - 3u;
+                want = 0xFF000000u | (v[0] << 16) | (v[1] << 8) | v[2];
+            }
+            if (px32(dst + c * 4) != want) bad++;
+        }
+        slot[PRED_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC3500009u; return 0; }
+    }
+
+    /* 10. Step 6b: LUT_FETCH outside Stage 2 is rejected without DDR writes */
+    {
+        uint32_t dst = SCRATCH + 0xD000;
+        for (unsigned c = 0; c < 8; c++) put32(dst + c * 4, 0x5A5A5A5Au);
+        ae350_dma_sync_for_device(dst, 32);
+        static const uint32_t inst[8] = {
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x30, 0, 0, 0xF, 6, 0, 0, SWZ_ID),
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x00, 0, 0, 0xF, 6, 0, 0, SWZ_ID),
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x00, 0, 0, 0xF, 6, 0, 0, SWZ_ID),
+            INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x00, 0, 0, 0xF, 6, 0, 0, SWZ_ID),
+        };
+        W(AE350_GFX2D_OP, 3);
+        W(AE350_GFX2D_SHADER_CFG, 3u);
+        W(AE350_GFX2D_DST_ADDR, dst);
+        W(AE350_GFX2D_DST_STRIDE, 32);
+        W(AE350_GFX2D_WIDTH, 8);
+        W(AE350_GFX2D_HEIGHT, 1);
+        W(AE350_GFX2D_FORMAT, 2);
+        load_insts(inst);
+        W(AE350_GFX2D_CONTROL, 1);
+
+        int rc = wait_gfx2d();
+        slot[PLACE_RC] = (uint32_t)rc;
+        ae350_dma_sync_for_cpu(dst, 32);
+        unsigned bad = 0;
+        for (unsigned c = 0; c < 8; c++)
+            if (px32(dst + c * 4) != 0x5A5A5A5Au) bad++;
+        if (rc != AE350_GFX2D_PARAM || bad) { slot[STAGE] = 0xC350000Au; return 0; }
+        W(AE350_GFX2D_CLEAR_ERRORS, 1);
     }
 
     slot[COMMANDS] = R(AE350_GFX2D_COMMANDS);
