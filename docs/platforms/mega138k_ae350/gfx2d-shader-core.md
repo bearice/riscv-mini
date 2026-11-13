@@ -39,19 +39,19 @@
 > [!IMPORTANT]
 > - **Step 6a（已实测闭合）**：包含行缓冲（`SRC_LB0`、`DST_LB`、`OUT_LB`）、流式解包/打包器、Stage 0..1 核心与 Stage 1 `DOT3` 点积单元。在 Gowin 全量 PnR（Run `20261111T175107778773Z` / Commit `d6d7cfe`）中**实测增量为 +8 BSRAM（整机 143/340，43%）与 +4 DSP（整机 27.5/298，10%）**，`ddr_ui_clk` 100MHz 保持 **0 TNS** 建立/保持全时钟时序闭合，且已完成实机板载 SRAM 验收（Run `20261111T191108626301Z`，7 阶段全部通过）。
 > - **Step 6b（已实测闭合）**：Stage 2..3、`PAL_RAM` 与 4×`256×8` `LUT_RAM`。全量 PnR（Run `20261113T010649048418Z`）相对 Step 6a **实测增量为 +20 DSP（整机 47.5/298，16%）与 +44 BSRAM（整机 187/340，55%）**；BSRAM 增量同时包含 DDR3 读/请求 FIFO 改用 `block_ram`（避免 LUT RAM 在 100MHz 下的时序问题）。全部时钟 setup/hold **0 TNS**（`ddr_ui_clk` 100.04MHz，`sys_clk` 50.16MHz），时序收敛全部来自 RTL 结构修改，未调整 PnR seed/选项。实机 SRAM 验收（Run `20261113T014213929850Z` 上传，`20261113T014251800531Z` JTAG 读回）结果字 `0xC3500020`，全部 BAD 计数为 0。
-> - **Step 6c（已实测闭合）**：48-bit `UQ32.16` UV 步进与 Clamp、步长选档与 `TILE_SETUP` 逐块跨度门禁、`SRC_LB0/1` 奇偶行 × 奇偶列双 Bank 与行槽标签、12 乘法器双线性前端（`OP_SCALE_BLIT`）。全量 PnR（Run `20261113T180813849246Z`）相对 Step 6b **实测增量为 +10 DSP（整机 57.5/298，20%）与 +4 BSRAM（整机 191/340，57%）**，逻辑 CLS 82%（56582/69120）。全部时钟 setup/hold **0 TNS**（`ddr_ui_clk` 100.08MHz，`sys_clk` 50.25MHz，`hdmi_pix_clk` 75.54MHz）。时序收敛来自 RTL 结构修改（`DST_LB`/`OUT_LB` 读写寄存、描述符校验与 V 几何分级寄存、宽计数器增量预寄存、仲裁器 one-hot 负载选择、fabric 逐页 valid 寄存与 DDR 诊断页私有地址副本等），未调整 PnR seed/选项；曾尝试的 GFX2D 区域布局约束因 21857 条网络无法布通而放弃。实机 SRAM 验收（Run `20261113T184308961834Z` 上传，`20261113T184348263827Z` JTAG 读回）结果字 `0xC3500030`，全部 BAD 计数为 0（含 `W_tile=1022` 跨度反例与 `U0=0xFFFF0000` 不回绕用例）。
+> - **Step 6c（已实测闭合）**：48-bit `UQ32.16` UV 步进与 Clamp、步长选档与 `TILE_SETUP` 逐块跨度门禁、`SRC_LB0/1` 奇偶行 × 奇偶列双 Bank 与行槽标签、12 乘法器双线性前端（`OP_SCALE_BLIT`）。全量 PnR（Run `20261113T192338423908Z`）相对 Step 6b **实测增量为 +11 DSP（整机 58.5/298，20%）与 +4 BSRAM（整机 191/340，57%）**，逻辑 CLS 82%（56483/69120）。全部时钟 setup/hold **0 TNS**（`ddr_ui_clk` 100.00MHz，`sys_clk` 50.10MHz，`hdmi_pix_clk` 75.95MHz）。时序收敛来自 RTL 结构修改（`DST_LB`/`OUT_LB` 读写寄存、描述符校验与 V 几何分级寄存、宽计数器增量预寄存、仲裁器 one-hot 负载选择、fabric 逐页 valid 寄存与 DDR 诊断页私有地址副本等），未调整 PnR seed/选项；曾尝试的 GFX2D 区域布局约束因 21857 条网络无法布通而放弃。实机 SRAM 验收（Run `20261113T200126914932Z` 上传，`20261113T200202540377Z` JTAG 读回）结果字 `0xC3500030`，全部 BAD 计数为 0（含 `W_tile=1022` 跨度反例与 `U0=0xFFFF0000` 不回绕用例）。
 
 | 子模块 | 阶段归属 | 目标 DSP 预算 | 目标 BSRAM (18Kb) | Step 6a/6b 实测增量 | 硬件映射与端口配置说明 |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **1. 48-bit 轴对齐 UV 步进与寻址 (AGU)** | Step 6c | **2 DSP** | 0 | 已实现（计入 6c 整机 **+10 DSP**） | 采用 48-bit `UQ32.16` 无回绕精度计算 $V_{\text{row}}$ 与 $U_{\text{first}}$；行内纯加法累加；`TILE_SETUP` 跨度与源行地址各拆 2 个寄存乘法 |
-| **2. 双线性 2×2 插值前端 (Bilinear)** | Step 6c | **12 DSP** | 0 | 已实现（计入 6c 整机 **+10 DSP**） | 每通道水平 2 + 垂直 1 个 `9×9` 有符号乘法，共 12 个乘法器，6 拍流水维持 `II=1` |
+| **1. 48-bit 轴对齐 UV 步进与寻址 (AGU)** | Step 6c | **2 DSP** | 0 | 已实现（计入 6c 整机 **+11 DSP**） | 采用 48-bit `UQ32.16` 无回绕精度计算 $V_{\text{row}}$ 与 $U_{\text{first}}$；行内纯加法累加；`TILE_SETUP` 跨度与源行地址各拆 2 个寄存乘法；纹理范围另用 1 个 14×16 高半积乘法判定 32-bit 截断 |
+| **2. 双线性 2×2 插值前端 (Bilinear)** | Step 6c | **12 DSP** | 0 | 已实现（计入 6c 整机 **+11 DSP**） | 每通道水平 2 + 垂直 1 个 `9×9` 有符号乘法，共 12 个乘法器，6 拍流水维持 `II=1` |
 | **3. 4-Stage × 4-Channel SIMD 着色阵列** | Step 6a/6b | **16 DSP** | 0 | 6a **+0 DSP**；6b 整机 **+20 DSP** | Step 6a 落地 Stage 0..1；Step 6b 补齐 Stage 2..3（乘法由综合映射到硬核 DSP） |
 | **4. 专用色度点积辅助单元 (Stage 1 DOT3)**| Step 6a | **4 DSP** | 0 | **+4 DSP** (MULTALU27X18) | 供 **Stage 1** 执行 `DOT3` 跨通道并行乘加运算（实测占用 4 个硬核 DSP） |
 | **5. 源图像奇偶行与奇偶列缓存 (`SRC_LB0/1`)** | Step 6a/6c | 0 | **4 BSRAM** | 6a **+2 BSRAM**；6c 整机 **+4 BSRAM** | Step 6a 落地 `SRC_LB0`（2×BSRAM，1024×32b）；Step 6c 补齐 `SRC_LB1` 双行槽，每槽拆为偶/奇列 2 个 Bank |
 | **6. 目标行与回写缓冲 (`DST_LB` / `OUT_LB`)**| Step 6a | 0 | **4 BSRAM** | **+6 BSRAM** (SDPB/SDPX9B) | `DST_LB`（2×BSRAM，预取目标背景）+ `OUT_LB`（4×BSRAM 组织流水回写缓冲） |
 | **7. 前端 `INDEX8` 专用调色板 (`PAL_RAM`)** | Step 6b | 0 | **1 BSRAM** | 已实现（计入 6b 整机增量） | 1 个 `256 × 32-bit` SDPB BSRAM，专供预取期展开 INDEX8 像素 |
 | **8. Stage 2 四通道并行查找表 (`LUT_RAM`)** | Step 6b | 0 | **2 BSRAM** | 已实现（计入 6b 整机增量） | 4 个独立 `256 × 8-bit` 查找表，专供 Stage 2 查表 |
-| **合计（全量总预算 vs 实测）** | - | **34 DSP** | **11 BSRAM** | 6a **+4 DSP / +8 BSRAM**；6b **+20 DSP / +44 BSRAM**（含 DDR FIFO `block_ram`）；6c **+10 DSP / +4 BSRAM** | **Step 6c 实测占全芯片：DSP 20% (57.5/298)，BSRAM 57% (191/340)** |
+| **合计（全量总预算 vs 实测）** | - | **34 DSP** | **11 BSRAM** | 6a **+4 DSP / +8 BSRAM**；6b **+20 DSP / +44 BSRAM**（含 DDR FIFO `block_ram`）；6c **+11 DSP / +4 BSRAM** | **Step 6c 实测占全芯片：DSP 20% (58.5/298)，BSRAM 57% (191/340)** |
 
 *(注：因为 Shader 仅 4 条 64-bit 指令，微码存储 `IMEM` 直接采用 `4 × 64-bit = 256 FFs` 分布式寄存器实现，无需消耗 BSRAM，且 4 个 Stage 可同时无冲突直读各自指令。)*
 
