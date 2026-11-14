@@ -139,6 +139,77 @@ def cmd_react(args: argparse.Namespace) -> int:
     return 0
 
 
+def find_review_thread(repo: str, pr: int, comment_id: int) -> Optional[Dict[str, Any]]:
+    owner, name = repo.split("/", 1)
+    cursor: Optional[str] = None
+    query = """
+    query($owner: String!, $name: String!, $pr: Int!, $after: String) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id
+              isResolved
+              comments(first: 50) {
+                nodes { databaseId }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    while True:
+        cmd = [
+            "gh", "api", "graphql",
+            "-f", f"query={query}",
+            "-f", f"owner={owner}",
+            "-f", f"name={name}",
+            "-F", f"pr={pr}",
+        ]
+        if cursor:
+            cmd.extend(["-f", f"after={cursor}"])
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"gh api graphql error ({res.returncode}): {res.stderr.strip()}")
+        data = json.loads(res.stdout)
+        threads = data["data"]["repository"]["pullRequest"]["reviewThreads"]
+        for t in threads["nodes"]:
+            if any(c.get("databaseId") == comment_id for c in t["comments"]["nodes"]):
+                return t
+        if not threads["pageInfo"]["hasNextPage"]:
+            return None
+        cursor = threads["pageInfo"]["endCursor"]
+
+
+def resolve_review_thread(repo: str, pr: int, comment_id: int) -> None:
+    thread = find_review_thread(repo, pr, comment_id)
+    if not thread:
+        print(f"  Warning: review thread for comment {comment_id} not found.")
+        return
+    if thread["isResolved"]:
+        print(f"  Review thread already resolved: {thread['id']}")
+        return
+    mutation = """
+    mutation($threadId: ID!) {
+      resolveReviewThread(input: {threadId: $threadId}) {
+        thread { id isResolved }
+      }
+    }
+    """
+    res = subprocess.run(
+        ["gh", "api", "graphql", "-f", f"query={mutation}", "-f", f"threadId={thread['id']}"],
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(f"gh api graphql error ({res.returncode}): {res.stderr.strip()}")
+    data = json.loads(res.stdout)
+    resolved = data["data"]["resolveReviewThread"]["thread"]
+    print(f"  Review thread resolved: {resolved['id']} (isResolved={resolved['isResolved']})")
+
+
 def cmd_resolve(args: argparse.Namespace) -> int:
     repo = args.repo or get_current_repo()
     pr = args.pr or get_current_pr()
@@ -158,6 +229,8 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         data={"content": reaction},
     )
     print(f"  Added '{reaction}' reaction.")
+    # 3. Resolve GraphQL review thread
+    resolve_review_thread(repo, pr, args.comment_id)
     return 0
 
 
