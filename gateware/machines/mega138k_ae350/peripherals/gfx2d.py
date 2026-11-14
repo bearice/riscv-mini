@@ -638,6 +638,49 @@ class BilinearFilter(LiteXModule):
             self.sync += self.out[sl].eq(out_full[0:8])
 
 
+class Frag3DPort:
+    """Shared 3D fragment injection and Late-Z sideband interface (Stage 2a).
+
+    Connects 3D fragment streams to Gfx2DEngine's BilinearFilter, DST_LB,
+    and 4-stage ShaderALU while keeping static command registers isolated.
+    """
+    LATENCY = BilinearFilter.LATENCY + 21
+
+    def __init__(self):
+        self.active = Signal()
+        self.valid = Signal()
+        self.tex_en = Signal()
+        self.uses_dst = Signal()
+        self.p00 = Signal(32)
+        self.p10 = Signal(32)
+        self.p01 = Signal(32)
+        self.p11 = Signal(32)
+        self.wu = Signal(9)
+        self.wv = Signal(9)
+        self.rgba = Signal(32)
+        self.dst_adr = Signal(10)
+        self.x = Signal(16)
+        self.y = Signal(16)
+        self.z_new = Signal(16)
+        self.z_pass = Signal()
+        self.bounds_discard = Signal()
+        self.stall_in = Signal()
+
+        self.ready = Signal()
+        self.pipe_busy = Signal()
+        self.out_valid = Signal()
+        self.out_rgba = Signal(32)
+        self.out_x = Signal(16)
+        self.out_y = Signal(16)
+        self.out_z = Signal(16)
+        self.out_z_pass = Signal()
+        self.out_bounds_discard = Signal()
+        self.out_shader_discard = Signal()
+        self.out_frag_kill = Signal()
+        self.out_we_color = Signal()
+        self.out_we_z = Signal()
+
+
 class Gfx2DEngine(LiteXModule):
     def __init__(self, pal_port, lut_ports, ddr_size=1 << 30,
                  response_timeout=1 << 18):
@@ -647,6 +690,7 @@ class Gfx2DEngine(LiteXModule):
         self.done_err = Signal(32)
         self.desc = desc = [Signal(32) for _ in DESC_NAMES]
         self.busy = Signal(reset_less=True)
+        self.frag3d = frag3d = Frag3DPort()
 
         local_desc = [Signal(32, reset_less=True) for _ in DESC_NAMES]
         op = local_desc[0][0:4]
@@ -1155,17 +1199,28 @@ class Gfx2DEngine(LiteXModule):
         ]
         self.bilinear = bilinear = BilinearFilter()
         self.comb += [
-            bilinear.p00.eq(fe_p[0]), bilinear.p10.eq(fe_p[1]),
-            bilinear.p01.eq(fe_p[2]), bilinear.p11.eq(fe_p[3]),
-            bilinear.wu.eq(fe_wu), bilinear.wv.eq(wv),
+            bilinear.p00.eq(Mux(frag3d.active, frag3d.p00, fe_p[0])),
+            bilinear.p10.eq(Mux(frag3d.active, frag3d.p10, fe_p[1])),
+            bilinear.p01.eq(Mux(frag3d.active, frag3d.p01, fe_p[2])),
+            bilinear.p11.eq(Mux(frag3d.active, frag3d.p11, fe_p[3])),
+            bilinear.wu.eq(Mux(frag3d.active, frag3d.wu, fe_wu)),
+            bilinear.wv.eq(Mux(frag3d.active, frag3d.wv, wv)),
         ]
         ff_x = delayed(fe_x, BilinearFilter.LATENCY)
         ff_uc = delayed(fe_uc, BilinearFilter.LATENCY)
         ff_fu = delayed(fe_fu, BilinearFilter.LATENCY)
+        f3d_rgba_d = delayed(frag3d.rgba, BilinearFilter.LATENCY)
+        f3d_tex_en_d = delayed(frag3d.tex_en, BilinearFilter.LATENCY)
+        f3d_uses_dst_d = delayed(frag3d.uses_dst, BilinearFilter.LATENCY)
 
         # Stage 0 inputs (with P0 pipeline register). The DST read trails
-        # comp_idx by FE_LAT cycles so it lands with the filtered source.
-        self.comb += self.dst_lb_r.adr.eq(delayed(comp_idx, fe_lat))
+        # comp_idx by FE_LAT cycles (or frag3d.dst_adr by LATENCY-1 cycles)
+        # so it lands with the filtered source.
+        self.comb += self.dst_lb_r.adr.eq(Mux(
+            frag3d.active,
+            delayed(frag3d.dst_adr, BilinearFilter.LATENCY - 1),
+            delayed(comp_idx, fe_lat),
+        ))
         src_lb_dat = bilinear.out
         dst_lb_dat = self.dst_lb_r.dat_r
         src_lb_ch = [
@@ -1192,6 +1247,7 @@ class Gfx2DEngine(LiteXModule):
             Cat(bg[16:24], Constant(0, 8)),
             Cat(bg[24:32], Constant(0, 8)),
         ]
+        p0_r2_3d = [Signal((16, True), reset_less=True) for _ in range(4)]
         # R3 = {V_frac, U_frac, V_clamp, U_clamp} on scaled ops and
         # {0, 0, Y, X} otherwise.
         self.sync += [
@@ -1200,10 +1256,18 @@ class Gfx2DEngine(LiteXModule):
             p0_r3[1].eq(Mux(scaled, y0, row[0:16])),
             p0_r3[2].eq(Mux(scaled, ff_fu, 0)),
             p0_r3[3].eq(Mux(scaled, fv, 0)),
-            [p0_src_pix[c].eq(Mux(uses_src, src_lb_ch[c], fg_ch[c]))
+            [p0_r2_3d[c].eq(Cat(f3d_rgba_d[8*c:8*(c+1)], Constant(0, 8)))
              for c in range(4)],
-            [p0_dst_pix[c].eq(Mux(uses_dst, dst_lb_ch[c], bg_ch[c]))
-             for c in range(4)],
+            [p0_src_pix[c].eq(Mux(
+                frag3d.active,
+                Mux(f3d_tex_en_d, src_lb_ch[c], 0xFF),
+                Mux(uses_src, src_lb_ch[c], fg_ch[c]),
+            )) for c in range(4)],
+            [p0_dst_pix[c].eq(Mux(
+                frag3d.active,
+                Mux(f3d_uses_dst_d, dst_lb_ch[c], bg_ch[c]),
+                Mux(uses_dst, dst_lb_ch[c], bg_ch[c]),
+            )) for c in range(4)],
         ]
         # FG/BG are static for the whole command, so every stage reads them
         # from the descriptor instead of carrying them down the pipeline.
@@ -1221,10 +1285,10 @@ class Gfx2DEngine(LiteXModule):
                 stage0.r_in[1][c].eq(p0_dst_pix[c]),
             ]
         self.comb += [
-            stage0.r_in[2][0].eq(p0_fetch_x[0:16]),
-            stage0.r_in[2][1].eq(row[0:16]),
-            stage0.r_in[2][2].eq(0),
-            stage0.r_in[2][3].eq(0),
+            stage0.r_in[2][0].eq(Mux(frag3d.active, p0_r2_3d[0], p0_fetch_x[0:16])),
+            stage0.r_in[2][1].eq(Mux(frag3d.active, p0_r2_3d[1], row[0:16])),
+            stage0.r_in[2][2].eq(Mux(frag3d.active, p0_r2_3d[2], 0)),
+            stage0.r_in[2][3].eq(Mux(frag3d.active, p0_r2_3d[3], 0)),
             [stage0.r_in[3][c].eq(p0_r3[c]) for c in range(4)],
             stage0.p_in.eq(0),
             stage0.discard_in.eq(0),
@@ -1301,7 +1365,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(self.busy, 0),
-                If(start, NextValue(err, 0),
+                If(start & ~frag3d.active, NextValue(err, 0),
                    NextValue(self.busy, 1),
                    NextState('INIT')))
 
@@ -2136,6 +2200,27 @@ class Gfx2DEngine(LiteXModule):
             r0 = stage3.r_out[0][c]
             self.comb += out_r0_sat[c].eq(
                 Mux(r0 < 0, 0, Mux(r0 > 255, 255, r0[0:8])))
+
+        # Stage 2a: 3D sideband shift register matching BilinearFilter + P0 + 4*ShaderALU
+        f3d_vld_pipe = Signal(Frag3DPort.LATENCY)
+        self.sync += f3d_vld_pipe.eq(Cat(frag3d.active & frag3d.valid & frag3d.ready,
+                                         f3d_vld_pipe[0:Frag3DPort.LATENCY - 1]))
+        f3d_sb_in = Cat(frag3d.x, frag3d.y, frag3d.z_new,
+                        frag3d.z_pass, frag3d.bounds_discard)
+        f3d_sb_out = delayed(f3d_sb_in, Frag3DPort.LATENCY)
+        self.comb += [
+            frag3d.ready.eq(~self.busy & ~frag3d.stall_in),
+            frag3d.pipe_busy.eq((comp_pipe_vld != 0) | (f3d_vld_pipe != 0)),
+            frag3d.out_valid.eq(f3d_vld_pipe[Frag3DPort.LATENCY - 1]),
+            frag3d.out_rgba.eq(Cat(*out_r0_sat)),
+            Cat(frag3d.out_x, frag3d.out_y, frag3d.out_z,
+                frag3d.out_z_pass, frag3d.out_bounds_discard).eq(f3d_sb_out),
+            frag3d.out_shader_discard.eq(stage3.discard_out),
+            frag3d.out_frag_kill.eq((~frag3d.out_z_pass) | frag3d.out_shader_discard |
+                                    frag3d.out_bounds_discard),
+            frag3d.out_we_color.eq(frag3d.out_valid & ~frag3d.out_frag_kill),
+            frag3d.out_we_z.eq(frag3d.out_valid & ~frag3d.out_frag_kill),
+        ]
         fsm.act('T_COMP_START',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(comp_idx, 0),
