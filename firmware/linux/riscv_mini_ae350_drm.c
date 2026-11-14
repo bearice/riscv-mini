@@ -428,6 +428,26 @@ static void ae350_drm_pipe_update(struct drm_simple_display_pipe *pipe,
 	}
 }
 
+static bool ae350_drm_src_aligned(const struct drm_framebuffer *fb,
+				  const struct drm_plane_state *plane_state)
+{
+	struct drm_gem_dma_object *gem = fb->obj[0] ?
+		to_drm_gem_dma_obj(fb->obj[0]) : NULL;
+	u32 sbpp = fb->format->cpp[0];
+	u32 align_mask = sbpp >= 4 ? 3u : (sbpp == 2 ? 1u : 0u);
+	u32 src_x = plane_state->src_x >> 16;
+	u32 src_y = plane_state->src_y >> 16;
+	u32 src_phys;
+
+	if (!gem || !gem->dma_addr)
+		return false;
+	if (!align_mask)
+		return true;
+	src_phys = (u32)gem->dma_addr + fb->offsets[0] +
+		   src_y * fb->pitches[0] + src_x * sbpp;
+	return !(src_phys & align_mask) && !(fb->pitches[0] & align_mask);
+}
+
 static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 				struct drm_plane_state *plane_state,
 				struct drm_crtc_state *crtc_state)
@@ -453,6 +473,7 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 		if ((plane_state->alpha >> 8) < 255u &&
 		    (format_id == AE350_FMT_RGB888 ||
 		     ae350_drm_gfx_format_id(fb->format->format) < 0 ||
+		     !ae350_drm_src_aligned(fb, plane_state) ||
 		     !drm->gfx || readl(drm->gfx) != AE350_GFX2D_ID ||
 		     !(readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SHADER)))
 			return -EINVAL;
@@ -477,6 +498,7 @@ static int ae350_drm_plane_atomic_check(struct drm_plane *plane,
 	bool can_scale = drm->gfx && plane_state->fb &&
 			 plane_state->fb->format->format != DRM_FORMAT_RGB888 &&
 			 ae350_drm_gfx_format_id(plane_state->fb->format->format) >= 0 &&
+			 ae350_drm_src_aligned(plane_state->fb, plane_state) &&
 			 readl(drm->gfx) == AE350_GFX2D_ID &&
 			 (readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SCALE);
 	int min_scale = can_scale ? 1 : DRM_PLANE_NO_SCALING;
