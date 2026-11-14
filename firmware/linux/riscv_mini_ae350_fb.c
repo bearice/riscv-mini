@@ -424,6 +424,15 @@ struct ae350_fb_scale_req {
 #define AE350_FBIO_BLEND _IOW('A', 0x01, struct ae350_fb_blend_req)
 #define AE350_FBIO_SCALE _IOW('A', 0x02, struct ae350_fb_scale_req)
 
+static bool ae350_fb_rect_in_bounds(const struct ae350_fb *fb,
+				    u32 x, u32 y, u32 w, u32 h)
+{
+	u32 max_y = fb->height * 2u;
+
+	return w && h && x < fb->width && y < max_y &&
+	       w <= fb->width - x && h <= max_y - y;
+}
+
 static int ae350_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			  unsigned long arg)
 {
@@ -442,11 +451,10 @@ static int ae350_fb_ioctl(struct fb_info *info, unsigned int cmd,
 
 		if (copy_from_user(&req, argp, sizeof(req)))
 			return -EFAULT;
-		if (!req.width || !req.height ||
-		    req.src_x + req.width > fb->width ||
-		    req.dst_x + req.width > fb->width ||
-		    req.src_y + req.height > fb->height * 2u ||
-		    req.dst_y + req.height > fb->height * 2u)
+		if (!ae350_fb_rect_in_bounds(fb, req.src_x, req.src_y,
+					     req.width, req.height) ||
+		    !ae350_fb_rect_in_bounds(fb, req.dst_x, req.dst_y,
+					     req.width, req.height))
 			return -EINVAL;
 		src_phys = ae350_phys(fb, req.src_x, req.src_y);
 		dst_phys = ae350_phys(fb, req.dst_x, req.dst_y);
@@ -467,12 +475,10 @@ static int ae350_fb_ioctl(struct fb_info *info, unsigned int cmd,
 
 		if (copy_from_user(&req, argp, sizeof(req)))
 			return -EFAULT;
-		if (!req.src_width || !req.src_height ||
-		    !req.dst_width || !req.dst_height ||
-		    req.src_x + req.src_width > fb->width ||
-		    req.dst_x + req.dst_width > fb->width ||
-		    req.src_y + req.src_height > fb->height * 2u ||
-		    req.dst_y + req.dst_height > fb->height * 2u)
+		if (!ae350_fb_rect_in_bounds(fb, req.src_x, req.src_y,
+					     req.src_width, req.src_height) ||
+		    !ae350_fb_rect_in_bounds(fb, req.dst_x, req.dst_y,
+					     req.dst_width, req.dst_height))
 			return -EINVAL;
 		src_phys = ae350_phys(fb, req.src_x, req.src_y);
 		dst_phys = ae350_phys(fb, req.dst_x, req.dst_y);
