@@ -20,6 +20,7 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_blend.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
@@ -440,7 +441,8 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 		bpp = ae350_drm_bpp(format_id);
 		if (((crtc_state->mode.hdisplay * bpp) & 31u) != 0)
 			return -EINVAL;
-		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff))
+		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff) ||
+		    (plane_state->src_w & 0xffff) || (plane_state->src_h & 0xffff))
 			return -EINVAL;
 		if (drm->cpu && (drm->width != (u32)crtc_state->mode.hdisplay ||
 				 drm->height != (u32)crtc_state->mode.vdisplay ||
@@ -679,6 +681,9 @@ static int ae350_drm_probe(struct platform_device *pdev)
 	if (ret)
 		goto release;
 	drm_plane_helper_add(&drm->pipe.plane, &ae350_drm_plane_helper_funcs);
+	if (drm->gfx && readl(drm->gfx) == AE350_GFX2D_ID &&
+	    (readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SHADER))
+		drm_plane_create_alpha_property(&drm->pipe.plane);
 	drm_plane_enable_fb_damage_clips(&drm->pipe.plane);
 	drm_mode_config_reset(dev_drm);
 	ret = drm_dev_register(dev_drm, 0);
