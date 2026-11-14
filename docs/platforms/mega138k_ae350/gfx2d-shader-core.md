@@ -1,7 +1,7 @@
 # AE350 GFX2D 可编程像素着色器核心（GFX2D-PPU）架构设计规格
 
 > 适用机器：`mega138k_ae350`（Tang Mega 138K Pro / Gowin GW5AST-LV138FPG676A）。
-> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）与 Step 6b（完整 4-Stage、`PAL_RAM`、4 通道 `LUT_RAM`）已完成全量 PnR 时序闭合与实机验收；Step 6c 为后续目标预算**。
+> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）、Step 6b（完整 4-Stage、`PAL_RAM`、4 通道 `LUT_RAM`）与 Step 6c（48-bit UV 缩放、逐块跨度门禁、`SRC_LB0/1` 双行槽与双线性插值）已完成全量 PnR 时序闭合与实机验收**。
 > 关联文档：[GFX2D 一期规格与实机验收](gfx2d.md)、[GW5AST 硬核资源说明](gw5ast-hard-ip-usage.md)、[地址映射合同](address-map.md)。
 
 ---
@@ -39,19 +39,19 @@
 > [!IMPORTANT]
 > - **Step 6a（已实测闭合）**：包含行缓冲（`SRC_LB0`、`DST_LB`、`OUT_LB`）、流式解包/打包器、Stage 0..1 核心与 Stage 1 `DOT3` 点积单元。在 Gowin 全量 PnR（Run `20261111T175107778773Z` / Commit `d6d7cfe`）中**实测增量为 +8 BSRAM（整机 143/340，43%）与 +4 DSP（整机 27.5/298，10%）**，`ddr_ui_clk` 100MHz 保持 **0 TNS** 建立/保持全时钟时序闭合，且已完成实机板载 SRAM 验收（Run `20261111T191108626301Z`，7 阶段全部通过）。
 > - **Step 6b（已实测闭合）**：Stage 2..3、`PAL_RAM` 与 4×`256×8` `LUT_RAM`。全量 PnR（Run `20261113T010649048418Z`）相对 Step 6a **实测增量为 +20 DSP（整机 47.5/298，16%）与 +44 BSRAM（整机 187/340，55%）**；BSRAM 增量同时包含 DDR3 读/请求 FIFO 改用 `block_ram`（避免 LUT RAM 在 100MHz 下的时序问题）。全部时钟 setup/hold **0 TNS**（`ddr_ui_clk` 100.04MHz，`sys_clk` 50.16MHz），时序收敛全部来自 RTL 结构修改，未调整 PnR seed/选项。实机 SRAM 验收（Run `20261113T014213929850Z` 上传，`20261113T014251800531Z` JTAG 读回）结果字 `0xC3500020`，全部 BAD 计数为 0。
-> - **Step 6c（后续规划预算）**：下表所列的 **34 DSP / 11 BSRAM** 为二期全量目标架构的原始预算，Step 6c（48-bit UV 步进、12-DSP 双线性插值）尚未实现。
+> - **Step 6c（已实测闭合）**：48-bit `UQ32.16` UV 步进与 Clamp、步长选档与 `TILE_SETUP` 逐块跨度门禁、`SRC_LB0/1` 奇偶行 × 奇偶列双 Bank 与行槽标签、12 乘法器双线性前端（`OP_SCALE_BLIT`）。全量 PnR（Run `20261113T192338423908Z`）相对 Step 6b **实测增量为 +11 DSP（整机 58.5/298，20%）与 +4 BSRAM（整机 191/340，57%）**，逻辑 CLS 82%（56483/69120）。全部时钟 setup/hold **0 TNS**（`ddr_ui_clk` 100.00MHz，`sys_clk` 50.10MHz，`hdmi_pix_clk` 75.95MHz）。时序收敛来自 RTL 结构修改（`DST_LB`/`OUT_LB` 读写寄存、描述符校验与 V 几何分级寄存、宽计数器增量预寄存、仲裁器 one-hot 负载选择、fabric 逐页 valid 寄存与 DDR 诊断页私有地址副本等），未调整 PnR seed/选项；曾尝试的 GFX2D 区域布局约束因 21857 条网络无法布通而放弃。实机 SRAM 验收（Run `20261113T200126914932Z` 上传，`20261113T200202540377Z` JTAG 读回）结果字 `0xC3500030`，全部 BAD 计数为 0（含 `W_tile=1022` 跨度反例与 `U0=0xFFFF0000` 不回绕用例）。
 
 | 子模块 | 阶段归属 | 目标 DSP 预算 | 目标 BSRAM (18Kb) | Step 6a/6b 实测增量 | 硬件映射与端口配置说明 |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **1. 48-bit 轴对齐 UV 步进与寻址 (AGU)** | Step 6c | **2 DSP** | 0 | 待实现 (0) | 采用 48-bit `UQ32.16` 无回绕精度计算 $V_{\text{row}}$ 与 $U_{\text{first}}$；行内纯加法累加 |
-| **2. 双线性 2×2 插值前端 (Bilinear)** | Step 6c | **12 DSP** | 0 | 待实现 (0) | 水平插值 8 DSP + 垂直插值 4 DSP，共 12 DSP 维持 `II=1` |
+| **1. 48-bit 轴对齐 UV 步进与寻址 (AGU)** | Step 6c | **2 DSP** | 0 | 已实现（计入 6c 整机 **+11 DSP**） | 采用 48-bit `UQ32.16` 无回绕精度计算 $V_{\text{row}}$ 与 $U_{\text{first}}$；行内纯加法累加；`TILE_SETUP` 跨度与源行地址各拆 2 个寄存乘法；纹理范围另用 1 个 14×16 高半积乘法判定 32-bit 截断 |
+| **2. 双线性 2×2 插值前端 (Bilinear)** | Step 6c | **12 DSP** | 0 | 已实现（计入 6c 整机 **+11 DSP**） | 每通道水平 2 + 垂直 1 个 `9×9` 有符号乘法，共 12 个乘法器，6 拍流水维持 `II=1` |
 | **3. 4-Stage × 4-Channel SIMD 着色阵列** | Step 6a/6b | **16 DSP** | 0 | 6a **+0 DSP**；6b 整机 **+20 DSP** | Step 6a 落地 Stage 0..1；Step 6b 补齐 Stage 2..3（乘法由综合映射到硬核 DSP） |
 | **4. 专用色度点积辅助单元 (Stage 1 DOT3)**| Step 6a | **4 DSP** | 0 | **+4 DSP** (MULTALU27X18) | 供 **Stage 1** 执行 `DOT3` 跨通道并行乘加运算（实测占用 4 个硬核 DSP） |
-| **5. 源图像奇偶行与奇偶列缓存 (`SRC_LB0/1`)** | Step 6a/6c | 0 | **4 BSRAM** | **+2 BSRAM** (SDPB/SDPX9B) | Step 6a 落地 `SRC_LB0`（2×BSRAM，1024×32b）；Step 6c 补齐 `SRC_LB1` 双行槽 |
+| **5. 源图像奇偶行与奇偶列缓存 (`SRC_LB0/1`)** | Step 6a/6c | 0 | **4 BSRAM** | 6a **+2 BSRAM**；6c 整机 **+4 BSRAM** | Step 6a 落地 `SRC_LB0`（2×BSRAM，1024×32b）；Step 6c 补齐 `SRC_LB1` 双行槽，每槽拆为偶/奇列 2 个 Bank |
 | **6. 目标行与回写缓冲 (`DST_LB` / `OUT_LB`)**| Step 6a | 0 | **4 BSRAM** | **+6 BSRAM** (SDPB/SDPX9B) | `DST_LB`（2×BSRAM，预取目标背景）+ `OUT_LB`（4×BSRAM 组织流水回写缓冲） |
 | **7. 前端 `INDEX8` 专用调色板 (`PAL_RAM`)** | Step 6b | 0 | **1 BSRAM** | 已实现（计入 6b 整机增量） | 1 个 `256 × 32-bit` SDPB BSRAM，专供预取期展开 INDEX8 像素 |
 | **8. Stage 2 四通道并行查找表 (`LUT_RAM`)** | Step 6b | 0 | **2 BSRAM** | 已实现（计入 6b 整机增量） | 4 个独立 `256 × 8-bit` 查找表，专供 Stage 2 查表 |
-| **合计（全量总预算 vs 实测）** | - | **34 DSP** | **11 BSRAM** | 6a **+4 DSP / +8 BSRAM**；6b **+20 DSP / +44 BSRAM**（含 DDR FIFO `block_ram`） | **Step 6b 实测占全芯片：DSP 16% (47.5/298)，BSRAM 55% (187/340)** |
+| **合计（全量总预算 vs 实测）** | - | **34 DSP** | **11 BSRAM** | 6a **+4 DSP / +8 BSRAM**；6b **+20 DSP / +44 BSRAM**（含 DDR FIFO `block_ram`）；6c **+11 DSP / +4 BSRAM** | **Step 6c 实测占全芯片：DSP 20% (58.5/298)，BSRAM 57% (191/340)** |
 
 *(注：因为 Shader 仅 4 条 64-bit 指令，微码存储 `IMEM` 直接采用 `4 × 64-bit = 256 FFs` 分布式寄存器实现，无需消耗 BSRAM，且 4 个 Stage 可同时无冲突直读各自指令。)*
 
@@ -183,7 +183,8 @@ flowchart TD
      - 检验 $W_{\text{step}} = 1023$：$((1022 \times \text{0x10001} + \text{0xFFFF}) \gg 16) + 2 = 1023 + 2 = \mathbf{1025 > 1024}$（**被硬件拒绝！**）；
      - 检验 $W_{\text{step}} = 1022$：$((1021 \times \text{0x10001} + \text{0xFFFF}) \gg 16) + 2 = 1022 + 2 = \mathbf{1024 \le 1024}$（**通过！** 此时哪怕 $U_{\text{first}} = \text{0x0000FFFF}$，$U_{\text{last}} = \text{0x0000FFFF} + 1021 \times \text{0x10001} = \text{0x03FE03FC}$，整数部分为 `1022`，$u_{\text{end}} = 1023$，$\text{src\_span} = 1024 \le 1024$，**严格不越界！**）。
 3. **`TILE_SETUP` 逐块真实 `U_first` 最终门禁**：
-   - 在每个 Tile 的 `TILE_SETUP` 拍，硬件直接计算当前块的真实 $\text{src\_span}(W_{\text{cand}})$。若 $\text{src\_span}(W_{\text{cand}}) > 1024$（例如极大幅度缩小 $dU_x > 64.0$ 使得 $W_{\text{step}}=16$ 仍超限），硬件直接将该 Tile 宽度折半（或降为 $W_{\text{tile}} = 1$，因为当 $W_{\text{tile}} = 1$ 时，$U_{\text{last}} = U_{\text{first}}$，无论 $dU_x$ 多大，$\text{src\_span}(1) \le 1 + \text{BILINEAR\_EN} = 2 \le 1024$ **恒成立**）。
+   - 在每个 Tile 的 `TILE_SETUP` 拍，硬件直接计算当前块的真实 $\text{src\_span}(W_{\text{cand}})$。若 $\text{src\_span}(W_{\text{cand}}) > 1024$（例如极大幅度缩小 $dU_x > 64.0$ 使得 $W_{\text{step}}=16$ 仍超限），硬件直接将该 Tile 降为 $W_{\text{tile}} = 1$（当 $W_{\text{tile}} = 1$ 时，$U_{\text{last}} = U_{\text{first}}$，无论 $dU_x$ 多大，$\text{src\_span}(1) \le 1 + \text{BILINEAR\_EN} = 2 \le 1024$ **恒成立**）。
+   - **实现说明（Step 6c）**：选档在命令启动后由描述符派生的自由运行寄存器完成。判据等价为 $(W-1) \cdot dU_x \le (1023 - \text{BILINEAR\_EN}) \ll 16$，对整数即 $dU_x \le \lfloor ((1023 - \text{BILINEAR\_EN}) \ll 16) / (W-1) \rfloor$，硬件以 9 档 × 2 组常量比较实现（无乘法、不占 DSP）；Tile 内 `UQ11.16` 局部累加器 $U_{\text{first}}[15:0] + k \cdot dU_x$ 的整数部分因此恒 $\le 1023$。`TILE_SETUP` 的 $(W_{\text{tile}}-1) \cdot dU_x$ 拆成 2 个 10×16 乘法（寄存输入/输出，映射硬核 DSP）在 11 拍等待窗口内完成；源行地址 $y_s \cdot \text{SRC\_STRIDE}$ 同理拆成 2 个 14×16 乘法。
    - 这从数学上闭合了“对任意 $U_0, dU_x \in [0, 2^{32}-1]$，每个 Tile 的 $\text{src\_span}$ 100% $\le 1024$ 且 $W_{\text{tile}} \ge 1$ 必然终止”的完备性证明。
 
 ---
@@ -198,6 +199,8 @@ $$\text{Tag}_k = \{ \text{valid}_k\ (1\text{b}),\ \text{row\_y}_k\ (14\text{b}),
   设当前 Tile 需要的源行号为 $y_{s0} = \text{clamp\_v}(V_{\text{row}}[47:16])$，双线性下邻居源行号为 $y_{s1} = \text{clamp\_v}(V_{\text{row}}[47:16] + 1)$，当前 Tile 精确水平区间为 $[u_{\text{base}}, u_{\text{end}}]$。
   源行 $y_s$ 在行槽 $k = y_s[0]$ **命中（Hit）**的充要条件为：
   $$\text{Hit}(y_s, k) \iff \big(\text{valid}_k == 1\big) \ \land \ \big(\text{row\_y}_k == y_s\big) \ \land \ \big(\text{u\_base}_k == u_{\text{base}}\big) \ \land \ \big(\text{u\_end}_k \ge u_{\text{end}}\big)$$
+- **未命中填充**：未命中的行按 $[u_{\text{base}}, u_{\text{end}}]$ 从 DDR 预取，局部像素 $i = u - u_{\text{base}}$ 写入行槽 $k$ 的偶/奇列 Bank（$i[0]$ 选 Bank，地址 $i \gg 1$），完成后更新 $\text{Tag}_k$。上采样时相邻目标行、以及同一目标行内 $V$ 不跨整数的情况直接复用缓存行。
+- **单拍取 2×2 邻居**：对局部索引 $i_0$，偶 Bank 读地址 $(i_0 + 1) \gg 1$、奇 Bank 读地址 $i_0 \gg 1$，两 Bank 同拍给出 $P_{i_0}$ 与 $P_{i_0+1}$。当 $u \ge \text{SRC\_WIDTH} - 1$ 时 $i_0$ 被限制在右边界，右邻居复用左邻居；当 $V[47:16] \ge \text{SRC\_HEIGHT} - 1$ 时下邻居行复用上邻居行。
 
 ---
 
@@ -236,7 +239,7 @@ $$\text{Tag}_k = \{ \text{valid}_k\ (1\text{b}),\ \text{row\_y}_k\ (14\text{b}),
    - DDR 每次读回 1 个 256-bit（32B）Beat 锁存入 `BEAT_SR` 移位寄存器，以 `1 像素/拍` 解包为 `32-bit ARGB8888` 写入 `SRC_LB0/1` 或 `DST_LB`（其中 `INDEX8` 经专用 `PAL_RAM` 展开）。
    - 进入 `SRC_LB0/1` 和 `DST_LB` 的数据已经是解包好的 32-bit `ARGB8888` 像素，Phase 2 计算期间双线性读取 4 个邻居与 Stage 2 执行 `LUT_FETCH` 零端口争用，100% 保证 Phase 2 恒定 `II=1`。
 2. **Phase 2 — 100MHz 零停顿流式计算（Streaming Shader Execution，`II=1`）**：
-   - 连续发射 $W_{\text{tile}}$ 个像素（耗时 $W_{\text{tile}} + 22$ 拍：4 Stage × 5 子级 + 读行缓冲 1 拍 + 写 `OUT_LB` 1 拍），每拍产出 1 个 `32-bit ARGB8888` 结果像素及 1-bit `discard` 标志，顺序写入 `OUT_LB[0 .. W_tile - 1]`。
+   - 连续发射 $W_{\text{tile}}$ 个像素（耗时 $W_{\text{tile}} + 32$ 拍：采样前端 10 拍（局部索引/边界 Clamp/奇偶 Bank 寻址/邻居选择 4 拍 + 双线性插值 6 拍）+ 4 Stage × 5 子级 + 读行缓冲 1 拍 + 写 `OUT_LB` 1 拍；非缩放命令同样经过该前端，权重为 0），每拍产出 1 个 `32-bit ARGB8888` 结果像素及 1-bit `discard` 标志，顺序写入 `OUT_LB[0 .. W_tile - 1]`。
 3. **Phase 3 — 流式打包、跨块边界对齐与尾拍部分 Beat 提交（Pack-on-Writeback & Tail Flush）**：
    - **字节偏移对齐与掩码初始化**：
      设当前 Tile 的目标起始字节地址为 $\text{tile\_dst\_addr} = \text{row\_start} + (x_{\text{start}} \ll \text{dst\_bpp\_shift})$。
@@ -295,6 +298,15 @@ $$\text{LERP}(S, D, \alpha) = \big( (S - D) \times W(\alpha) + (D \ll 8) + 128 \
   - `SAT = 1`（`bit[11] = 1`）：写回目标寄存器前自动钳位至无符号字节范围 `[0, 255]`（`< 0` 置 `0`，`> 255` 置 `255`）。
   - `SAT = 0`（`bit[11] = 0`）：保留有符号 16-bit 结果（钳位至 `[-32768, +32767]`）。
 
+### 5.4 双线性采样（`BILINEAR_EN`：3 次 §5.2 `LERP` 的位精确组合）
+对目标像素 $(x, y)$，取 $U = U(x)$、$V = V(y)$（§3.1 的 48-bit `UQ32.16`），令
+$u_0 = \text{clamp\_u}(U[47:16])$、$u_1 = \text{clamp\_u}(U[47:16] + 1)$、$v_0 = \text{clamp\_v}(V[47:16])$、$v_1 = \text{clamp\_v}(V[47:16] + 1)$，
+$P_{ij} = \text{SRC}(u_i, v_j)$（已解包为 `ARGB8888`），权重取 8-bit 小数高位 $f_u = U[15:8]$、$f_v = V[15:8]$。每通道：
+$$\text{top} = \text{LERP}(P_{10}, P_{00}, f_u),\quad \text{bot} = \text{LERP}(P_{11}, P_{01}, f_u),\quad \text{SRC} = \text{LERP}(\text{bot}, \text{top}, f_v)$$
+- 中间结果 `top`/`bot` 为 `0..255` 无需饱和（`LERP` 端点精确，结果恒落在两端点之间）。
+- `BILINEAR_EN = 0`（最近邻）时 $\text{SRC} = P_{00}$；越界邻居按 Clamp 复制边缘像素，因此边缘处插值退化为边缘像素本身。
+- 硬件实现：每通道水平 2 个 + 垂直 1 个 `9-bit × 9-bit` 有符号乘法，共 12 个乘法器，6 拍流水、`II=1`。Host 参考模型与板级套件以本节公式为 Bit-Exact 验收标准。
+
 ---
 
 ## 6. 寄存器文件与 64-bit 指令编码合同（GFX2D-ISA v1.2）
@@ -306,7 +318,7 @@ $$\text{LERP}(S, D, \alpha) = \big( (S - D) \times W(\alpha) + (D \ll 8) + 128 \
 | `0` | `R0` | R/W | 通用向量寄存器 0（Stage 0 入口处初始化为 `SRC`） | Stage 3 结束后，`R0` 经 `[0,255]` 饱和后作为最终输出像素 |
 | `1` | `R1` | R/W | 通用向量寄存器 1（Stage 0 入口处初始化为 `DST`） | 供多步混合暂存中间结果 |
 | `2` | `R2` | R/W | 通用向量寄存器 2（初始化为 `{0, 0, Y[15:0], X[15:0]}`） | `.g` = 当前像素相对目标矩形的 $Y$ 坐标，`.b` = $X$ 坐标 |
-| `3` | `R3` | R/W | 通用向量寄存器 3（初始化为 `{V_frac, U_frac, V_clamp, U_clamp}`） | 当前像素 Clamp 后的源纹理整数坐标与小数部分 |
+| `3` | `R3` | R/W | 通用向量寄存器 3（初始化为 `{V_frac, U_frac, V_clamp, U_clamp}`） | 缩放命令（`SCALE_EN = 1`）：`.b/.g` = $u_0 / v_0$（Clamp 后整数坐标），`.r/.a` = $U[15:8] / V[15:8]$；非缩放命令为 `{0, 0, Y, X}` |
 | `4` | `SRC` | RO | `{Src.A, Src.R, Src.G, Src.B}` (`0..255`) | 当前源像素（若开启 Bilinear 则为插值后的源像素） |
 | `5` | `DST` | RO | `{Dst.A, Dst.R, Dst.G, Dst.B}` (`0..255`) | 当前目标背景像素 |
 | `6` | `FG` | RO | `{FG.A, FG.R, FG.G, FG.B}` (`0..255`) | 来自 `FG_COLOR` 寄存器（按 `ARGB8888` 拆分为 4 通道） |
@@ -513,5 +525,5 @@ $$\text{LERP}(S, D, \alpha) = \big( (S - D) \times W(\alpha) + (D \ll 8) + 128 \
 | :--- | :--- | :--- |
 | **Step 6a：ABI 扩展、重叠安全校验、行缓冲切块与 Stage 0..1 核心** | 1. 在 `address_map.py` 扩展 `GFX2D_CAP` (`0x0FEF`) 与 `SHADER_CFG` 等寄存器；<br/>2. 实现 `INIT3` 重叠安全校验（仅允许无缩放同格式同 stride 且 `WIDTH<=1024` 的单块原位/垂直逆序操作，其余重叠一律返回 `ERR_PARAM`）；<br/>3. 实现 `SRC_LB0`、`DST_LB`、`OUT_LB`、Phase 1 流式拆包、Phase 3 流式打包（含 4×4 Bayer Dither）与 `MAX_TILE_PIXELS=1024` 分块状态机；<br/>4. 落地 Stage 0..1（含 `MUL_UNORM8`、`LERP`、`DISCARD_IF` 与 Stage 1 `DOT3`）。 | 1. 单元测试验证 `MUL_UNORM8` 全 65536 组合精确 `/255`、`LERP` 端点无损、`XRGB` 默认不透明、`WIDTH=1280` 跨块重叠拒绝与非重叠双块正确性；<br/>2. Gowin PnR `ddr_ui_clk` (100MHz) 0 TNS。 |
 | **Step 6b：完整 4-Stage 流水线与 `PAL_RAM` / `LUT_RAM`** | 1. 补齐 Stage 2..3、前端 `INDEX8` 专用 `PAL_RAM`（1×BSRAM）与 Stage 2 专用 4-Port `LUT_RAM`（2×BSRAM）；<br/>2. 验证单趟 `INDEX8 解包 -> Stage 1 DOT3 -> Stage 2 LUT_FETCH -> Stage 3 LERP` 组合流水。 | Host 仿真与实板 SRAM 验收示例 1/2/3 全链路像素级 Bit-Exact 一致性。**已完成**：Host 28 项通过，全时钟 0 TNS，实机结果字 `0xC3500020`。 |
-| **Step 6c：48-bit 防回绕 UV 缩放、逐块精确跨度门禁与 12-DSP 双线性插值** | 1. 实现 48-bit `UQ32.16` 无回绕 UV 步进器与单调边界 Clamp；<br/>2. 实现含 `+0xFFFF` 最坏小数进位上界的步长选档与 `TILE_SETUP` 逐块真实 `U_first` 跨度门禁；<br/>3. 实现 `SRC_LB0/1` 奇偶行+奇偶列双 Bank 组织、三维标签 `{valid, row_y, u_base, u_end}` 命中逻辑与 12-DSP 双线性插值前端（`OP_SCALE_BLIT`）。 | Host 仿真与实板专项回归：<br/>- 反例验证：`U_first=0x0000FFFF, dU_x=0x00010001, BILINEAR=1` 自动选定 `W_tile=1022`（`src_span=1024` 不越界）；<br/>- 溢出验证：`U0=0xFFFF0000, dU_x=0x10000` 在 48-bit 下平滑 Clamp 于右边界不回绕；<br/>- 全时钟 0 TNS。 |
+| **Step 6c：48-bit 防回绕 UV 缩放、逐块精确跨度门禁与 12-DSP 双线性插值** | 1. 实现 48-bit `UQ32.16` 无回绕 UV 步进器与单调边界 Clamp；<br/>2. 实现含 `+0xFFFF` 最坏小数进位上界的步长选档与 `TILE_SETUP` 逐块真实 `U_first` 跨度门禁；<br/>3. 实现 `SRC_LB0/1` 奇偶行+奇偶列双 Bank 组织、三维标签 `{valid, row_y, u_base, u_end}` 命中逻辑与 12-DSP 双线性插值前端（`OP_SCALE_BLIT`）。 | Host 仿真与实板专项回归：<br/>- 反例验证：`U_first=0x0000FFFF, dU_x=0x00010001, BILINEAR=1` 自动选定 `W_tile=1022`（`src_span=1024` 不越界）；<br/>- 溢出验证：`U0=0xFFFF0000, dU_x=0x10000` 在 48-bit 下平滑 Clamp 于右边界不回绕；<br/>- 全时钟 0 TNS。<br/>**已完成**：Host 36 项通过，全时钟 0 TNS，实机结果字 `0xC3500030`。 |
 | **Step 6d：BSP / Linux 驱动接入** | 在 `ae350_gfx2d.c` 与 Linux DRM/fbdev 中暴露 `ae350_gfx2d_blend`、`ae350_gfx2d_scale` 接口。 | 板级实体 HDMI 显示器 60Hz 验收。 |

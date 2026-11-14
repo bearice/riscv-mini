@@ -420,6 +420,10 @@ class FabricVideo(LiteXModule):
                 cus_vco.eq(Constant(50000000) * cus_m8),
                 cus_h_total.eq(self.cus_wh[0:12]+self.cus_h[0:12]+self.cus_h[12:24]+Cat(self.cus_h[24:32],Constant(0,4))),
                 cus_v_total.eq(self.cus_wh[16:28]+Cat(self.cus_v[0:8],Constant(0,4))+Cat(self.cus_v[8:16],Constant(0,4))+Cat(self.cus_v[16:24],Constant(0,4))),
+            ]
+            # WDATA and the custom-mode registers are stable for at least one
+            # cycle before a MODE_CONFIG commit, so the check is registered.
+            self.sync += [
                 cus_bad.eq((self.cus_wh[0:12] == 0) | (self.cus_wh[16:28] == 0) |
                     (cus_row_bytes[:5] != 0) |
                     (cus_h_total >= 4096) | (cus_v_total >= 4096) |
@@ -516,11 +520,16 @@ class FabricVideo(LiteXModule):
         self.specials += MultiReg(write_gray, gray_pix, 'video_pix')
         self.sync.video_pix += [write_pix[i].eq(reduce(xor, [gray_pix[j] for j in range(i, pointer_bits)]))
                       for i in range(pointer_bits)]
+        # The low-water statistic samples a registered level one pixel late;
+        # frame_start falls in blanking, so the delayed sample cannot cross it.
+        level_q = Signal(pointer_bits)
+        sample_q = Signal()
         self.comb += [difference.eq(write_pix - read), level.eq(Mux(difference <= fifo_depth, difference, 0))]
         self.sync.video_pix += [
             If(fifo.re, read.eq(read + 1)),
+            level_q.eq(level), sample_q.eq(pixels.de & active_run),
             If(pixels.frame_start & new_config, minimum.eq(fifo_depth))
-            .Elif(pixels.de & active_run & (level < minimum), minimum.eq(level)),
+            .Elif(sample_q & (level_q < minimum), minimum.eq(level_q)),
         ]
 
         pixel_fields = [('sequence', applied), ('run', active_run), ('slot', active_slot),

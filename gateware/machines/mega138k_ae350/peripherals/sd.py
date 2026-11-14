@@ -43,6 +43,9 @@ class CommandResponsePipe(LiteXModule):
     def __init__(self,phy):
         self.sink=stream.Endpoint(phy.sink.description)
         self.fifo=stream.SyncFIFO(phy.source.description,depth=2,buffered=True)
+        # The PHY's response valid comes out of its command FSM; register it
+        # before it becomes the FIFO write enable.
+        self.entry=stream.Buffer(phy.source.description,pipe_ready=False)
         self.source=self.fifo.source
         completed,armed=Signal(),Signal()
         fields=('cmd_type','data_type','length','first','last')
@@ -50,7 +53,8 @@ class CommandResponsePipe(LiteXModule):
         self.comb += [getattr(phy.sink,name).eq(held[name]) for name in fields]
         self.comb += [self.sink.ready.eq(phy.sink.ready),
                       phy.sink.valid.eq(self.sink.valid & armed & ~completed),
-                      phy.source.connect(self.fifo.sink)]
+                      phy.source.connect(self.entry.sink),
+                      self.entry.source.connect(self.fifo.sink)]
         self.sync += If(~self.sink.valid,completed.eq(0),armed.eq(0)).Elif(
             phy.sink.valid & phy.sink.ready,completed.eq(1),armed.eq(0)).Elif(
             ~armed & ~completed,armed.eq(1),
@@ -89,7 +93,8 @@ class WordFIFO(LiteXModule):
         self.source=stream.Endpoint([('data',32)])
         self.level=Signal(max=depth+1)
         head,tail=Signal(max=depth),Signal(max=depth)
-        words=Array(Signal(34) for _ in range(depth))
+        # Storage is qualified by the pointers, so it needs no reset fanout.
+        words=Array(Signal(34,reset_less=True) for _ in range(depth))
         # Registered flags keep the level comparators off the word enables.
         full,empty=Signal(),Signal(reset=1)
         self.comb += [self.sink.ready.eq(~full),self.source.valid.eq(~empty),

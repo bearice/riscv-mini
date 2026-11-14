@@ -1,8 +1,10 @@
-/* GFX2D Shader Core On-Board Acceptance Suite (Step 6a/6b).
+/* GFX2D Shader Core On-Board Acceptance Suite (Step 6a/6b/6c).
  * Tests GFX2D CAP flags, legacy OP regression, ARGB8888->RGB565 blend,
  * color-key discard, Stage 1 DOT3 grayscale, downward row overlap, the
  * 4-stage INDEX8/PAL -> DOT3 -> LUT_FETCH -> LERP chain, a 4-stage
- * predicate chain and DOT3/LUT_FETCH stage placement rejection.
+ * predicate chain, DOT3/LUT_FETCH stage placement rejection, and the
+ * OP_SCALE_BLIT bilinear upscale, tile span counterexample, 48-bit UV
+ * clamp, two-tile downscale and scale mode validation.
  */
 #include <stdint.h>
 #include "ae350_address_map.h"
@@ -25,10 +27,16 @@ enum {
     ERRORS,
     LUT4_BAD,
     PRED_BAD,
-    PLACE_RC
+    PLACE_RC,
+    SCALE_UP_BAD,
+    SPAN_BAD,
+    WRAP_BAD,
+    DOWN_BAD,
+    SCALE_RC,
+    SLOT_COUNT
 };
 
-#define DONE_STAGE 0xC3500020u
+#define DONE_STAGE 0xC3500030u
 static volatile uint32_t *const slot = (volatile uint32_t *)AE350_RESULTS_BASE;
 
 #define R(off) (*(volatile uint32_t *)(uintptr_t)(AE350_GFX2D_BASE + (off)))
@@ -96,8 +104,110 @@ static unsigned lerp8(int s, int d, unsigned a) {
     return (unsigned)(((s - d) * w + (d << 8) + 128) >> 8);
 }
 
+#define OP_SCALE_BLIT 4u
+#define CFG_USES_SRC (1u << 4)
+#define CFG_BILINEAR (1u << 6)
+#define CFG_SCALE    (1u << 8)
+#define CFG_SRC_FMT(f) ((1u << 11) | ((uint32_t)(f) << 12))
+#define FMT_RGB565   0u
+#define FMT_ARGB8888 4u
+
+static uint32_t texel(unsigned u, unsigned v) {
+    return (((u * 37u + v * 101u + 13u) & 0xFFu) << 24) | (((u * 11u + 7u) & 0xFFu) << 16) |
+           (((v * 29u + u * 3u) & 0xFFu) << 8) | ((u ^ (v << 3)) & 0xFFu);
+}
+static uint16_t texel565(unsigned u, unsigned v) {
+    return (uint16_t)(u * 37u + v * 1009u + u * v);
+}
+static uint32_t argb_of_565(uint16_t p) {
+    unsigned r = (p >> 11) & 31u, g = (p >> 5) & 63u, b = p & 31u;
+    return 0xFF000000u | (((r << 3) | (r >> 2)) << 16) |
+           (((g << 2) | (g >> 4)) << 8) | ((b << 3) | (b >> 2));
+}
+
+/* top = LERP(P10, P00, u), bot = LERP(P11, P01, u), out = LERP(bot, top, v) */
+static uint32_t bilinear(uint32_t p00, uint32_t p10, uint32_t p01, uint32_t p11,
+                         unsigned fu, unsigned fv) {
+    uint32_t out = 0;
+    for (unsigned sh = 0; sh < 32; sh += 8) {
+        unsigned top = lerp8((int)((p10 >> sh) & 0xFFu), (int)((p00 >> sh) & 0xFFu), fu);
+        unsigned bot = lerp8((int)((p11 >> sh) & 0xFFu), (int)((p01 >> sh) & 0xFFu), fu);
+        out |= (uint32_t)lerp8((int)bot, (int)top, fv) << sh;
+    }
+    return out;
+}
+
+/* UV in 48-bit UQ32.16 with edge clamp, as the hardware samples it. */
+static uint32_t scale_ref(uint32_t (*tex)(unsigned, unsigned), unsigned sw, unsigned sh,
+                          uint32_t u0, uint32_t du, uint32_t v0, uint32_t dv, int bil,
+                          unsigned x, unsigned y) {
+    uint64_t U = (uint64_t)u0 + (uint64_t)x * du;
+    uint64_t V = (uint64_t)v0 + (uint64_t)y * dv;
+    uint64_t ui = U >> 16, vi = V >> 16;
+    unsigned cu0 = ui < sw - 1 ? (unsigned)ui : sw - 1;
+    unsigned cv0 = vi < sh - 1 ? (unsigned)vi : sh - 1;
+    if (!bil) return tex(cu0, cv0);
+    unsigned cu1 = ui + 1 < sw - 1 ? (unsigned)ui + 1 : sw - 1;
+    unsigned cv1 = vi + 1 < sh - 1 ? (unsigned)vi + 1 : sh - 1;
+    return bilinear(tex(cu0, cv0), tex(cu1, cv0), tex(cu0, cv1), tex(cu1, cv1),
+                    (unsigned)(U >> 8) & 0xFFu, (unsigned)(V >> 8) & 0xFFu);
+}
+static uint32_t tex565(unsigned u, unsigned v) { return argb_of_565(texel565(u, v)); }
+
+/* Pass-through (MOV R0, SRC) scaled blit. */
+static int run_scale(uint32_t op, uint32_t cfg, uint32_t src, uint32_t src_stride,
+                     uint32_t sw, uint32_t sh, uint32_t dst, uint32_t dst_stride,
+                     uint32_t w, uint32_t h, uint32_t fmt,
+                     uint32_t u0, uint32_t du, uint32_t v0, uint32_t dv) {
+    static const uint32_t inst[8] = {
+        INST_LO(SWZ_ID, SWZ_ID, SWZ_ID, 0, 0), INST_HI(0x00, 0, 0, 0xF, 4, 0, 0, SWZ_ID),
+    };
+    W(AE350_GFX2D_OP, op);
+    W(AE350_GFX2D_SHADER_CFG, cfg);
+    W(AE350_GFX2D_SRC_ADDR, src);
+    W(AE350_GFX2D_SRC_STRIDE, src_stride);
+    W(AE350_GFX2D_SRC_WIDTH, sw);
+    W(AE350_GFX2D_SRC_HEIGHT, sh);
+    W(AE350_GFX2D_DST_ADDR, dst);
+    W(AE350_GFX2D_DST_STRIDE, dst_stride);
+    W(AE350_GFX2D_WIDTH, w);
+    W(AE350_GFX2D_HEIGHT, h);
+    W(AE350_GFX2D_FORMAT, fmt);
+    W(AE350_GFX2D_UV_START_U, u0);
+    W(AE350_GFX2D_UV_DU_DX, du);
+    W(AE350_GFX2D_UV_START_V, v0);
+    W(AE350_GFX2D_UV_DV_DY, dv);
+    load_insts(inst);
+    W(AE350_GFX2D_CONTROL, 1);
+    return wait_gfx2d();
+}
+
+/* ARGB8888 texture -> ARGB8888 destination, compared against scale_ref. */
+static unsigned scale_argb_case(uint32_t src, uint32_t dst, unsigned sw, unsigned sh,
+                                unsigned w, unsigned h, uint32_t u0, uint32_t du,
+                                uint32_t v0, uint32_t dv, int bil, int *rc) {
+    uint32_t src_stride = sw * 4u, dst_stride = w * 4u;
+    for (unsigned v = 0; v < sh; v++)
+        for (unsigned u = 0; u < sw; u++) put32(src + v * src_stride + u * 4u, texel(u, v));
+    for (unsigned i = 0; i < w * h; i++) put32(dst + i * 4u, 0);
+    ae350_dma_sync_for_device(src, src_stride * sh);
+    ae350_dma_sync_for_device(dst, dst_stride * h);
+    *rc = run_scale(OP_SCALE_BLIT,
+                    CFG_USES_SRC | CFG_SCALE | (bil ? CFG_BILINEAR : 0) | CFG_SRC_FMT(FMT_ARGB8888),
+                    src, src_stride, sw, sh, dst, dst_stride, w, h, FMT_ARGB8888,
+                    u0, du, v0, dv);
+    if (*rc) return 0;
+    ae350_dma_sync_for_cpu(dst, dst_stride * h);
+    unsigned bad = 0;
+    for (unsigned y = 0; y < h; y++)
+        for (unsigned x = 0; x < w; x++)
+            if (px32(dst + y * dst_stride + x * 4u) !=
+                scale_ref(texel, sw, sh, u0, du, v0, dv, bil, x, y)) bad++;
+    return bad;
+}
+
 int main(void) {
-    for (unsigned i = 0; i < 16; i++) slot[i] = 0;
+    for (unsigned i = 0; i < SLOT_COUNT; i++) slot[i] = 0;
 
     /* 1. Probe & CAP verification */
     uint32_t id = R(0);
@@ -496,6 +606,90 @@ int main(void) {
         for (unsigned c = 0; c < 8; c++)
             if (px32(dst + c * 4) != 0x5A5A5A5Au) bad++;
         if (rc != AE350_GFX2D_PARAM || bad) { slot[STAGE] = 0xC350000Au; return 0; }
+        W(AE350_GFX2D_CLEAR_ERRORS, 1);
+    }
+
+    /* 11. Step 6c: OP_SCALE_BLIT 2x upscale, nearest then bilinear */
+    {
+        int rc;
+        unsigned bad = 0;
+        for (int bil = 0; bil < 2; bil++) {
+            bad += scale_argb_case(SCRATCH + 0x10000, SCRATCH + 0x11000, 8, 6, 16, 12,
+                                   0, 0x8000u, 0, 0x8000u, bil, &rc);
+            if (rc) { slot[STAGE] = 0xC350000Bu; slot[SCALE_UP_BAD] = 0x80000000u | (uint32_t)rc; return 0; }
+        }
+        slot[SCALE_UP_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC350000Bu; return 0; }
+    }
+
+    /* 12. Step 6c: U_first=0xFFFF, dU=0x10001, bilinear over 1100 pixels
+     * (the step choice must tile it as 1022 + 78 to keep spans <= 1024) */
+    {
+        int rc;
+        unsigned bad = scale_argb_case(SCRATCH + 0x20000, SCRATCH + 0x24000, 1200, 2,
+                                       1100, 1, 0xFFFFu, 0x10001u, 0, 0, 1, &rc);
+        if (rc) { slot[STAGE] = 0xC350000Cu; slot[SPAN_BAD] = 0x80000000u | (uint32_t)rc; return 0; }
+        slot[SPAN_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC350000Cu; return 0; }
+    }
+
+    /* 13. Step 6c: U0/V0 = 0xFFFF0000 cross 2^32 and must clamp, not wrap */
+    {
+        int rc;
+        unsigned bad = 0;
+        for (int bil = 0; bil < 2; bil++) {
+            bad += scale_argb_case(SCRATCH + 0x26000, SCRATCH + 0x26400, 8, 4, 4, 3,
+                                   0xFFFF0000u, 0x10000u, 0xFFFF0000u, 0x10000u, bil, &rc);
+            if (rc) { slot[STAGE] = 0xC350000Du; slot[WRAP_BAD] = 0x80000000u | (uint32_t)rc; return 0; }
+        }
+        slot[WRAP_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC350000Du; return 0; }
+    }
+
+    /* 14. Step 6c: bilinear 2x downscale RGB565 -> RGB565 over 512 + 88 tiles */
+    {
+        uint32_t src = SCRATCH + 0x28000, dst = SCRATCH + 0x2C000;
+        unsigned sw = 1210, sh = 4, w = 600, h = 2;
+        uint32_t src_stride = 2432, dst_stride = 1280;
+        uint32_t u0 = 0x8000u, du = 0x20000u, v0 = 0x4000u, dv = 0x18000u;
+        for (unsigned v = 0; v < sh; v++)
+            for (unsigned u = 0; u < sw; u++) put16(src + v * src_stride + u * 2u, texel565(u, v));
+        for (unsigned y = 0; y < h; y++)
+            for (unsigned x = 0; x < w; x++) put16(dst + y * dst_stride + x * 2u, 0);
+        ae350_dma_sync_for_device(src, src_stride * sh);
+        ae350_dma_sync_for_device(dst, dst_stride * h);
+        int rc = run_scale(OP_SCALE_BLIT,
+                           CFG_USES_SRC | CFG_SCALE | CFG_BILINEAR | CFG_SRC_FMT(FMT_RGB565),
+                           src, src_stride, sw, sh, dst, dst_stride, w, h, FMT_RGB565,
+                           u0, du, v0, dv);
+        if (rc) { slot[STAGE] = 0xC350000Eu; slot[DOWN_BAD] = 0x80000000u | (uint32_t)rc; return 0; }
+        ae350_dma_sync_for_cpu(dst, dst_stride * h);
+        unsigned bad = 0;
+        for (unsigned y = 0; y < h; y++)
+            for (unsigned x = 0; x < w; x++) {
+                uint32_t p = scale_ref(tex565, sw, sh, u0, du, v0, dv, 1, x, y);
+                uint16_t want = (uint16_t)(((p >> 19) & 31u) << 11 |
+                                           ((p >> 10) & 63u) << 5 | ((p >> 3) & 31u));
+                if (px16(dst + y * dst_stride + x * 2u) != want) bad++;
+            }
+        slot[DOWN_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC350000Eu; return 0; }
+    }
+
+    /* 15. Step 6c: OP_SCALE_BLIT without SCALE_EN is rejected without writes */
+    {
+        uint32_t dst = SCRATCH + 0x2E000;
+        for (unsigned c = 0; c < 8; c++) put32(dst + c * 4, 0x5A5A5A5Au);
+        ae350_dma_sync_for_device(dst, 32);
+        int rc = run_scale(OP_SCALE_BLIT, CFG_USES_SRC | CFG_SRC_FMT(FMT_ARGB8888),
+                           SCRATCH + 0x10000, 32, 8, 6, dst, 32, 8, 1, FMT_ARGB8888,
+                           0, 0x10000u, 0, 0x10000u);
+        slot[SCALE_RC] = (uint32_t)rc;
+        ae350_dma_sync_for_cpu(dst, 32);
+        unsigned bad = 0;
+        for (unsigned c = 0; c < 8; c++)
+            if (px32(dst + c * 4) != 0x5A5A5A5Au) bad++;
+        if (rc != AE350_GFX2D_PARAM || bad) { slot[STAGE] = 0xC350000Fu; return 0; }
         W(AE350_GFX2D_CLEAR_ERRORS, 1);
     }
 

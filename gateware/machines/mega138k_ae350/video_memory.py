@@ -36,6 +36,12 @@ class DDRMemoryArbiter(LiteXModule):
             ports.append(gfx2d)
             pending.append(self.gfx2d_pending)
             counts.append(self.gfx2d_commands)
+        # Client pending levels come from distant domains and modules; the
+        # grant logic sees them one cycle late. A stale level at most offers
+        # one unused grant, which the next cycle withdraws.
+        pend_q=[Signal() for _ in pending]
+        self.sync += [q.eq(p) for q,p in zip(pend_q,pending)]
+        pending=pend_q
         choices = {}
         for previous in range(len(ports)):
             choice = previous
@@ -56,11 +62,21 @@ class DDRMemoryArbiter(LiteXModule):
         out={field:Signal(len(getattr(memory,field)),reset_less=True)
              for field in ('addr','cmd','wr_data','wr_data_mask')}
         # Per-port readiness and response ownership are registered from the
-        # next arbiter state, so each client's handshake starts at one FF.
+        # next arbiter state, so each client's handshake starts at arbiter
+        # registers.
         ready=[Signal() for _ in ports];own=[Signal() for _ in ports]
+        ready_q=[Signal() for _ in ports]
         hit=[Signal() for _ in ports]
+        # One-hot copy of grant for the wide payload mux, so the binary
+        # grant register does not fan out across every payload bit.
+        grant_sel=[Signal(reset_less=True) for _ in ports]
+        for s in grant_sel:
+            s.attr.add(("syn_maxfan", 32))
         valid_next=Signal();grant_next=Signal(id_bits)
         busy_next=Signal();out_valid_next=Signal()
+        # Next state assuming no command this cycle. An accepted command
+        # clears valid_next, so it only needs to gate readiness at the end.
+        valid_idle=Signal();busy_idle=Signal()
         self.comb += [any_pending.eq(Cat(*pending)!=0),
             Case(last,{i:chosen.eq(value) for i,value in choices.items()}),
             # The registered grant owns readiness. Pending selects the next
@@ -69,15 +85,18 @@ class DDRMemoryArbiter(LiteXModule):
             # Writers raise cmd_en together with their data only after seeing
             # ready, so readiness must not depend on either enable.
             command.eq(Cat(*[r & p.cmd_en for r,p in zip(ready,ports)])!=0),
-            valid_next.eq(valid),grant_next.eq(grant),
-            If(~valid & any_pending,valid_next.eq(1),grant_next.eq(chosen)),
-            If(valid & ~selected_pending,valid_next.eq(0)),
-            If(command,valid_next.eq(0)),
+            valid_idle.eq(valid),grant_next.eq(grant),
+            If(~valid & any_pending,valid_idle.eq(1),grant_next.eq(chosen)),
+            If(valid & ~selected_pending,valid_idle.eq(0)),
+            valid_next.eq(valid_idle & ~command),
+            busy_idle.eq(busy & ~memory.rd_data_valid),
             busy_next.eq(busy),
             If(command & read,busy_next.eq(1)),
             If(busy & memory.rd_data_valid,busy_next.eq(0)),
-            out_valid_next.eq(out_valid),
-            If(command,out_valid_next.eq(1)).Elif(issued,out_valid_next.eq(0)),
+            # A command is only possible with the slot empty, and the slot
+            # can only issue when full, so each side needs one term only.
+            out_valid_next.eq(Mux(out_valid,~issued,
+                Cat(*[q & p.cmd_en for q,p in zip(ready_q,ports)])!=0)),
             *[getattr(memory,field).eq(value) for field,value in out.items()],
             memory.burst.eq(0),
             memory.cmd_en.eq(out_valid & (out_read | memory.wr_data_rdy)),
@@ -86,18 +105,37 @@ class DDRMemoryArbiter(LiteXModule):
             issued.eq(memory.cmd_en & memory.cmd_ready)]
         # The payload loads whenever the slot is free, so its enable is a
         # register and not the selected client's command decode.
+        def select_onehot(field):
+            terms=[Mux(s,getattr(p,field),0) for s,p in zip(grant_sel,ports)]
+            value=terms[0]
+            for t in terms[1:]:
+                value=value|t
+            return value
         self.sync += [
-            If(~out_valid,*[value.eq(select(field)) for field,value in out.items()],
+            *[s.eq(grant_next==i) for i,s in enumerate(grant_sel)],
+            If(~out_valid,*[value.eq(select_onehot(field)) for field,value in out.items()],
                out_read.eq(read)),
             out_valid.eq(out_valid_next)]
+        # Read responses are registered once beside the controller, one cycle
+        # after the raw response; each port's valid is its own register.
+        rd_data_q=Signal(len(memory.rd_data),reset_less=True)
+        rd_valid_q=[Signal() for _ in ports]
+        self.sync += rd_data_q.eq(memory.rd_data)
+        # The registered readiness assumes no command this cycle; a command
+        # always fills the output slot, so gating with out_valid withdraws it
+        # in the following cycle without client enables reaching the register.
+        # Without a command the slot's next state is out_valid & ~issued, so
+        # the same gate also covers a slot still waiting for the controller.
         for i,p in enumerate(ports):
             # Once granted, this port's command is the selected command.
-            self.comb += [p.cmd_ready.eq(ready[i]),p.wr_data_rdy.eq(ready[i]),
-                p.rd_data.eq(memory.rd_data),p.rd_data_valid.eq(memory.rd_data_valid & own[i])]
+            self.comb += [ready[i].eq(ready_q[i] & ~out_valid),
+                p.cmd_ready.eq(ready[i]),p.wr_data_rdy.eq(ready[i]),
+                p.rd_data.eq(rd_data_q),p.rd_data_valid.eq(rd_valid_q[i])]
             self.sync += [
-                ready[i].eq(valid_next & ~busy_next & ~out_valid_next & (grant_next==i)),
+                ready_q[i].eq(valid_idle & ~busy_idle & (grant_next==i)),
                 If(command & read & ready[i],own[i].eq(1))
                 .Elif(memory.rd_data_valid,own[i].eq(0)),
+                rd_valid_q[i].eq(memory.rd_data_valid & own[i]),
                 hit[i].eq(command & ready[i]),
                 If(hit[i],counts[i].eq(counts[i]+1))]
         video_waiting = Signal()
@@ -278,6 +316,12 @@ class VideoFrameReader(LiteXModule):
         fsm.act('IDLE', request.ready.eq(1), If(request.valid, *accept()))
         # Bound calculation is once per frame, away from the FIFO admission
         # and invalid-address state transition. It adds no per-block latency.
+        # The base/stride checks are registered in BOUND, so CHECK only ORs
+        # flags into the address error and state decode.
+        layout_bad = Signal()
+        layout_check = NextValue(layout_bad,
+            (base < min_base) | (base[:5] != 0) | (stride < row_bytes) |
+            (stride[:5] != 0) | (stride >= 65536))
         if runtime:
             row_span = Signal(32)
             # Inputs are stable from accept() onward; BOUND reads the value
@@ -290,6 +334,7 @@ class VideoFrameReader(LiteXModule):
             )
             fsm.act('BOUND',
                 NextValue(end, base + row_span + row_bytes),
+                layout_check,
                 NextValue(wrap_enabled, wrap_end != 0),
                 NextValue(wrap_valid,
                     (wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
@@ -308,6 +353,7 @@ class VideoFrameReader(LiteXModule):
                 NextState('BOUND')
             )
             fsm.act('BOUND',
+                layout_check,
                 NextValue(wrap_enabled, wrap_end != 0),
                 NextValue(wrap_valid,
                     (wrap_start[:5] == 0) & (wrap_end[:5] == 0) &
@@ -320,9 +366,7 @@ class VideoFrameReader(LiteXModule):
             )
         fsm.act('CHECK',
             If(~self.enabled, NextState('IDLE'))
-            .Elif((base < min_base) | (base[:5] != 0) | (stride < row_bytes) |
-               (stride[:5] != 0) | (stride >= 65536) |
-               Mux(wrap_enabled, ~wrap_valid, end > ram_bytes),
+            .Elif(layout_bad | Mux(wrap_enabled, ~wrap_valid, end > ram_bytes),
                 NextValue(self.address_error, 1), NextState('IDLE'),
             ).Else(NextState('SEND')),
         )
@@ -361,7 +405,9 @@ class VideoFrameReader(LiteXModule):
         # registered terminal flags rather than a subtract/compare CE cone.
         # Next-row addresses are also registered ahead of time so last_column
         # carries no 32-bit addition or comparator cones.
+        index_p1 = Signal(len(index))
         self.sync += [
+            index_p1.eq(index + 1),
             self.first_block.eq(index == 0),
             last_block.eq(index == blocks - 1),
             last_column.eq(column == blocks_per_row - 1),
@@ -381,7 +427,7 @@ class VideoFrameReader(LiteXModule):
                     If(last_block,
                         NextValue(self.frames, self.frames + 1), NextState('IDLE'),
                     ).Else(
-                        NextValue(index, index + 1), NextValue(elapsed, 0),
+                        NextValue(index, index_p1), NextValue(elapsed, 0),
                         If(last_column,
                             NextValue(column, 0),
                             NextValue(row_base, nxt_row),

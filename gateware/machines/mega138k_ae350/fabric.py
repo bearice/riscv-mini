@@ -227,7 +227,6 @@ class AE350Fabric(LiteXModule):
         strb_q = Signal(4)
         read_data_reg = Signal(32)
         error_reg = Signal()
-        error_q = Signal()
         off = Signal(12)
         commit = Signal()
         self.comb += [
@@ -323,6 +322,12 @@ class AE350Fabric(LiteXModule):
         dma_ro = _onehot(off, (0x00, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c))
         status = Cat(self.fifo.empty, self.fifo.full, self.fifo.overflow, self.fifo.underflow)
         sys_data, irq_data, dma_data, ddr_data = (Signal(32) for _ in range(4))
+        # The DDR diagnostic words sit with their clock-crossing registers,
+        # away from the fabric. A private copy of the offset captured with
+        # addr_q lets their read mux start beside them.
+        diag_off = Signal(12)
+        diag_off.attr.update({('syn_keep', 1), ('syn_preserve', 1)})
+        self.sync += If(cpu.apb_select & ~cpu.apb_enable, diag_off.eq(cpu.apb_addr[:12]))
         self.comb += [
             sys_data.eq(0), irq_data.eq(0), dma_data.eq(0), ddr_data.eq(0),
             Case(off, {
@@ -340,7 +345,7 @@ class AE350Fabric(LiteXModule):
                 0x14: irq_data.eq(self.irq_pending),0x18: irq_data.eq(self.irq_enable),
                 0x20: irq_data.eq(1),
             }),
-            Case(off, {offset: ddr_data.eq(value) for offset,value in diagnostics.items()}),
+            Case(diag_off, {offset: ddr_data.eq(value) for offset,value in diagnostics.items()}),
             Case(off, {
                 0: dma_data.eq(amap.DMA_SVC_ID),4: dma_data.eq(amap.ABI_VERSION),
                 8: dma_data.eq(amap.DMA_SVC_CAP),0x0c: dma_data.eq(self.req_enable<<1),
@@ -398,10 +403,13 @@ class AE350Fabric(LiteXModule):
         ]
         # Each gated page read is registered beside its device; the OR across
         # the chip runs in the completion cycle instead of after the decode.
+        # Page validity is registered per page the same way, so a device's
+        # offset decode does not also cross the chip into one error flop.
         read_regs = [Signal(32, reset_less=True) for _ in read_pages]
+        valid_regs = [Signal(reset_less=True) for _ in pages]
         self.comb += [
             read_data_reg.eq(reduce(or_, read_regs)),
-            error_q.eq(~reduce(or_, [valid for valid, _ in pages])),
+            error_reg.eq(~reduce(or_, valid_regs)),
         ]
         control_q,sticky_q,w1c_q,irq_enable_q=(Signal() for _ in range(4))
         self.sync += [
@@ -449,7 +457,7 @@ class AE350Fabric(LiteXModule):
             ).Elif(wait & ~phase,
                 phase.eq(1),
                 *[r.eq(Mux(v, val, 0)) for r, (v, val) in zip(read_regs, read_pages)],
-                error_reg.eq(error_q),
+                *[r.eq(v) for r, (v, _) in zip(valid_regs, pages)],
             ).Elif(wait & (~sd_page | ~legal |
                            (sd.complete if sd is not None else 1)) &
                     (~flash_page | ~legal | flash_done) &
