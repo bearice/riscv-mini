@@ -450,6 +450,48 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 	return 0;
 }
 
+static int ae350_drm_plane_atomic_check(struct drm_plane *plane,
+					struct drm_atomic_state *state)
+{
+	struct drm_plane_state *plane_state =
+		drm_atomic_get_new_plane_state(state, plane);
+	struct drm_simple_display_pipe *pipe =
+		container_of(plane, struct drm_simple_display_pipe, plane);
+	struct drm_crtc_state *crtc_state =
+		drm_atomic_get_new_crtc_state(state, &pipe->crtc);
+	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+	int min_scale = drm->gfx ? 1 : DRM_PLANE_NO_SCALING;
+	int max_scale = drm->gfx ? INT_MAX : DRM_PLANE_NO_SCALING;
+	int ret;
+
+	ret = drm_atomic_helper_check_plane_state(plane_state, crtc_state,
+						  min_scale, max_scale,
+						  false, false);
+	if (ret)
+		return ret;
+
+	if (!plane_state->visible)
+		return 0;
+
+	return ae350_drm_pipe_check(pipe, plane_state, crtc_state);
+}
+
+static void ae350_drm_plane_atomic_update(struct drm_plane *plane,
+					  struct drm_atomic_state *state)
+{
+	struct drm_plane_state *old_pstate =
+		drm_atomic_get_old_plane_state(state, plane);
+	struct drm_simple_display_pipe *pipe =
+		container_of(plane, struct drm_simple_display_pipe, plane);
+
+	ae350_drm_pipe_update(pipe, old_pstate);
+}
+
+static const struct drm_plane_helper_funcs ae350_drm_plane_helper_funcs = {
+	.atomic_check = ae350_drm_plane_atomic_check,
+	.atomic_update = ae350_drm_plane_atomic_update,
+};
+
 static const struct drm_simple_display_pipe_funcs ae350_drm_pipe_funcs = {
 	.enable = ae350_drm_pipe_enable,
 	.disable = ae350_drm_pipe_disable,
@@ -631,6 +673,7 @@ static int ae350_drm_probe(struct platform_device *pdev)
 					   &drm->connector);
 	if (ret)
 		goto release;
+	drm_plane_helper_add(&drm->pipe.plane, &ae350_drm_plane_helper_funcs);
 	drm_plane_enable_fb_damage_clips(&drm->pipe.plane);
 	drm_mode_config_reset(dev_drm);
 	ret = drm_dev_register(dev_drm, 0);

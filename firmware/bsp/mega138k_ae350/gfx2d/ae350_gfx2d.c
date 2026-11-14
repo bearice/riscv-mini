@@ -58,7 +58,7 @@ void ae350_gfx2d_reset_cache(void) {
 }
 
 int ae350_gfx2d_set_format(unsigned format) {
-    if (format == AE350_GFX2D_FMT_RGB888 || format > AE350_GFX2D_FMT_ARGB1555)
+    if (format == AE350_GFX2D_FMT_RGB888 || format > AE350_GFX2D_FMT_XRGB1555)
         return AE350_GFX2D_PARAM;
     default_fmt = format;
     return AE350_GFX2D_OK;
