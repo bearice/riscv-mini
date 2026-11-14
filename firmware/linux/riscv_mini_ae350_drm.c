@@ -460,8 +460,13 @@ static int ae350_drm_plane_atomic_check(struct drm_plane *plane,
 	struct drm_crtc_state *crtc_state =
 		drm_atomic_get_new_crtc_state(state, &pipe->crtc);
 	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
-	int min_scale = drm->gfx ? 1 : DRM_PLANE_NO_SCALING;
-	int max_scale = drm->gfx ? INT_MAX : DRM_PLANE_NO_SCALING;
+	bool can_scale = drm->gfx && plane_state->fb &&
+			 plane_state->fb->format->format != DRM_FORMAT_RGB888 &&
+			 ae350_drm_gfx_format_id(plane_state->fb->format->format) >= 0 &&
+			 readl(drm->gfx) == AE350_GFX2D_ID &&
+			 (readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SCALE);
+	int min_scale = can_scale ? 1 : DRM_PLANE_NO_SCALING;
+	int max_scale = can_scale ? INT_MAX : DRM_PLANE_NO_SCALING;
 	int ret;
 
 	ret = drm_atomic_helper_check_plane_state(plane_state, crtc_state,
