@@ -391,6 +391,111 @@ static ssize_t ae350_fb_write(struct fb_info *info, const char __user *buf,
 	return ret;
 }
 
+struct ae350_fb_blend_req {
+	__u32 src_x;
+	__u32 src_y;
+	__u32 dst_x;
+	__u32 dst_y;
+	__u32 width;
+	__u32 height;
+	__u8 alpha;
+	__u8 pad[3];
+	__u32 flags;
+};
+
+struct ae350_fb_scale_req {
+	__u32 src_x;
+	__u32 src_y;
+	__u32 src_width;
+	__u32 src_height;
+	__u32 dst_x;
+	__u32 dst_y;
+	__u32 dst_width;
+	__u32 dst_height;
+	__u32 u0;
+	__u32 v0;
+	__u32 du_dx;
+	__u32 dv_dy;
+	__u8 alpha;
+	__u8 pad[3];
+	__u32 flags;
+};
+
+#define AE350_FBIO_BLEND _IOW('A', 0x01, struct ae350_fb_blend_req)
+#define AE350_FBIO_SCALE _IOW('A', 0x02, struct ae350_fb_scale_req)
+
+static int ae350_fb_ioctl(struct fb_info *info, unsigned int cmd,
+			  unsigned long arg)
+{
+	struct ae350_fb *fb = info->par;
+	void __user *argp = (void __user *)arg;
+
+	if (!ae350_gfx_ready(fb) || fb->format == AE350_FMT_RGB888 ||
+	    fb->format == AE350_FMT_INDEX8)
+		return -ENODEV;
+
+	switch (cmd) {
+	case AE350_FBIO_BLEND: {
+		struct ae350_fb_blend_req req;
+		u32 src_phys, dst_phys;
+		int rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!req.width || !req.height ||
+		    req.src_x + req.width > fb->width ||
+		    req.dst_x + req.width > fb->width ||
+		    req.src_y + req.height > fb->height * 2u ||
+		    req.dst_y + req.height > fb->height * 2u)
+			return -EINVAL;
+		src_phys = ae350_phys(fb, req.src_x, req.src_y);
+		dst_phys = ae350_phys(fb, req.dst_x, req.dst_y);
+		ae350_fb_clean_rect(fb, req.src_x, req.src_y, req.width, req.height);
+		ae350_fb_clean_rect(fb, req.dst_x, req.dst_y, req.width, req.height);
+		rc = ae350_gfx2d_blend(fb->gfx, src_phys, fb->stride, fb->format,
+				       dst_phys, fb->stride, fb->format,
+				       req.width, req.height, req.alpha, req.flags);
+		if (rc)
+			return rc < 0 ? rc : -EIO;
+		ae350_fb_inval_rect(fb, req.dst_x, req.dst_y, req.width, req.height);
+		return 0;
+	}
+	case AE350_FBIO_SCALE: {
+		struct ae350_fb_scale_req req;
+		u32 src_phys, dst_phys, du_dx, dv_dy;
+		int rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!req.src_width || !req.src_height ||
+		    !req.dst_width || !req.dst_height ||
+		    req.src_x + req.src_width > fb->width ||
+		    req.dst_x + req.dst_width > fb->width ||
+		    req.src_y + req.src_height > fb->height * 2u ||
+		    req.dst_y + req.dst_height > fb->height * 2u)
+			return -EINVAL;
+		src_phys = ae350_phys(fb, req.src_x, req.src_y);
+		dst_phys = ae350_phys(fb, req.dst_x, req.dst_y);
+		du_dx = req.du_dx ? req.du_dx : ((req.src_width << 16) / req.dst_width);
+		dv_dy = req.dv_dy ? req.dv_dy : ((req.src_height << 16) / req.dst_height);
+		ae350_fb_clean_rect(fb, req.src_x, req.src_y, req.src_width, req.src_height);
+		ae350_fb_clean_rect(fb, req.dst_x, req.dst_y, req.dst_width, req.dst_height);
+		rc = ae350_gfx2d_scale(fb->gfx, src_phys, fb->stride,
+				       req.src_width, req.src_height, fb->format,
+				       dst_phys, fb->stride,
+				       req.dst_width, req.dst_height, fb->format,
+				       req.u0, req.v0, du_dx, dv_dy,
+				       req.alpha, req.flags);
+		if (rc)
+			return rc < 0 ? rc : -EIO;
+		ae350_fb_inval_rect(fb, req.dst_x, req.dst_y, req.dst_width, req.dst_height);
+		return 0;
+	}
+	default:
+		return -ENOTTY;
+	}
+}
+
 static const struct fb_ops ae350_fb_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = ae350_fb_check_var,
@@ -401,6 +506,7 @@ static const struct fb_ops ae350_fb_ops = {
 	.fb_fillrect = ae350_fb_fillrect,
 	.fb_copyarea = ae350_fb_copyarea,
 	.fb_imageblit = ae350_fb_imageblit,
+	.fb_ioctl = ae350_fb_ioctl,
 	.fb_sync = ae350_fb_sync,
 	.fb_read = fb_sys_read,
 	.fb_write = ae350_fb_write,

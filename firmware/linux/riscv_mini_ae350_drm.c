@@ -67,6 +67,24 @@ static int ae350_drm_format_id(u32 fourcc)
 	}
 }
 
+static int ae350_drm_gfx_format_id(u32 fourcc)
+{
+	switch (fourcc) {
+	case DRM_FORMAT_RGB565:
+		return AE350_GFX_FMT_RGB565;
+	case DRM_FORMAT_XRGB8888:
+		return AE350_GFX_FMT_XRGB8888;
+	case DRM_FORMAT_XRGB1555:
+		return AE350_GFX_FMT_XRGB1555;
+	case DRM_FORMAT_ARGB8888:
+		return AE350_GFX_FMT_ARGB8888;
+	case DRM_FORMAT_ARGB1555:
+		return AE350_GFX_FMT_ARGB1555;
+	default:
+		return -1;
+	}
+}
+
 static u32 ae350_drm_bpp(u32 format_id)
 {
 	switch (format_id) {
@@ -130,57 +148,87 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 	src_y = plane_state->src_y >> 16;
 	src_w = plane_state->src_w >> 16 ? (plane_state->src_w >> 16) : drm->width;
 	src_h = plane_state->src_h >> 16 ? (plane_state->src_h >> 16) : drm->height;
-	if (src_w > drm->width)
-		src_w = drm->width;
-	if (src_h > drm->height)
-		src_h = drm->height;
 
-	if (drm->gfx && drm->fourcc == fb->format->format &&
-	    drm->format_id != AE350_FMT_RGB888 &&
+	if (drm->gfx && drm->format_id != AE350_FMT_RGB888 &&
 	    readl(drm->gfx) == AE350_GFX2D_ID &&
 	    !(readl(drm->gfx + AE350_G_STATUS) & AE350_G_STATUS_BUSY)) {
 		struct drm_gem_dma_object *gem = to_drm_gem_dma_obj(fb->obj[0]);
+		int src_gfx_fmt = ae350_drm_gfx_format_id(fb->format->format);
+		u32 dst_w = plane_state->crtc_w ? (u32)plane_state->crtc_w : src_w;
+		u32 dst_h = plane_state->crtc_h ? (u32)plane_state->crtc_h : src_h;
+		u8 alpha = (u8)(plane_state->alpha >> 8);
 
-		if (gem && gem->dma_addr) {
-			u32 bpp = ae350_drm_bpp(drm->format_id);
+		if (dst_w > drm->width)
+			dst_w = drm->width;
+		if (dst_h > drm->height)
+			dst_h = drm->height;
+		if (gem && gem->dma_addr && src_gfx_fmt >= 0) {
+			u32 sbpp = fb->format->cpp[0];
+			u32 dbpp = ae350_drm_bpp(drm->format_id);
 			u32 src_phys = (u32)gem->dma_addr + fb->offsets[0] +
-				       src_y * fb->pitches[0] + src_x * bpp;
+				       src_y * fb->pitches[0] + src_x * sbpp;
 			u32 dst_phys = (u32)drm->dma;
+			u32 r;
+			int gfx_rc = -EINVAL;
 
-			if ((src_phys % 32) == (dst_phys % 32) &&
-			    (fb->pitches[0] % 32) == (drm->stride % 32)) {
-				u32 r;
+			for (r = 0; r < src_h; r++) {
+				u32 s_va = (u32)(uintptr_t)src_data[0].vaddr +
+					   (src_y + r) * fb->pitches[0] + src_x * sbpp;
+				ae350_cache_clean_range(s_va, src_w * sbpp);
+			}
+			for (r = 0; r < dst_h; r++) {
+				u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
+				ae350_cache_clean_range(d_va, dst_w * dbpp);
+			}
 
-				for (r = 0; r < src_h; r++) {
-					u32 s_va = (u32)(uintptr_t)src_data[0].vaddr +
-						   (src_y + r) * fb->pitches[0] + src_x * bpp;
-					u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
-					ae350_cache_clean_range(s_va, src_w * bpp);
-					ae350_cache_clean_range(d_va, src_w * bpp);
-				}
+			if (src_w != dst_w || src_h != dst_h) {
+				u32 du_dx = (src_w << 16) / dst_w;
+				u32 dv_dy = (src_h << 16) / dst_h;
+				u32 flags = AE350_GFX_FLAG_BILINEAR |
+					    (alpha < 255u ? AE350_GFX_FLAG_BLEND : 0u);
 
+				gfx_rc = ae350_gfx2d_scale(drm->gfx, src_phys,
+							   fb->pitches[0], src_w, src_h,
+							   src_gfx_fmt, dst_phys,
+							   drm->stride, dst_w, dst_h,
+							   drm->format_id, 0, 0,
+							   du_dx, dv_dy, alpha, flags);
+			} else if (drm->fourcc != fb->format->format || alpha < 255u) {
+				gfx_rc = ae350_gfx2d_blend(drm->gfx, src_phys,
+							   fb->pitches[0], src_gfx_fmt,
+							   dst_phys, drm->stride,
+							   drm->format_id, dst_w, dst_h,
+							   alpha, 0);
+			} else if ((src_phys % 32) == (dst_phys % 32) &&
+				   (fb->pitches[0] % 32) == (drm->stride % 32)) {
 				writel(AE350_GFX_COPY, drm->gfx + AE350_G_OP);
 				writel(src_phys, drm->gfx + AE350_G_SRC_ADDR);
 				writel(dst_phys, drm->gfx + AE350_G_DST_ADDR);
 				writel(fb->pitches[0], drm->gfx + AE350_G_SRC_STRIDE);
 				writel(drm->stride, drm->gfx + AE350_G_DST_STRIDE);
-				writel(src_w, drm->gfx + AE350_G_WIDTH);
-				writel(src_h, drm->gfx + AE350_G_HEIGHT);
+				writel(dst_w, drm->gfx + AE350_G_WIDTH);
+				writel(dst_h, drm->gfx + AE350_G_HEIGHT);
 				writel(0, drm->gfx + AE350_G_FG_COLOR);
 				writel(0, drm->gfx + AE350_G_BG_COLOR);
 				writel(0, drm->gfx + AE350_G_BLIT_SRC_WB);
 				writel(drm->format_id, drm->gfx + AE350_G_FORMAT);
-				if (!ae350_gfx2d_run(drm->gfx)) {
-					for (r = 0; r < src_h; r++) {
-						u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
-						ae350_cache_inval_range(d_va, src_w * bpp);
-					}
-					drm_gem_fb_vunmap(fb, src_maps);
-					goto free_maps;
+				gfx_rc = ae350_gfx2d_run(drm->gfx);
+			}
+
+			if (!gfx_rc) {
+				for (r = 0; r < dst_h; r++) {
+					u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
+					ae350_cache_inval_range(d_va, dst_w * dbpp);
 				}
+				drm_gem_fb_vunmap(fb, src_maps);
+				goto free_maps;
 			}
 		}
 	}
+	if (src_w > drm->width)
+		src_w = drm->width;
+	if (src_h > drm->height)
+		src_h = drm->height;
 
 	drm_rect_init(&clip, src_x, src_y, src_w, src_h);
 	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_data,

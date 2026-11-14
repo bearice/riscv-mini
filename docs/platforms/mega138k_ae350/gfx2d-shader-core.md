@@ -1,7 +1,7 @@
 # AE350 GFX2D 可编程像素着色器核心（GFX2D-PPU）架构设计规格
 
 > 适用机器：`mega138k_ae350`（Tang Mega 138K Pro / Gowin GW5AST-LV138FPG676A）。
-> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）、Step 6b（完整 4-Stage、`PAL_RAM`、4 通道 `LUT_RAM`）与 Step 6c（48-bit UV 缩放、逐块跨度门禁、`SRC_LB0/1` 双行槽与双线性插值）已完成全量 PnR 时序闭合与实机验收**。
+> 状态：**二期 Step 6a（基础架构、行缓冲、Stage 0..1 及 DOT3）、Step 6b（完整 4-Stage、`PAL_RAM`、4 通道 `LUT_RAM`）、Step 6c（48-bit UV 缩放、逐块跨度门禁、`SRC_LB0/1` 双行槽与双线性插值）与 Step 6d（BSP `ae350_gfx2d_blend` / `ae350_gfx2d_scale` 及 Linux `fbdev` / `DRM` 接入）已完成**。
 > 关联文档：[GFX2D 一期规格与实机验收](gfx2d.md)、[GW5AST 硬核资源说明](gw5ast-hard-ip-usage.md)、[地址映射合同](address-map.md)。
 
 ---
@@ -526,4 +526,4 @@ $$\text{top} = \text{LERP}(P_{10}, P_{00}, f_u),\quad \text{bot} = \text{LERP}(P
 | **Step 6a：ABI 扩展、重叠安全校验、行缓冲切块与 Stage 0..1 核心** | 1. 在 `address_map.py` 扩展 `GFX2D_CAP` (`0x0FEF`) 与 `SHADER_CFG` 等寄存器；<br/>2. 实现 `INIT3` 重叠安全校验（仅允许无缩放同格式同 stride 且 `WIDTH<=1024` 的单块原位/垂直逆序操作，其余重叠一律返回 `ERR_PARAM`）；<br/>3. 实现 `SRC_LB0`、`DST_LB`、`OUT_LB`、Phase 1 流式拆包、Phase 3 流式打包（含 4×4 Bayer Dither）与 `MAX_TILE_PIXELS=1024` 分块状态机；<br/>4. 落地 Stage 0..1（含 `MUL_UNORM8`、`LERP`、`DISCARD_IF` 与 Stage 1 `DOT3`）。 | 1. 单元测试验证 `MUL_UNORM8` 全 65536 组合精确 `/255`、`LERP` 端点无损、`XRGB` 默认不透明、`WIDTH=1280` 跨块重叠拒绝与非重叠双块正确性；<br/>2. Gowin PnR `ddr_ui_clk` (100MHz) 0 TNS。 |
 | **Step 6b：完整 4-Stage 流水线与 `PAL_RAM` / `LUT_RAM`** | 1. 补齐 Stage 2..3、前端 `INDEX8` 专用 `PAL_RAM`（1×BSRAM）与 Stage 2 专用 4-Port `LUT_RAM`（2×BSRAM）；<br/>2. 验证单趟 `INDEX8 解包 -> Stage 1 DOT3 -> Stage 2 LUT_FETCH -> Stage 3 LERP` 组合流水。 | Host 仿真与实板 SRAM 验收示例 1/2/3 全链路像素级 Bit-Exact 一致性。**已完成**：Host 28 项通过，全时钟 0 TNS，实机结果字 `0xC3500020`。 |
 | **Step 6c：48-bit 防回绕 UV 缩放、逐块精确跨度门禁与 12-DSP 双线性插值** | 1. 实现 48-bit `UQ32.16` 无回绕 UV 步进器与单调边界 Clamp；<br/>2. 实现含 `+0xFFFF` 最坏小数进位上界的步长选档与 `TILE_SETUP` 逐块真实 `U_first` 跨度门禁；<br/>3. 实现 `SRC_LB0/1` 奇偶行+奇偶列双 Bank 组织、三维标签 `{valid, row_y, u_base, u_end}` 命中逻辑与 12-DSP 双线性插值前端（`OP_SCALE_BLIT`）。 | Host 仿真与实板专项回归：<br/>- 反例验证：`U_first=0x0000FFFF, dU_x=0x00010001, BILINEAR=1` 自动选定 `W_tile=1022`（`src_span=1024` 不越界）；<br/>- 溢出验证：`U0=0xFFFF0000, dU_x=0x10000` 在 48-bit 下平滑 Clamp 于右边界不回绕；<br/>- 全时钟 0 TNS。<br/>**已完成**：Host 36 项通过，全时钟 0 TNS，实机结果字 `0xC3500030`。 |
-| **Step 6d：BSP / Linux 驱动接入** | 在 `ae350_gfx2d.c` 与 Linux DRM/fbdev 中暴露 `ae350_gfx2d_blend`、`ae350_gfx2d_scale` 接口。 | 板级实体 HDMI 显示器 60Hz 验收。 |
+| **Step 6d：BSP / Linux 驱动接入** | 在 `ae350_gfx2d.h/.c` 新增 `ae350_gfx2d_blend`、`ae350_gfx2d_scale`、`ae350_gfx2d_caps`、`ae350_gfx2d_reset_cache`；在 `riscv_mini_ae350_regs.h` 新增扩展寄存器与内联 helper，在 `riscv_mini_ae350_drm.c`（格式转换/Alpha 混合/平面缩放）与 `riscv_mini_ae350_fb.c`（`AE350_FBIO_BLEND` / `AE350_FBIO_SCALE` ioctl）接入。 | **BSP 实板与驱动编译已通过**：`ae350_gfx2d_shader_test` 实机 SRAM 验收（Run `20261114T010510840869Z` 上传，`20261114T010551593566Z` JTAG 读回）结果字 `0xC3500040`，`BSP_API_BAD = 0`；Linux `fbdev`/`DRM` 驱动在 Linux 6.12.112 头下编译通过（完整 Linux 镜像重编因 `linux/default/obj/.config` 为 root 属主未在非特权态执行；实体 HDMI 显示器 60Hz 目视验收待用户接入显示器确认）。 |
