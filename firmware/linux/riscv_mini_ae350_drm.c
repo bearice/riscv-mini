@@ -177,9 +177,15 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 					   (src_y + r) * fb->pitches[0] + src_x * sbpp;
 				ae350_cache_clean_range(s_va, src_w * sbpp);
 			}
-			for (r = 0; r < dst_h; r++) {
-				u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
-				ae350_cache_clean_range(d_va, dst_w * dbpp);
+			if (alpha < 255u) {
+				memset(drm->cpu, 0, drm->size);
+				ae350_cache_clean_range((u32)(uintptr_t)drm->cpu,
+							(u32)drm->size);
+			} else {
+				for (r = 0; r < dst_h; r++) {
+					u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
+					ae350_cache_clean_range(d_va, dst_w * dbpp);
+				}
 			}
 
 			if (src_w != dst_w || src_h != dst_h) {
@@ -443,6 +449,12 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 			return -EINVAL;
 		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff) ||
 		    (plane_state->src_w & 0xffff) || (plane_state->src_h & 0xffff))
+			return -EINVAL;
+		if ((plane_state->alpha >> 8) < 255u &&
+		    (format_id == AE350_FMT_RGB888 ||
+		     ae350_drm_gfx_format_id(fb->format->format) < 0 ||
+		     !drm->gfx || readl(drm->gfx) != AE350_GFX2D_ID ||
+		     !(readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SHADER)))
 			return -EINVAL;
 		if (drm->cpu && (drm->width != (u32)crtc_state->mode.hdisplay ||
 				 drm->height != (u32)crtc_state->mode.vdisplay ||
