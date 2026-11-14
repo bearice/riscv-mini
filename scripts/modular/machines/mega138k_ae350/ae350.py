@@ -513,9 +513,12 @@ def payload(store, run, cpu, args, profile, plan=False):
     extra_flags = getattr(args, 'cflag', [])
     if any(flag.startswith(('-march', '-mabi', '-T', '-Wl', '-I', '-include', '-imacros', '-isystem', '-iquote', '@')) for flag in extra_flags):
         raise ValueError('Use declared source/include options; ISA and linker overrides are unsupported')
+    hard_float = bool(getattr(args, 'hard_float', False))
+    march = 'rv32imfd_zicsr_zifencei' if hard_float else 'rv32im_zicsr_zifencei'
+    mabi = 'ilp32d' if hard_float else 'ilp32'
     flags = [*[flag for flag in BASE_FLAGS if not flag.startswith('-O')], optimize,
              # No A: DDR atomics only complete in a load-allocated L1D line (capabilities atomics='none').
-             '-march=rv32im_zicsr_zifencei', '-mabi=ilp32', '-mcmodel=medany', '-mno-relax',
+             '-march=' + march, '-mabi=' + mabi, '-mcmodel=medany', '-mno-relax',
              '-fno-delete-null-pointer-checks', '-Wl,--build-id=none',
              '-DVT_COLS=80', '-DVT_ROWS=30',
              *['-D' + value for value in getattr(args, 'define', [])], *extra_flags]

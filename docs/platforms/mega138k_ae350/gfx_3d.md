@@ -2,7 +2,7 @@
 
 > 适用机器：`mega138k_ae350`（板卡 `mega138k_pro`）。
 > 状态：**演进路线图与软硬件接口设计规范（预研/待实现）**。
-> 基线锚点：文中“Step 6a 实测基线”资源数据引自 [gfx2d-shader-core.md §2](gfx2d-shader-core.md) 记录的全量 PnR 回执 `build/runs/20261111T175107778773Z-build-ae350-gfx2d-shader-timing-closure-opt22-f06773`（Commit `d6d7cfe`，Gateware `719806b12dd23325956c0656e40d3d4d41b4bc513b3cc0cfdf7da2b3c6b1cc5d`）及板级验收回执 `build/runs/20261111T191108626301Z-board-ae350-upload`（注：`build/runs/` 为本地未入库构建收据目录，跨工作区复核以 `gfx2d-shader-core.md` §2 归档表格为准）。所有 Stage 1..4 的资源增量与帧率指标均为**限定工况下的目标设计预算（Design Budget）**，不代表已验收的硬件能力。
+> 基线锚点：文中资源基线已更新至 **Step 6c 实测基线**，引自 [gfx2d-shader-core.md §2](gfx2d-shader-core.md#L42) 记录的全量 PnR 回执 `Run 20261113T192338423908Z`（全时钟 setup/hold 0 TNS：`ddr_ui_clk` 100.00MHz、`sys_clk` 50.10MHz、`hdmi_pix_clk` 75.95MHz）及板级 SRAM 验收回执 `20261113T200126914932Z` / `20261113T200202540377Z`（结果字 `0xC3500030`，全部 BAD 计数为 0）。所有 Stage 1..4 的资源增量与帧率指标均为**限定工况下的目标设计预算（Design Budget）**，不代表已验收的硬件能力。
 
 ---
 
@@ -23,33 +23,54 @@ flowchart TD
     TRI_EMIT -->|DMA / 命令队列| RASTER
 
     subgraph FPGA["FPGA 数据面与像素流水线 (GW5AST-138B @ 100MHz DDR UI)"]
-        RASTER["三角形设置与跨度生成器 (35b Q27.8 面积, Top-Left Fill Rule)"]
+        RASTER["三角形 Setup 与 Span 生成器 (35b Q27.8 面积, 64b 梯度, 82b 行首 MAC)"]
         PERSP["逐像素 II=1 尾数倒数与高低拆乘恢复 (6x MULT27X18 DSP)"]
         TMEM["片上 2D 纹理缓存 TMEM (8~16KB 4-Bank BSRAM + 同 Bank 广播交叉开关)"]
-        SAMPLER["有符号 2D 双线性采样与四角独立 Wrap 单元"]
-        ZLB["片上行深度缓冲 Z_LB (1024x16b)"]
-        SIMD["4 通道 SIMD ALU (复用 Phase 2: MUL_UNORM8 / LERP / DOT3 / DISCARD_IF)"]
+        WRAP["有符号 UV 寻址与四角独立 Wrap / 越界判定 (bounds_discard)"]
+        BIL["双线性插值器 (复用 BilinearFilter: 四角输入, 6 拍延迟, II=1)"]
+        ZLB["片上行深度缓冲 Z_LB (1024x16b) & Early-Z Compare (z_pass)"]
+        DSTLB["目标背景行缓冲 DST_LB (复用, Span 预取对齐)"]
+        SIDE["旁路延迟对齐寄存器 (Sideband: XY, Z_new, z_pass, bounds_discard)"]
+        SIMD["4 级 ShaderALU (复用: SRC=纹理/R0, DST=DST_LB/R1, R2=逐像素 Gouraud RGBA)"]
         COMMIT["Late-Z 与颜色原子提交门禁 (we_color / we_z)"]
-        PACKER["Bayer 抖动与打包写回 (复用 Phase 3)"]
+        PACKER["Bayer 抖动与打包写回 OUT_LB (复用 Phase 3, 适配 Span)"]
         DDR3["DDR3 显存 (Framebuffer + 16-bit Z-Buffer)"]
 
-        RASTER --> PERSP --> SAMPLER
-        TMEM -.-> SAMPLER
-        ZLB -->|Early Z Read & Compare| SIMD
-        SAMPLER --> SIMD --> COMMIT
+        RASTER --> PERSP --> WRAP --> BIL
+        TMEM -.-> WRAP
+        RASTER -->|逐像素 Gouraud RGBA| SIMD
+        RASTER -->|XY, Z_new| ZLB
+        ZLB -->|z_pass| SIDE
+        WRAP -->|bounds_discard| SIDE
+        DSTLB -->|bg_pix -> R1 / DST| SIMD
+        BIL -->|src_pix -> R0 / SRC| SIMD
+        SIMD --> COMMIT
+        SIDE --> COMMIT
         COMMIT -->|we_z=1| ZLB
         COMMIT -->|we_color=1| PACKER
         ZLB <-->|Span Z Read/Write| DDR3
+        DDR3 -->|Span 背景预取| DSTLB
         PACKER -->|Color Burst Write| DDR3
     end
 ```
 
-### 核心分工原则
+### 核心分工与模块复用边界
 
 1. **浮点归 CPU，定点归 FPGA**：
    - **CPU 端**：承担 **3D 空间 4×4 矩阵变换、摄像机投影、法线光照、近平面齐次裁剪及顶点级 $Q=1/W$ 归一化**，直接利用 A25 的 800MHz 硬件 FPU（`fadd.s`, `fmul.s`, `fdiv.s`）与 DSP 向量指令集。
-   - **FPGA 端**：承担 **Top-Left 边界跨度生成、逐像素高精度 DDA 插值、逐像素 $1/Q$ 尾数牛顿迭代与高低位拆分乘法恢复、2D TMEM 纹理双线性采样、片元着色、Late-Z 深度测试与 Alpha 混合写回**，内部全链路采用定点数与归一化整数。
-2. **对上暴露标准 API**：
+   - **FPGA 端**：承担 **Top-Left 边界跨度生成、逐像素高精度 DDA 插值、逐像素 $1/Q$ 尾数牛顿迭代与高低位拆分乘法恢复、2D TMEM 纹理寻址、片元着色、Late-Z 深度测试与 Alpha 混合写回**，内部全链路采用定点数与归一化整数。
+2. **复用现有像素后端与新增 3D 模块划分（2D/3D 串行共享后端）**：
+   - Step 6c 已将 [`BilinearFilter`](../../../gateware/machines/mega138k_ae350/peripherals/gfx2d.py#L569) 与 4 级 [`ShaderALU`](../../../gateware/machines/mega138k_ae350/peripherals/gfx2d.py#L47) 落地并闭合 100MHz 时序。3D 硬件明确将**“复用双线性算术”**与**“新增 2D 纹理寻址”**分离：
+
+| 子模块 | 3D 更新方向 | 关键说明与接口边界 |
+| :--- | :--- | :--- |
+| **双线性插值算术 (`BilinearFilter`)** | **直接复用现有模块及位精确公式** | 四角 32-bit 像素输入（`p00, p10, p01, p11`）、9-bit 权重（`wu, wv`）、6 拍延迟、`II=1` |
+| **4 级 `ShaderALU`** | **复用，增加 3D 属性入口** | 现有 `FG/BG/U0..U7` 为整条命令静态常量，3D 需通过逐像素入口（`R2`）送入 Gouraud RGBA（见 §4.6） |
+| **背景读取、抖动与颜色打包** | **复用已有结构，适配 Span** | 复用 `DST_LB`、`OUT_LB` 与 Phase 3 打包/抖动逻辑，按三角形 Span 起止地址预取与写回 |
+| **有符号 UV、四角 Wrap、TMEM** | **仍需新增** | 6c 的 `SRC_LB0/1` 两个 1D 源行槽**不等于**任意寻址的 2D TMEM；Mode 7 独立 4-Bank 寻址设计仍然成立 |
+| **三角形 Setup、透视恢复、Z** | **仍需新增** | 包含 35-bit 面积、64-bit 梯度、82-bit 行首 MAC、6-DSP `1/Q` 透视恢复与 `Z_LB`/Late-Z |
+
+3. **对上暴露标准 API**：
    - 向上层暴露标准 **OpenGL ES 1.1**（`GLfloat` Common 与 `GLfixed` Common-Lite）头文件 `<GLES/gl.h>`。
 
 ---
@@ -66,41 +87,89 @@ flowchart TD
 
 ### 2.2 FPGA 硬件资源基线与 3D 拓展预算（GW5AST-138B）
 
-> **基线说明**：“Step 6a 实测基线”引自 [gfx2d-shader-core.md §2](gfx2d-shader-core.md)（全量 PnR 回执 `20261111T175107778773Z`，Commit `d6d7cfe`，`ddr_ui_clk` 100MHz 0 TNS）；“Stage 2..4 预算增量”为架构设计上限目标。
+> **基线说明**：“Step 6c 实测基线”引自 [gfx2d-shader-core.md §2](gfx2d-shader-core.md#L42)（全量 PnR 回执 `Run 20261113T192338423908Z`，全时钟 setup/hold 0 TNS，`ddr_ui_clk` 100.00MHz）；“Stage 2..4 预算增量”基于 **2D/3D 串行共享像素后端**（直接复用 6c 的 `BilinearFilter` 与 4 级 `ShaderALU`）进行估算。
+>
+> **[!WARNING] 逻辑余量收紧与布局时序风险提示**
+> 1. **禁止混用 LUT4 与 CLS 口径**：旧基线将逻辑误标为 LUT4 / 138,240（34%~41%），而 Step 6c 实测逻辑占用为 **56,483 CLS / 69,120（82%）**，当前仅剩约 **12,637 CLS**，不能继续依据旧表判断“逻辑余量充足”。
+> 2. **布局、扇出与长组合路径为主要风险**：Step 6c 虽实现全时钟 0 TNS，但曾因 21,857 条网络无法布通而放弃区域布局约束，最终依靠多处流水寄存（`DST_LB`/`OUT_LB` 读写寄存、描述符校验与 V 几何分级寄存、宽计数器增量预寄存等）才实现时序闭合。因此 3D 阶段必须将**逻辑布局拥塞、高扇出控制信号与长组合路径**列为首要物理风险，而非只关注 DSP 剩余数量。
 
-| 硬件原语 | 芯片总数 | Step 6a 实测基线 | 剩余可用 | Stage 2..4 目标增量预算 | 新增模块构成说明 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Logic (LUT4)** | 138,240 | 56,450 (41%) | **81,790** | **+4,800 ~ 7,500** | 三角形 Setup、40-bit DDA 步进、CLZ/NR 倒数流水线与 Late-Z 控制 |
-| **硬核 DSP (MULT27X18)** | 298 | 27.5 (10%) | **270.5** | **+20 ~ 26** | 双线性插值 (12 DSP) + 逐像素 $1/Q$ 牛顿迭代 (2 DSP) + $S/T$ 高低字拆分恢复乘法 (4 DSP) + Setup 乘法 (2~8 DSP) |
-| **BSRAM (18Kb 块)** | 340 | 143 (43%) | **197** | **+11 ~ 19** | 2D TMEM 纹理缓存 (8~16 BSRAM) + `Z_LB` 行深度缓冲 (2 BSRAM) + 倒数初值表 (1 BSRAM) |
+| 硬件原语 | 芯片总数 | Step 6c 实测基线 | 剩余可用 | 共享后端下 Stage 2..4 增量预算 | 新增模块构成说明（不再重复计入双线性 12 DSP） |
+| :--- | ---: | ---: | ---: | :--- | :--- |
+| **逻辑单元 (CLS)** | 69,120 | **56,483 (82%)** | **12,637** | **需严格控域（待综合评估）** | 三角形 Setup、40-bit/42-bit DDA 步进、64b/82b 多周期运算复用控制、2D TMEM 寻址交叉开关、CLZ/NR 控制与 Late-Z 门禁 |
+| **硬核 DSP (MULT27X18)** | 298 | **58.5 (20%)** | **239.5** | **+10 ~ 14**（不含 64b/82b 展开） | 逐像素 $1/Q$ 牛顿迭代 (2 DSP) + $S/T$ 高低字拆分恢复乘法 (4 DSP) + Setup 面积/边缘斜率复用乘法 (2~4 DSP) + 82b 行首 MAC 复用单元 (2~4 DSP，见 §2.3)；**注：已移除原预算中重复计算的“双线性 +12 DSP”，且 12 个乘法器在综合中并不直接等同于 12 个 DSP 占用** |
+| **BSRAM (18Kb 块)** | 340 | **191 (57%)** | **149** | **+11 ~ 19** | 2D TMEM 4-Bank 纹理缓存 (8~16 BSRAM) + `Z_LB` 行深度缓冲 (2 BSRAM) + 倒数初值表 (1 BSRAM) |
+
+### 2.3 短 Span 性能预算、Setup 成本与 64-bit/82-bit 运算方案
+
+Step 6c 的 `II=1`（1 像素/周期 @ 100MHz）描述的是**稳态计算流水线的峰值吞吐**，而整次 3D 绘制还包含预取、启动、排空与写回固定开销。3D 场景中的**大量短 Span** 会显著放大这些固定周期开销，因此不能仅凭 `100MHz ÷ 帧像素数` 推算 60 FPS。
+
+#### 1. 60 FPS 帧时间预算分解维度（100MHz 下每帧总预算 = $1.667 \times 10^6$ 周期）
+
+| 开销项 | 主要周期来源 | 对短 Span 工况的影响评估 |
+| :--- | :--- | :--- |
+| **1. 三角形 Setup 周期** | 96B 描述符读取（3 Beats）、35-bit 面积 $E_{\text{area}}$、面积倒数 $1/E_{\text{area}}$ 及 64-bit 平面梯度生成 | 若单帧 1,500~2,000 个有效三角形、每次 Setup 消耗 40~80 周期，仅 Setup 即占 $6\times 10^4 \sim 1.6\times 10^5$ 周期（约 4%~10% 帧预算） |
+| **2. 每帧 Span 数量与平均长度** | 有效面积 $120\text{ px}$ 的三角形典型高度 $12\sim 15$ 行、平均 Span 长度仅 $8\sim 10\text{ px}$；单帧 Span 数可达 **$1.8\times 10^4 \sim 3.0\times 10^4$ 条** | 在平均 $8\sim 10\text{ px}$ 长度下，若每条 Span 额外引入 $15\sim 30$ 周期固定启动/排空开销，实际像素有效占空比将降至 **25%~40%** |
+| **3. Span 预取、行首 MAC 与排空写回** | 82-bit 行首预对齐 MAC 计算、`Z_LB`/`DST_LB` 预取、流水填充/排空气泡、`OUT_LB`/`Z_LB` 回写及 TMEM 换装（DDR3 突发读） | 需通过 **Span 级乒乓缓冲 / 下一条 Span 预取与当前 Span 着色重叠** 掩盖大部分预取与行首 MAC 延迟；TMEM 换装次数仍需严格受限（如 $\le 16$ 次/帧） |
+| **4. 显示扫描与 DDR3 总线竞争** | HDMI（75.95MHz 像素时钟）连续帧缓冲扫描、CPU I/D Cache 填充及其他 DMA 客户端共享同一 100MHz DDR3 UI 总线 | 显示扫描与 3D 读/写（颜色 + 16b Z-Buffer）存在仲裁抢占，实际可用 DDR3 突发带宽与延迟抖动需在 RTL 仿真与板级实测中验证 |
+
+#### 2. 64-bit 平面梯度与 82-bit 行首乘加（Row-Start MAC）资源与周期预算
+
+§4.3 与 §4.5 引入的 **64-bit 平面梯度（`Q36.28` / `Q26.38`）** 与 **82-bit 行首直接预对齐乘加（`17b × 64b` 两路求和）** 超出了单 `MULT27X18` 原语位宽，不能继续笼统算入“Setup 2~8 DSP”。设计明确采用**多周期共享运算（而非全并行展开）**以控制 CLS 与 DSP 消耗：
+
+- **全并行展开方案（不推荐）**：若为 $S, T, Q, Z$ 四组属性（每组两路 `17b × 64b`）同时展开硬核 DSP，需占用 $4 \times 2 \times 4 = 32$ 个 `MULT27X18` 及大量 82-bit 进位树，对剩余仅 12,637 CLS 的布局极为不利。
+- **多周期共享运算方案（推荐基准）**：
+  - 将 `17b × 64b` 拆分为 4 段 `17b × 16b`（适配 `MULT27X18` 18-bit 有符号与 27-bit 零扩展端口），配合 1 组或 2 组共享 `MULT27X18` + 82-bit 累加寄存器（每路乘加约 4~5 拍）；
+  - **资源预算**：单套共享行首 MAC 复用单元仅需 **2~4 个 DSP**，Setup 阶段面积/梯度复用除法与乘法器另需 **2~4 个 DSP**；
+  - **周期预算**：每条 Span 行首串行计算 $S, T, Q, Z$ 约需 **12~20 周期**（在当前像素流水线推进上一条 Span 或预取 `Z_LB`/`DST_LB` 期间流水并行隐藏），仅在连续极短 Span（$1\sim 3\text{ px}$）时暴露部分等待周期。
+
+> **结论**：Stage 3 / Stage 4 的 **60 FPS 指标仍保留为目标性能预算（Design Target）**，其最终达成依赖后续周期精确 RTL 仿真（含短 Span 调度与 DDR3 仲裁竞争模型）的实测确认。
 
 ---
 
 ## 3. 分阶段演进路线图与工况门禁
 
+在保留既有数值格式与精度合同（§4.1、§4.3、§4.5）的前提下，硬件执行顺序调整为：**共享像素后端接口 → Mode 7＋TMEM → 仿射三角形 → Z 与透视恢复**；其中 **TinyGL 软件验证（Stage 1）可与硬件接入并行推进**。
+
 ```mermaid
 flowchart LR
-    M1["Stage 1: TinyGL + P 扩展<br/>(纯 CPU 软渲染 + GFX2D 换页)"] --> M2["Stage 2: 2.5D Mode 7<br/>(有符号 2D 扫描线仿射 + TMEM)"]
-    M2 --> M3["Stage 3: PS1 级仿射 3D<br/>(Top-Left 光栅化 + 96B 包)"]
+    M1["Stage 1 (可并行): TinyGL + P 扩展<br/>(纯 CPU 软渲染 + GFX2D 换页)"] -.-> M2A
+    M2A["Stage 2a: 共享像素后端接入验收<br/>(R2 属性入口 + DST_LB + 旁路对齐)"] --> M2["Stage 2: 2.5D Mode 7 + TMEM<br/>(有符号 UV + 四角 Wrap + BilinearFilter)"]
+    M2 --> M3["Stage 3: PS1 级仿射 3D<br/>(Top-Left 光栅化 + 逐片元颜色 + 短 Span)"]
     M3 --> M4["Stage 4: Voodoo 级完整 3D<br/>(Late-Z + 6-DSP 逐像素 1/Q 透视)"]
 ```
 
-### Stage 1：TinyGL + Andes P-扩展优化（纯 CPU 软件 3D 验证）
+### Stage 1：TinyGL + 硬件 FPU 优化（纯 CPU 软件 3D 验证，**已完成实板验收**）
 
 1. **核心交付**：
-   - 引入 **TinyGL**（纯 C OpenGL 1.1 子集），使用 A25 硬件 FPU 加速 `vertex.c` MVP 变换，使用 P-扩展优化 `ztriangle.c` 扫描线步进；
-   - GFX2D 仅负责帧缓冲清屏（`FILL_RECT`）、UI 叠加与双缓冲交换。
-2. **目标工况与验证门禁**：
-   - **基准负载**：单纹理 3D 旋转网格（1,000 三角形，平均屏幕覆盖率 30%，单光源 Gouraud 着色，开启软件 16-bit Z-Buffer）；
-   - **目标性能指标（待实测）**：$320\times 240$ 分辨率下目标 $\ge 45\text{ FPS}$；$640\times 480$ 下目标 $\ge 20\text{ FPS}$。
+   - 引入 **TinyGL**（纯 C OpenGL 1.1 子集，[firmware/vendor/tinygl/](../../../firmware/vendor/tinygl/include/GL/gl.h)），使用 A25 硬件 FPU（`rv32imfd_zicsr_zifencei` / `ilp32d`，`start.S` 开启 `mstatus.FS`）加速 `vertex.c` MVP 变换、光照与 `ztriangle.c` 倒数求值；
+   - **实板指令集验证结论**：JTAG 读取 `misa = 0x4094312d`（含 `I/M/A/F/D/C/X`），但实测 Gowin AE350 硬核 **未实现 Andes P-扩展**（执行 `add16` 触发 `mcause = 2` 非法指令异常），因此扫描线内层采用标准 32-bit 定点 DDA；
+   - GFX2D `FILL_RECT` 负责帧缓冲与 16-bit Z-Buffer 并行清屏，HDMI 双缓冲输出（`320×240` 工况还使用 GFX2D `ae350_gfx2d_scale` 2× 硬件缩放至 `640×480` 显示）。
+2. **目标工况与实板实测结果（[ae350_tinygl_bench.c](../../../firmware/diagnostics/mega138k_ae350/ae350_tinygl_bench.c)）**：
+   - **基准负载**：单纹理（64×64 RGB565）3D 旋转网格（1,000 提交三角形 / 988 绘制三角形，单光源 Gouraud 着色，开启软件 16-bit Z-Buffer）；
+   - **实板实测（800MHz CPU / 100MHz DDR3，Payload `c8dcdb95d044`，JTAG 回执 `20261114T030213964717Z`）**：
+     - **$320\times 240$**：**71.55 FPS**（目标 $\ge 45\text{ FPS}$ ✅），单帧平均 `11,180,371` 周期（**13.98 ms**：顶点+裁剪 `2.85 ms`、光栅化 `8.94 ms`、GFX2D 清屏 `2.18 ms`）；
+     - **$640\times 480$**：**25.28 FPS**（目标 $\ge 20\text{ FPS}$ ✅），单帧平均 `31,634,335` 周期（**39.54 ms**：顶点+裁剪 `2.86 ms`、光栅化 `31.28 ms`、GFX2D 清屏 `5.40 ms`）。
 
 ---
 
-### Stage 2：2.5D 扫描线任意仿射引擎（Mode 7 独立合同）
+### Stage 2a：共享像素后端接口接入验收（前置硬件里程碑）
+
+1. **核心交付**：
+   - 在不引入 3D 三角形 Setup 前，先打通 **§4.6 共享像素后端接口**：
+     - 在 `ShaderALU` Stage 0 入口增加 3D 逐像素 `R2` 属性注入通道（与 `FG/BG/U0..U7` 静态寄存器严格隔离）；
+     - 验证 `BilinearFilter` 四角输入接口复用、`DST_LB` 背景预取对齐路径以及 `XY / Z / z_pass / bounds_discard` 跨级旁路延迟寄存器；
+     - 实现 2D/3D 命令切换前的流水线排空（Drain）状态机与反压门控。
+2. **验证门禁**：
+   - **2D 零回归门禁**：原有 `OP=0..3` 及 `OP_SCALE_BLIT` 测试用例全数通过，100MHz 全时钟保持 0 TNS；
+   - **3D 接口注入回环测试**：向共享后端注入合成逐像素测试向量（含变色 `R2`、动态 `DST_LB` 背景与交替 `bounds_discard`），验证与参考模型 Bit-Exact 一致且前后命令间无状态串扰。
+
+---
+
+### Stage 2：2.5D 扫描线任意仿射引擎（Mode 7 + TMEM 独立合同）
 
 > **[!IMPORTANT] 与 Step 6c 轴对齐缩放的边界区分**
 > `gfx2d-shader-core.md` §3.1 定义的 Step 6c（`OP_SCALE_BLIT`）为**无符号 `UQ32.16`、单调递增、轴对齐（$dU/dy=0, dV/dx=0$）**合同，且依赖 1D 行缓冲 `SRC_LB0/1` 预取。
-> **Mode 7 地面旋转场景下，单条水平扫描线在源纹理上沿斜线行进（$U, V$ 同时变化且步长可正可负），因此绝不能直接复用 Step 6c 的无符号轴对齐行预取通路**，必须实现以下独立的 `OP_SCANLINE_AFFINE` 合同：
+> **Step 6c 的两个源行槽（`SRC_LB0/1`）并不等于任意寻址的 2D TMEM**。Mode 7 地面旋转场景下，单条水平扫描线在源纹理上沿斜线行进（$U, V$ 同时变化且步长可正可负），因此**本阶段优先验证有符号 UV 寻址、四角独立 Wrap、4-Bank TMEM 与现有 `BilinearFilter` 的结合**，现有 Mode 7 独立寻址设计仍然成立。
 
 1. **有符号梯度与 48-bit `Q32.16` 双向步进合同**：
    - CPU 按行提供扫描线仿射参数表（每行 16 字节：`U0`, `V0`, `dU_dx`, `dV_dx`，均为 **32-bit 二进制补码有符号定点数 `Q16.16`**，覆盖范围 $[-32768.0, +32767.99998]$）；
@@ -392,6 +461,26 @@ flowchart LR
 
 ---
 
+### 4.6 3D 片元输入接口与共享像素后端流水合同
+
+在 [`gfx2d.py`](../../../gateware/machines/mega138k_ae350/peripherals/gfx2d.py#L47) 的现有实现中，[`ShaderALU`](../../../gateware/machines/mega138k_ae350/peripherals/gfx2d.py#L47) 的 `fg_pix`、`bg_pix` 与 `uniforms`（`U0..U7`）均为**整条命令保持不变的静态寄存器**（内部 `select_src` 经 2 拍 `sync` 寄存与译码），不能直接改为逐拍变化而不破坏原有流水与时序合同。3D 模式（`OP=5` `TRI_RENDER`）与 2D 串行共享 [`BilinearFilter`](../../../gateware/machines/mega138k_ae350/peripherals/gfx2d.py#L569)、4 级 `ShaderALU`、`DST_LB` 与 `OUT_LB` 时，必须严格遵守以下片元接口合同：
+
+1. **逐像素 Gouraud RGBA 入口（经 `R2` 进入 `ShaderALU` Stage 0）**：
+   - **禁止**复用 `fg_pix`、`bg_pix` 或 `U0..U7` 传递逐像素顶点颜色；
+   - 在 `OP=5` 模式下，扫描线累加器插值并算术右移 8 位、饱和夹紧至 `[0, 255]` 的逐像素颜色 `{A, R, G, B}`（零扩展为 4 × 16-bit `{8'b0, ch}`），于 `BilinearFilter` 输出对齐的 Stage 0 入口寄存器（`P0`）注入 **`stage0.r_in[2]`（即通用寄存器 `R2`，替代 2D 模式下的 `{0, 0, Y, X}`）**；
+   - `stage0.src_pix`（及 `R0`）接收纹理采样输出（`TEX_EN=1` 时取 `BilinearFilter.out`，`TEX_EN=0` 时置 `0xFFFF_FFFF` 纯白），供 Stage 0 指令直接执行 `MUL_UNORM8(SRC, R2)` 完成“纹理 × Gouraud 顶点色”调制。
+2. **背景颜色读取路径（`DST_LB` → `stage0.dst_pix` / `R1`）**：
+   - 当启用 Alpha 混合（如 Stage 3 `LERP` 读取 `DST`/`R1`）时，Span 调度器在发射当前 Span 前，按目标矩形的 Span 起止地址从 DDR3 预取目标背景行至 `DST_LB`；
+   - 像素流推进期间，按与 `BilinearFilter` 固定 6 拍延迟对齐的读指针提前读取 `DST_LB`，经 `stage0.dst_pix`（及 `R1`）进入 `ShaderALU` 流水线，避免 3D 透明混合出现未定义背景读数。
+3. **跨级伴随信号（Sideband）与延迟对齐**：
+   - 3D 模式下 `R2` 已用于承载 Gouraud RGBA，片元的屏幕坐标 `(X_p, Y_p)`、插值深度 `Z_new`、`z_pass`（来自 Early-Z 比较）以及 `bounds_discard`（来自 TMEM 四角 Wrap 判定）**全部移出 `ShaderALU` 数据寄存器**，改由独立且与 `BilinearFilter`（6 拍）+ 4 级 `ShaderALU` 精确等长的**旁路伴随移位寄存器（Sideband Shift Register）**同步推进；
+   - 其中 `bounds_discard` 与纹理坐标同拍产生，跨越 `BilinearFilter` 及 `ShaderALU` 4 个阶段；`X_p, Y_p, Z_new, z_pass` 在 Span/Early-Z 阶段与纹理采样对齐后进入对应段移位寄存器，最终在 Stage 3 退休拍与 `shader_discard` 汇合，驱动 §4.4 Late-Z 原子提交门禁（`we_color` / `we_z`）及 `OUT_LB` / `Z_LB` 写回。
+4. **命令切换、流水排空与停顿隔离**：
+   - **排空切换原则**：任何命令切换（2D → 3D、3D → 2D 或相邻两个三角形切换 `INST0..3`、`SHADER_CFG`、`U0..U7`、TMEM/ZBUF 配置）前，控制 FSM 必须等待前一条命令的像素流水线与 `OUT_LB` / `Z_LB` 写回**完全排空（Drain to Idle）**，再更新静态描述符寄存器，确保 `ShaderALU` 内部静态译码与流水数据不跨三角形混用；
+   - **停顿一致冻结**：当 DDR3 写回或行缓冲发生反压停顿时，必须采用入口反压门控（仅在 `OUT_LB`/`Z_LB` 有空位时发射 Span）或对 `BilinearFilter`、`ShaderALU` 与 Sideband 移位寄存器施加同一使能冻结信号，严禁部分级推进、部分级停顿导致伴随坐标与像素颜色错位。
+
+---
+
 ## 5. 总结与后续验证计划
 
-本文档定义了 `mega138k_ae350` 平台从 GFX2D 向 GFX3D 演进的分阶段路线与软硬件接口设计规范（涵盖 96 字节三角形描述符、Mode 7 有符号 2D TMEM 四角独立 Wrap 合同、35-bit 面积与 Top-Left 覆盖公式、Late-Z 提交门禁及 6-DSP 逐像素 `II=1` 透视恢复通路）。本规范当前处于**架构设计阶段**，后续实施须按 Stage 1..4 依次通过主机 RTL 仿真、Gowin 100MHz 0 TNS 全量 PnR 及实板验收后方可转为已验证交付结论。
+本文档定义了 `mega138k_ae350` 平台从 GFX2D 向 GFX3D 演进的分阶段路线与软硬件接口设计规范（基于 Step 6c 实测资源基线，明确 `BilinearFilter` / `ShaderALU` / `DST_LB` / `OUT_LB` 共享后端边界与 3D 片元输入合同、Mode 7 有符号 2D TMEM 四角独立 Wrap 合同、短 Span 性能与 64b/82b 多周期运算预算、96 字节三角形描述符、35-bit 面积与 Top-Left 覆盖公式、Late-Z 提交门禁及 6-DSP 逐像素 `II=1` 透视恢复通路）。本规范当前处于**架构设计阶段**，后续实施按 **Stage 2a（共享像素后端接口）→ Stage 2（Mode 7 + TMEM）→ Stage 3（仿射三角形）→ Stage 4（Z 与透视恢复）** 推进（Stage 1 TinyGL 软件验证可同步进行），依次通过主机 RTL 仿真、Gowin 100MHz 0 TNS 全量 PnR 及实板验收后方可转为已验证交付结论。

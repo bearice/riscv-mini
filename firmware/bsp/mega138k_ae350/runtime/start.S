@@ -5,6 +5,10 @@ _start:
     csrw mie, zero
     li t0, 8
     csrc mstatus, t0
+#ifdef __riscv_flen
+    li t0, 0x2000
+    csrs mstatus, t0
+#endif
     .option push
     .option norelax
     la gp, __global_pointer$
