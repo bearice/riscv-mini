@@ -317,7 +317,7 @@ class TriRasterizer(Module):
         mac_gx = Signal((64, True))
         mac_gy = Signal((64, True))
         def _ch_q12_20_s(v, shift_bits):
-            return Cat(Constant(0, 20), v[shift_bits:shift_bits + 8], Constant(0, 16))
+            return Cat(Constant(0, 32), v[shift_bits:shift_bits + 8], Constant(0, 9))
         self.comb += Case(mac_attr, {
             0: [mac_base.eq(s[0] << 12), mac_gx.eq(grads[0]), mac_gy.eq(grads[1])],
             1: [mac_base.eq(t[0] << 12), mac_gx.eq(grads[2]), mac_gy.eq(grads[3])],
