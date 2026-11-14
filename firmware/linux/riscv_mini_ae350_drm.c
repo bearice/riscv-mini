@@ -20,6 +20,7 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_blend.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
@@ -62,6 +63,24 @@ static int ae350_drm_format_id(u32 fourcc)
 		return AE350_FMT_XRGB8888;
 	case DRM_FORMAT_XRGB1555:
 		return AE350_FMT_XRGB1555;
+	default:
+		return -1;
+	}
+}
+
+static int ae350_drm_gfx_format_id(u32 fourcc)
+{
+	switch (fourcc) {
+	case DRM_FORMAT_RGB565:
+		return AE350_GFX_FMT_RGB565;
+	case DRM_FORMAT_XRGB8888:
+		return AE350_GFX_FMT_XRGB8888;
+	case DRM_FORMAT_XRGB1555:
+		return AE350_GFX_FMT_XRGB1555;
+	case DRM_FORMAT_ARGB8888:
+		return AE350_GFX_FMT_ARGB8888;
+	case DRM_FORMAT_ARGB1555:
+		return AE350_GFX_FMT_ARGB1555;
 	default:
 		return -1;
 	}
@@ -130,57 +149,93 @@ static void ae350_drm_copy_fb(struct ae350_drm *drm,
 	src_y = plane_state->src_y >> 16;
 	src_w = plane_state->src_w >> 16 ? (plane_state->src_w >> 16) : drm->width;
 	src_h = plane_state->src_h >> 16 ? (plane_state->src_h >> 16) : drm->height;
-	if (src_w > drm->width)
-		src_w = drm->width;
-	if (src_h > drm->height)
-		src_h = drm->height;
 
-	if (drm->gfx && drm->fourcc == fb->format->format &&
-	    drm->format_id != AE350_FMT_RGB888 &&
+	if (drm->gfx && drm->format_id != AE350_FMT_RGB888 &&
 	    readl(drm->gfx) == AE350_GFX2D_ID &&
 	    !(readl(drm->gfx + AE350_G_STATUS) & AE350_G_STATUS_BUSY)) {
 		struct drm_gem_dma_object *gem = to_drm_gem_dma_obj(fb->obj[0]);
+		int src_gfx_fmt = ae350_drm_gfx_format_id(fb->format->format);
+		u32 dst_w = plane_state->crtc_w ? (u32)plane_state->crtc_w : src_w;
+		u32 dst_h = plane_state->crtc_h ? (u32)plane_state->crtc_h : src_h;
+		u8 alpha = (u8)(plane_state->alpha >> 8);
 
-		if (gem && gem->dma_addr) {
-			u32 bpp = ae350_drm_bpp(drm->format_id);
+		if (dst_w > drm->width)
+			dst_w = drm->width;
+		if (dst_h > drm->height)
+			dst_h = drm->height;
+		if (gem && gem->dma_addr && src_gfx_fmt >= 0) {
+			u32 sbpp = fb->format->cpp[0];
+			u32 dbpp = ae350_drm_bpp(drm->format_id);
 			u32 src_phys = (u32)gem->dma_addr + fb->offsets[0] +
-				       src_y * fb->pitches[0] + src_x * bpp;
+				       src_y * fb->pitches[0] + src_x * sbpp;
 			u32 dst_phys = (u32)drm->dma;
+			u32 r;
+			int gfx_rc = -EINVAL;
 
-			if ((src_phys % 32) == (dst_phys % 32) &&
-			    (fb->pitches[0] % 32) == (drm->stride % 32)) {
-				u32 r;
-
-				for (r = 0; r < src_h; r++) {
-					u32 s_va = (u32)(uintptr_t)src_data[0].vaddr +
-						   (src_y + r) * fb->pitches[0] + src_x * bpp;
+			for (r = 0; r < src_h; r++) {
+				u32 s_va = (u32)(uintptr_t)src_data[0].vaddr +
+					   (src_y + r) * fb->pitches[0] + src_x * sbpp;
+				ae350_cache_clean_range(s_va, src_w * sbpp);
+			}
+			if (alpha < 255u) {
+				memset(drm->cpu, 0, drm->size);
+				ae350_cache_clean_range((u32)(uintptr_t)drm->cpu,
+							(u32)drm->size);
+			} else {
+				for (r = 0; r < dst_h; r++) {
 					u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
-					ae350_cache_clean_range(s_va, src_w * bpp);
-					ae350_cache_clean_range(d_va, src_w * bpp);
+					ae350_cache_clean_range(d_va, dst_w * dbpp);
 				}
+			}
 
+			if (src_w != dst_w || src_h != dst_h) {
+				u32 du_dx = (src_w << 16) / dst_w;
+				u32 dv_dy = (src_h << 16) / dst_h;
+				u32 flags = AE350_GFX_FLAG_BILINEAR |
+					    (alpha < 255u ? AE350_GFX_FLAG_BLEND : 0u);
+
+				gfx_rc = ae350_gfx2d_scale(drm->gfx, src_phys,
+							   fb->pitches[0], src_w, src_h,
+							   src_gfx_fmt, dst_phys,
+							   drm->stride, dst_w, dst_h,
+							   drm->format_id, 0, 0,
+							   du_dx, dv_dy, alpha, flags);
+			} else if (drm->fourcc != fb->format->format || alpha < 255u) {
+				gfx_rc = ae350_gfx2d_blend(drm->gfx, src_phys,
+							   fb->pitches[0], src_gfx_fmt,
+							   dst_phys, drm->stride,
+							   drm->format_id, dst_w, dst_h,
+							   alpha, 0);
+			} else if ((src_phys % 32) == (dst_phys % 32) &&
+				   (fb->pitches[0] % 32) == (drm->stride % 32)) {
 				writel(AE350_GFX_COPY, drm->gfx + AE350_G_OP);
 				writel(src_phys, drm->gfx + AE350_G_SRC_ADDR);
 				writel(dst_phys, drm->gfx + AE350_G_DST_ADDR);
 				writel(fb->pitches[0], drm->gfx + AE350_G_SRC_STRIDE);
 				writel(drm->stride, drm->gfx + AE350_G_DST_STRIDE);
-				writel(src_w, drm->gfx + AE350_G_WIDTH);
-				writel(src_h, drm->gfx + AE350_G_HEIGHT);
+				writel(dst_w, drm->gfx + AE350_G_WIDTH);
+				writel(dst_h, drm->gfx + AE350_G_HEIGHT);
 				writel(0, drm->gfx + AE350_G_FG_COLOR);
 				writel(0, drm->gfx + AE350_G_BG_COLOR);
 				writel(0, drm->gfx + AE350_G_BLIT_SRC_WB);
 				writel(drm->format_id, drm->gfx + AE350_G_FORMAT);
-				if (!ae350_gfx2d_run(drm->gfx)) {
-					for (r = 0; r < src_h; r++) {
-						u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
-						ae350_cache_inval_range(d_va, src_w * bpp);
-					}
-					drm_gem_fb_vunmap(fb, src_maps);
-					goto free_maps;
+				gfx_rc = ae350_gfx2d_run(drm->gfx);
+			}
+
+			if (!gfx_rc) {
+				for (r = 0; r < dst_h; r++) {
+					u32 d_va = (u32)(uintptr_t)drm->cpu + r * drm->stride;
+					ae350_cache_inval_range(d_va, dst_w * dbpp);
 				}
+				drm_gem_fb_vunmap(fb, src_maps);
+				goto free_maps;
 			}
 		}
 	}
+	if (src_w > drm->width)
+		src_w = drm->width;
+	if (src_h > drm->height)
+		src_h = drm->height;
 
 	drm_rect_init(&clip, src_x, src_y, src_w, src_h);
 	ret = drm_fb_blit(&dst_map, &drm->stride, drm->fourcc, src_data,
@@ -373,6 +428,26 @@ static void ae350_drm_pipe_update(struct drm_simple_display_pipe *pipe,
 	}
 }
 
+static bool ae350_drm_src_aligned(const struct drm_framebuffer *fb,
+				  const struct drm_plane_state *plane_state)
+{
+	struct drm_gem_dma_object *gem = fb->obj[0] ?
+		to_drm_gem_dma_obj(fb->obj[0]) : NULL;
+	u32 sbpp = fb->format->cpp[0];
+	u32 align_mask = sbpp >= 4 ? 3u : (sbpp == 2 ? 1u : 0u);
+	u32 src_x = plane_state->src_x >> 16;
+	u32 src_y = plane_state->src_y >> 16;
+	u32 src_phys;
+
+	if (!gem || !gem->dma_addr)
+		return false;
+	if (!align_mask)
+		return true;
+	src_phys = (u32)gem->dma_addr + fb->offsets[0] +
+		   src_y * fb->pitches[0] + src_x * sbpp;
+	return !(src_phys & align_mask) && !(fb->pitches[0] & align_mask);
+}
+
 static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 				struct drm_plane_state *plane_state,
 				struct drm_crtc_state *crtc_state)
@@ -392,7 +467,15 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 		bpp = ae350_drm_bpp(format_id);
 		if (((crtc_state->mode.hdisplay * bpp) & 31u) != 0)
 			return -EINVAL;
-		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff))
+		if ((plane_state->src_x & 0xffff) || (plane_state->src_y & 0xffff) ||
+		    (plane_state->src_w & 0xffff) || (plane_state->src_h & 0xffff))
+			return -EINVAL;
+		if ((plane_state->alpha >> 8) < 255u &&
+		    (format_id == AE350_FMT_RGB888 ||
+		     ae350_drm_gfx_format_id(fb->format->format) < 0 ||
+		     !ae350_drm_src_aligned(fb, plane_state) ||
+		     !drm->gfx || readl(drm->gfx) != AE350_GFX2D_ID ||
+		     !(readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SHADER)))
 			return -EINVAL;
 		if (drm->cpu && (drm->width != (u32)crtc_state->mode.hdisplay ||
 				 drm->height != (u32)crtc_state->mode.vdisplay ||
@@ -401,6 +484,54 @@ static int ae350_drm_pipe_check(struct drm_simple_display_pipe *pipe,
 	}
 	return 0;
 }
+
+static int ae350_drm_plane_atomic_check(struct drm_plane *plane,
+					struct drm_atomic_state *state)
+{
+	struct drm_plane_state *plane_state =
+		drm_atomic_get_new_plane_state(state, plane);
+	struct drm_simple_display_pipe *pipe =
+		container_of(plane, struct drm_simple_display_pipe, plane);
+	struct drm_crtc_state *crtc_state =
+		drm_atomic_get_new_crtc_state(state, &pipe->crtc);
+	struct ae350_drm *drm = pipe->crtc.dev->dev_private;
+	bool can_scale = drm->gfx && plane_state->fb &&
+			 plane_state->fb->format->format != DRM_FORMAT_RGB888 &&
+			 ae350_drm_gfx_format_id(plane_state->fb->format->format) >= 0 &&
+			 ae350_drm_src_aligned(plane_state->fb, plane_state) &&
+			 readl(drm->gfx) == AE350_GFX2D_ID &&
+			 (readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SCALE);
+	int min_scale = can_scale ? 1 : DRM_PLANE_NO_SCALING;
+	int max_scale = can_scale ? INT_MAX : DRM_PLANE_NO_SCALING;
+	int ret;
+
+	ret = drm_atomic_helper_check_plane_state(plane_state, crtc_state,
+						  min_scale, max_scale,
+						  false, false);
+	if (ret)
+		return ret;
+
+	if (!plane_state->visible)
+		return 0;
+
+	return ae350_drm_pipe_check(pipe, plane_state, crtc_state);
+}
+
+static void ae350_drm_plane_atomic_update(struct drm_plane *plane,
+					  struct drm_atomic_state *state)
+{
+	struct drm_plane_state *old_pstate =
+		drm_atomic_get_old_plane_state(state, plane);
+	struct drm_simple_display_pipe *pipe =
+		container_of(plane, struct drm_simple_display_pipe, plane);
+
+	ae350_drm_pipe_update(pipe, old_pstate);
+}
+
+static const struct drm_plane_helper_funcs ae350_drm_plane_helper_funcs = {
+	.atomic_check = ae350_drm_plane_atomic_check,
+	.atomic_update = ae350_drm_plane_atomic_update,
+};
 
 static const struct drm_simple_display_pipe_funcs ae350_drm_pipe_funcs = {
 	.enable = ae350_drm_pipe_enable,
@@ -583,6 +714,10 @@ static int ae350_drm_probe(struct platform_device *pdev)
 					   &drm->connector);
 	if (ret)
 		goto release;
+	drm_plane_helper_add(&drm->pipe.plane, &ae350_drm_plane_helper_funcs);
+	if (drm->gfx && readl(drm->gfx) == AE350_GFX2D_ID &&
+	    (readl(drm->gfx + AE350_G_CAP) & AE350_GFX_CAP_SHADER))
+		drm_plane_create_alpha_property(&drm->pipe.plane);
 	drm_plane_enable_fb_damage_clips(&drm->pipe.plane);
 	drm_mode_config_reset(dev_drm);
 	ret = drm_dev_register(dev_drm, 0);

@@ -15,6 +15,11 @@ int ae350_gfx2d_probe(void) {
     return cached;
 }
 
+unsigned ae350_gfx2d_caps(void) {
+    if (ae350_gfx2d_probe()) return 0;
+    return R(GFX2D_CAP);
+}
+
 /* Cache-clean only the lines the engine actually touches: per row of the
  * rectangle (a full-span clean of a sparse cell costs ~600 line ops).
  * Batched CSR writes with one fence: per-row sync calls would fence 16x. */
@@ -48,8 +53,13 @@ static struct gfx2d_desc last_desc;
 static int desc_valid;
 static unsigned default_fmt = AE350_GFX2D_FMT_RGB565;
 
+void ae350_gfx2d_reset_cache(void) {
+    desc_valid = 0;
+}
+
 int ae350_gfx2d_set_format(unsigned format) {
-    if (format > AE350_GFX2D_FMT_XRGB1555) return AE350_GFX2D_PARAM;
+    if (format == AE350_GFX2D_FMT_RGB888 || format > AE350_GFX2D_FMT_XRGB1555)
+        return AE350_GFX2D_PARAM;
     default_fmt = format;
     return AE350_GFX2D_OK;
 }
@@ -60,8 +70,10 @@ unsigned ae350_gfx2d_get_format(void) {
 
 static inline unsigned bpp_for_format(unsigned fmt) {
     switch (fmt) {
-        case AE350_GFX2D_FMT_XRGB8888: return 4;
+        case AE350_GFX2D_FMT_XRGB8888:
+        case AE350_GFX2D_FMT_ARGB8888: return 4;
         case AE350_GFX2D_FMT_RGB888: return 3;
+        case AE350_GFX2D_FMT_INDEX8: return 1;
         default: return 2;
     }
 }
@@ -171,6 +183,126 @@ int ae350_gfx2d_image_blit(uint32_t src, uint32_t src_wb,
                            uint32_t width, uint32_t height,
                            uint16_t fg, uint16_t bg) {
     return ae350_gfx2d_image_blit_fmt(src, src_wb, dst, dst_stride, width, height, fg, bg, default_fmt);
+}
+
+#define SHADER_INST_HI(op, pred, dst, wr, s0, s1, s2, swz0) \
+    (((uint32_t)(op) << 26) | ((uint32_t)(pred) << 24) | ((uint32_t)(dst) << 20) | \
+     ((uint32_t)(wr) << 16) | ((uint32_t)(s0) << 12) | ((uint32_t)(s1) << 8) | \
+     ((uint32_t)(s2) << 4) | ((uint32_t)(swz0) >> 4))
+#define SHADER_INST_LO(swz0, swz1, swz2, flags, imm) \
+    ((((uint32_t)(swz0) & 0xFu) << 28) | ((uint32_t)(swz1) << 20) | \
+     ((uint32_t)(swz2) << 12) | ((uint32_t)(flags) << 8) | (uint32_t)(imm))
+
+static int valid_shader_src_fmt(unsigned fmt) {
+    return fmt != AE350_GFX2D_FMT_RGB888 && fmt < AE350_GFX2D_FMT_MONO1;
+}
+
+static int valid_shader_dst_fmt(unsigned fmt) {
+    return fmt != AE350_GFX2D_FMT_RGB888 && fmt < AE350_GFX2D_FMT_INDEX8;
+}
+
+static int aligned_for_fmt(uint32_t addr, uint32_t stride, unsigned bpp) {
+    if (bpp == 4) return (addr & 3u) == 0 && (stride & 3u) == 0;
+    if (bpp == 2) return (addr & 1u) == 0 && (stride & 1u) == 0;
+    return 1;
+}
+
+static void program_blend_shader(uint8_t alpha) {
+    /* Stage 0: R0.a = MUL_UNORM8(SRC.a, U0.a); Stage 1: R0.rgb = LERP(SRC.rgb, DST.rgb, R0.a) */
+    W(GFX2D_UNIFORM0, (uint32_t)alpha << 24);
+    W(GFX2D_INST0_LO, SHADER_INST_LO(0xFFu, 0xFFu, 0xE4u, 0x8u, 0u));
+    W(GFX2D_INST0_HI, SHADER_INST_HI(0x10u, 0u, 0u, 0x8u, 4u, 8u, 0u, 0xFFu));
+    W(GFX2D_INST1_LO, SHADER_INST_LO(0xE4u, 0xE4u, 0xFFu, 0x8u, 0u));
+    W(GFX2D_INST1_HI, SHADER_INST_HI(0x13u, 0u, 0u, 0x7u, 4u, 5u, 0u, 0xE4u));
+}
+
+int ae350_gfx2d_blend(uint32_t src, uint32_t src_stride, unsigned src_format,
+                      uint32_t dst, uint32_t dst_stride, unsigned dst_format,
+                      uint32_t width, uint32_t height,
+                      uint8_t alpha, unsigned flags) {
+    if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
+    if (!(R(GFX2D_CAP) & AE350_GFX2D_CAP_SHADER)) return AE350_GFX2D_UNSUPPORTED;
+    if (!width || !height || width > 16384u || height > 16384u ||
+        !valid_shader_src_fmt(src_format) || !valid_shader_dst_fmt(dst_format))
+        return AE350_GFX2D_PARAM;
+    unsigned sbpp = bpp_for_format(src_format);
+    unsigned dbpp = bpp_for_format(dst_format);
+    uint64_t srow = (uint64_t)width * sbpp;
+    uint64_t drow = (uint64_t)width * dbpp;
+    if (!aligned_for_fmt(src, src_stride, sbpp) || !aligned_for_fmt(dst, dst_stride, dbpp) ||
+        src_stride < srow || dst_stride < drow)
+        return AE350_GFX2D_PARAM;
+    uint64_t sspan = (uint64_t)src_stride * (height - 1u) + srow;
+    uint64_t dspan = (uint64_t)dst_stride * (height - 1u) + drow;
+    if (sspan > 0xffffffffull || dspan > 0xffffffffull) return AE350_GFX2D_ADDR;
+    if ((uint64_t)src < (uint64_t)dst + dspan && (uint64_t)dst < (uint64_t)src + sspan) {
+        if (src_format != dst_format || src_stride != dst_stride ||
+            width > 1024u || src > dst)
+            return AE350_GFX2D_PARAM;
+    }
+    if (sync_rect(src, src_stride, (uint32_t)srow, height) ||
+        sync_rect(dst, dst_stride, (uint32_t)drow, height))
+        return AE350_GFX2D_ADDR;
+    uint32_t cfg = 1u | (1u << 4) | (1u << 5) | (1u << 11) | (src_format << 12);
+    if (flags & AE350_GFX2D_FLAG_DITHER) cfg |= (1u << 7);
+    W(GFX2D_SHADER_CFG, cfg);
+    program_blend_shader(alpha);
+    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_SHADER, .src=src, .dst=dst,
+        .src_stride=src_stride, .dst_stride=dst_stride, .w=width, .h=height,
+        .fg=0, .bg=0, .wb=0, .fmt=dst_format });
+    return AE350_GFX2D_OK;
+}
+
+int ae350_gfx2d_scale(uint32_t src, uint32_t src_stride,
+                      uint32_t src_width, uint32_t src_height, unsigned src_format,
+                      uint32_t dst, uint32_t dst_stride,
+                      uint32_t dst_width, uint32_t dst_height, unsigned dst_format,
+                      uint32_t u0, uint32_t v0, uint32_t du_dx, uint32_t dv_dy,
+                      uint8_t alpha, unsigned flags) {
+    if (ae350_gfx2d_probe()) return AE350_GFX2D_DEVICE;
+    if (!(R(GFX2D_CAP) & AE350_GFX2D_CAP_SCALE)) return AE350_GFX2D_UNSUPPORTED;
+    if (!src_width || !src_height || src_width > 16384u || src_height > 16384u ||
+        !dst_width || !dst_height || dst_width > 16384u || dst_height > 16384u ||
+        !valid_shader_src_fmt(src_format) || !valid_shader_dst_fmt(dst_format))
+        return AE350_GFX2D_PARAM;
+    unsigned sbpp = bpp_for_format(src_format);
+    unsigned dbpp = bpp_for_format(dst_format);
+    uint64_t srow = (uint64_t)src_width * sbpp;
+    uint64_t drow = (uint64_t)dst_width * dbpp;
+    if (!aligned_for_fmt(src, src_stride, sbpp) || !aligned_for_fmt(dst, dst_stride, dbpp) ||
+        src_stride < srow || dst_stride < drow)
+        return AE350_GFX2D_PARAM;
+    uint64_t sspan = (uint64_t)src_stride * (src_height - 1u) + srow;
+    uint64_t dspan = (uint64_t)dst_stride * (dst_height - 1u) + drow;
+    if (sspan > 0xffffffffull || dspan > 0xffffffffull) return AE350_GFX2D_ADDR;
+    if ((uint64_t)src < (uint64_t)dst + dspan && (uint64_t)dst < (uint64_t)src + sspan)
+        return AE350_GFX2D_PARAM;
+    if (sync_rect(src, src_stride, (uint32_t)srow, src_height) ||
+        sync_rect(dst, dst_stride, (uint32_t)drow, dst_height))
+        return AE350_GFX2D_ADDR;
+    int do_blend = (alpha < 255u) || (flags & AE350_GFX2D_FLAG_BLEND);
+    uint32_t cfg = (do_blend ? 1u : 0u) | (1u << 4) | (1u << 8) |
+                   (1u << 11) | (src_format << 12);
+    if (do_blend) cfg |= (1u << 5);
+    if (flags & AE350_GFX2D_FLAG_BILINEAR) cfg |= (1u << 6);
+    if (flags & AE350_GFX2D_FLAG_DITHER) cfg |= (1u << 7);
+    W(GFX2D_SHADER_CFG, cfg);
+    W(GFX2D_SRC_WIDTH, src_width);
+    W(GFX2D_SRC_HEIGHT, src_height);
+    W(GFX2D_UV_START_U, u0);
+    W(GFX2D_UV_START_V, v0);
+    W(GFX2D_UV_DU_DX, du_dx);
+    W(GFX2D_UV_DV_DY, dv_dy);
+    if (do_blend) {
+        program_blend_shader(alpha);
+    } else {
+        W(GFX2D_INST0_LO, SHADER_INST_LO(0xE4u, 0xE4u, 0xE4u, 0x8u, 0u));
+        W(GFX2D_INST0_HI, SHADER_INST_HI(0x00u, 0u, 0u, 0xFu, 4u, 0u, 0u, 0xE4u));
+    }
+    write_desc_diff(&(struct gfx2d_desc){ .op=GFX2D_OP_SCALE_BLIT, .src=src, .dst=dst,
+        .src_stride=src_stride, .dst_stride=dst_stride, .w=dst_width, .h=dst_height,
+        .fg=0, .bg=0, .wb=0, .fmt=dst_format });
+    return AE350_GFX2D_OK;
 }
 
 int ae350_gfx2d_status(unsigned *status) {

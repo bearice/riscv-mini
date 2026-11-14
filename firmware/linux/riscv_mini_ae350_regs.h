@@ -69,6 +69,7 @@ enum ae350_video_reg {
 };
 
 enum ae350_gfx2d_reg {
+	AE350_G_CAP		= 8,
 	AE350_G_CONTROL		= 12,
 	AE350_G_STATUS		= 16,
 	AE350_G_IRQ_STATUS	= 20,
@@ -88,12 +89,60 @@ enum ae350_gfx2d_reg {
 	AE350_G_ERRORS		= 76,
 	AE350_G_CLEAR_ERRORS	= 80,
 	AE350_G_FORMAT		= 84,
+	AE350_G_SHADER_CFG	= 88,
+	AE350_G_SRC_WIDTH	= 92,
+	AE350_G_SRC_HEIGHT	= 96,
+	AE350_G_UV_START_U	= 100,
+	AE350_G_UV_START_V	= 104,
+	AE350_G_UV_DU_DX	= 108,
+	AE350_G_UV_DV_DY	= 112,
+	AE350_G_INST0_LO	= 116,
+	AE350_G_INST0_HI	= 120,
+	AE350_G_INST1_LO	= 124,
+	AE350_G_INST1_HI	= 128,
+	AE350_G_INST2_LO	= 132,
+	AE350_G_INST2_HI	= 136,
+	AE350_G_INST3_LO	= 140,
+	AE350_G_INST3_HI	= 144,
+	AE350_G_UNIFORM0	= 148,
+	AE350_G_UNIFORM1	= 152,
+	AE350_G_UNIFORM2	= 156,
+	AE350_G_UNIFORM3	= 160,
+	AE350_G_UNIFORM4	= 164,
+	AE350_G_UNIFORM5	= 168,
+	AE350_G_UNIFORM6	= 172,
+	AE350_G_UNIFORM7	= 176,
+	AE350_G_LUT_ADDR	= 180,
+	AE350_G_LUT_DATA	= 184,
 };
 
-/* GFX2D op codes (docs/platforms/mega138k_ae350/gfx2d.md). */
+/* GFX2D op codes (docs/platforms/mega138k_ae350/gfx2d.md & gfx2d-shader-core.md). */
 #define AE350_GFX_FILL	0
 #define AE350_GFX_COPY	1
 #define AE350_GFX_BLIT	2
+#define AE350_GFX_SHADER	3
+#define AE350_GFX_SCALE	4
+
+/* GFX2D capability bits (CAP register at offset 8). */
+#define AE350_GFX_CAP_SHADER	BIT(7)
+#define AE350_GFX_CAP_SCALE	BIT(8)
+#define AE350_GFX_CAP_ALPHA_FMT	BIT(9)
+#define AE350_GFX_CAP_DITHER	BIT(10)
+#define AE350_GFX_CAP_LUT	BIT(11)
+
+/* GFX2D pixel formats (FORMAT / SHADER_CFG.SRC_FORMAT). */
+#define AE350_GFX_FMT_RGB565	0u
+#define AE350_GFX_FMT_RGB888	1u
+#define AE350_GFX_FMT_XRGB8888	2u
+#define AE350_GFX_FMT_XRGB1555	3u
+#define AE350_GFX_FMT_ARGB8888	4u
+#define AE350_GFX_FMT_ARGB1555	5u
+#define AE350_GFX_FMT_INDEX8	6u
+#define AE350_GFX_FMT_MONO1	7u
+
+#define AE350_GFX_FLAG_DITHER	BIT(0)
+#define AE350_GFX_FLAG_BILINEAR	BIT(1)
+#define AE350_GFX_FLAG_BLEND	BIT(2)
 
 /* Video pixel formats (MODE_CONFIG[15:8]). */
 #define AE350_FMT_RGB565	0
@@ -400,6 +449,107 @@ static inline int ae350_gfx2d_run(void __iomem *gfx)
 {
 	writel(1u, gfx + AE350_G_CONTROL);
 	return ae350_gfx2d_wait(gfx, 0x40000);
+}
+
+#define AE350_G_INST_HI(op, pred, dst, wr, s0, s1, s2, swz0)		\
+	(((u32)(op) << 26) | ((u32)(pred) << 24) | ((u32)(dst) << 20) |	\
+	 ((u32)(wr) << 16) | ((u32)(s0) << 12) | ((u32)(s1) << 8) |	\
+	 ((u32)(s2) << 4) | ((u32)(swz0) >> 4))
+#define AE350_G_INST_LO(swz0, swz1, swz2, flags, imm)			\
+	((((u32)(swz0) & 0xfu) << 28) | ((u32)(swz1) << 20) |		\
+	 ((u32)(swz2) << 12) | ((u32)(flags) << 8) | (u32)(imm))
+
+static inline void ae350_gfx2d_program_blend_shader(void __iomem *gfx, u8 alpha)
+{
+	writel((u32)alpha << 24, gfx + AE350_G_UNIFORM0);
+	writel(AE350_G_INST_LO(0xffu, 0xffu, 0xe4u, 0x8u, 0u),
+	       gfx + AE350_G_INST0_LO);
+	writel(AE350_G_INST_HI(0x10u, 0u, 0u, 0x8u, 4u, 8u, 0u, 0xffu),
+	       gfx + AE350_G_INST0_HI);
+	writel(AE350_G_INST_LO(0xe4u, 0xe4u, 0xffu, 0x8u, 0u),
+	       gfx + AE350_G_INST1_LO);
+	writel(AE350_G_INST_HI(0x13u, 0u, 0u, 0x7u, 4u, 5u, 0u, 0xe4u),
+	       gfx + AE350_G_INST1_HI);
+}
+
+static inline int ae350_gfx2d_blend(void __iomem *gfx,
+				    u32 src, u32 src_stride, u32 src_fmt,
+				    u32 dst, u32 dst_stride, u32 dst_fmt,
+				    u32 width, u32 height,
+				    u8 alpha, u32 flags)
+{
+	u32 cfg;
+
+	if (!(readl(gfx + AE350_G_CAP) & AE350_GFX_CAP_SHADER))
+		return -ENODEV;
+	cfg = 1u | BIT(4) | BIT(5) | BIT(11) | (src_fmt << 12);
+	if (flags & AE350_GFX_FLAG_DITHER)
+		cfg |= BIT(7);
+
+	writel(AE350_GFX_SHADER, gfx + AE350_G_OP);
+	writel(cfg, gfx + AE350_G_SHADER_CFG);
+	writel(src, gfx + AE350_G_SRC_ADDR);
+	writel(dst, gfx + AE350_G_DST_ADDR);
+	writel(src_stride, gfx + AE350_G_SRC_STRIDE);
+	writel(dst_stride, gfx + AE350_G_DST_STRIDE);
+	writel(width, gfx + AE350_G_WIDTH);
+	writel(height, gfx + AE350_G_HEIGHT);
+	writel(0, gfx + AE350_G_FG_COLOR);
+	writel(0, gfx + AE350_G_BG_COLOR);
+	writel(0, gfx + AE350_G_BLIT_SRC_WB);
+	writel(dst_fmt, gfx + AE350_G_FORMAT);
+	ae350_gfx2d_program_blend_shader(gfx, alpha);
+	return ae350_gfx2d_run(gfx);
+}
+
+static inline int ae350_gfx2d_scale(void __iomem *gfx,
+				    u32 src, u32 src_stride,
+				    u32 src_w, u32 src_h, u32 src_fmt,
+				    u32 dst, u32 dst_stride,
+				    u32 dst_w, u32 dst_h, u32 dst_fmt,
+				    u32 u0, u32 v0, u32 du_dx, u32 dv_dy,
+				    u8 alpha, u32 flags)
+{
+	bool do_blend = (alpha < 255u) || (flags & AE350_GFX_FLAG_BLEND);
+	u32 cfg;
+
+	if (!(readl(gfx + AE350_G_CAP) & AE350_GFX_CAP_SCALE))
+		return -ENODEV;
+	cfg = (do_blend ? 1u : 0u) | BIT(4) | BIT(8) | BIT(11) | (src_fmt << 12);
+	if (do_blend)
+		cfg |= BIT(5);
+	if (flags & AE350_GFX_FLAG_BILINEAR)
+		cfg |= BIT(6);
+	if (flags & AE350_GFX_FLAG_DITHER)
+		cfg |= BIT(7);
+
+	writel(AE350_GFX_SCALE, gfx + AE350_G_OP);
+	writel(cfg, gfx + AE350_G_SHADER_CFG);
+	writel(src, gfx + AE350_G_SRC_ADDR);
+	writel(dst, gfx + AE350_G_DST_ADDR);
+	writel(src_stride, gfx + AE350_G_SRC_STRIDE);
+	writel(dst_stride, gfx + AE350_G_DST_STRIDE);
+	writel(dst_w, gfx + AE350_G_WIDTH);
+	writel(dst_h, gfx + AE350_G_HEIGHT);
+	writel(src_w, gfx + AE350_G_SRC_WIDTH);
+	writel(src_h, gfx + AE350_G_SRC_HEIGHT);
+	writel(u0, gfx + AE350_G_UV_START_U);
+	writel(v0, gfx + AE350_G_UV_START_V);
+	writel(du_dx, gfx + AE350_G_UV_DU_DX);
+	writel(dv_dy, gfx + AE350_G_UV_DV_DY);
+	writel(0, gfx + AE350_G_FG_COLOR);
+	writel(0, gfx + AE350_G_BG_COLOR);
+	writel(0, gfx + AE350_G_BLIT_SRC_WB);
+	writel(dst_fmt, gfx + AE350_G_FORMAT);
+	if (do_blend) {
+		ae350_gfx2d_program_blend_shader(gfx, alpha);
+	} else {
+		writel(AE350_G_INST_LO(0xe4u, 0xe4u, 0xe4u, 0x8u, 0u),
+		       gfx + AE350_G_INST0_LO);
+		writel(AE350_G_INST_HI(0x00u, 0u, 0u, 0xfu, 4u, 0u, 0u, 0xe4u),
+		       gfx + AE350_G_INST0_HI);
+	}
+	return ae350_gfx2d_run(gfx);
 }
 
 #endif /* _RISCV_MINI_AE350_REGS_H */

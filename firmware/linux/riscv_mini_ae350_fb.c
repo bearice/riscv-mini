@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/spinlock.h>
 
 #include "riscv_mini_ae350_regs.h"
 
@@ -38,6 +39,7 @@ struct ae350_fb {
 	u8 *scratch;
 	dma_addr_t scratch_dma;
 	size_t scratch_size;
+	spinlock_t gfx_lock;
 };
 
 static void ae350_fb_clean(struct ae350_fb *fb, u32 slot)
@@ -257,24 +259,31 @@ static void ae350_fb_fillrect(struct fb_info *info,
 	u32 dst;
 	u32 color;
 
-	if (rect->rop == ROP_COPY && ae350_gfx_ready(fb) &&
-	    rect->width && rect->height) {
+	if (rect->rop == ROP_COPY && fb->gfx &&
+	    rect->width && rect->height &&
+	    rect->dy + rect->height <=
+		(rect->dy >= fb->height ? fb->height * 2 : fb->height)) {
+		unsigned long flags;
+		int rc = -EBUSY;
+
 		dst = ae350_phys(fb, rect->dx, rect->dy);
-		if (rect->dy + rect->height <=
-		    (rect->dy >= fb->height ? fb->height * 2 : fb->height)) {
+		color = rect->color < 16 ? ((u32 *)info->pseudo_palette)[rect->color] :
+					   rect->color;
+		spin_lock_irqsave(&fb->gfx_lock, flags);
+		if (ae350_gfx_ready(fb)) {
 			ae350_fb_clean_rect(fb, rect->dx, rect->dy,
 					    rect->width, rect->height);
-			color = rect->color < 16 ? ((u32 *)info->pseudo_palette)[rect->color] :
-						   rect->color;
 			ae350_gfx_write_desc(fb, AE350_GFX_FILL, 0, dst, 0,
-					 fb->stride, rect->width, rect->height,
-					 color, 0, 0);
-			if (!ae350_gfx2d_run(fb->gfx)) {
+					     fb->stride, rect->width, rect->height,
+					     color, 0, 0);
+			rc = ae350_gfx2d_run(fb->gfx);
+			if (!rc)
 				ae350_fb_inval_rect(fb, rect->dx, rect->dy,
 						    rect->width, rect->height);
-				return;
-			}
 		}
+		spin_unlock_irqrestore(&fb->gfx_lock, flags);
+		if (!rc)
+			return;
 	}
 	sys_fillrect(info, rect);
 	ae350_fb_clean_rect(fb, rect->dx, rect->dy, rect->width, rect->height);
@@ -286,7 +295,7 @@ static void ae350_fb_copyarea(struct fb_info *info,
 	struct ae350_fb *fb = info->par;
 	u32 src, dst;
 
-	if (ae350_gfx_ready(fb) && area->width && area->height &&
+	if (fb->gfx && area->width && area->height &&
 	    (area->sy >= fb->height) == (area->dy >= fb->height)) {
 		/*
 		 * When copying rightward within overlapping columns on the same
@@ -303,18 +312,26 @@ static void ae350_fb_copyarea(struct fb_info *info,
 		src = ae350_phys(fb, area->sx, area->sy);
 		dst = ae350_phys(fb, area->dx, area->dy);
 		if ((src % 32) == (dst % 32)) {
-			ae350_fb_clean_rect(fb, area->sx, area->sy,
-					    area->width, area->height);
-			ae350_fb_clean_rect(fb, area->dx, area->dy,
-					    area->width, area->height);
-			ae350_gfx_write_desc(fb, AE350_GFX_COPY, src, dst,
-					 fb->stride, fb->stride, area->width,
-					 area->height, 0, 0, 0);
-			if (!ae350_gfx2d_run(fb->gfx)) {
-				ae350_fb_inval_rect(fb, area->dx, area->dy,
+			unsigned long flags;
+			int rc = -EBUSY;
+
+			spin_lock_irqsave(&fb->gfx_lock, flags);
+			if (ae350_gfx_ready(fb)) {
+				ae350_fb_clean_rect(fb, area->sx, area->sy,
 						    area->width, area->height);
-				return;
+				ae350_fb_clean_rect(fb, area->dx, area->dy,
+						    area->width, area->height);
+				ae350_gfx_write_desc(fb, AE350_GFX_COPY, src, dst,
+						     fb->stride, fb->stride, area->width,
+						     area->height, 0, 0, 0);
+				rc = ae350_gfx2d_run(fb->gfx);
+				if (!rc)
+					ae350_fb_inval_rect(fb, area->dx, area->dy,
+							    area->width, area->height);
 			}
+			spin_unlock_irqrestore(&fb->gfx_lock, flags);
+			if (!rc)
+				return;
 		}
 	}
 	sys_copyarea(info, area);
@@ -330,7 +347,7 @@ static void ae350_fb_imageblit(struct fb_info *info,
 	size_t total;
 	u32 fg, bg;
 
-	if (ae350_gfx_ready(fb) && image->depth == 1 &&
+	if (fb->gfx && image->depth == 1 &&
 	    image->width >= 1 && image->height >= 1) {
 		dst = ae350_phys(fb, image->dx, image->dy);
 		bytes_per_row = (image->width + 7) / 8;
@@ -339,25 +356,33 @@ static void ae350_fb_imageblit(struct fb_info *info,
 		    fb->format != AE350_FMT_RGB888 &&
 		    image->dy + image->height <=
 			(image->dy >= fb->height ? fb->height * 2 : fb->height)) {
-			memcpy(fb->scratch, image->data, total);
-			ae350_cache_clean_range((u32)(uintptr_t)fb->scratch, total);
-			ae350_fb_clean_rect(fb, image->dx, image->dy,
-					    image->width, image->height);
+			unsigned long flags;
+			int rc = -EBUSY;
+
 			fg = image->fg_color < 16 ? ((u32 *)info->pseudo_palette)[image->fg_color] :
 						    image->fg_color;
 			bg = image->bg_color < 16 ? ((u32 *)info->pseudo_palette)[image->bg_color] :
 						    image->bg_color;
-			ae350_gfx_write_desc(fb, AE350_GFX_BLIT,
-					     (u32)fb->scratch_dma, dst,
-					     bytes_per_row, fb->stride,
-					     image->width, image->height,
-					     fg, bg,
-					     bytes_per_row);
-			if (!ae350_gfx2d_run(fb->gfx)) {
-				ae350_fb_inval_rect(fb, image->dx, image->dy,
+			spin_lock_irqsave(&fb->gfx_lock, flags);
+			if (ae350_gfx_ready(fb)) {
+				memcpy(fb->scratch, image->data, total);
+				ae350_cache_clean_range((u32)(uintptr_t)fb->scratch, total);
+				ae350_fb_clean_rect(fb, image->dx, image->dy,
 						    image->width, image->height);
-				return;
+				ae350_gfx_write_desc(fb, AE350_GFX_BLIT,
+						     (u32)fb->scratch_dma, dst,
+						     bytes_per_row, fb->stride,
+						     image->width, image->height,
+						     fg, bg,
+						     bytes_per_row);
+				rc = ae350_gfx2d_run(fb->gfx);
+				if (!rc)
+					ae350_fb_inval_rect(fb, image->dx, image->dy,
+							    image->width, image->height);
 			}
+			spin_unlock_irqrestore(&fb->gfx_lock, flags);
+			if (!rc)
+				return;
 		}
 	}
 	sys_imageblit(info, image);
@@ -391,6 +416,132 @@ static ssize_t ae350_fb_write(struct fb_info *info, const char __user *buf,
 	return ret;
 }
 
+struct ae350_fb_blend_req {
+	__u32 src_x;
+	__u32 src_y;
+	__u32 dst_x;
+	__u32 dst_y;
+	__u32 width;
+	__u32 height;
+	__u8 alpha;
+	__u8 pad[3];
+	__u32 flags;
+};
+
+struct ae350_fb_scale_req {
+	__u32 src_x;
+	__u32 src_y;
+	__u32 src_width;
+	__u32 src_height;
+	__u32 dst_x;
+	__u32 dst_y;
+	__u32 dst_width;
+	__u32 dst_height;
+	__u32 u0;
+	__u32 v0;
+	__u32 du_dx;
+	__u32 dv_dy;
+	__u8 alpha;
+	__u8 pad[3];
+	__u32 flags;
+};
+
+#define AE350_FBIO_BLEND _IOW('A', 0x01, struct ae350_fb_blend_req)
+#define AE350_FBIO_SCALE _IOW('A', 0x02, struct ae350_fb_scale_req)
+
+static bool ae350_fb_rect_in_bounds(const struct ae350_fb *fb,
+				    u32 x, u32 y, u32 w, u32 h)
+{
+	u32 max_y = fb->height * 2u;
+
+	return w && h && x < fb->width && y < max_y &&
+	       w <= fb->width - x && h <= max_y - y;
+}
+
+static int ae350_fb_ioctl(struct fb_info *info, unsigned int cmd,
+			  unsigned long arg)
+{
+	struct ae350_fb *fb = info->par;
+	void __user *argp = (void __user *)arg;
+	unsigned long flags;
+
+	if (!fb->gfx || fb->format == AE350_FMT_RGB888 ||
+	    fb->format == AE350_FMT_INDEX8)
+		return -ENODEV;
+
+	switch (cmd) {
+	case AE350_FBIO_BLEND: {
+		struct ae350_fb_blend_req req;
+		u32 src_phys, dst_phys;
+		int rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!ae350_fb_rect_in_bounds(fb, req.src_x, req.src_y,
+					     req.width, req.height) ||
+		    !ae350_fb_rect_in_bounds(fb, req.dst_x, req.dst_y,
+					     req.width, req.height))
+			return -EINVAL;
+		src_phys = ae350_phys(fb, req.src_x, req.src_y);
+		dst_phys = ae350_phys(fb, req.dst_x, req.dst_y);
+		spin_lock_irqsave(&fb->gfx_lock, flags);
+		if (!ae350_gfx_ready(fb)) {
+			spin_unlock_irqrestore(&fb->gfx_lock, flags);
+			return -EBUSY;
+		}
+		ae350_fb_clean_rect(fb, req.src_x, req.src_y, req.width, req.height);
+		ae350_fb_clean_rect(fb, req.dst_x, req.dst_y, req.width, req.height);
+		rc = ae350_gfx2d_blend(fb->gfx, src_phys, fb->stride, fb->format,
+				       dst_phys, fb->stride, fb->format,
+				       req.width, req.height, req.alpha, req.flags);
+		if (!rc)
+			ae350_fb_inval_rect(fb, req.dst_x, req.dst_y, req.width, req.height);
+		spin_unlock_irqrestore(&fb->gfx_lock, flags);
+		if (rc)
+			return rc < 0 ? rc : -EIO;
+		return 0;
+	}
+	case AE350_FBIO_SCALE: {
+		struct ae350_fb_scale_req req;
+		u32 src_phys, dst_phys, du_dx, dv_dy;
+		int rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!ae350_fb_rect_in_bounds(fb, req.src_x, req.src_y,
+					     req.src_width, req.src_height) ||
+		    !ae350_fb_rect_in_bounds(fb, req.dst_x, req.dst_y,
+					     req.dst_width, req.dst_height))
+			return -EINVAL;
+		src_phys = ae350_phys(fb, req.src_x, req.src_y);
+		dst_phys = ae350_phys(fb, req.dst_x, req.dst_y);
+		du_dx = req.du_dx ? req.du_dx : ((req.src_width << 16) / req.dst_width);
+		dv_dy = req.dv_dy ? req.dv_dy : ((req.src_height << 16) / req.dst_height);
+		spin_lock_irqsave(&fb->gfx_lock, flags);
+		if (!ae350_gfx_ready(fb)) {
+			spin_unlock_irqrestore(&fb->gfx_lock, flags);
+			return -EBUSY;
+		}
+		ae350_fb_clean_rect(fb, req.src_x, req.src_y, req.src_width, req.src_height);
+		ae350_fb_clean_rect(fb, req.dst_x, req.dst_y, req.dst_width, req.dst_height);
+		rc = ae350_gfx2d_scale(fb->gfx, src_phys, fb->stride,
+				       req.src_width, req.src_height, fb->format,
+				       dst_phys, fb->stride,
+				       req.dst_width, req.dst_height, fb->format,
+				       req.u0, req.v0, du_dx, dv_dy,
+				       req.alpha, req.flags);
+		if (!rc)
+			ae350_fb_inval_rect(fb, req.dst_x, req.dst_y, req.dst_width, req.dst_height);
+		spin_unlock_irqrestore(&fb->gfx_lock, flags);
+		if (rc)
+			return rc < 0 ? rc : -EIO;
+		return 0;
+	}
+	default:
+		return -ENOTTY;
+	}
+}
+
 static const struct fb_ops ae350_fb_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = ae350_fb_check_var,
@@ -401,6 +552,7 @@ static const struct fb_ops ae350_fb_ops = {
 	.fb_fillrect = ae350_fb_fillrect,
 	.fb_copyarea = ae350_fb_copyarea,
 	.fb_imageblit = ae350_fb_imageblit,
+	.fb_ioctl = ae350_fb_ioctl,
 	.fb_sync = ae350_fb_sync,
 	.fb_read = fb_sys_read,
 	.fb_write = ae350_fb_write,
@@ -462,6 +614,7 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto release;
 	}
+	spin_lock_init(&fb->gfx_lock);
 	static const u8 bpp_table[] = { 2, 3, 4, 2, 1 };
 	fb->format = AE350_FMT_RGB565;
 	if (!of_property_read_string(dev->of_node, "riscv-mini,format",

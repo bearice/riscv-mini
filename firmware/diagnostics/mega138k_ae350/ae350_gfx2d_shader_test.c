@@ -33,10 +33,11 @@ enum {
     WRAP_BAD,
     DOWN_BAD,
     SCALE_RC,
+    BSP_API_BAD,
     SLOT_COUNT
 };
 
-#define DONE_STAGE 0xC3500030u
+#define DONE_STAGE 0xC3500040u
 static volatile uint32_t *const slot = (volatile uint32_t *)AE350_RESULTS_BASE;
 
 #define R(off) (*(volatile uint32_t *)(uintptr_t)(AE350_GFX2D_BASE + (off)))
@@ -691,6 +692,64 @@ int main(void) {
             if (px32(dst + c * 4) != 0x5A5A5A5Au) bad++;
         if (rc != AE350_GFX2D_PARAM || bad) { slot[STAGE] = 0xC350000Fu; return 0; }
         W(AE350_GFX2D_CLEAR_ERRORS, 1);
+    }
+
+    /* 16. Step 6d: BSP ae350_gfx2d_blend + ae350_gfx2d_scale API verification */
+    {
+        uint32_t src = SCRATCH + 0x30000, dst = SCRATCH + 0x31000;
+        unsigned bad = 0;
+        ae350_gfx2d_reset_cache();
+        /* 16a: ARGB8888 (0x80FF0000) + global alpha 0x80 -> RGB565 (0x001F) */
+        for (unsigned i = 0; i < 4 * 2; i++) put32(src + i * 4u, 0x80FF0000u);
+        for (unsigned i = 0; i < 4 * 2; i++) put16(dst + i * 2u, 0x001Fu);
+        int rc = ae350_gfx2d_blend(src, 16, AE350_GFX2D_FMT_ARGB8888,
+                                   dst, 8, AE350_GFX2D_FMT_RGB565,
+                                   4, 2, 0x80u, 0);
+        int wrc = rc ? 0 : ae350_gfx2d_wait(0xffffu);
+        if (rc || wrc) {
+            slot[STAGE] = 0xC3500010u;
+            slot[BSP_API_BAD] = 0x80000000u | ((uint32_t)rc << 8) | (uint32_t)wrc;
+            return 0;
+        }
+        ae350_dma_sync_for_cpu(dst, 16);
+        unsigned eff_a = ((0x80u * 0x80u + 128u) + ((0x80u * 0x80u + 128u) >> 8)) >> 8;
+        unsigned want_r = lerp8(255, 0, eff_a) >> 3;
+        unsigned want_g = lerp8(0, 0, eff_a) >> 2;
+        unsigned want_b = lerp8(0, 255, eff_a) >> 3;
+        uint16_t want565 = (uint16_t)((want_r << 11) | (want_g << 5) | want_b);
+        for (unsigned i = 0; i < 4 * 2; i++)
+            if (px16(dst + i * 2u) != want565) bad++;
+
+        /* 16b: 2x2 ARGB8888 -> 4x4 ARGB8888 bilinear scale + blend via ae350_gfx2d_scale */
+        for (unsigned v = 0; v < 2; v++)
+            for (unsigned u = 0; u < 2; u++)
+                put32(src + v * 8u + u * 4u, texel(u, v));
+        for (unsigned y = 0; y < 4; y++)
+            for (unsigned x = 0; x < 4; x++)
+                put32(dst + y * 16u + x * 4u, 0xFF102030u);
+        rc = ae350_gfx2d_scale(src, 8, 2, 2, AE350_GFX2D_FMT_ARGB8888,
+                               dst, 16, 4, 4, AE350_GFX2D_FMT_ARGB8888,
+                               0, 0, 0x8000u, 0x8000u, 0xFFu,
+                               AE350_GFX2D_FLAG_BILINEAR | AE350_GFX2D_FLAG_BLEND);
+        wrc = rc ? 0 : ae350_gfx2d_wait(0xffffu);
+        if (rc || wrc) {
+            slot[STAGE] = 0xC3500010u;
+            slot[BSP_API_BAD] = 0x40000000u | ((uint32_t)rc << 8) | (uint32_t)wrc;
+            return 0;
+        }
+        ae350_dma_sync_for_cpu(dst, 64);
+        for (unsigned y = 0; y < 4; y++)
+            for (unsigned x = 0; x < 4; x++) {
+                uint32_t s = scale_ref(texel, 2, 2, 0, 0x8000u, 0, 0x8000u, 1, x, y);
+                unsigned a = (s >> 24) & 0xFFu;
+                unsigned r = lerp8((int)((s >> 16) & 0xFFu), 0x10, a);
+                unsigned g = lerp8((int)((s >> 8) & 0xFFu), 0x20, a);
+                unsigned b = lerp8((int)(s & 0xFFu), 0x30, a);
+                uint32_t want = (a << 24) | (r << 16) | (g << 8) | b;
+                if (px32(dst + y * 16u + x * 4u) != want) bad++;
+            }
+        slot[BSP_API_BAD] = bad;
+        if (bad) { slot[STAGE] = 0xC3500010u; return 0; }
     }
 
     slot[COMMANDS] = R(AE350_GFX2D_COMMANDS);
