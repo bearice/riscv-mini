@@ -42,6 +42,10 @@ class TriRasterizer(Module):
         self.z_out = Signal(32)       # UQ16.16
         self.s_q32_16 = Signal((48, True))
         self.t_q32_16 = Signal((48, True))
+        self.s_q12_20 = Signal((32, True))
+        self.t_q12_20 = Signal((32, True))
+        self.q_clamped = Signal(32)   # UQ2.30 in [0x0040_0000, 0x4000_0000]
+        self.persp_en_out = Signal()
         self.rgba_out = Signal(32)    # {A, R, G, B}
 
         # Latched triangle packet fields (after CW normalization)
@@ -50,6 +54,7 @@ class TriRasterizer(Module):
         w22 = self.words[22]
         w23 = self.words[23]
 
+        persp_en = Signal()
         gouraud_en = Signal()
         sc_min_x = Signal(12)
         sc_min_y = Signal(12)
@@ -61,6 +66,7 @@ class TriRasterizer(Module):
         z = [Signal(32) for _ in range(3)]
         s = [Signal((32, True)) for _ in range(3)]
         t = [Signal((32, True)) for _ in range(3)]
+        q = [Signal(32) for _ in range(3)]
         rgba = [Signal(32) for _ in range(3)]
 
         # Setup temporaries
@@ -75,11 +81,11 @@ class TriRasterizer(Module):
         inv_e_norm = Signal(50)
         div_cnt = Signal(6)
 
-        # Planar gradients (14 values: 7 attrs x {dx, dy}) in 64-bit Q36.28
+        # Planar gradients (16 values: 8 attrs x {dx, dy}) in 64-bit Q36.28 / Q26.38
         # Order: 0:dS_dx, 1:dS_dy, 2:dT_dx, 3:dT_dy, 4:dZ_dx, 5:dZ_dy,
         #        6:dR_dx, 7:dR_dy, 8:dG_dx, 9:dG_dy, 10:dB_dx, 11:dB_dy,
-        #        12:dA_dx, 13:dA_dy
-        grads = [Signal((64, True), reset_less=True) for _ in range(14)]
+        #        12:dA_dx, 13:dA_dy, 14:dQ_dx, 15:dQ_dy
+        grads = [Signal((64, True), reset_less=True) for _ in range(16)]
         grad_idx = Signal(4)
 
         # Multi-cycle 64x50 -> 114-bit gradient multiplier (4 chunks of 16b x 50b)
@@ -123,6 +129,7 @@ class TriRasterizer(Module):
         g_acc = Signal((42, True), reset_less=True)
         b_acc = Signal((42, True), reset_less=True)
         a_acc = Signal((42, True), reset_less=True)
+        q_acc = Signal((40, True), reset_less=True)
 
         # Combinational edge vectors
         dx10 = Signal((17, True))
@@ -201,6 +208,7 @@ class TriRasterizer(Module):
             4: [attr_0.eq(_ch_q12_20(rgba[0], 8)), attr_1.eq(_ch_q12_20(rgba[1], 8)), attr_2.eq(_ch_q12_20(rgba[2], 8))],
             5: [attr_0.eq(_ch_q12_20(rgba[0], 0)), attr_1.eq(_ch_q12_20(rgba[1], 0)), attr_2.eq(_ch_q12_20(rgba[2], 0))],
             6: [attr_0.eq(_ch_q12_20(rgba[0], 24)), attr_1.eq(_ch_q12_20(rgba[1], 24)), attr_2.eq(_ch_q12_20(rgba[2], 24))],
+            7: [attr_0.eq(Cat(q[0], 0)), attr_1.eq(Cat(q[1], 0)), attr_2.eq(Cat(q[2], 0))],
             "default": [attr_0.eq(0), attr_1.eq(0), attr_2.eq(0)],
         })
 
@@ -227,6 +235,15 @@ class TriRasterizer(Module):
         # Output pixel assembly
         s_q14_16 = (s_acc + (1 << 11)) >> 12
         t_q14_16 = (t_acc + (1 << 11)) >> 12
+        s_q14_20 = (s_acc + 128) >> 8
+        t_q14_20 = (t_acc + 128) >> 8
+        s_sat_20 = Mux(s_q14_20 < -(1 << 31), -(1 << 31),
+                       Mux(s_q14_20 > ((1 << 31) - 1), (1 << 31) - 1, s_q14_20[0:32]))
+        t_sat_20 = Mux(t_q14_20 < -(1 << 31), -(1 << 31),
+                       Mux(t_q14_20 > ((1 << 31) - 1), (1 << 31) - 1, t_q14_20[0:32]))
+        q_rnd_30 = (q_acc + 128) >> 8
+        q_clamped_v = Mux(q_rnd_30 < 0x00400000, 0x00400000,
+                          Mux(q_rnd_30 > 0x40000000, 0x40000000, q_rnd_30[0:32]))
         z_rnd = (z_acc + (1 << 11)) >> 12
         z_clamped = Mux(z_rnd < 0, 0, Mux(z_rnd > 0xFFFFFFFF, 0xFFFFFFFF, z_rnd[0:32]))
         r_u8 = _clamp_u8(r_acc)
@@ -240,6 +257,10 @@ class TriRasterizer(Module):
             self.z_out.eq(z_clamped),
             self.s_q32_16.eq(s_q14_16),
             self.t_q32_16.eq(t_q14_16),
+            self.s_q12_20.eq(s_sat_20),
+            self.t_q12_20.eq(t_sat_20),
+            self.q_clamped.eq(q_clamped_v),
+            self.persp_en_out.eq(persp_en),
             self.rgba_out.eq(Mux(gouraud_en, Cat(b_u8, g_u8, r_u8, a_u8), rgba[0])),
         ]
 
@@ -292,7 +313,7 @@ class TriRasterizer(Module):
         ]
 
         # MAC attribute selector
-        mac_base = Signal((44, True))
+        mac_base = Signal((49, True))
         mac_gx = Signal((64, True))
         mac_gy = Signal((64, True))
         def _ch_q12_20_s(v, shift_bits):
@@ -300,11 +321,12 @@ class TriRasterizer(Module):
         self.comb += Case(mac_attr, {
             0: [mac_base.eq(s[0] << 12), mac_gx.eq(grads[0]), mac_gy.eq(grads[1])],
             1: [mac_base.eq(t[0] << 12), mac_gx.eq(grads[2]), mac_gy.eq(grads[3])],
-            2: [mac_base.eq(Cat(Constant(0, 12), z[0], Constant(0, 2))), mac_gx.eq(grads[4]), mac_gy.eq(grads[5])],
+            2: [mac_base.eq(Cat(Constant(0, 16), z[0], Constant(0, 1))), mac_gx.eq(grads[4]), mac_gy.eq(grads[5])],
             3: [mac_base.eq(_ch_q12_20_s(rgba[0], 16)), mac_gx.eq(grads[6]), mac_gy.eq(grads[7])],
             4: [mac_base.eq(_ch_q12_20_s(rgba[0], 8)), mac_gx.eq(grads[8]), mac_gy.eq(grads[9])],
             5: [mac_base.eq(_ch_q12_20_s(rgba[0], 0)), mac_gx.eq(grads[10]), mac_gy.eq(grads[11])],
             6: [mac_base.eq(_ch_q12_20_s(rgba[0], 24)), mac_gx.eq(grads[12]), mac_gy.eq(grads[13])],
+            7: [mac_base.eq(Cat(Constant(0, 12), q[0])), mac_gx.eq(grads[14]), mac_gy.eq(grads[15])],
             "default": [mac_base.eq(0), mac_gx.eq(0), mac_gy.eq(0)],
         })
 
@@ -316,14 +338,20 @@ class TriRasterizer(Module):
             self.valid_out.eq(fsm.ongoing("SPAN_WALK")),
         ]
 
+        q_bad = w0[10] & (
+            (self.words[7] < 0x00400000) | (self.words[7] > 0x40000000) |
+            (self.words[13] < 0x00400000) | (self.words[13] > 0x40000000) |
+            (self.words[19] < 0x00400000) | (self.words[19] > 0x40000000)
+        )
         fsm.act("IDLE",
             If(self.start,
                 NextValue(self.done, 0),
                 NextValue(self.err_param, 0),
-                If(w23 != 0,
+                If((w23 != 0) | q_bad,
                     NextValue(self.err_param, 1),
                     NextValue(self.done, 1),
                 ).Else(
+                    NextValue(persp_en, w0[10]),
                     NextValue(gouraud_en, w0[11]),
                     NextValue(sc_min_x, w21[0:12]),
                     NextValue(sc_min_y, w21[16:28]),
@@ -334,18 +362,21 @@ class TriRasterizer(Module):
                     NextValue(z[0], self.words[4]),
                     NextValue(s[0], self.words[5]),
                     NextValue(t[0], self.words[6]),
+                    NextValue(q[0], self.words[7]),
                     NextValue(rgba[0], self.words[8]),
                     NextValue(x[1], self.words[9][0:16]),
                     NextValue(y[1], self.words[9][16:32]),
                     NextValue(z[1], self.words[10]),
                     NextValue(s[1], self.words[11]),
                     NextValue(t[1], self.words[12]),
+                    NextValue(q[1], self.words[13]),
                     NextValue(rgba[1], self.words[14]),
                     NextValue(x[2], self.words[15][0:16]),
                     NextValue(y[2], self.words[15][16:32]),
                     NextValue(z[2], self.words[16]),
                     NextValue(s[2], self.words[17]),
                     NextValue(t[2], self.words[18]),
+                    NextValue(q[2], self.words[19]),
                     NextValue(rgba[2], self.words[20]),
                     NextState("SETUP_AREA"),
                 ),
@@ -366,6 +397,7 @@ class TriRasterizer(Module):
                     NextValue(z[1], z[2]), NextValue(z[2], z[1]),
                     NextValue(s[1], s[2]), NextValue(s[2], s[1]),
                     NextValue(t[1], t[2]), NextValue(t[2], t[1]),
+                    NextValue(q[1], q[2]), NextValue(q[2], q[1]),
                     NextValue(rgba[1], rgba[2]), NextValue(rgba[2], rgba[1]),
                     NextValue(e_area, -area_comb),
                     NextValue(e_area_abs, (-area_comb)[0:34]),
@@ -382,10 +414,9 @@ class TriRasterizer(Module):
         fsm.act("SETUP_CLZ",
             NextValue(clz_val, clz_comb),
             NextValue(e_norm, e_area_abs << clz_comb),
-            # Compute floor(2^82 / e_norm): start with MSB=1 at bit 49 (since 2^33 <= e_norm < 2^34)
-            # First trial: rem starts at 1 << 33? Actually 50-bit quotient:
-            # At step k=49, dividend bit is 2^82 -> aligned to 2^33*2^49, so initial rem=1
-            NextValue(div_rem, 1),
+            # Compute floor(2^82 / e_norm): 2^33 <= e_norm < 2^34, so at step 49
+            # rem_next = div_rem << 1 must be 2^33 (hence initial div_rem = 1 << 32).
+            NextValue(div_rem, 1 << 32),
             NextValue(inv_e_norm, 0),
             NextValue(div_cnt, 49),
             NextState("SETUP_DIV"),
@@ -442,23 +473,18 @@ class TriRasterizer(Module):
         grad_mag = (gmul_acc + (1 << (shift_amt - 1))) >> shift_amt
         grad_signed = Mux(gmul_sign, -grad_mag[0:64], grad_mag[0:64])
         fsm.act("SETUP_GRAD_STORE",
-            [If(grad_idx == k, NextValue(grads[k], grad_signed)) for k in range(14)],
-            If(grad_idx == (13 if True else 5),
+            [If(grad_idx == k, NextValue(grads[k], grad_signed)) for k in range(16)],
+            If((grad_idx == 15) | ((grad_idx == 13) & ~persp_en) | ((grad_idx == 5) & ~gouraud_en & ~persp_en),
                 NextValue(edge_idx, 0),
                 NextValue(has_left, 0),
                 NextValue(has_right, 0),
                 NextState("SPAN_EDGE_PREP"),
+            ).Elif((grad_idx == 5) & ~gouraud_en & persp_en,
+                NextValue(grad_idx, 14),
+                NextState("SETUP_GRAD_LOAD"),
             ).Else(
-                # Skip RGBA gradients when gouraud_en == 0
-                If((grad_idx == 5) & ~gouraud_en,
-                    NextValue(edge_idx, 0),
-                    NextValue(has_left, 0),
-                    NextValue(has_right, 0),
-                    NextState("SPAN_EDGE_PREP"),
-                ).Else(
-                    NextValue(grad_idx, grad_idx + 1),
-                    NextState("SETUP_GRAD_LOAD"),
-                )
+                NextValue(grad_idx, grad_idx + 1),
+                NextState("SETUP_GRAD_LOAD"),
             )
         )
 
@@ -603,10 +629,13 @@ class TriRasterizer(Module):
                     4: NextValue(g_acc, mac_res[0:42]),
                     5: NextValue(b_acc, mac_res[0:42]),
                     6: NextValue(a_acc, mac_res[0:42]),
+                    7: NextValue(q_acc, mac_res[0:40]),
                 }),
                 NextValue(mac_phase, 0),
-                If((mac_attr == 6) | ((mac_attr == 2) & ~gouraud_en),
+                If((mac_attr == 7) | ((mac_attr == 6) & ~persp_en) | ((mac_attr == 2) & ~gouraud_en & ~persp_en),
                     NextState("SPAN_WALK"),
+                ).Elif((mac_attr == 2) & ~gouraud_en & persp_en,
+                    NextValue(mac_attr, 7),
                 ).Else(
                     NextValue(mac_attr, mac_attr + 1),
                 )
@@ -636,6 +665,7 @@ class TriRasterizer(Module):
                     NextValue(g_acc, g_acc + grads[8][0:42]),
                     NextValue(b_acc, b_acc + grads[10][0:42]),
                     NextValue(a_acc, a_acc + grads[12][0:42]),
+                    NextValue(q_acc, q_acc + grads[14][0:40]),
                 )
             )
         )
