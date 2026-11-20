@@ -72,7 +72,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
     if (fdx == 0) return;
 
     float inv_area = 1.0f / (float)fdx;
-    int dzdx = (int)((float)((int64_t)(p1->z - p0->z) * dy2 - (int64_t)(p2->z - p0->z) * dy1) * (65536.0f * inv_area));
+    int64_t z_num = (int64_t)(p1->z - p0->z) * dy2 - (int64_t)(p2->z - p0->z) * dy1;
+    int64_t dzdx = (z_num << 16) / fdx;
     int drdx = 0, dgdx = 0, dbdx = 0;
     int dsdx = 0, dtdx = 0;
 
@@ -95,8 +96,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
     float inv_th = 1.0f / (float)total_h;
     int32_t x_long = p0->x << 16;
     int32_t dx_long = (int32_t)((float)(p2->x - p0->x) * (65536.0f * inv_th));
-    int32_t z_long = p0->z << 16;
-    int32_t dz_long = (int32_t)((float)(p2->z - p0->z) * (65536.0f * inv_th));
+    int64_t z_long = (int64_t)p0->z << 16;
+    int64_t dz_long = ((int64_t)(p2->z - p0->z) << 16) / total_h;
     int32_t r_long = p0->r, g_long = p0->g, b_long = p0->b;
     int32_t dr_long = (int32_t)((float)(p2->r - p0->r) * inv_th);
     int32_t dg_long = (int32_t)((float)(p2->g - p0->g) * inv_th);
@@ -119,8 +120,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
         float inv_sh = 1.0f / (float)seg_h;
         int32_t x_short = pa->x << 16;
         int32_t dx_short = (int32_t)((float)(pb->x - pa->x) * (65536.0f * inv_sh));
-        int32_t z_short = pa->z << 16;
-        int32_t dz_short = (int32_t)((float)(pb->z - pa->z) * (65536.0f * inv_sh));
+        int64_t z_short = (int64_t)pa->z << 16;
+        int64_t dz_short = ((int64_t)(pb->z - pa->z) << 16) / seg_h;
         int32_t r_short = pa->r, g_short = pa->g, b_short = pa->b;
         int32_t dr_short = (int32_t)((float)(pb->r - pa->r) * inv_sh);
         int32_t dg_short = (int32_t)((float)(pb->g - pa->g) * inv_sh);
@@ -135,7 +136,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
         for (int y = y_start; y < y_end; y++) {
             if (y >= 0 && y < ysize) {
                 int32_t x_left, x_right;
-                int32_t z, r, g, b, s, t;
+                int64_t z;
+                int32_t r, g, b, s, t;
 
                 if (x_long <= x_short) {
                     x_left = x_long; x_right = x_short;
@@ -152,7 +154,7 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
 
                 if (xl <= xr) {
                     int64_t dx_sub = ((int64_t)xl << 16) - (int64_t)x_left;
-                    z += (int32_t)(((int64_t)dzdx * dx_sub) >> 16);
+                    z += (dzdx * dx_sub) >> 16;
                     r += (int32_t)(((int64_t)drdx * dx_sub) >> 16);
                     g += (int32_t)(((int64_t)dgdx * dx_sub) >> 16);
                     b += (int32_t)(((int64_t)dbdx * dx_sub) >> 16);
