@@ -114,7 +114,11 @@ class Gfx3DPipeline(Module):
             self.zbuf.out_we_z_raw.eq(frag3d.out_we_z),
         ]
 
+        self.downstream_busy = Signal()
         self.pipe_busy = Signal()
-        self.comb += self.pipe_busy.eq(
-            self.tri.busy | self.persp.valid_out | self.sampler.valid_out | frag3d.pipe_busy
-        )
+        self.comb += [
+            self.downstream_busy.eq(
+                self.persp.busy | self.sampler.busy | frag3d.pipe_busy
+            ),
+            self.pipe_busy.eq(self.tri.busy | self.downstream_busy),
+        ]

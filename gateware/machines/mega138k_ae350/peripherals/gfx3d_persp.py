@@ -306,6 +306,11 @@ class PerspRecipUnit(Module):
             self.v_q32_16.eq(Mux(pe7b, v_sum_7b, v_aff_7b)),
         )
 
+        self.busy = Signal()
+        self.comb += self.busy.eq(
+            v1 | v2 | v3 | v4 | v4b | v5 | v6 | v7 | v7b | self.valid_out
+        )
+
 
 def eval_z_func(z_new, z_old, z_func, z_test_en):
     """Combinational Z_FUNC evaluation (§4.2 / §4.4)."""
@@ -356,12 +361,21 @@ class ZBufferUnit(Module):
         self.we_color = Signal()
         self.we_z = Signal()
 
+        # External Z line-buffer load/store port (active only when pipeline is drained)
+        self.ext_rd_en = Signal()
+        self.ext_rd_adr = Signal(12)
+        self.ext_rd_dat = Signal(16)
+        self.ext_wr_en = Signal()
+        self.ext_wr_adr = Signal(12)
+        self.ext_wr_dat = Signal(16)
+
         # Synchronous read of Z_LB[rd_x]; z_new_q aligns with rd_port.dat_r
         z_new_q = Signal(16)
         self.sync += If(~self.stall, z_new_q.eq(self.z_new_in))
         self.comb += [
-            self.rd_port.adr.eq(self.rd_x),
-            self.rd_port.re.eq(~self.stall),
+            self.rd_port.adr.eq(Mux(self.ext_rd_en, self.ext_rd_adr, self.rd_x)),
+            self.rd_port.re.eq(Mux(self.ext_rd_en, 1, ~self.stall)),
+            self.ext_rd_dat.eq(self.rd_port.dat_r),
         ]
 
         z_pass_sig, z_comb_stmts = eval_z_func(
@@ -374,7 +388,7 @@ class ZBufferUnit(Module):
         self.comb += [
             self.we_color.eq(self.out_valid & self.color_write_en & self.out_we_color_raw),
             self.we_z.eq(self.out_valid & self.z_write_en & self.out_we_z_raw),
-            self.wr_port.adr.eq(self.out_x),
-            self.wr_port.dat_w.eq(self.out_z_new),
-            self.wr_port.we.eq(self.we_z),
+            self.wr_port.adr.eq(Mux(self.ext_wr_en, self.ext_wr_adr, self.out_x)),
+            self.wr_port.dat_w.eq(Mux(self.ext_wr_en, self.ext_wr_dat, self.out_z_new)),
+            self.wr_port.we.eq(Mux(self.ext_wr_en, 1, self.we_z)),
         ]

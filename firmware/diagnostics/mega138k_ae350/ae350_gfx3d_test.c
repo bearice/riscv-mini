@@ -31,6 +31,9 @@
 #define G3D_TMEM_DATA   GFX3D_REG(0x184u)
 #define G3D_PIXELS_OUT  GFX3D_REG(0x188u)
 
+#define G3D_FLAG_PERSP   (1u << 10)
+#define G3D_FLAG_GOURAUD (1u << 11)
+
 #define RES ((volatile uint32_t *)AE350_RESULTS_BASE)
 
 static void putc_uart(char c) {
@@ -108,15 +111,29 @@ int main(void) {
     }
 
     const uint32_t fb_addr = AE350_DIAG_VIDEO_FB0;
+    const uint32_t zbuf_addr = AE350_DIAG_VIDEO_FB0 + 0x10000u;
     const uint32_t stride = 64u;
     const uint32_t fb_bytes = stride * 64u * 4u;
+    const uint32_t zb_bytes = stride * 64u * 2u;
     volatile uint32_t *fb = (volatile uint32_t *)(uintptr_t)fb_addr;
-    for (uint32_t i = 0; i < stride * 64u; i++) fb[i] = 0u;
+    volatile uint16_t *zb = (volatile uint16_t *)(uintptr_t)zbuf_addr;
+    for (uint32_t i = 0; i < stride * 64u; i++) {
+        fb[i] = 0u;
+        zb[i] = 0xFFFFu;
+    }
     ae350_dma_sync_for_device(fb_addr, fb_bytes);
+    ae350_dma_sync_for_device(zbuf_addr, zb_bytes);
+
+    /* Configure ShaderALU INST0 = MUL_UNORM8(R0, SRC, R2) so textured (RGBA=white)
+     * and Gouraud-shaded (tex_en=0 -> SRC=white) triangles both write R0. */
+    GFX3D_REG(0x058u) = 0u;           /* SHADER_CFG: 1 stage */
+    GFX3D_REG(0x074u) = 0x4E4E4000u;  /* INST0_LO */
+    GFX3D_REG(0x078u) = 0x400F420Eu;  /* INST0_HI */
 
     /* Upload 8x8 checkerboard texture to TMEM (log2_w=3, log2_h=3) */
     G3D_FB_ADDR = fb_addr;
     G3D_FB_STRIDE = stride;
+    G3D_ZBUF_ADDR = zbuf_addr;
     G3D_TEX_CFG = (1u << 0) | (3u << 5) | (3u << 8);
     G3D_BG_COLOR = 0xFF000000u;
     G3D_Z_CFG = (0u << 0) | (0u << 1) | (7u << 2) | (1u << 5);
@@ -155,7 +172,7 @@ int main(void) {
     /* Test 2: Perspective-correct textured triangle (32,4)-(56,4)-(32,28) */
     G3D_TEX_CFG = (1u << 0) | (1u << 1) | (3u << 5) | (3u << 8); /* bilinear_en=1 */
     uint32_t t1 = mcycle32();
-    submit_tri(1u, /* persp_en=1 */
+    submit_tri(G3D_FLAG_PERSP,
                32 << 4, 4 << 4, 0x10000000u, 0, 0, 1u << 30, 0xFFFFFFFFu,
                56 << 4, 4 << 4, 0x10000000u, (7 << 19), 0, 1u << 29, 0xFFFFFFFFu,
                32 << 4, 28 << 4, 0x10000000u, 0, (7 << 18), 1u << 28, 0xFFFFFFFFu,
@@ -164,19 +181,21 @@ int main(void) {
     uint32_t cyc2 = mcycle32() - t1;
     uint32_t pix2 = G3D_PIXELS_OUT;
     ae350_dma_sync_for_cpu(fb_addr, fb_bytes);
-    uint32_t p_persp = fb[8 * stride + 36];
+    uint32_t p_persp_a = fb[6 * stride + 34];
+    uint32_t p_persp_b = fb[10 * stride + 44];
     puts_uart("T2 persp_bil rc="); hex32((uint32_t)rc2);
     puts_uart(" pix="); hex32(pix2);
     puts_uart(" cyc="); hex32(cyc2);
-    puts_uart(" in="); hex32(p_persp);
+    puts_uart(" a="); hex32(p_persp_a);
+    puts_uart(" b="); hex32(p_persp_b);
     puts_uart("\r\n");
-    if (rc2 != 0 || pix2 == 0 || p_persp == 0) fails++;
+    if (rc2 != 0 || pix2 == 0 || p_persp_a == 0 || p_persp_b == 0 || p_persp_a == p_persp_b) fails++;
 
-    /* Test 3: Gouraud-shaded untextured triangle (8,32)-(48,32)-(28,56) */
+    /* Test 3: Gouraud-shaded multi-row triangle + DDR3 Z-buffer occlusion */
     G3D_TEX_CFG = 0u;
-    G3D_Z_CFG = (1u << 0) | (1u << 1) | (7u << 2) | (1u << 5); /* Z_ALWAYS + Z_WRITE */
+    G3D_Z_CFG = (1u << 0) | (1u << 1) | (1u << 2) | (1u << 5); /* Z_LESS + Z_WRITE + COLOR_WRITE */
     uint32_t t2 = mcycle32();
-    submit_tri(2u, /* gouraud_en=1 */
+    submit_tri(G3D_FLAG_GOURAUD,
                8 << 4, 32 << 4, 0x40000000u, 0, 0, 1u << 30, 0xFFFF0000u,
                48 << 4, 32 << 4, 0x40000000u, 0, 0, 1u << 30, 0xFF00FF00u,
                28 << 4, 56 << 4, 0x40000000u, 0, 0, 1u << 30, 0xFF0000FFu,
@@ -185,13 +204,33 @@ int main(void) {
     uint32_t cyc3 = mcycle32() - t2;
     uint32_t pix3 = G3D_PIXELS_OUT;
     ae350_dma_sync_for_cpu(fb_addr, fb_bytes);
-    uint32_t p_gour = fb[40 * stride + 28];
+    ae350_dma_sync_for_cpu(zbuf_addr, zb_bytes);
+    uint32_t p_gour_l = fb[36 * stride + 18];
+    uint32_t p_gour_r = fb[36 * stride + 38];
+    uint32_t p_gour_b = fb[48 * stride + 28];
+    /* Verify Gouraud interpolation produces distinct colors across vertices and Z was written */
+    if (rc3 != 0 || pix3 == 0 || p_gour_l == 0 || p_gour_r == 0 || p_gour_b == 0 ||
+        p_gour_l == p_gour_r || p_gour_l == p_gour_b ||
+        zb[36 * stride + 28] != 0x4000u || zb[48 * stride + 28] != 0x4000u) {
+        fails++;
+    }
+    /* Farther overlapping triangle (Z=0x6000) must be occluded by Z=0x4000 across rows */
+    submit_tri(0u,
+               16 << 4, 34 << 4, 0x60000000u, 0, 0, 1u << 30, 0xFFFFFFFFu,
+               40 << 4, 34 << 4, 0x60000000u, 0, 0, 1u << 30, 0xFFFFFFFFu,
+               28 << 4, 50 << 4, 0x60000000u, 0, 0, 1u << 30, 0xFFFFFFFFu,
+               0, 0, 63, 63);
+    int rc3b = g3d_wait(0x100000u);
+    uint32_t pix3b = G3D_PIXELS_OUT;
     puts_uart("T3 gouraud_z rc="); hex32((uint32_t)rc3);
     puts_uart(" pix="); hex32(pix3);
+    puts_uart(" occ_pix="); hex32(pix3b);
     puts_uart(" cyc="); hex32(cyc3);
-    puts_uart(" in="); hex32(p_gour);
+    puts_uart(" l="); hex32(p_gour_l);
+    puts_uart(" r="); hex32(p_gour_r);
+    puts_uart(" b="); hex32(p_gour_b);
     puts_uart("\r\n");
-    if (rc3 != 0 || pix3 == 0 || p_gour == 0) fails++;
+    if (rc3b != 0 || pix3b != 0) fails++;
 
     RES[1] = pix1;
     RES[2] = pix2;

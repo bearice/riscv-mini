@@ -58,18 +58,18 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
     if (fdx == 0) return;
 
     float inv_area = 1.0f / (float)fdx;
-    int dzdx = (int)((float)((p1->z - p0->z) * dy2 - (p2->z - p0->z) * dy1) * (65536.0f * inv_area));
+    int dzdx = (int)((float)((int64_t)(p1->z - p0->z) * dy2 - (int64_t)(p2->z - p0->z) * dy1) * (65536.0f * inv_area));
     int drdx = 0, dgdx = 0, dbdx = 0;
     int dsdx = 0, dtdx = 0;
 
     if (mode == MODE_SMOOTH || mode == MODE_TEX_SMOOTH) {
-        drdx = (int)((float)((p1->r - p0->r) * dy2 - (p2->r - p0->r) * dy1) * inv_area);
-        dgdx = (int)((float)((p1->g - p0->g) * dy2 - (p2->g - p0->g) * dy1) * inv_area);
-        dbdx = (int)((float)((p1->b - p0->b) * dy2 - (p2->b - p0->b) * dy1) * inv_area);
+        drdx = (int)((float)((int64_t)(p1->r - p0->r) * dy2 - (int64_t)(p2->r - p0->r) * dy1) * inv_area);
+        dgdx = (int)((float)((int64_t)(p1->g - p0->g) * dy2 - (int64_t)(p2->g - p0->g) * dy1) * inv_area);
+        dbdx = (int)((float)((int64_t)(p1->b - p0->b) * dy2 - (int64_t)(p2->b - p0->b) * dy1) * inv_area);
     }
     if (mode == MODE_TEX || mode == MODE_TEX_SMOOTH) {
-        dsdx = (int)((float)((p1->s - p0->s) * dy2 - (p2->s - p0->s) * dy1) * inv_area);
-        dtdx = (int)((float)((p1->t - p0->t) * dy2 - (p2->t - p0->t) * dy1) * inv_area);
+        dsdx = (int)((float)((int64_t)(p1->s - p0->s) * dy2 - (int64_t)(p2->s - p0->s) * dy1) * inv_area);
+        dtdx = (int)((float)((int64_t)(p1->t - p0->t) * dy2 - (int64_t)(p2->t - p0->t) * dy1) * inv_area);
     }
 
     uint16_t flat_color = pack_rgb565(p0->r >> 8, p0->g >> 8, p0->b >> 8);

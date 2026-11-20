@@ -2626,6 +2626,7 @@ class Gfx2D(LiteXModule):
         g3d_active_ddr = Signal()
         g3d_active_ddr.attr.add(("syn_maxfan", 32))
         g3d_idle_ui = Signal(reset=1)
+        g3d_ui_cmd = Signal()
         g3d_ui_cmd_en = Signal()
         g3d_ui_wr_en = Signal()
         g3d_req_blk = Signal(26, reset_less=True)
@@ -2637,7 +2638,7 @@ class Gfx2D(LiteXModule):
             engine.ui.wr_data_rdy.eq(self.ui.wr_data_rdy),
             engine.ui.rd_data.eq(rd_data_q),
             engine.ui.rd_data_valid.eq(rd_valid_q),
-            self.ui.cmd.eq(Mux(g3d_idle_ui, engine.ui.cmd, 0)),
+            self.ui.cmd.eq(Mux(g3d_idle_ui, engine.ui.cmd, g3d_ui_cmd)),
             self.ui.cmd_en.eq(Mux(g3d_idle_ui, engine.ui.cmd_en, g3d_ui_cmd_en)),
             self.ui.addr.eq(Mux(g3d_idle_ui, engine.ui.addr,
                                 Cat(Constant(0, 3), g3d_req_blk))),
@@ -2906,7 +2907,9 @@ class Gfx2D(LiteXModule):
             g3d_pipe.zbuf.color_write_en.eq(g3d_z_cfg[5]),
             engine.frag3d.active.eq(g3d_active_ddr),
             engine.frag3d.tex_en.eq(g3d_tex_cfg[0]),
-            engine.frag3d.uses_dst.eq(g3d_tex_cfg[21]),
+            # 3D destination line-buffer prefetch is not yet implemented;
+            # TEX_CFG[21] (uses_dst) is rejected at START with ERR_PARAM.
+            engine.frag3d.uses_dst.eq(0),
         ]
 
         # 64-entry 56-bit pixel output FIFO (decouples Frag3DPort from DDR3UI)
@@ -2922,8 +2925,7 @@ class Gfx2D(LiteXModule):
         px_pop = Signal()
 
         self.comb += [
-            px_push.eq(g3d_active_ddr & engine.frag3d.out_valid &
-                       engine.frag3d.out_we_color),
+            px_push.eq(g3d_active_ddr & g3d_pipe.zbuf.we_color),
             px_wr.we.eq(px_push),
             px_wr.adr.eq(px_wr_ptr),
             px_wr.dat_w.eq(Cat(engine.frag3d.out_x[0:12],
@@ -2939,7 +2941,7 @@ class Gfx2D(LiteXModule):
             If(~px_push & px_pop, px_level.eq(px_level - 1)),
         ]
 
-        # DDR3UI single-beat pixel write FSM
+        # DDR3UI single-beat pixel write & row-aware Z-buffer load/store FSM
         px_x = Signal(12, reset_less=True)
         px_y = Signal(12, reset_less=True)
         px_rgba = Signal(32, reset_less=True)
@@ -2948,22 +2950,69 @@ class Gfx2D(LiteXModule):
         px_lane = Signal(3)
 
         g3d_wr_mask_r = Signal(32, reset_less=True)
+        g3d_wr_data_sel = Signal()
+        z_beat_buf = Signal(256, reset_less=True)
+        z_en = Signal()
+        z_row_valid = Signal()
+        z_row_dirty = Signal()
+        z_clear_valid = Signal()
+        z_set_valid = Signal()
+        z_clear_dirty = Signal()
+        z_cur_y = Signal(12, reset_less=True)
+        z_cur_blk_lo = Signal(7, reset_less=True)
+        z_cur_blk_hi = Signal(7, reset_less=True)
+        z_blk_idx = Signal(7, reset_less=True)
+        z_lane_idx = Signal(4, reset_less=True)
+        z_y_mul = Signal(28, reset_less=True)
+        z_row_base_blk = Signal(26, reset_less=True)
+        z_flush_only = Signal()
+        z_flush_req = Signal()
+        z_sync_done = Signal()
+        g3d_ds_busy_r = Signal(reset=1)
+
+        self.sync.ddr += [
+            g3d_ds_busy_r.eq(g3d_pipe.downstream_busy),
+            If(z_clear_valid, z_row_valid.eq(0))
+            .Elif(z_set_valid, z_row_valid.eq(1)),
+            If(z_clear_dirty, z_row_dirty.eq(0))
+            .Elif(g3d_active_ddr & g3d_pipe.zbuf.we_z, z_row_dirty.eq(1)),
+        ]
         self.comb += [
+            z_en.eq(g3d_z_cfg[0] | g3d_z_cfg[1]),
             px_byte_addr.eq(g3d_fb_addr + Cat(Constant(0, 2), px_y_mul + px_x)),
             px_lane.eq(px_byte_addr[2:5]),
-            g3d_wr_data.eq(Replicate(px_rgba, 8)),
+            g3d_wr_data.eq(Mux(g3d_wr_data_sel, z_beat_buf, Replicate(px_rgba, 8))),
             g3d_wr_mask.eq(g3d_wr_mask_r),
+            g3d_pipe.tri.row_sync_ack.eq(Mux(z_en, z_sync_done & ~z_flush_only, 1)),
         ]
 
         wr_fsm = ClockDomainsRenamer("ddr")(OneHotFSM(reset_state="IDLE"))
         self.submodules += wr_fsm
         wr_fsm.act("IDLE",
+            g3d_ui_cmd.eq(0),
             g3d_ui_cmd_en.eq(0),
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
-            If(px_level != 0, NextState("CALC")),
+            If(px_level != 0,
+                NextState("CALC"),
+            ).Elif(z_flush_req,
+                NextValue(z_flush_only, 1),
+                NextValue(z_y_mul, z_cur_y * g3d_fb_stride),
+                NextValue(z_blk_idx, z_cur_blk_lo),
+                NextState("Z_WR_ADDR1"),
+            ).Elif(z_en & g3d_pipe.tri.row_sync_req & ~g3d_ds_busy_r,
+                NextValue(z_flush_only, 0),
+                If(z_row_valid & z_row_dirty,
+                    NextValue(z_y_mul, z_cur_y * g3d_fb_stride),
+                    NextValue(z_blk_idx, z_cur_blk_lo),
+                    NextState("Z_WR_ADDR1"),
+                ).Else(
+                    NextState("Z_RD_ADDR0"),
+                ),
+            ),
         )
         wr_fsm.act("CALC",
+            g3d_ui_cmd.eq(0),
             g3d_ui_cmd_en.eq(0),
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
@@ -2975,6 +3024,7 @@ class Gfx2D(LiteXModule):
             NextState("CALC2"),
         )
         wr_fsm.act("CALC2",
+            g3d_ui_cmd.eq(0),
             g3d_ui_cmd_en.eq(0),
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
@@ -2983,8 +3033,10 @@ class Gfx2D(LiteXModule):
             NextState("ISSUE"),
         )
         wr_fsm.act("ISSUE",
+            g3d_ui_cmd.eq(0),
             g3d_ui_cmd_en.eq(1),
             g3d_ui_wr_en.eq(1),
+            g3d_wr_data_sel.eq(0),
             If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                 px_pop.eq(1),
                 NextValue(g3d_pix_lo, g3d_pix_lo + 1),
@@ -2995,6 +3047,113 @@ class Gfx2D(LiteXModule):
             ).Else(
                 px_pop.eq(0),
             ),
+        )
+        # Z-buffer row writeback states
+        wr_fsm.act("Z_WR_ADDR1",
+            NextValue(z_row_base_blk,
+                      (g3d_zbuf_addr + Cat(Constant(0, 1), z_y_mul))[5:31]),
+            NextState("Z_WR_PACK_PREP"),
+        )
+        wr_fsm.act("Z_WR_PACK_PREP",
+            g3d_pipe.zbuf.ext_rd_en.eq(1),
+            g3d_pipe.zbuf.ext_rd_adr.eq(Cat(Constant(0, 4), z_blk_idx)),
+            NextValue(z_lane_idx, 0),
+            NextState("Z_WR_PACK"),
+        )
+        wr_fsm.act("Z_WR_PACK",
+            g3d_pipe.zbuf.ext_rd_en.eq(1),
+            g3d_pipe.zbuf.ext_rd_adr.eq(Cat((z_lane_idx + 1)[0:4], z_blk_idx)),
+            Case(z_lane_idx, {
+                i: NextValue(z_beat_buf[16*i:16*(i+1)], g3d_pipe.zbuf.ext_rd_dat)
+                for i in range(16)
+            }),
+            If(z_lane_idx == 15,
+                NextState("Z_WR_CALC"),
+            ).Else(
+                NextValue(z_lane_idx, z_lane_idx + 1),
+            ),
+        )
+        wr_fsm.act("Z_WR_CALC",
+            NextValue(g3d_req_blk, z_row_base_blk + z_blk_idx),
+            NextValue(g3d_wr_mask_r, 0),
+            NextState("Z_WR_ISSUE"),
+        )
+        wr_fsm.act("Z_WR_ISSUE",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(1),
+            g3d_ui_wr_en.eq(1),
+            g3d_wr_data_sel.eq(1),
+            If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                If(z_blk_idx == z_cur_blk_hi,
+                    z_clear_dirty.eq(1),
+                    If(z_flush_only,
+                        NextState("Z_DONE"),
+                    ).Else(
+                        NextState("Z_RD_ADDR0"),
+                    ),
+                ).Else(
+                    NextValue(z_blk_idx, z_blk_idx + 1),
+                    NextState("Z_WR_PACK_PREP"),
+                ),
+            ),
+        )
+        # Z-buffer row prefetch states
+        wr_fsm.act("Z_RD_ADDR0",
+            NextValue(z_cur_y, g3d_pipe.tri.row_y),
+            NextValue(z_cur_blk_lo, g3d_pipe.tri.row_x0[4:11]),
+            NextValue(z_cur_blk_hi, g3d_pipe.tri.row_x1[4:11]),
+            NextValue(z_blk_idx, g3d_pipe.tri.row_x0[4:11]),
+            NextValue(z_y_mul, g3d_pipe.tri.row_y * g3d_fb_stride),
+            NextState("Z_RD_ADDR1"),
+        )
+        wr_fsm.act("Z_RD_ADDR1",
+            NextValue(z_row_base_blk,
+                      (g3d_zbuf_addr + Cat(Constant(0, 1), z_y_mul))[5:31]),
+            NextState("Z_RD_CALC"),
+        )
+        wr_fsm.act("Z_RD_CALC",
+            NextValue(g3d_req_blk, z_row_base_blk + z_blk_idx),
+            NextState("Z_RD_ISSUE"),
+        )
+        wr_fsm.act("Z_RD_ISSUE",
+            g3d_ui_cmd.eq(1),
+            g3d_ui_cmd_en.eq(1),
+            g3d_ui_wr_en.eq(0),
+            If(self.ui.cmd_ready,
+                NextState("Z_RD_WAIT"),
+            ),
+        )
+        wr_fsm.act("Z_RD_WAIT",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            If(rd_valid_q,
+                NextValue(z_beat_buf, rd_data_q),
+                NextValue(z_lane_idx, 0),
+                NextState("Z_RD_UNPACK"),
+            ),
+        )
+        wr_fsm.act("Z_RD_UNPACK",
+            g3d_pipe.zbuf.ext_wr_en.eq(1),
+            g3d_pipe.zbuf.ext_wr_adr.eq(Cat(z_lane_idx, z_blk_idx)),
+            g3d_pipe.zbuf.ext_wr_dat.eq(
+                Array([z_beat_buf[16*i:16*(i+1)] for i in range(16)])[z_lane_idx]
+            ),
+            If(z_lane_idx == 15,
+                If(z_blk_idx == z_cur_blk_hi,
+                    z_set_valid.eq(1),
+                    NextState("Z_DONE"),
+                ).Else(
+                    NextValue(z_blk_idx, z_blk_idx + 1),
+                    NextState("Z_RD_CALC"),
+                ),
+            ).Else(
+                NextValue(z_lane_idx, z_lane_idx + 1),
+            ),
+        )
+        wr_fsm.act("Z_DONE",
+            z_sync_done.eq(1),
+            NextState("IDLE"),
         )
 
         # Main GFX3D control FSM in DDR domain
@@ -3011,6 +3170,11 @@ class Gfx2D(LiteXModule):
         self.sync.ddr += g3d_pipe_busy_r.eq(
             g3d_pipe.pipe_busy | g3d_fsm.ongoing("START")
         )
+        g3d_cfg_bad = Signal()
+        self.comb += g3d_cfg_bad.eq(
+            g3d_tex_cfg[21]
+            | (z_en & ((g3d_fb_stride[0:4] != 0) | (g3d_zbuf_addr[0:5] != 0)))
+        )
         g3d_fsm.act("IDLE",
             g3d_pipe.tri.start.eq(0),
             If(g3d_req_sync[1] != g3d_req_seen,
@@ -3020,17 +3184,42 @@ class Gfx2D(LiteXModule):
                 NextValue(g3d_pix_lo, 0),
                 NextValue(g3d_pix_hi, 0),
                 NextValue(g3d_err_ddr, 0),
+                z_clear_valid.eq(1),
+                z_clear_dirty.eq(1),
                 NextState("START"),
             ),
         )
         g3d_fsm.act("START",
-            g3d_pipe.tri.start.eq(1),
-            NextState("RUN"),
+            If(g3d_cfg_bad,
+                g3d_pipe.tri.start.eq(0),
+                NextValue(g3d_err_ddr, 1),
+                NextValue(g3d_active_ddr, 0),
+                NextValue(g3d_idle_ui, 1),
+                NextValue(g3d_ack, ~g3d_ack),
+                NextState("IDLE"),
+            ).Else(
+                g3d_pipe.tri.start.eq(1),
+                NextState("RUN"),
+            ),
         )
         g3d_fsm.act("RUN",
             g3d_pipe.tri.start.eq(0),
             If(g3d_pipe.tri.err_param, NextValue(g3d_err_ddr, 1)),
             If(~g3d_pipe_busy_r & (px_level == 0) & wr_fsm.ongoing("IDLE"),
+                If(z_en & z_row_valid & z_row_dirty,
+                    NextState("FLUSH_Z"),
+                ).Else(
+                    NextValue(g3d_active_ddr, 0),
+                    NextValue(g3d_idle_ui, 1),
+                    NextValue(g3d_ack, ~g3d_ack),
+                    NextState("IDLE"),
+                ),
+            ),
+        )
+        g3d_fsm.act("FLUSH_Z",
+            g3d_pipe.tri.start.eq(0),
+            z_flush_req.eq(1),
+            If(z_sync_done,
                 NextValue(g3d_active_ddr, 0),
                 NextValue(g3d_idle_ui, 1),
                 NextValue(g3d_ack, ~g3d_ack),

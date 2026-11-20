@@ -296,6 +296,9 @@ class TmemSampler(Module):
             self.bounds_discard.eq(s1_bdisc),
         )
 
+        self.busy = Signal()
+        self.comb += self.busy.eq(s0_valid | s1_valid | self.valid_out)
+
 
 class Mode7ScanlineStepper(Module):
     """48-bit signed Q32.16 bidirectional DDA stepper for a Mode 7 scanline."""

@@ -48,6 +48,13 @@ class TriRasterizer(Module):
         self.persp_en_out = Signal()
         self.rgba_out = Signal(32)    # {A, R, G, B}
 
+        # Optional per-scanline row-sync handshake (e.g. DDR3 Z-buffer load/store)
+        self.row_sync_req = Signal()
+        self.row_sync_ack = Signal(reset=1)
+        self.row_y = Signal(12)
+        self.row_x0 = Signal(12)
+        self.row_x1 = Signal(12)
+
         # Triangle packet fields (held static in words[0..23] while busy; swap_v12 swaps V1 <-> V2)
         w0 = self.words[0]
         w21 = self.words[21]
@@ -914,6 +921,11 @@ class TriRasterizer(Module):
             NextValue(mac_res_r, mac_res),
             NextState("SPAN_MAC_RND2"),
         )
+        self.comb += [
+            self.row_y.eq(y_cur[0:12]),
+            self.row_x0.eq(x_start[0:12]),
+            self.row_x1.eq(x_end[0:12]),
+        ]
         fsm.act("SPAN_MAC_RND2",
             Case(mac_attr, {
                 0: NextValue(s_acc, mac_res_r[0:42]),
@@ -926,7 +938,7 @@ class TriRasterizer(Module):
                 7: NextValue(q_acc, mac_res_r[0:40]),
             }),
             If((mac_attr == 7) | ((mac_attr == 6) & ~persp_en) | ((mac_attr == 2) & ~gouraud_en & ~persp_en),
-                NextState("SPAN_WALK_RND"),
+                NextState("SPAN_ROW_SYNC"),
             ).Elif((mac_attr == 2) & ~gouraud_en & persp_en,
                 NextValue(mac_attr, 7),
                 NextState("SPAN_MAC_PRE"),
@@ -934,6 +946,12 @@ class TriRasterizer(Module):
                 NextValue(mac_attr, mac_attr + 1),
                 NextState("SPAN_MAC_PRE"),
             )
+        )
+        fsm.act("SPAN_ROW_SYNC",
+            self.row_sync_req.eq(1),
+            If(self.row_sync_ack,
+                NextState("SPAN_WALK_RND"),
+            ),
         )
 
         # Shared 46-bit accumulator step for SPAN_STEP -> SPAN_STEP2 (reads dx_mem sequentially)
