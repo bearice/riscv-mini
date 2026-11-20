@@ -147,6 +147,20 @@ GFX2D_REGS = dict(
     LUT_ADDR=180,
     LUT_DATA=184,
 )
+GFX3D_REGS = {
+    **{f"TRI{i}": 0x100 + 4 * i for i in range(24)},
+    "CTRL": 0x160,
+    "STATUS": 0x164,
+    "FB_ADDR": 0x168,
+    "FB_STRIDE": 0x16C,
+    "TEX_CFG": 0x170,
+    "BG_COLOR": 0x174,
+    "Z_CFG": 0x178,
+    "ZBUF_ADDR": 0x17C,
+    "TMEM_ADDR": 0x180,
+    "TMEM_DATA": 0x184,
+    "PIXELS_OUT": 0x188,
+}
 EXT_INT_ETHERNET = 9
 
 USB_BASE = 0xf8060000

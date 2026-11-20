@@ -48,19 +48,21 @@ class TriRasterizer(Module):
         self.persp_en_out = Signal()
         self.rgba_out = Signal(32)    # {A, R, G, B}
 
-        # Latched triangle packet fields (after CW normalization)
+        # Triangle packet fields (held static in words[0..23] while busy; swap_v12 swaps V1 <-> V2)
         w0 = self.words[0]
         w21 = self.words[21]
         w22 = self.words[22]
         w23 = self.words[23]
 
-        persp_en = Signal()
-        gouraud_en = Signal()
-        sc_min_x = Signal(12)
-        sc_min_y = Signal(12)
-        sc_max_x = Signal(12)
-        sc_max_y = Signal(12)
+        persp_en = w0[10]
+        gouraud_en = w0[11]
+        sc_min_x = w21[0:12]
+        sc_min_y = w21[16:28]
+        sc_max_x = w22[0:12]
+        sc_max_y = w22[16:28]
 
+        swap_v12 = Signal()
+        swap_v12.attr.add(("syn_maxfan", 16))
         x = [Signal((16, True)) for _ in range(3)]
         y = [Signal((16, True)) for _ in range(3)]
         z = [Signal(32) for _ in range(3)]
@@ -68,6 +70,29 @@ class TriRasterizer(Module):
         t = [Signal((32, True)) for _ in range(3)]
         q = [Signal(32) for _ in range(3)]
         rgba = [Signal(32) for _ in range(3)]
+        self.comb += [
+            x[0].eq(self.words[3][0:16]),
+            y[0].eq(self.words[3][16:32]),
+            z[0].eq(self.words[4]),
+            s[0].eq(self.words[5]),
+            t[0].eq(self.words[6]),
+            q[0].eq(self.words[7]),
+            rgba[0].eq(self.words[8]),
+            x[1].eq(Mux(swap_v12, self.words[15][0:16], self.words[9][0:16])),
+            y[1].eq(Mux(swap_v12, self.words[15][16:32], self.words[9][16:32])),
+            z[1].eq(Mux(swap_v12, self.words[16], self.words[10])),
+            s[1].eq(Mux(swap_v12, self.words[17], self.words[11])),
+            t[1].eq(Mux(swap_v12, self.words[18], self.words[12])),
+            q[1].eq(Mux(swap_v12, self.words[19], self.words[13])),
+            rgba[1].eq(Mux(swap_v12, self.words[20], self.words[14])),
+            x[2].eq(Mux(swap_v12, self.words[9][0:16], self.words[15][0:16])),
+            y[2].eq(Mux(swap_v12, self.words[9][16:32], self.words[15][16:32])),
+            z[2].eq(Mux(swap_v12, self.words[10], self.words[16])),
+            s[2].eq(Mux(swap_v12, self.words[11], self.words[17])),
+            t[2].eq(Mux(swap_v12, self.words[12], self.words[18])),
+            q[2].eq(Mux(swap_v12, self.words[13], self.words[19])),
+            rgba[2].eq(Mux(swap_v12, self.words[14], self.words[20])),
+        ]
 
         # Setup temporaries
         e_area = Signal((35, True))
@@ -81,18 +106,25 @@ class TriRasterizer(Module):
         inv_e_norm = Signal(50)
         div_cnt = Signal(6)
 
-        # Planar gradients (16 values: 8 attrs x {dx, dy}) in 64-bit Q36.28 / Q26.38
-        # Order: 0:dS_dx, 1:dS_dy, 2:dT_dx, 3:dT_dy, 4:dZ_dx, 5:dZ_dy,
-        #        6:dR_dx, 7:dR_dy, 8:dG_dx, 9:dG_dy, 10:dB_dx, 11:dB_dy,
-        #        12:dA_dx, 13:dA_dy, 14:dQ_dx, 15:dQ_dy
-        grads = [Signal((64, True), reset_less=True) for _ in range(16)]
+        # Planar gradients: dX and dY in 8x50b BSRAMs
+        # Order: 0:S, 1:T, 2:Z, 3:R, 4:G, 5:B, 6:A, 7:Q
+        dx_mem = Memory(50, 8, name="g3d_dx_mem")
+        dx_wr = dx_mem.get_port(write_capable=True)
+        dx_rd = dx_mem.get_port()
+        dy_mem = Memory(50, 8, name="g3d_dy_mem")
+        dy_wr = dy_mem.get_port(write_capable=True)
+        dy_rd = dy_mem.get_port()
+        self.specials += [dx_mem, dx_wr, dx_rd, dy_mem, dy_wr, dy_rd]
         grad_idx = Signal(4)
+        walk_idx = Signal(4)
 
         # Multi-cycle 64x50 -> 114-bit gradient multiplier (4 chunks of 16b x 50b)
-        gmul_acc = Signal(114)
+        gmul_acc = Signal(147)
         gmul_a = Signal(64)
         gmul_sign = Signal()
         gmul_step = Signal(3)
+        norm_cnt = Signal(6)
+        norm_done = Signal()
 
         # Span Y/X state
         y_cur = Signal((13, True))
@@ -125,10 +157,10 @@ class TriRasterizer(Module):
         s_acc = Signal((42, True), reset_less=True)
         t_acc = Signal((42, True), reset_less=True)
         z_acc = Signal((46, True), reset_less=True)
-        r_acc = Signal((42, True), reset_less=True)
-        g_acc = Signal((42, True), reset_less=True)
-        b_acc = Signal((42, True), reset_less=True)
-        a_acc = Signal((42, True), reset_less=True)
+        r_acc = Signal((38, True), reset_less=True)
+        g_acc = Signal((38, True), reset_less=True)
+        b_acc = Signal((38, True), reset_less=True)
+        a_acc = Signal((38, True), reset_less=True)
         q_acc = Signal((40, True), reset_less=True)
 
         # Combinational edge vectors
@@ -136,33 +168,40 @@ class TriRasterizer(Module):
         dy10 = Signal((17, True))
         dx20 = Signal((17, True))
         dy20 = Signal((17, True))
-        p1 = Signal((34, True))
-        p2 = Signal((34, True))
+        p1 = Signal((34, True), reset_less=True)
+        p2 = Signal((34, True), reset_less=True)
         area_comb = Signal((35, True))
         self.comb += [
             dx10.eq(x[1] - x[0]),
             dy10.eq(y[1] - y[0]),
             dx20.eq(x[2] - x[0]),
             dy20.eq(y[2] - y[0]),
-            p1.eq(dx10 * dy20),
-            p2.eq(dy10 * dx20),
             area_comb.eq(p1 - p2),
         ]
 
-        # Combinational Y bounding box with scissor clamp
+        # Combinational Y bounding box with scissor clamp (registered in SETUP_AREA0)
         y_min_q = Signal((16, True))
         y_max_q = Signal((16, True))
+        y_min_r = Signal((16, True), reset_less=True)
+        y_max_r = Signal((16, True), reset_less=True)
         y_min_s17 = Signal((17, True))
         y_max_s17 = Signal((17, True))
         y_start_c = Signal((13, True))
         y_end_c = Signal((13, True))
+        y_start_r = Signal((13, True), reset_less=True)
+        y_end_r = Signal((13, True), reset_less=True)
+        area_zero = Signal(reset_less=True)
+        y1_raw = Signal((16, True))
+        y2_raw = Signal((16, True))
         self.comb += [
-            y_min_q.eq(Mux(y[0] < y[1], Mux(y[0] < y[2], y[0], y[2]),
-                           Mux(y[1] < y[2], y[1], y[2]))),
-            y_max_q.eq(Mux(y[0] > y[1], Mux(y[0] > y[2], y[0], y[2]),
-                           Mux(y[1] > y[2], y[1], y[2]))),
-            y_min_s17.eq(y_min_q),
-            y_max_s17.eq(y_max_q),
+            y1_raw.eq(self.words[9][16:32]),
+            y2_raw.eq(self.words[15][16:32]),
+            y_min_q.eq(Mux(y[0] < y1_raw, Mux(y[0] < y2_raw, y[0], y2_raw),
+                           Mux(y1_raw < y2_raw, y1_raw, y2_raw))),
+            y_max_q.eq(Mux(y[0] > y1_raw, Mux(y[0] > y2_raw, y[0], y2_raw),
+                           Mux(y1_raw > y2_raw, y1_raw, y2_raw))),
+            y_min_s17.eq(y_min_r),
+            y_max_s17.eq(y_max_r),
         ]
         ceil_ymin = (y_min_s17 + 7) >> 4
         ceil_ymax = (y_max_s17 + 7) >> 4
@@ -214,66 +253,82 @@ class TriRasterizer(Module):
 
         da10 = Signal((34, True))
         da20 = Signal((34, True))
-        num_dx = Signal((52, True))
-        num_dy = Signal((52, True))
+        mul_d1 = Signal((17, True))
+        mul_d2 = Signal((17, True))
+        da10_r = Signal((34, True), reset_less=True)
+        da20_r = Signal((34, True), reset_less=True)
+        mul_d1_r = Signal((17, True), reset_less=True)
+        mul_d2_r = Signal((17, True), reset_less=True)
+        gp_p1 = Signal((51, True), reset_less=True)
+        gp_p2 = Signal((51, True), reset_less=True)
+        num_sel = Signal((52, True))
         num_raw = Signal((64, True))
         self.comb += [
             da10.eq(attr_1 - attr_0),
             da20.eq(attr_2 - attr_0),
-            num_dx.eq(da10 * dy20 - da20 * dy10),
-            num_dy.eq(da20 * dx10 - da10 * dx20),
+            mul_d1.eq(Mux(grad_is_dy, -dx20, dy20)),
+            mul_d2.eq(Mux(grad_is_dy, -dx10, dy10)),
+            num_sel.eq(gp_p1 - gp_p2),
             # Shift to align to Q36.28 before dividing by e_area (Q27.8):
             # S/T/RGBA (Q12.20 * Q13.4 -> 2^24 / 2^8 = 2^16) => << 12
             # Z (UQ16.16 * Q13.4 -> 2^20 / 2^8 = 2^12) => << 16
-            num_raw.eq(
-                Mux(grad_is_z,
-                    Mux(grad_is_dy, num_dy, num_dx) << 16,
-                    Mux(grad_is_dy, num_dy, num_dx) << 12)
-            ),
+            num_raw.eq(Mux(grad_is_z, num_sel << 16, num_sel << 12)),
         ]
 
-        # Output pixel assembly
-        s_q14_16 = (s_acc + (1 << 11)) >> 12
-        t_q14_16 = (t_acc + (1 << 11)) >> 12
-        s_q14_20 = (s_acc + 128) >> 8
-        t_q14_20 = (t_acc + 128) >> 8
-        s_sat_20 = Mux(s_q14_20 < -(1 << 31), -(1 << 31),
-                       Mux(s_q14_20 > ((1 << 31) - 1), (1 << 31) - 1, s_q14_20[0:32]))
-        t_sat_20 = Mux(t_q14_20 < -(1 << 31), -(1 << 31),
-                       Mux(t_q14_20 > ((1 << 31) - 1), (1 << 31) - 1, t_q14_20[0:32]))
-        q_rnd_30 = (q_acc + 128) >> 8
-        q_clamped_v = Mux(q_rnd_30 < 0x00400000, 0x00400000,
-                          Mux(q_rnd_30 > 0x40000000, 0x40000000, q_rnd_30[0:32]))
-        z_rnd = (z_acc + (1 << 11)) >> 12
-        z_clamped = Mux(z_rnd < 0, 0, Mux(z_rnd > 0xFFFFFFFF, 0xFFFFFFFF, z_rnd[0:32]))
+        # Output pixel assembly (2-stage: SPAN_WALK_RND adds, SPAN_WALK_PRE clamps)
+        s_q14_16_r = Signal((36, True), reset_less=True)
+        t_q14_16_r = Signal((36, True), reset_less=True)
+        s_q14_20_r = Signal((34, True), reset_less=True)
+        t_q14_20_r = Signal((34, True), reset_less=True)
+        q_rnd_r = Signal((32, True), reset_less=True)
+        z_rnd_r = Signal((34, True), reset_less=True)
+        s_sat_20 = Mux(s_q14_20_r < -(1 << 31), -(1 << 31),
+                       Mux(s_q14_20_r > ((1 << 31) - 1), (1 << 31) - 1, s_q14_20_r[0:32]))
+        t_sat_20 = Mux(t_q14_20_r < -(1 << 31), -(1 << 31),
+                       Mux(t_q14_20_r > ((1 << 31) - 1), (1 << 31) - 1, t_q14_20_r[0:32]))
+        q_clamped_v = Mux(q_rnd_r < 0x00400000, 0x00400000,
+                          Mux(q_rnd_r > 0x40000000, 0x40000000, q_rnd_r[0:32]))
+        z_clamped = Mux(z_rnd_r < 0, 0, Mux(z_rnd_r > 0xFFFFFFFF, 0xFFFFFFFF, z_rnd_r[0:32]))
         r_u8 = _clamp_u8(r_acc)
         g_u8 = _clamp_u8(g_acc)
         b_u8 = _clamp_u8(b_acc)
         a_u8 = _clamp_u8(a_acc)
 
+        z_out_r = Signal(32, reset_less=True)
+        s_q32_16_r = Signal((48, True), reset_less=True)
+        t_q32_16_r = Signal((48, True), reset_less=True)
+        s_q12_20_r = Signal((32, True), reset_less=True)
+        t_q12_20_r = Signal((32, True), reset_less=True)
+        q_clamped_r = Signal(32, reset_less=True)
+        rgba_out_r = Signal(32, reset_less=True)
+
         self.comb += [
             self.x_out.eq(x_cur),
             self.y_out.eq(y_cur[0:12]),
-            self.z_out.eq(z_clamped),
-            self.s_q32_16.eq(s_q14_16),
-            self.t_q32_16.eq(t_q14_16),
-            self.s_q12_20.eq(s_sat_20),
-            self.t_q12_20.eq(t_sat_20),
-            self.q_clamped.eq(q_clamped_v),
+            self.z_out.eq(z_out_r),
+            self.s_q32_16.eq(s_q32_16_r),
+            self.t_q32_16.eq(t_q32_16_r),
+            self.s_q12_20.eq(s_q12_20_r),
+            self.t_q12_20.eq(t_q12_20_r),
+            self.q_clamped.eq(q_clamped_r),
             self.persp_en_out.eq(persp_en),
-            self.rgba_out.eq(Mux(gouraud_en, Cat(b_u8, g_u8, r_u8, a_u8), rgba[0])),
+            self.rgba_out.eq(rgba_out_r),
         ]
 
         # Edge endpoints for edge_idx 0..2: (V0->V1), (V1->V2), (V2->V0)
-        ex0 = Signal((16, True))
-        ey0 = Signal((16, True))
-        ex1 = Signal((16, True))
-        ey1 = Signal((16, True))
+        ex0_c = Signal((16, True))
+        ey0_c = Signal((16, True))
+        ex1_c = Signal((16, True))
+        ey1_c = Signal((16, True))
+        ex0 = Signal((16, True), reset_less=True)
+        ey0 = Signal((16, True), reset_less=True)
+        ex1 = Signal((16, True), reset_less=True)
+        ey1 = Signal((16, True), reset_less=True)
         self.comb += Case(edge_idx, {
-            0: [ex0.eq(x[0]), ey0.eq(y[0]), ex1.eq(x[1]), ey1.eq(y[1])],
-            1: [ex0.eq(x[1]), ey0.eq(y[1]), ex1.eq(x[2]), ey1.eq(y[2])],
-            2: [ex0.eq(x[2]), ey0.eq(y[2]), ex1.eq(x[0]), ey1.eq(y[0])],
-            "default": [ex0.eq(0), ey0.eq(0), ex1.eq(0), ey1.eq(0)],
+            0: [ex0_c.eq(x[0]), ey0_c.eq(y[0]), ex1_c.eq(x[1]), ey1_c.eq(y[1])],
+            1: [ex0_c.eq(x[1]), ey0_c.eq(y[1]), ex1_c.eq(x[2]), ey1_c.eq(y[2])],
+            2: [ex0_c.eq(x[2]), ey0_c.eq(y[2]), ex1_c.eq(x[0]), ey1_c.eq(y[0])],
+            "default": [ex0_c.eq(0), ey0_c.eq(0), ex1_c.eq(0), ey1_c.eq(0)],
         })
         edx = Signal((17, True))
         edy = Signal((17, True))
@@ -314,26 +369,32 @@ class TriRasterizer(Module):
 
         # MAC attribute selector
         mac_base = Signal((49, True))
-        mac_gx = Signal((64, True))
-        mac_gy = Signal((64, True))
+        mac_gx = Signal((50, True))
+        mac_gy = Signal((50, True))
         def _ch_q12_20_s(v, shift_bits):
             return Cat(Constant(0, 32), v[shift_bits:shift_bits + 8], Constant(0, 9))
+        self.comb += [
+            dy_rd.adr.eq(mac_attr),
+            mac_gx.eq(dx_rd.dat_r),
+            mac_gy.eq(dy_rd.dat_r),
+        ]
         self.comb += Case(mac_attr, {
-            0: [mac_base.eq(s[0] << 12), mac_gx.eq(grads[0]), mac_gy.eq(grads[1])],
-            1: [mac_base.eq(t[0] << 12), mac_gx.eq(grads[2]), mac_gy.eq(grads[3])],
-            2: [mac_base.eq(Cat(Constant(0, 16), z[0], Constant(0, 1))), mac_gx.eq(grads[4]), mac_gy.eq(grads[5])],
-            3: [mac_base.eq(_ch_q12_20_s(rgba[0], 16)), mac_gx.eq(grads[6]), mac_gy.eq(grads[7])],
-            4: [mac_base.eq(_ch_q12_20_s(rgba[0], 8)), mac_gx.eq(grads[8]), mac_gy.eq(grads[9])],
-            5: [mac_base.eq(_ch_q12_20_s(rgba[0], 0)), mac_gx.eq(grads[10]), mac_gy.eq(grads[11])],
-            6: [mac_base.eq(_ch_q12_20_s(rgba[0], 24)), mac_gx.eq(grads[12]), mac_gy.eq(grads[13])],
-            7: [mac_base.eq(Cat(Constant(0, 12), q[0])), mac_gx.eq(grads[14]), mac_gy.eq(grads[15])],
-            "default": [mac_base.eq(0), mac_gx.eq(0), mac_gy.eq(0)],
+            0: mac_base.eq(s[0] << 12),
+            1: mac_base.eq(t[0] << 12),
+            2: mac_base.eq(Cat(Constant(0, 16), z[0], Constant(0, 1))),
+            3: mac_base.eq(_ch_q12_20_s(rgba[0], 16)),
+            4: mac_base.eq(_ch_q12_20_s(rgba[0], 8)),
+            5: mac_base.eq(_ch_q12_20_s(rgba[0], 0)),
+            6: mac_base.eq(_ch_q12_20_s(rgba[0], 24)),
+            7: mac_base.eq(Cat(Constant(0, 12), q[0])),
+            "default": mac_base.eq(0),
         })
 
         fsm = FSM(reset_state="IDLE")
         self.submodules += fsm
 
         self.comb += [
+            dx_rd.adr.eq(Mux(fsm.ongoing("SPAN_STEP"), walk_idx[0:3], mac_attr)),
             self.busy.eq(~fsm.ongoing("IDLE")),
             self.valid_out.eq(fsm.ongoing("SPAN_WALK")),
         ]
@@ -351,69 +412,81 @@ class TriRasterizer(Module):
                     NextValue(self.err_param, 1),
                     NextValue(self.done, 1),
                 ).Else(
-                    NextValue(persp_en, w0[10]),
-                    NextValue(gouraud_en, w0[11]),
-                    NextValue(sc_min_x, w21[0:12]),
-                    NextValue(sc_min_y, w21[16:28]),
-                    NextValue(sc_max_x, w22[0:12]),
-                    NextValue(sc_max_y, w22[16:28]),
-                    NextValue(x[0], self.words[3][0:16]),
-                    NextValue(y[0], self.words[3][16:32]),
-                    NextValue(z[0], self.words[4]),
-                    NextValue(s[0], self.words[5]),
-                    NextValue(t[0], self.words[6]),
-                    NextValue(q[0], self.words[7]),
-                    NextValue(rgba[0], self.words[8]),
-                    NextValue(x[1], self.words[9][0:16]),
-                    NextValue(y[1], self.words[9][16:32]),
-                    NextValue(z[1], self.words[10]),
-                    NextValue(s[1], self.words[11]),
-                    NextValue(t[1], self.words[12]),
-                    NextValue(q[1], self.words[13]),
-                    NextValue(rgba[1], self.words[14]),
-                    NextValue(x[2], self.words[15][0:16]),
-                    NextValue(y[2], self.words[15][16:32]),
-                    NextValue(z[2], self.words[16]),
-                    NextValue(s[2], self.words[17]),
-                    NextValue(t[2], self.words[18]),
-                    NextValue(q[2], self.words[19]),
-                    NextValue(rgba[2], self.words[20]),
-                    NextState("SETUP_AREA"),
+                    NextValue(swap_v12, 0),
+                    NextState("SETUP_AREA0"),
                 ),
             ).Else(
                 NextValue(self.done, 0),
             )
         )
 
+        # Unswapped edge vectors for SETUP_AREA0 (swap_v12 is always 0 before SETUP_AREA)
+        x1_0 = Signal((16, True))
+        y1_0 = Signal((16, True))
+        x2_0 = Signal((16, True))
+        y2_0 = Signal((16, True))
+        dx10_0 = Signal((17, True))
+        dy10_0 = Signal((17, True))
+        dx20_0 = Signal((17, True))
+        dy20_0 = Signal((17, True))
+        self.comb += [
+            x1_0.eq(self.words[9][0:16]),
+            y1_0.eq(self.words[9][16:32]),
+            x2_0.eq(self.words[15][0:16]),
+            y2_0.eq(self.words[15][16:32]),
+            dx10_0.eq(x1_0 - x[0]),
+            dy10_0.eq(y1_0 - y[0]),
+            dx20_0.eq(x2_0 - x[0]),
+            dy20_0.eq(y2_0 - y[0]),
+        ]
+        fsm.act("SETUP_AREA0",
+            NextValue(p1, dx10_0 * dy20_0),
+            NextValue(p2, dy10_0 * dx20_0),
+            NextValue(y_min_r, y_min_q),
+            NextValue(y_max_r, y_max_q),
+            NextState("SETUP_AREA1"),
+        )
+
+        area_bad = Signal(reset_less=True)
+        e_area_neg = Signal(34, reset_less=True)
+        fsm.act("SETUP_AREA1",
+            NextValue(e_area, area_comb),
+            NextValue(area_zero, area_comb == 0),
+            NextValue(y_start_r, y_start_c),
+            NextValue(y_end_r, y_end_c),
+            NextState("SETUP_AREA1b"),
+        )
+        fsm.act("SETUP_AREA1b",
+            NextValue(area_bad, area_zero | (sc_min_x > sc_max_x) | (sc_min_y > sc_max_y) | (y_start_r > y_end_r)),
+            NextValue(e_area_neg, (-e_area)[0:34]),
+            NextState("SETUP_AREA"),
+        )
+
         fsm.act("SETUP_AREA",
-            If((area_comb == 0) | (sc_min_x > sc_max_x) | (sc_min_y > sc_max_y) | (y_start_c > y_end_c),
+            If(area_bad,
                 NextValue(self.done, 1),
                 NextState("IDLE"),
             ).Else(
-                If(area_comb[34],
+                If(e_area[34],
                     # Swap V1 <-> V2 so E_area > 0
-                    NextValue(x[1], x[2]), NextValue(x[2], x[1]),
-                    NextValue(y[1], y[2]), NextValue(y[2], y[1]),
-                    NextValue(z[1], z[2]), NextValue(z[2], z[1]),
-                    NextValue(s[1], s[2]), NextValue(s[2], s[1]),
-                    NextValue(t[1], t[2]), NextValue(t[2], t[1]),
-                    NextValue(q[1], q[2]), NextValue(q[2], q[1]),
-                    NextValue(rgba[1], rgba[2]), NextValue(rgba[2], rgba[1]),
-                    NextValue(e_area, -area_comb),
-                    NextValue(e_area_abs, (-area_comb)[0:34]),
+                    NextValue(swap_v12, 1),
+                    NextValue(e_area_abs, e_area_neg),
                 ).Else(
-                    NextValue(e_area, area_comb),
-                    NextValue(e_area_abs, area_comb[0:34]),
+                    NextValue(e_area_abs, e_area[0:34]),
                 ),
-                NextValue(y_cur, y_start_c),
-                NextValue(y_end, y_end_c),
+                NextValue(y_cur, y_start_r),
+                NextValue(y_end, y_end_r),
                 NextState("SETUP_CLZ"),
             )
         )
 
         fsm.act("SETUP_CLZ",
             NextValue(clz_val, clz_comb),
-            NextValue(e_norm, e_area_abs << clz_comb),
+            NextState("SETUP_CLZ2"),
+        )
+
+        fsm.act("SETUP_CLZ2",
+            NextValue(e_norm, e_area_abs << clz_val),
             # Compute floor(2^82 / e_norm): 2^33 <= e_norm < 2^34, so at step 49
             # rem_next = div_rem << 1 must be 2^33 (hence initial div_rem = 1 << 32).
             NextValue(div_rem, 1 << 32),
@@ -435,70 +508,239 @@ class TriRasterizer(Module):
             ),
             If(div_cnt == 0,
                 NextValue(grad_idx, 0),
-                NextState("SETUP_GRAD_LOAD"),
+                NextState("SETUP_GRAD_MUX"),
             ).Else(
                 NextValue(div_cnt, div_cnt - 1),
             )
         )
 
-        # Multi-cycle gradient compute: 4 chunks of 16b x 50b
+        # Multi-cycle gradient compute: mux -> sub -> register 34x17 operands -> multiply -> sub/abs -> 4x 16b*50b
+        attr_0_r = Signal((34, True), reset_less=True)
+        attr_1_r = Signal((34, True), reset_less=True)
+        attr_2_r = Signal((34, True), reset_less=True)
+        fsm.act("SETUP_GRAD_MUX",
+            NextValue(attr_0_r, attr_0),
+            NextValue(attr_1_r, attr_1),
+            NextValue(attr_2_r, attr_2),
+            NextValue(mul_d1_r, mul_d1),
+            NextValue(mul_d2_r, mul_d2),
+            NextState("SETUP_GRAD_SUB"),
+        )
+        fsm.act("SETUP_GRAD_SUB",
+            NextValue(da10_r, attr_1_r - attr_0_r),
+            NextValue(da20_r, attr_2_r - attr_0_r),
+            NextState("SETUP_GRAD_PREP"),
+        )
+        num_raw_r = Signal((64, True), reset_less=True)
+        fsm.act("SETUP_GRAD_PREP",
+            NextValue(gp_p1, da10_r * mul_d1_r),
+            NextValue(gp_p2, da20_r * mul_d2_r),
+            NextState("SETUP_GRAD_DIFF"),
+        )
+        fsm.act("SETUP_GRAD_DIFF",
+            NextValue(num_raw_r, num_raw),
+            NextState("SETUP_GRAD_LOAD"),
+        )
+        gmul_lo33 = Signal(33, reset_less=True)
         fsm.act("SETUP_GRAD_LOAD",
-            NextValue(gmul_sign, num_raw[63]),
-            NextValue(gmul_a, Mux(num_raw[63], -num_raw, num_raw)),
+            NextValue(gmul_sign, num_raw_r[63]),
+            NextValue(gmul_a, Mux(num_raw_r[63], num_raw_r ^ ((1 << 64) - 1), num_raw_r)),
             NextValue(gmul_acc, 0),
             NextValue(gmul_step, 0),
-            NextState("SETUP_GRAD_MUL"),
+            NextState("SETUP_GRAD_LOAD2"),
+        )
+        fsm.act("SETUP_GRAD_LOAD2",
+            If(gmul_sign,
+                NextValue(gmul_lo33, gmul_a[0:32] + 1),
+            ),
+            NextState("SETUP_GRAD_LOAD3"),
+        )
+        fsm.act("SETUP_GRAD_LOAD3",
+            If(gmul_sign,
+                NextValue(gmul_a, Cat(gmul_lo33[0:32], gmul_a[32:64] + gmul_lo33[32])),
+            ),
+            NextState("SETUP_GRAD_MUL0"),
         )
 
-        chunk16 = Signal(16)
-        self.comb += Case(gmul_step, {
-            0: chunk16.eq(gmul_a[0:16]),
-            1: chunk16.eq(gmul_a[16:32]),
-            2: chunk16.eq(gmul_a[32:48]),
-            3: chunk16.eq(gmul_a[48:64]),
-            "default": chunk16.eq(0),
-        })
-        partial = Signal(66)
-        self.comb += partial.eq(chunk16 * inv_e_norm)
+        gmul_b16_r = Signal(16, reset_less=True)
+        partial_lo_r = Signal(48, reset_less=True)
+        partial_hi_r = Signal(34, reset_less=True)
+        partial_r = Signal(66, reset_less=True)
+        gmul_lo_sum = Signal(51, reset_less=True)
+        gmul_lo16_r = Signal(16, reset_less=True)
+        gmul_hi0_r = Signal(34, reset_less=True)
+        gmul_hi1_r = Signal(34, reset_less=True)
+        gmul_hi0_sum = Signal(35, reset_less=True)
+        fsm.act("SETUP_GRAD_MUL0",
+            NextValue(gmul_b16_r, gmul_a[48:64]),
+            NextState("SETUP_GRAD_MUL"),
+        )
         fsm.act("SETUP_GRAD_MUL",
-            NextValue(gmul_acc, gmul_acc + (partial << (gmul_step * 16))),
+            NextValue(partial_lo_r, inv_e_norm[0:32] * gmul_b16_r),
+            NextValue(partial_hi_r, inv_e_norm[32:50] * gmul_b16_r),
+            NextState("SETUP_GRAD_MUL1b"),
+        )
+        fsm.act("SETUP_GRAD_MUL1b",
+            NextValue(partial_r, Cat(partial_lo_r[0:32], partial_lo_r[32:48] + partial_hi_r)),
+            NextState("SETUP_GRAD_MUL2"),
+        )
+        fsm.act("SETUP_GRAD_MUL2",
+            NextValue(gmul_lo16_r, partial_r[0:16]),
+            NextValue(gmul_lo_sum, gmul_acc[0:50] + partial_r[16:66]),
+            NextValue(gmul_hi0_r, gmul_acc[50:84]),
+            NextValue(gmul_hi1_r, gmul_acc[84:118]),
+            NextState("SETUP_GRAD_MUL3"),
+        )
+        fsm.act("SETUP_GRAD_MUL3",
+            NextValue(gmul_hi0_sum, gmul_hi0_r + gmul_lo_sum[50]),
+            NextState("SETUP_GRAD_MUL4"),
+        )
+        gmul_hi1_lo = Signal(17)
+        gmul_hi1_c = Signal()
+        gmul_hi1_hi = Signal(17)
+        self.comb += [
+            gmul_hi1_lo.eq(gmul_hi1_r[0:17] + gmul_hi0_sum[34]),
+            gmul_hi1_c.eq((gmul_hi1_r[0:17] == 0x1FFFF) & gmul_hi0_sum[34]),
+            gmul_hi1_hi.eq(Mux(gmul_hi1_c, gmul_hi1_r[17:34] + 1, gmul_hi1_r[17:34])),
+        ]
+        fsm.act("SETUP_GRAD_MUL4",
+            NextValue(gmul_acc, Cat(gmul_lo16_r, gmul_lo_sum[0:50], gmul_hi0_sum[0:34], gmul_hi1_lo, gmul_hi1_hi)),
             If(gmul_step == 3,
-                NextState("SETUP_GRAD_STORE"),
+                NextValue(norm_cnt, clz_val),
+                NextValue(norm_done, clz_val == 0),
+                NextState("SETUP_GRAD_NORM"),
             ).Else(
+                NextValue(gmul_a, gmul_a << 16),
                 NextValue(gmul_step, gmul_step + 1),
+                NextState("SETUP_GRAD_MUL0"),
             )
         )
 
-        shift_amt = 82 - clz_val
-        grad_mag = (gmul_acc + (1 << (shift_amt - 1))) >> shift_amt
-        grad_signed = Mux(gmul_sign, -grad_mag[0:64], grad_mag[0:64])
+        grad_mag_lo = Signal(27, reset_less=True)
+        grad_mag_r = Signal(51, reset_less=True)
+        grad_neg_lo = Signal(26, reset_less=True)
+        grad_signed_r = Signal(50, reset_less=True)
+        fsm.act("SETUP_GRAD_NORM",
+            If(norm_done,
+                NextValue(grad_mag_lo, gmul_acc[82:108] + gmul_acc[81]),
+                NextState("SETUP_GRAD_NORM2"),
+            ).Else(
+                NextValue(gmul_acc, gmul_acc << 1),
+                NextValue(norm_cnt, norm_cnt - 1),
+                NextValue(norm_done, norm_cnt == 1),
+            )
+        )
+        fsm.act("SETUP_GRAD_NORM2",
+            NextValue(grad_mag_r, Cat(grad_mag_lo[0:26], gmul_acc[108:133] + grad_mag_lo[26])),
+            NextState("SETUP_GRAD_SIGN"),
+        )
+
+        fsm.act("SETUP_GRAD_SIGN",
+            NextValue(grad_neg_lo, (grad_mag_r[0:25] ^ 0x1FFFFFF) + 1),
+            NextState("SETUP_GRAD_SIGN2"),
+        )
+        fsm.act("SETUP_GRAD_SIGN2",
+            NextValue(grad_signed_r, Mux(
+                gmul_sign,
+                Cat(grad_neg_lo[0:25], ((grad_mag_r[25:50] ^ 0x1FFFFFF) + grad_neg_lo[25])[0:25]),
+                grad_mag_r[0:50],
+            )),
+            NextState("SETUP_GRAD_STORE"),
+        )
+        self.comb += [
+            dx_wr.adr.eq(grad_idx[1:4]),
+            dx_wr.dat_w.eq(grad_signed_r),
+            dx_wr.we.eq(fsm.ongoing("SETUP_GRAD_STORE") & ~grad_idx[0]),
+            dy_wr.adr.eq(grad_idx[1:4]),
+            dy_wr.dat_w.eq(grad_signed_r),
+            dy_wr.we.eq(fsm.ongoing("SETUP_GRAD_STORE") & grad_idx[0]),
+        ]
         fsm.act("SETUP_GRAD_STORE",
-            [If(grad_idx == k, NextValue(grads[k], grad_signed)) for k in range(16)],
             If((grad_idx == 15) | ((grad_idx == 13) & ~persp_en) | ((grad_idx == 5) & ~gouraud_en & ~persp_en),
                 NextValue(edge_idx, 0),
                 NextValue(has_left, 0),
                 NextValue(has_right, 0),
-                NextState("SPAN_EDGE_PREP"),
+                NextState("SPAN_EDGE_SEL"),
             ).Elif((grad_idx == 5) & ~gouraud_en & persp_en,
                 NextValue(grad_idx, 14),
-                NextState("SETUP_GRAD_LOAD"),
+                NextState("SETUP_GRAD_MUX"),
             ).Else(
                 NextValue(grad_idx, grad_idx + 1),
-                NextState("SETUP_GRAD_LOAD"),
+                NextState("SETUP_GRAD_MUX"),
             )
         )
 
         # Per-scanline edge intersection (3 edges)
-        # Compute ceil_div(edge_lhs, 16 * edge_D) cleanly for positive/negative edge_lhs
+        # Pipelined into SPAN_EDGE_PREP (products) -> SPAN_EDGE_PREP2 (sub/add + ceil_div setup)
+        em_D = Signal((18, True), reset_less=True)
+        em_ex0 = Signal((18, True), reset_less=True)
+        em_edx = Signal((17, True), reset_less=True)
+        em_ydiff = Signal((18, True), reset_less=True)
+        ep_a = Signal((36, True), reset_less=True)
+        ep_b = Signal((36, True), reset_less=True)
+        ep_nz = Signal(reset_less=True)
+        ep_c0 = Signal(reset_less=True)
+        ep_c1 = Signal(reset_less=True)
+        ep_active = Signal(reset_less=True)
+        ep_is_left = Signal(reset_less=True)
+        ep_D = Signal(17, reset_less=True)
+        ep_lhs = Signal((36, True))
+        ep_lhs_r = Signal((36, True), reset_less=True)
         ediv_den_comb = Signal(21)
-        self.comb += ediv_den_comb.eq(edge_D << 4)
+        ediv_den_m1_r = Signal(21, reset_less=True)
+        self.comb += [
+            ep_lhs.eq(Mux(ep_is_left, ep_a - ep_b, ep_a + ep_b)),
+            ediv_den_comb.eq(ep_D << 4),
+        ]
+        fsm.act("SPAN_EDGE_SEL",
+            NextValue(ex0, ex0_c),
+            NextValue(ey0, ey0_c),
+            NextValue(ex1, ex1_c),
+            NextValue(ey1, ey1_c),
+            NextState("SPAN_EDGE_MUX"),
+        )
+        ep_c0_l = Signal(reset_less=True)
+        ep_c0_r = Signal(reset_less=True)
+        ep_c1_l = Signal(reset_less=True)
+        ep_c1_r = Signal(reset_less=True)
+        edy_r = Signal((17, True), reset_less=True)
+        edy_neg_r = Signal((17, True), reset_less=True)
+        fsm.act("SPAN_EDGE_MUX",
+            NextValue(edy_r, ey1 - ey0),
+            NextValue(edy_neg_r, ey0 - ey1),
+            NextValue(em_ex0, ex0_s18 - 8),
+            NextValue(em_edx, edx),
+            NextValue(em_ydiff, y_sample - ey0),
+            NextValue(ep_c0_l, y_sample >= ey1),
+            NextValue(ep_c0_r, y_sample >= ey0),
+            NextValue(ep_c1_l, y_sample <= ey0),
+            NextValue(ep_c1_r, y_sample <= ey1),
+            NextState("SPAN_EDGE_MUX2"),
+        )
+        fsm.act("SPAN_EDGE_MUX2",
+            NextValue(ep_is_left, edy_r[16]),
+            NextValue(ep_D, Mux(edy_r[16], edy_neg_r[0:17], edy_r[0:17])),
+            NextValue(em_D, Cat(Mux(edy_r[16], edy_neg_r[0:17], edy_r[0:17]), Constant(0, 1))),
+            NextValue(ep_nz, edy_r != 0),
+            NextValue(ep_c0, Mux(edy_r[16], ep_c0_l, ep_c0_r)),
+            NextValue(ep_c1, Mux(edy_r[16], ep_c1_l, ep_c1_r)),
+            NextState("SPAN_EDGE_PREP"),
+        )
         fsm.act("SPAN_EDGE_PREP",
-            If(edge_active,
-                # If edge_lhs <= 0, quotient is <= 0 (clamped to >= sc_min_x >= 0 anyway,
-                # so any negative x_edge clamps to 0; for ceil_div(lhs, den) when lhs > 0:
-                # (lhs + den - 1) // den).
-                If(edge_lhs <= 0,
-                    If(edge_is_left,
+            NextValue(ep_a, em_D * em_ex0),
+            NextValue(ep_b, em_edx * em_ydiff),
+            NextValue(ep_active, ep_nz & ep_c0 & ep_c1),
+            NextState("SPAN_EDGE_PREP2"),
+        )
+        fsm.act("SPAN_EDGE_PREP2",
+            NextValue(ep_lhs_r, ep_lhs),
+            NextValue(ediv_den_m1_r, ediv_den_comb - 1),
+            NextState("SPAN_EDGE_PREP3"),
+        )
+        fsm.act("SPAN_EDGE_PREP3",
+            If(ep_active,
+                If(ep_lhs_r <= 0,
+                    If(ep_is_left,
                         NextValue(edge_x_left, 0),
                         NextValue(has_left, 1),
                     ).Else(
@@ -506,12 +748,13 @@ class TriRasterizer(Module):
                         NextValue(has_right, 1),
                     ),
                     If(edge_idx == 2,
-                        NextState("SPAN_CHECK"),
+                        NextState("SPAN_CHECK0"),
                     ).Else(
                         NextValue(edge_idx, edge_idx + 1),
+                        NextState("SPAN_EDGE_SEL"),
                     )
                 ).Else(
-                    NextValue(ediv_num, (edge_lhs + ediv_den_comb - 1)[0:36]),
+                    NextValue(ediv_num, (ep_lhs_r + ediv_den_m1_r)[0:36]),
                     NextValue(ediv_den, ediv_den_comb),
                     NextValue(ediv_rem, 0),
                     NextValue(ediv_q, 0),
@@ -520,9 +763,10 @@ class TriRasterizer(Module):
                 )
             ).Else(
                 If(edge_idx == 2,
-                    NextState("SPAN_CHECK"),
+                    NextState("SPAN_CHECK0"),
                 ).Else(
                     NextValue(edge_idx, edge_idx + 1),
+                    NextState("SPAN_EDGE_SEL"),
                 )
             )
         )
@@ -572,27 +816,37 @@ class TriRasterizer(Module):
                 NextValue(has_right, 1),
             ),
             If(edge_idx == 2,
-                NextState("SPAN_CHECK"),
+                NextState("SPAN_CHECK0"),
             ).Else(
                 NextValue(edge_idx, edge_idx + 1),
-                NextState("SPAN_EDGE_PREP"),
+                NextState("SPAN_EDGE_SEL"),
             )
         )
 
         xs_clamp = Mux(edge_x_left > sc_minx_s, edge_x_left, sc_minx_s)
         xe_clamp = Mux(edge_x_right < sc_maxx_s, edge_x_right, sc_maxx_s)
+        span_lr = Signal(reset_less=True)
+        span_ok = Signal(reset_less=True)
         xs_s17 = Signal((17, True))
-        self.comb += xs_s17.eq(xs_clamp)
+        self.comb += xs_s17.eq(x_start)
+        fsm.act("SPAN_CHECK0",
+            NextValue(x_start, xs_clamp),
+            NextValue(x_end, xe_clamp),
+            NextValue(span_lr, has_left & has_right),
+            NextState("SPAN_CHECK1"),
+        )
+        fsm.act("SPAN_CHECK1",
+            NextValue(span_ok, span_lr & (x_start <= x_end)),
+            NextState("SPAN_CHECK"),
+        )
         fsm.act("SPAN_CHECK",
-            If(has_left & has_right & (xs_clamp <= xe_clamp),
-                NextValue(x_start, xs_clamp),
-                NextValue(x_end, xe_clamp),
-                NextValue(x_cur, xs_clamp[0:12]),
+            If(span_ok,
+                NextValue(x_cur, x_start[0:12]),
                 NextValue(dx_q13_4, (xs_s17 << 4) + 8 - x[0]),
                 NextValue(dy_q13_4, (y_cur_s17 << 4) + 8 - y[0]),
                 NextValue(mac_attr, 0),
                 NextValue(mac_phase, 0),
-                NextState("SPAN_MAC"),
+                NextState("SPAN_MAC_PRE"),
             ).Else(
                 If(y_cur >= y_end,
                     NextValue(self.done, 1),
@@ -602,47 +856,128 @@ class TriRasterizer(Module):
                     NextValue(edge_idx, 0),
                     NextValue(has_left, 0),
                     NextValue(has_right, 0),
-                    NextState("SPAN_EDGE_PREP"),
+                    NextState("SPAN_EDGE_SEL"),
                 )
             )
         )
 
-        # 82-bit Row-start MAC: 2 phases per attribute (phase 0: base + dx*gx, phase 1: + dy*gy + 8 >>> 4)
-        mac_sum_x = Signal((82, True))
-        mac_sum_y = Signal((82, True))
-        mac_res = Signal((82, True))
+        # 82-bit Row-start MAC: 4 phases per attribute, pipelined (SPAN_MAC -> SPAN_MAC_ACC)
+        # phase 0: mac_base + dx * gx[0:25]
+        # phase 1: mac_acc  + (dx * gx[25:50]) << 25
+        # phase 2: mac_acc  + dy * gy[0:25]
+        # phase 3: mac_acc  + (dy * gy[25:50]) << 25 + 8 -> >> 4
+        mac_d = Signal((17, True))
+        mac_g_full = Signal((50, True))
+        mac_g26 = Signal((26, True))
+        mac_prod_r = Signal((43, True), reset_less=True)
+        mac_prod_shifted = Signal((52, True))
+        mac_sum = Signal((52, True))
+        mac_res = Signal((48, True))
+        mac_gx_r = Signal((50, True), reset_less=True)
+        mac_gy_r = Signal((50, True), reset_less=True)
+        mac_base_r = Signal((49, True), reset_less=True)
         self.comb += [
-            mac_sum_x.eq(mac_base + dx_q13_4 * mac_gx),
-            mac_sum_y.eq(mac_acc + dy_q13_4 * mac_gy + 8),
-            mac_res.eq(mac_sum_y >> 4),
+            mac_d.eq(Mux(mac_phase[1] == 0, dx_q13_4, dy_q13_4)),
+            mac_g_full.eq(Mux(mac_phase[1] == 0, mac_gx_r, mac_gy_r)),
+            mac_g26.eq(Mux(mac_phase[0] == 0,
+                           Cat(mac_g_full[0:25], Constant(0, 1)),
+                           Cat(mac_g_full[25:50], mac_g_full[49]))),
+            mac_prod_shifted.eq(Mux(mac_phase[0] == 0, mac_prod_r, mac_prod_r << 25)),
+            mac_sum.eq(Mux(mac_phase == 0, mac_base_r, mac_acc[0:52]) + mac_prod_shifted),
+            mac_res.eq((mac_acc[0:52] + 8) >> 4),
         ]
+        fsm.act("SPAN_MAC_PRE",
+            NextValue(mac_base_r, mac_base),
+            NextState("SPAN_MAC_PRE2"),
+        )
+        fsm.act("SPAN_MAC_PRE2",
+            NextValue(mac_gx_r, mac_gx),
+            NextValue(mac_gy_r, mac_gy),
+            NextState("SPAN_MAC"),
+        )
         fsm.act("SPAN_MAC",
-            If(mac_phase == 0,
-                NextValue(mac_acc, mac_sum_x),
-                NextValue(mac_phase, 1),
+            NextValue(mac_prod_r, mac_d * mac_g26),
+            NextState("SPAN_MAC_ACC"),
+        )
+        fsm.act("SPAN_MAC_ACC",
+            NextValue(mac_acc, mac_sum),
+            If(mac_phase != 3,
+                NextValue(mac_phase, mac_phase + 1),
+                NextState("SPAN_MAC"),
             ).Else(
-                Case(mac_attr, {
-                    0: NextValue(s_acc, mac_res[0:42]),
-                    1: NextValue(t_acc, mac_res[0:42]),
-                    2: NextValue(z_acc, mac_res[0:46]),
-                    3: NextValue(r_acc, mac_res[0:42]),
-                    4: NextValue(g_acc, mac_res[0:42]),
-                    5: NextValue(b_acc, mac_res[0:42]),
-                    6: NextValue(a_acc, mac_res[0:42]),
-                    7: NextValue(q_acc, mac_res[0:40]),
-                }),
                 NextValue(mac_phase, 0),
-                If((mac_attr == 7) | ((mac_attr == 6) & ~persp_en) | ((mac_attr == 2) & ~gouraud_en & ~persp_en),
-                    NextState("SPAN_WALK"),
-                ).Elif((mac_attr == 2) & ~gouraud_en & persp_en,
-                    NextValue(mac_attr, 7),
-                ).Else(
-                    NextValue(mac_attr, mac_attr + 1),
-                )
+                NextState("SPAN_MAC_RND"),
+            )
+        )
+        mac_res_r = Signal((48, True), reset_less=True)
+        fsm.act("SPAN_MAC_RND",
+            NextValue(mac_res_r, mac_res),
+            NextState("SPAN_MAC_RND2"),
+        )
+        fsm.act("SPAN_MAC_RND2",
+            Case(mac_attr, {
+                0: NextValue(s_acc, mac_res_r[0:42]),
+                1: NextValue(t_acc, mac_res_r[0:42]),
+                2: NextValue(z_acc, mac_res_r[0:46]),
+                3: NextValue(r_acc, mac_res_r[0:38]),
+                4: NextValue(g_acc, mac_res_r[0:38]),
+                5: NextValue(b_acc, mac_res_r[0:38]),
+                6: NextValue(a_acc, mac_res_r[0:38]),
+                7: NextValue(q_acc, mac_res_r[0:40]),
+            }),
+            If((mac_attr == 7) | ((mac_attr == 6) & ~persp_en) | ((mac_attr == 2) & ~gouraud_en & ~persp_en),
+                NextState("SPAN_WALK_RND"),
+            ).Elif((mac_attr == 2) & ~gouraud_en & persp_en,
+                NextValue(mac_attr, 7),
+                NextState("SPAN_MAC_PRE"),
+            ).Else(
+                NextValue(mac_attr, mac_attr + 1),
+                NextState("SPAN_MAC_PRE"),
             )
         )
 
-        # II=1 Pixel Streamer
+        # Shared 46-bit accumulator step for SPAN_STEP -> SPAN_STEP2 (reads dx_mem sequentially)
+        step_cur = Signal((46, True))
+        step_cur_r = Signal((46, True), reset_less=True)
+        dx_rd_r = Signal((46, True), reset_less=True)
+        step_sum = Signal((46, True))
+        self.comb += [
+            Case(walk_idx, {
+                0: step_cur.eq(s_acc),
+                1: step_cur.eq(t_acc),
+                2: step_cur.eq(z_acc),
+                3: step_cur.eq(r_acc),
+                4: step_cur.eq(g_acc),
+                5: step_cur.eq(b_acc),
+                6: step_cur.eq(a_acc),
+                7: step_cur.eq(q_acc),
+                "default": step_cur.eq(0),
+            }),
+            step_sum.eq(step_cur_r + dx_rd_r),
+        ]
+
+        # Register rounded/clamped outputs ahead of SPAN_WALK (2-stage)
+        fsm.act("SPAN_WALK_RND",
+            NextValue(s_q14_16_r, (s_acc + (1 << 11)) >> 12),
+            NextValue(t_q14_16_r, (t_acc + (1 << 11)) >> 12),
+            NextValue(s_q14_20_r, (s_acc + 128) >> 8),
+            NextValue(t_q14_20_r, (t_acc + 128) >> 8),
+            NextValue(q_rnd_r, (q_acc + 128) >> 8),
+            NextValue(z_rnd_r, (z_acc + (1 << 11)) >> 12),
+            NextState("SPAN_WALK_PRE"),
+        )
+        fsm.act("SPAN_WALK_PRE",
+            NextValue(z_out_r, z_clamped),
+            NextValue(s_q32_16_r, s_q14_16_r),
+            NextValue(t_q32_16_r, t_q14_16_r),
+            NextValue(s_q12_20_r, s_sat_20),
+            NextValue(t_q12_20_r, t_sat_20),
+            NextValue(q_clamped_r, q_clamped_v),
+            NextValue(rgba_out_r, Mux(gouraud_en, Cat(b_u8, g_u8, r_u8, a_u8), rgba[0])),
+            NextState("SPAN_WALK"),
+        )
+
+        # Pixel Streamer (1 pixel per SPAN_WALK + 2-cycle/attr SPAN_STEP)
         fsm.act("SPAN_WALK",
             If(self.ready,
                 If(x_cur >= x_end[0:12],
@@ -654,18 +989,43 @@ class TriRasterizer(Module):
                         NextValue(edge_idx, 0),
                         NextValue(has_left, 0),
                         NextValue(has_right, 0),
-                        NextState("SPAN_EDGE_PREP"),
+                        NextState("SPAN_EDGE_SEL"),
                     )
                 ).Else(
                     NextValue(x_cur, x_cur + 1),
-                    NextValue(s_acc, s_acc + grads[0][0:42]),
-                    NextValue(t_acc, t_acc + grads[2][0:42]),
-                    NextValue(z_acc, z_acc + grads[4][0:46]),
-                    NextValue(r_acc, r_acc + grads[6][0:42]),
-                    NextValue(g_acc, g_acc + grads[8][0:42]),
-                    NextValue(b_acc, b_acc + grads[10][0:42]),
-                    NextValue(a_acc, a_acc + grads[12][0:42]),
-                    NextValue(q_acc, q_acc + grads[14][0:40]),
+                    NextValue(walk_idx, 0),
+                    NextState("SPAN_STEP"),
                 )
+            )
+        )
+        fsm.act("SPAN_STEP",
+            NextValue(step_cur_r, step_cur),
+            NextState("SPAN_STEP1b"),
+        )
+        fsm.act("SPAN_STEP1b",
+            NextValue(dx_rd_r, dx_rd.dat_r[0:46]),
+            NextState("SPAN_STEP2"),
+        )
+        fsm.act("SPAN_STEP2",
+            Case(walk_idx, {
+                0: NextValue(s_acc, step_sum[0:42]),
+                1: NextValue(t_acc, step_sum[0:42]),
+                2: NextValue(z_acc, step_sum[0:46]),
+                3: NextValue(r_acc, step_sum[0:38]),
+                4: NextValue(g_acc, step_sum[0:38]),
+                5: NextValue(b_acc, step_sum[0:38]),
+                6: NextValue(a_acc, step_sum[0:38]),
+                7: NextValue(q_acc, step_sum[0:40]),
+            }),
+            If((walk_idx == 7) |
+               ((walk_idx == 2) & ~gouraud_en & ~persp_en) |
+               ((walk_idx == 6) & ~persp_en),
+                NextState("SPAN_WALK_RND"),
+            ).Elif((walk_idx == 2) & ~gouraud_en & persp_en,
+                NextValue(walk_idx, 7),
+                NextState("SPAN_STEP"),
+            ).Else(
+                NextValue(walk_idx, walk_idx + 1),
+                NextState("SPAN_STEP"),
             )
         )

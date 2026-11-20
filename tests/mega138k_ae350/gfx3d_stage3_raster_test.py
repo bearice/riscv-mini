@@ -139,7 +139,7 @@ class Stage3RasterTest(unittest.TestCase):
             yield dut.start.eq(1)
             yield
             yield dut.start.eq(0)
-            for _ in range(25000):
+            for _ in range(50000):
                 yield
                 if (yield dut.valid_out):
                     px = (yield dut.x_out)
@@ -270,7 +270,7 @@ class Stage3RasterTest(unittest.TestCase):
             yield
             yield dut.tri.start.eq(0)
 
-            for _ in range(1000):
+            for _ in range(4000):
                 yield
                 if (yield eng.frag3d.out_valid) and (yield eng.frag3d.out_we_color):
                     observed.append((
@@ -279,7 +279,7 @@ class Stage3RasterTest(unittest.TestCase):
                         (yield eng.frag3d.out_rgba),
                     ))
                 if not (yield dut.tri.busy) and not (yield eng.frag3d.pipe_busy) and not (yield dut.sampler.valid_out):
-                    for _ in range(30):
+                    for _ in range(300):
                         yield
                         if (yield eng.frag3d.out_valid) and (yield eng.frag3d.out_we_color):
                             observed.append((

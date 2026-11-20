@@ -142,30 +142,31 @@ class LateZHarness(Module):
             ClockDomainsRenamer("ddr")(eng_raw),
         ]
 
-        # Delay sideband (x, y, z, rgba) by TmemSampler.LATENCY (2 cycles)
-        # Note: ZBufferUnit Early-Z read takes 1 cycle, so rd_x reads at cycle 1
-        # (x_d1) and z_pass_out is ready at cycle 2 alongside sampler.valid_out!
-        x_d1, x_d2 = Signal(12), Signal(12)
-        y_d1, y_d2 = Signal(12), Signal(12)
-        z_d1, z_d2 = Signal(32), Signal(32)
-        rgba_d1, rgba_d2 = Signal(32), Signal(32)
+        # Delay sideband (x, y, z, rgba) by TmemSampler.LATENCY (3 cycles)
+        # Note: ZBufferUnit Early-Z read takes 1 cycle, so rd_x reads at cycle 2
+        # (x_d2) and z_pass_out is ready at cycle 3 alongside sampler.valid_out!
+        x_d1, x_d2, x_d3 = Signal(12), Signal(12), Signal(12)
+        y_d1, y_d2, y_d3 = Signal(12), Signal(12), Signal(12)
+        z_d1, z_d2, z_d3 = Signal(32), Signal(32), Signal(32)
+        rgba_d1, rgba_d2, rgba_d3 = Signal(32), Signal(32), Signal(32)
         self.sync.ddr += If(~self.sampler.stall,
-            x_d1.eq(self.tri.x_out), x_d2.eq(x_d1),
-            y_d1.eq(self.tri.y_out), y_d2.eq(y_d1),
-            z_d1.eq(self.tri.z_out), z_d2.eq(z_d1),
-            rgba_d1.eq(self.tri.rgba_out), rgba_d2.eq(rgba_d1),
+            x_d1.eq(self.tri.x_out), x_d2.eq(x_d1), x_d3.eq(x_d2),
+            y_d1.eq(self.tri.y_out), y_d2.eq(y_d1), y_d3.eq(y_d2),
+            z_d1.eq(self.tri.z_out), z_d2.eq(z_d1), z_d3.eq(z_d2),
+            rgba_d1.eq(self.tri.rgba_out), rgba_d2.eq(rgba_d1), rgba_d3.eq(rgba_d2),
         )
 
         self.comb += [
             self.tri.ready.eq(eng_raw.frag3d.ready),
             self.sampler.stall.eq(~eng_raw.frag3d.ready),
+            self.zbuf.stall.eq(~eng_raw.frag3d.ready),
             self.sampler.valid_in.eq(self.tri.valid_out),
             self.sampler.u_q32_16.eq(self.tri.s_q32_16),
             self.sampler.v_q32_16.eq(self.tri.t_q32_16),
 
-            # Early-Z read at cycle 1 (x_d1, z_d1[16:32]) -> z_pass_out ready at cycle 2
-            self.zbuf.rd_x.eq(x_d1),
-            self.zbuf.z_new_in.eq(z_d1[16:32]),
+            # Early-Z read at cycle 2 (x_d2, z_d2[16:32]) -> z_pass_out ready at cycle 3
+            self.zbuf.rd_x.eq(x_d2),
+            self.zbuf.z_new_in.eq(z_d2[16:32]),
 
             eng_raw.frag3d.valid.eq(self.sampler.valid_out),
             eng_raw.frag3d.p00.eq(self.sampler.p00),
@@ -175,12 +176,12 @@ class LateZHarness(Module):
             eng_raw.frag3d.wu.eq(self.sampler.wu),
             eng_raw.frag3d.wv.eq(self.sampler.wv),
             eng_raw.frag3d.bounds_discard.eq(self.sampler.bounds_discard),
-            eng_raw.frag3d.x.eq(x_d2),
-            eng_raw.frag3d.y.eq(y_d2),
-            eng_raw.frag3d.z_new.eq(z_d2[16:32]),
+            eng_raw.frag3d.x.eq(x_d3),
+            eng_raw.frag3d.y.eq(y_d3),
+            eng_raw.frag3d.z_new.eq(z_d3[16:32]),
             eng_raw.frag3d.z_pass.eq(self.zbuf.z_pass_out),
-            eng_raw.frag3d.rgba.eq(rgba_d2),
-            eng_raw.frag3d.dst_adr.eq(x_d2[0:8]),
+            eng_raw.frag3d.rgba.eq(rgba_d3),
+            eng_raw.frag3d.dst_adr.eq(x_d3[0:8]),
 
             # Late-Z commit
             self.zbuf.out_valid.eq(eng_raw.frag3d.out_valid),
@@ -214,7 +215,7 @@ class Stage4PerspZTest(unittest.TestCase):
             yield dut.tri.start.eq(1)
             yield
             yield dut.tri.start.eq(0)
-            for _ in range(5000):
+            for _ in range(25000):
                 yield
                 if (yield dut.persp.valid_out):
                     obs.append((
@@ -224,7 +225,7 @@ class Stage4PerspZTest(unittest.TestCase):
                         s48_to_float((yield dut.persp.v_q32_16)),
                     ))
                 if not (yield dut.tri.busy):
-                    for _ in range(10):
+                    for _ in range(12):
                         yield
                         if (yield dut.persp.valid_out):
                             obs.append((
@@ -310,7 +311,7 @@ class Stage4PerspZTest(unittest.TestCase):
             yield
             yield dut.tri.start.eq(0)
 
-            for _ in range(400):
+            for _ in range(1500):
                 yield
                 if (yield dut.zbuf.we_color):
                     px = (yield eng.frag3d.out_x)
@@ -318,8 +319,8 @@ class Stage4PerspZTest(unittest.TestCase):
                 if (yield dut.zbuf.we_z):
                     px = (yield eng.frag3d.out_x)
                     z_row[px] = (yield eng.frag3d.out_z)
-                if not (yield dut.tri.busy) and not (yield eng.frag3d.pipe_busy) and not (yield dut.sampler.valid_out):
-                    for _ in range(30):
+                if not (yield dut.tri.busy):
+                    for _ in range(400):
                         yield
                         if (yield dut.zbuf.we_color):
                             px = (yield eng.frag3d.out_x)

@@ -40,12 +40,18 @@ class Gfx3DPipeline(Module):
             self.zbuf,
         ]
 
-        # Total sideband delay: PerspRecipUnit.LATENCY (5) + TmemSampler.LATENCY (2) = 7
+        # Total sideband delay: PerspRecipUnit.LATENCY (9) + TmemSampler.LATENCY (3) = 12
+        # Store sideband (x[12], y[12], z_hi[16], rgba[32] = 72b) in a 16-entry
+        # circular BSRAM buffer to save ~800 FFs.
         sb_len = PerspRecipUnit.LATENCY + TmemSampler.LATENCY
-        x_d = [Signal(12, reset_less=True) for _ in range(sb_len)]
-        y_d = [Signal(12, reset_less=True) for _ in range(sb_len)]
-        z_d = [Signal(32, reset_less=True) for _ in range(sb_len)]
-        rgba_d = [Signal(32, reset_less=True) for _ in range(sb_len)]
+        sb_mem = Memory(72, 16, name="g3d_sb_mem")
+        sb_wr = sb_mem.get_port(write_capable=True, clock_domain=clock_domain)
+        sb_rd = sb_mem.get_port(has_re=True, clock_domain=clock_domain)
+        self.specials += [sb_mem, sb_wr, sb_rd]
+
+        sb_wp = Signal(4)
+        sb_rp = Signal(4)
+        sb_q2 = Signal(72, reset_less=True)
 
         stall = Signal()
         self.comb += [
@@ -53,17 +59,19 @@ class Gfx3DPipeline(Module):
             self.tri.ready.eq(frag3d.ready),
             self.persp.stall.eq(stall),
             self.sampler.stall.eq(stall),
+            self.zbuf.stall.eq(stall),
+            sb_wr.adr.eq(sb_wp),
+            sb_wr.we.eq(~stall),
+            sb_wr.dat_w.eq(Cat(self.tri.x_out, self.tri.y_out,
+                               self.tri.z_out[16:32], self.tri.rgba_out)),
+            sb_rp.eq(sb_wp - (sb_len - 2)),
+            sb_rd.adr.eq(sb_rp),
+            sb_rd.re.eq(~stall),
         ]
 
         self.sync += If(~stall,
-            x_d[0].eq(self.tri.x_out),
-            y_d[0].eq(self.tri.y_out),
-            z_d[0].eq(self.tri.z_out),
-            rgba_d[0].eq(self.tri.rgba_out),
-            *[x_d[i].eq(x_d[i - 1]) for i in range(1, sb_len)],
-            *[y_d[i].eq(y_d[i - 1]) for i in range(1, sb_len)],
-            *[z_d[i].eq(z_d[i - 1]) for i in range(1, sb_len)],
-            *[rgba_d[i].eq(rgba_d[i - 1]) for i in range(1, sb_len)],
+            sb_wp.eq(sb_wp + 1),
+            sb_q2.eq(sb_rd.dat_r),
         )
 
         # TriRasterizer -> PerspRecipUnit -> TmemSampler
@@ -78,9 +86,9 @@ class Gfx3DPipeline(Module):
             self.sampler.u_q32_16.eq(self.persp.u_q32_16),
             self.sampler.v_q32_16.eq(self.persp.v_q32_16),
 
-            # Early-Z read at cycle sb_len - 2 (= 5), ready at cycle sb_len - 1 (= 6)
-            self.zbuf.rd_x.eq(x_d[sb_len - 2]),
-            self.zbuf.z_new_in.eq(z_d[sb_len - 2][16:32]),
+            # Early-Z read at cycle sb_len - 2 (sb_rd.dat_r), ready at cycle sb_len - 1
+            self.zbuf.rd_x.eq(sb_rd.dat_r[0:12]),
+            self.zbuf.z_new_in.eq(sb_rd.dat_r[24:40]),
 
             # TmemSampler + ZBufferUnit -> Frag3DPort
             frag3d.valid.eq(self.sampler.valid_out),
@@ -91,12 +99,12 @@ class Gfx3DPipeline(Module):
             frag3d.wu.eq(self.sampler.wu),
             frag3d.wv.eq(self.sampler.wv),
             frag3d.bounds_discard.eq(self.sampler.bounds_discard),
-            frag3d.x.eq(x_d[sb_len - 1]),
-            frag3d.y.eq(y_d[sb_len - 1]),
-            frag3d.z_new.eq(z_d[sb_len - 1][16:32]),
+            frag3d.x.eq(sb_q2[0:12]),
+            frag3d.y.eq(sb_q2[12:24]),
+            frag3d.z_new.eq(sb_q2[24:40]),
             frag3d.z_pass.eq(self.zbuf.z_pass_out),
-            frag3d.rgba.eq(rgba_d[sb_len - 1]),
-            frag3d.dst_adr.eq(x_d[sb_len - 1][0:10]),
+            frag3d.rgba.eq(sb_q2[40:72]),
+            frag3d.dst_adr.eq(sb_q2[0:10]),
 
             # Late-Z commit
             self.zbuf.out_valid.eq(frag3d.out_valid),

@@ -110,7 +110,7 @@ class Gfx3DPipelineTest(unittest.TestCase):
             yield
             yield g3d.tri.start.eq(0)
 
-            for _ in range(600):
+            for _ in range(2500):
                 yield
                 if (yield g3d.zbuf.we_color):
                     px = (yield eng.frag3d.out_x)
@@ -121,7 +121,7 @@ class Gfx3DPipelineTest(unittest.TestCase):
                     py = (yield eng.frag3d.out_y)
                     zb[(px, py)] = (yield eng.frag3d.out_z)
                 if not (yield g3d.pipe_busy):
-                    for _ in range(40):
+                    for _ in range(500):
                         yield
                         if (yield g3d.zbuf.we_color):
                             px = (yield eng.frag3d.out_x)

@@ -133,16 +133,20 @@ class Stage2Harness(Module):
         ]
 
         # Wire Mode7ScanlineStepper -> TmemSampler -> Gfx2DEngine.frag3d
-        # Sideband x, y delayed by TmemSampler.LATENCY (2 cycles)
+        # Sideband x, y delayed by TmemSampler.LATENCY (3 cycles)
         x_d1 = Signal(12)
         y_d1 = Signal(12)
         x_d2 = Signal(12)
         y_d2 = Signal(12)
+        x_d3 = Signal(12)
+        y_d3 = Signal(12)
         self.sync.ddr += If(~self.sampler.stall,
             x_d1.eq(self.stepper.x_out),
             y_d1.eq(self.stepper.y_out),
             x_d2.eq(x_d1),
             y_d2.eq(y_d1),
+            x_d3.eq(x_d2),
+            y_d3.eq(y_d2),
         )
 
         self.comb += [
@@ -160,8 +164,8 @@ class Stage2Harness(Module):
             eng_raw.frag3d.wu.eq(self.sampler.wu),
             eng_raw.frag3d.wv.eq(self.sampler.wv),
             eng_raw.frag3d.bounds_discard.eq(self.sampler.bounds_discard),
-            eng_raw.frag3d.x.eq(x_d2),
-            eng_raw.frag3d.y.eq(y_d2),
+            eng_raw.frag3d.x.eq(x_d3),
+            eng_raw.frag3d.y.eq(y_d3),
             eng_raw.frag3d.z_pass.eq(1),
             eng_raw.frag3d.z_new.eq(0),
             eng_raw.frag3d.rgba.eq(0xFFFFFFFF),
@@ -254,7 +258,7 @@ class Stage2Mode7TmemTest(unittest.TestCase):
 
                 obs = []
                 # Collect until pipe_busy goes low after stepper finishes
-                for _ in range(width + 45):
+                for _ in range(width * 24 + 300):
                     yield
                     if (yield eng.frag3d.out_valid):
                         obs.append((

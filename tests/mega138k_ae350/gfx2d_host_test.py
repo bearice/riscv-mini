@@ -662,9 +662,11 @@ class Gfx2DHostTest(unittest.TestCase):
                         v[1] = v[0]
                 cases.append(('cmp', 0x38, 0, sub_op, vals))
 
-        alu = ShaderALU(0)
+        alu = ShaderALU()
 
         def gen():
+            yield alu.stage_idx.eq(0)
+            yield alu.stage_next.eq(0)
             yield alu.last_stage.eq(0)
             yield alu.p_in.eq(0)
             yield alu.discard_in.eq(0)
@@ -672,11 +674,11 @@ class Gfx2DHostTest(unittest.TestCase):
                 lo, hi = enc(op, dst=0, wr=0xF, s0=1, s1=2, s2=3, sat=s,
                              sub_op=arg if kind == 'cmp' else 0,
                              imm=arg if kind == 'logic' else 0)
-                yield alu.inst.eq((hi << 32) | lo)
+                yield alu.insts[0].eq((hi << 32) | lo)
                 for c in range(4):
                     for r in range(3):
                         yield alu.r_in[r + 1][c].eq(vals[c][r])
-                for _ in range(8):
+                for _ in range(10):
                     yield
                 if kind in ('arith', 'logic'):
                     for c in range(4):
@@ -732,7 +734,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
 
         # Expected blended pixel: RGB565 0x800F
         expected_p = (16 << 11) | 15
@@ -798,7 +800,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
             'INST1_LO': inst1_lo, 'INST1_HI': inst1_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
 
         p0 = mem[dst_addr + 0] | (mem[dst_addr + 1] << 8)
         p1 = mem[dst_addr + 2] | (mem[dst_addr + 3] << 8)
@@ -848,7 +850,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
             'INST1_LO': inst1_lo, 'INST1_HI': inst1_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
         for c in range(w):
             p = mem[dst_addr + c * 2 + 0] | (mem[dst_addr + c * 2 + 1] << 8)
             self.assertEqual(p, expected_p)
@@ -889,7 +891,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
 
         # Output must be 100% Red (0xF800), NOT blue
         for c in range(w):
@@ -928,7 +930,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
 
         expected_p = (16 << 11) | 15
         for c in range(w):
@@ -971,7 +973,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'WIDTH': w, 'HEIGHT': h, 'FORMAT': 0,
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
 
         for r in range(h):
             for c in range(w):
@@ -1041,7 +1043,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'WIDTH': 16, 'HEIGHT': 1, 'FORMAT': 0,
             'INST0_LO': inst0_lo, 'INST0_HI': inst0_hi,
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
         for c in range(16):
             got = mem[0x2000 + 2 * c] | (mem[0x2000 + 2 * c + 1] << 8)
             # c in [0..15] -> RGB565: R=c>>3, G=c>>2, B=c>>3
@@ -1146,7 +1148,7 @@ class Gfx2DHostTest(unittest.TestCase):
             'FG_COLOR': fg, 'UNIFORM0': 100,
             **inst_regs(i0, i1, i2, i3),
         }
-        self._run_op(d, self._fake_pump_factory(d, mem), desc)
+        self._run_op(d, self._fake_pump_factory(d, mem), desc, max_cycles=40000)
         for c in range(w):
             if c * 16 < 100:
                 want = 0xFF000000 | fg
@@ -1277,11 +1279,11 @@ class Gfx2DHostTest(unittest.TestCase):
         # the cached slots, so only rows 0,1 / 2 / 3 are ever fetched.
         for bil in (0, 1):
             reads = []
-            self._scale_case(12, 8, 6, 4, 0, 0x8000, 0, 0x8000, bil, reads=reads)
+            self._scale_case(12, 8, 6, 4, 0, 0x8000, 0, 0x8000, bil, reads=reads, max_cycles=6000)
             src_reads = [a for a in reads if 0x1000 <= a < 0x1000 + 4 * 64]
             self.assertEqual(len(src_reads), 4, (bil, src_reads))
         # OP_SHADER with SCALE_EN takes the same path.
-        self._scale_case(12, 8, 6, 4, 0x4000, 0x8000, 0x2000, 0x8000, 1, op=OP_SHADER)
+        self._scale_case(12, 8, 6, 4, 0x4000, 0x8000, 0x2000, 0x8000, 1, op=OP_SHADER, max_cycles=6000)
         print('PASS GFX2D: scaled nearest/bilinear upscale bit-exact; row cache hits')
 
     def test_scale_tile_span_counterexample(self):
@@ -1290,7 +1292,7 @@ class Gfx2DHostTest(unittest.TestCase):
         tile_ws = []
         self._scale_case(1100, 1, 1200, 2, 0xFFFF, 0x10001, 0, 0, 1,
                          src_stride=1200 * 4, dst_addr=0x4000,
-                         tile_ws=tile_ws, max_cycles=20000)
+                         tile_ws=tile_ws, max_cycles=40000)
         self.assertEqual([t for t in tile_ws if t], [1022, 78])
         print('PASS GFX2D: U_first=0xFFFF dU=0x10001 bilinear tiles as 1022 + 78')
 
@@ -1308,7 +1310,7 @@ class Gfx2DHostTest(unittest.TestCase):
             tile_ws = []
             self._scale_case(600, 2, 1210, 4, 0x8000, 0x20000, 0x4000, 0x18000, bil,
                              src_stride=1210 * 4, dst_addr=0x10000,
-                             tile_ws=tile_ws, max_cycles=40000)
+                             tile_ws=tile_ws, max_cycles=80000)
             self.assertEqual([t for t in tile_ws if t][:2], [512, 88])
         print('PASS GFX2D: 2x downscale over two tiles (512 + 88) bit-exact')
 

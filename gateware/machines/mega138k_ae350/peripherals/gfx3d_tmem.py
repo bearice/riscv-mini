@@ -56,6 +56,7 @@ class Tmem4Bank(Module):
         self.wr_dat = Signal(32)
 
         # 4 parallel read ports (one per parity bank)
+        self.rd_re = Signal(reset=1)
         self.rd_adr = [Signal(self.adr_bits) for _ in range(4)]
         self.rd_dat = [Signal(32) for _ in range(4)]
 
@@ -67,7 +68,7 @@ class Tmem4Bank(Module):
             for m in self.banks
         ]
         rd_ports = [
-            m.get_port(clock_domain=clock_domain)
+            m.get_port(has_re=True, clock_domain=clock_domain)
             for m in self.banks
         ]
         self.specials += wr_ports + rd_ports
@@ -91,6 +92,7 @@ class Tmem4Bank(Module):
                 wr_ports[b].dat_w.eq(self.wr_dat),
                 wr_ports[b].we.eq(self.wr_en & (wr_bank == b)),
                 rd_ports[b].adr.eq(self.rd_adr[b]),
+                rd_ports[b].re.eq(self.rd_re),
                 self.rd_dat[b].eq(rd_ports[b].dat_r),
             ]
 
@@ -111,7 +113,7 @@ class TmemSampler(Module):
         - Register p00, p10, p01, p11, wu, wv, bounds_discard, valid_out
     """
 
-    LATENCY = 2
+    LATENCY = 3
 
     def __init__(self, tmem: Tmem4Bank):
         self.tmem = tmem
@@ -185,12 +187,36 @@ class TmemSampler(Module):
         v0_w, oob_v0 = wrap_coord(v_raw0, tex_h, mask_h, self.wrap_v)
         v1_w, oob_v1 = wrap_coord(v_raw1, tex_h, mask_h, self.wrap_v)
 
+        # --- Stage 0 -> Stage 1: Register wrapped coords & wu/wv ---
+        s0_valid = Signal()
+        u0_r = Signal(12, reset_less=True)
+        u1_r = Signal(12, reset_less=True)
+        v0_r = Signal(12, reset_less=True)
+        v1_r = Signal(12, reset_less=True)
+        oob_u0_r = Signal(reset_less=True)
+        oob_u1_r = Signal(reset_less=True)
+        oob_v0_r = Signal(reset_less=True)
+        oob_v1_r = Signal(reset_less=True)
+        s0_wu = Signal(8, reset_less=True)
+        s0_wv = Signal(8, reset_less=True)
+
+        self.sync += If(~self.stall,
+            s0_valid.eq(self.valid_in),
+            u0_r.eq(u0_w), u1_r.eq(u1_w),
+            v0_r.eq(v0_w), v1_r.eq(v1_w),
+            oob_u0_r.eq(oob_u0), oob_u1_r.eq(oob_u1),
+            oob_v0_r.eq(oob_v0), oob_v1_r.eq(oob_v1),
+            s0_wu.eq(Mux(self.bilinear_en, self.u_q32_16[8:16], 0)),
+            s0_wv.eq(Mux(self.bilinear_en, self.v_q32_16[8:16], 0)),
+        )
+
+        # --- Stage 1: Bank address generation ---
         # 4 corners: (k, m) -> c00=(u0,v0), c10=(u1,v0), c01=(u0,v1), c11=(u1,v1)
         corners_uv = [
-            (u0_w, v0_w, oob_u0, oob_v0),  # 0: p00
-            (u1_w, v0_w, oob_u1, oob_v0),  # 1: p10
-            (u0_w, v1_w, oob_u0, oob_v1),  # 2: p01
-            (u1_w, v1_w, oob_u1, oob_v1),  # 3: p11
+            (u0_r, v0_r, oob_u0_r, oob_v0_r),  # 0: p00
+            (u1_r, v0_r, oob_u1_r, oob_v0_r),  # 1: p10
+            (u0_r, v1_r, oob_u0_r, oob_v1_r),  # 2: p01
+            (u1_r, v1_r, oob_u1_r, oob_v1_r),  # 3: p11
         ]
 
         c_bank = [Signal(2) for _ in range(4)]
@@ -215,6 +241,7 @@ class TmemSampler(Module):
 
         # Drive each bank's read address from whichever corner maps to that bank
         # (any two corners mapping to the same bank have identical (u, v) coords).
+        self.comb += tmem.rd_re.eq(~self.stall)
         for b in range(4):
             self.comb += tmem.rd_adr[b].eq(
                 Mux(c_bank[0] == b, c_badr[0],
@@ -222,7 +249,7 @@ class TmemSampler(Module):
                 Mux(c_bank[2] == b, c_badr[2], c_badr[3])))
             )
 
-        # Stage 0 -> Stage 1 registers
+        # Stage 1 -> Stage 2 registers
         s1_valid = Signal()
         s1_bank = [Signal(2, reset_less=True) for _ in range(4)]
         s1_oob = [Signal(reset_less=True) for _ in range(4)]
@@ -231,9 +258,9 @@ class TmemSampler(Module):
         s1_bdisc = Signal(reset_less=True)
 
         self.sync += If(~self.stall,
-            s1_valid.eq(self.valid_in),
-            s1_wu.eq(Mux(self.bilinear_en, self.u_q32_16[8:16], 0)),
-            s1_wv.eq(Mux(self.bilinear_en, self.v_q32_16[8:16], 0)),
+            s1_valid.eq(s0_valid),
+            s1_wu.eq(s0_wu),
+            s1_wv.eq(s0_wv),
             s1_bdisc.eq(self.tex_en & self.border_kill_en & c_oob[0]),
             *[s1_bank[i].eq(c_bank[i]) for i in range(4)],
             *[s1_oob[i].eq(c_oob[i]) for i in range(4)],

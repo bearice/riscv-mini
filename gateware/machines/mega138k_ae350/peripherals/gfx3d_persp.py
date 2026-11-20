@@ -34,9 +34,9 @@ def _build_recip_lut_init():
 
 
 class PerspRecipUnit(Module):
-    """5-cycle II=1 perspective 1/Q Newton-Raphson + split hi/lo multiply."""
+    """6-cycle II=1 perspective 1/Q Newton-Raphson + pipelined split hi/lo multiply."""
 
-    LATENCY = 5
+    LATENCY = 10
 
     def __init__(self, clock_domain="ddr"):
         self.valid_in = Signal()
@@ -79,15 +79,17 @@ class PerspRecipUnit(Module):
         v2 = Signal()
         v3 = Signal()
         v4 = Signal()
-        s1, s2, s3, s4 = [Signal((32, True), reset_less=True) for _ in range(4)]
-        t1, t2, t3, t4 = [Signal((32, True), reset_less=True) for _ in range(4)]
-        e1, e2, e3, e4 = [Signal(4, reset_less=True) for _ in range(4)]
+        v4b = Signal()
+        s1, s2, s3, s4, s4b = [Signal((32, True), reset_less=True) for _ in range(5)]
+        t1, t2, t3, t4, t4b = [Signal((32, True), reset_less=True) for _ in range(5)]
+        e1, e2, e3, e4, e4b = [Signal(4, reset_less=True) for _ in range(5)]
         eo1, eo2, eo3, eo4 = [Signal(reset_less=True) for _ in range(4)]
-        pe1, pe2, pe3, pe4 = [Signal(reset_less=True) for _ in range(4)]
+        pe1, pe2, pe3, pe4, pe4b = [Signal(reset_less=True) for _ in range(5)]
         m1, m2 = [Signal(17, reset_less=True) for _ in range(2)]
         y0_2 = Signal(17)
         y0_3 = Signal(17, reset_less=True)
         r_3 = Signal(20, reset_less=True)
+        pb_4_r = Signal(37, reset_less=True)
         y1_4 = Signal(20, reset_less=True)
 
         # Cycle 2 LUT address from m1[8:16]; lut_port.dat_r is valid alongside m2
@@ -106,12 +108,12 @@ class PerspRecipUnit(Module):
             r_rnd_3.eq((r_full_3 + (1 << 14)) >> 15),
         ]
 
-        # Cycle 4 NR mult 2 (DSP #1): Pb = r_3 * y0_3
+        # Cycle 4 NR mult 2 (DSP #1): Pb = r_3 * y0_3; Cycle 4b rounds Pb
         pb_4 = Signal(37)
         y1_rnd_4 = Signal(20)
         self.comb += [
             pb_4.eq(r_3 * y0_3),
-            y1_rnd_4.eq((pb_4 + (1 << 15)) >> 16),
+            y1_rnd_4.eq((pb_4_r + (1 << 15)) >> 16),
         ]
 
         # Cycle 5 Split 16-bit hi/lo multiply (DSP #2..#5) + << e4 + round >>> 22
@@ -133,13 +135,54 @@ class PerspRecipUnit(Module):
         u_out_c = Signal((48, True))
         v_out_c = Signal((48, True))
 
+        v5 = Signal()
+        s5 = Signal((32, True), reset_less=True)
+        t5 = Signal((32, True), reset_less=True)
+        e5 = Signal(4, reset_less=True)
+        pe5 = Signal(reset_less=True)
+        pu_hi_5 = Signal((36, True), reset_less=True)
+        pu_lo_5 = Signal((37, True), reset_less=True)
+        pv_hi_5 = Signal((36, True), reset_less=True)
+        pv_lo_5 = Signal((37, True), reset_less=True)
+
+        v6 = Signal()
+        s6 = Signal((32, True), reset_less=True)
+        t6 = Signal((32, True), reset_less=True)
+        e6 = Signal(4, reset_less=True)
+        pe6 = Signal(reset_less=True)
+        u_prod_6 = Signal((54, True), reset_less=True)
+        v_prod_6 = Signal((54, True), reset_less=True)
+
+        v7 = Signal()
+        s7 = Signal((32, True), reset_less=True)
+        t7 = Signal((32, True), reset_less=True)
+        pe7 = Signal(reset_less=True)
+        u_shift_7 = Signal((62, True), reset_less=True)
+        v_shift_7 = Signal((62, True), reset_less=True)
+
+        u_lo_sum = Signal(21)
+        v_lo_sum = Signal(21)
+        u_hi_p1 = Signal((20, True))
+        v_hi_p1 = Signal((20, True))
+        u_mid_c = Signal()
+        v_mid_c = Signal()
+        u_sum_40 = Signal((40, True))
+        v_sum_40 = Signal((40, True))
+        s7_hi_s = Signal((28, True))
+        t7_hi_s = Signal((28, True))
         self.comb += [
+            u_lo_sum.eq(u_shift_7[22:42] + u_shift_7[21]),
+            v_lo_sum.eq(v_shift_7[22:42] + v_shift_7[21]),
+            u_hi_p1.eq(u_shift_7[42:62] + 1),
+            v_hi_p1.eq(v_shift_7[42:62] + 1),
+            u_mid_c.eq(u_shift_7[21:42] == 0x1FFFFF),
+            v_mid_c.eq(v_shift_7[21:42] == 0x1FFFFF),
             y1_s.eq(y1_4),
-            s4_hi.eq(s4[16:32]),
-            s4_lo.eq(s4[0:16]),
+            s4_hi.eq(s4b[16:32]),
+            s4_lo.eq(s4b[0:16]),
             s4_lo_s.eq(s4_lo),
-            t4_hi.eq(t4[16:32]),
-            t4_lo.eq(t4[0:16]),
+            t4_hi.eq(t4b[16:32]),
+            t4_lo.eq(t4b[0:16]),
             t4_lo_s.eq(t4_lo),
 
             pu_hi.eq(y1_s * s4_hi),
@@ -147,20 +190,32 @@ class PerspRecipUnit(Module):
             pv_hi.eq(y1_s * t4_hi),
             pv_lo.eq(y1_s * t4_lo_s),
 
-            u_prod.eq((pu_hi << 16) + pu_lo),
-            v_prod.eq((pv_hi << 16) + pv_lo),
-            u_shift.eq(u_prod << e4),
-            v_shift.eq(v_prod << e4),
-            u_out_c.eq((u_shift + (1 << 21)) >> 22),
-            v_out_c.eq((v_shift + (1 << 21)) >> 22),
+            u_prod.eq((pu_hi_5 << 16) + pu_lo_5),
+            v_prod.eq((pv_hi_5 << 16) + pv_lo_5),
+            u_shift.eq(u_prod_6 << e6),
+            v_shift.eq(v_prod_6 << e6),
+            u_sum_40.eq(Cat(u_lo_sum[0:20], Mux(u_mid_c, u_hi_p1, u_shift_7[42:62]))),
+            v_sum_40.eq(Cat(v_lo_sum[0:20], Mux(v_mid_c, v_hi_p1, v_shift_7[42:62]))),
+            u_out_c.eq(u_sum_40),
+            v_out_c.eq(v_sum_40),
         ]
 
-        # Affine bypass when persp_en == 0: s4/t4 are Q12.20 -> round >> 4 to Q32.16
-        u_aff_c = Signal((48, True))
-        v_aff_c = Signal((48, True))
+        # Affine bypass when persp_en == 0: s6/t6 are Q12.20 -> round >> 4 to Q32.16 in Cycle 7
+        u_aff_c = Signal((29, True))
+        v_aff_c = Signal((29, True))
+        u_aff_7 = Signal((29, True), reset_less=True)
+        v_aff_7 = Signal((29, True), reset_less=True)
+        v7b = Signal()
+        pe7b = Signal(reset_less=True)
+        u_sum_7b = Signal((40, True), reset_less=True)
+        v_sum_7b = Signal((40, True), reset_less=True)
+        u_aff_7b = Signal((29, True), reset_less=True)
+        v_aff_7b = Signal((29, True), reset_less=True)
         self.comb += [
-            u_aff_c.eq((s4 + 8) >> 4),
-            v_aff_c.eq((t4 + 8) >> 4),
+            s7_hi_s.eq(s6[4:32]),
+            t7_hi_s.eq(t6[4:32]),
+            u_aff_c.eq(s7_hi_s + s6[3]),
+            v_aff_c.eq(t7_hi_s + t6[3]),
         ]
 
         self.sync += If(~self.stall,
@@ -192,19 +247,63 @@ class PerspRecipUnit(Module):
             y0_3.eq(y0_2),
             r_3.eq(r_rnd_3),
 
-            # Cycle 4
+            # Cycle 4 (register DSP product pb_4)
             v4.eq(v3),
             s4.eq(s3),
             t4.eq(t3),
             e4.eq(e3),
             eo4.eq(eo3),
             pe4.eq(pe3),
-            y1_4.eq(Mux(eo3, 0x40000, y1_rnd_4)),
+            pb_4_r.eq(pb_4),
 
-            # Cycle 5
-            self.valid_out.eq(v4),
-            self.u_q32_16.eq(Mux(pe4, u_out_c, u_aff_c)),
-            self.v_q32_16.eq(Mux(pe4, v_out_c, v_aff_c)),
+            # Cycle 4b (round pb_4_r)
+            v4b.eq(v4),
+            s4b.eq(s4),
+            t4b.eq(t4),
+            e4b.eq(e4),
+            pe4b.eq(pe4),
+            y1_4.eq(Mux(eo4, 0x40000, y1_rnd_4)),
+
+            # Cycle 5 (register DSP products)
+            v5.eq(v4b),
+            s5.eq(s4b),
+            t5.eq(t4b),
+            e5.eq(e4b),
+            pe5.eq(pe4b),
+            pu_hi_5.eq(pu_hi),
+            pu_lo_5.eq(pu_lo),
+            pv_hi_5.eq(pv_hi),
+            pv_lo_5.eq(pv_lo),
+
+            # Cycle 6 (register 54-bit product sums before barrel shift)
+            v6.eq(v5),
+            s6.eq(s5),
+            t6.eq(t5),
+            e6.eq(e5),
+            pe6.eq(pe5),
+            u_prod_6.eq(u_prod),
+            v_prod_6.eq(v_prod),
+
+            # Cycle 7 (register barrel-shifted values before rounding add)
+            v7.eq(v6),
+            u_aff_7.eq(u_aff_c),
+            v_aff_7.eq(v_aff_c),
+            pe7.eq(pe6),
+            u_shift_7.eq(u_shift),
+            v_shift_7.eq(v_shift),
+
+            # Cycle 7b (register rounded 40-bit perspective values before final mux)
+            v7b.eq(v7),
+            pe7b.eq(pe7),
+            u_sum_7b.eq(u_out_c),
+            v_sum_7b.eq(v_out_c),
+            u_aff_7b.eq(u_aff_7),
+            v_aff_7b.eq(v_aff_7),
+
+            # Cycle 8
+            self.valid_out.eq(v7b),
+            self.u_q32_16.eq(Mux(pe7b, u_sum_7b, u_aff_7b)),
+            self.v_q32_16.eq(Mux(pe7b, v_sum_7b, v_aff_7b)),
         )
 
 
@@ -231,11 +330,12 @@ class ZBufferUnit(Module):
     def __init__(self, max_width=2048, clock_domain="ddr"):
         self.z_lb = Memory(16, max_width)
         self.specials += self.z_lb
-        self.rd_port = self.z_lb.get_port(clock_domain=clock_domain)
+        self.rd_port = self.z_lb.get_port(has_re=True, clock_domain=clock_domain)
         self.wr_port = self.z_lb.get_port(write_capable=True, clock_domain=clock_domain)
         self.specials += [self.rd_port, self.wr_port]
 
         # Config
+        self.stall = Signal()
         self.z_test_en = Signal()
         self.z_write_en = Signal()
         self.z_func = Signal(3)
@@ -258,8 +358,11 @@ class ZBufferUnit(Module):
 
         # Synchronous read of Z_LB[rd_x]; z_new_q aligns with rd_port.dat_r
         z_new_q = Signal(16)
-        self.sync += z_new_q.eq(self.z_new_in)
-        self.comb += self.rd_port.adr.eq(self.rd_x)
+        self.sync += If(~self.stall, z_new_q.eq(self.z_new_in))
+        self.comb += [
+            self.rd_port.adr.eq(self.rd_x),
+            self.rd_port.re.eq(~self.stall),
+        ]
 
         z_pass_sig, z_comb_stmts = eval_z_func(
             z_new_q, self.rd_port.dat_r, self.z_func, self.z_test_en
