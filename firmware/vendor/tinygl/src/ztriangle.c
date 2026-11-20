@@ -4,13 +4,18 @@ static inline uint16_t pack_rgb565(int r8, int g8, int b8) {
     return (uint16_t)(((r8 & 0xF8) << 8) | ((g8 & 0xFC) << 3) | ((b8 >> 3) & 0x1F));
 }
 
+static inline int mul_unorm8(int c, int u8) {
+    int p = c * u8;
+    return (p + 1 + (p >> 8)) >> 8;
+}
+
 static inline uint16_t modulate_rgb565(uint16_t tex, int r8, int g8, int b8) {
     int tr = (tex >> 11) & 0x1F;
     int tg = (tex >> 5)  & 0x3F;
     int tb = tex & 0x1F;
-    int mr = (tr * r8) >> 8;
-    int mg = (tg * g8) >> 8;
-    int mb = (tb * b8) >> 8;
+    int mr = mul_unorm8(tr, r8);
+    int mg = mul_unorm8(tg, g8);
+    int mb = mul_unorm8(tb, b8);
     return (uint16_t)((mr << 11) | (mg << 5) | mb);
 }
 
