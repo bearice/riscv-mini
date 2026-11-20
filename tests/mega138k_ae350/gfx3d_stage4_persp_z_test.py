@@ -397,6 +397,51 @@ class Stage4PerspZTest(unittest.TestCase):
                 self.assertEqual(z_row[px], 0xCCCC, f"px={px} Z must remain wall Z=0xCCCC")
         print("PASS GFX3D Stage 4: DISCARD_IF + Late-Z + translucent Z_WRITE=0 consistency verified")
 
+    def test_persp_recip_stall_varying_q(self):
+        from gateware.machines.mega138k_ae350.peripherals.gfx3d_persp import PerspRecipUnit
+
+        def run_seq(stalls):
+            dut = ClockDomainsRenamer("ddr")(PerspRecipUnit(clock_domain="ddr"))
+            samples = [
+                (1 << 20, 2 << 20, 0x40000000),  # Q=1.0
+                (3 << 20, 1 << 20, 0x20000000),  # Q=0.5
+                (5 << 20, 7 << 20, 0x10000000),  # Q=0.25
+                (2 << 20, 3 << 20, 0x08000000),  # Q=0.125
+                (4 << 20, 5 << 20, 0x30000000),  # Q=0.75
+            ]
+            out = []
+
+            def sim():
+                idx = 0
+                cyc = 0
+                yield dut.persp_en.eq(1)
+                while len(out) < len(samples) and cyc < 200:
+                    st = stalls[cyc] if cyc < len(stalls) else 0
+                    yield dut.stall.eq(st)
+                    if idx < len(samples):
+                        s, t, q = samples[idx]
+                        yield dut.valid_in.eq(1)
+                        yield dut.s_q12_20.eq(s)
+                        yield dut.t_q12_20.eq(t)
+                        yield dut.q_clamped.eq(q)
+                        if not st:
+                            idx += 1
+                    else:
+                        yield dut.valid_in.eq(0)
+                    yield
+                    if not st and (yield dut.valid_out):
+                        out.append(((yield dut.u_q32_16), (yield dut.v_q32_16)))
+                    cyc += 1
+
+            run_simulation(dut, {"ddr": sim()}, clocks={"ddr": 10})
+            return out
+
+        ref = run_seq([0] * 40)
+        stalled = run_seq([0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0])
+        self.assertEqual(len(stalled), len(ref))
+        self.assertEqual(stalled, ref)
+        print("PASS GFX3D Stage 4: PerspRecipUnit LUT freeze under stall verified")
+
 
 if __name__ == "__main__":
     unittest.main()

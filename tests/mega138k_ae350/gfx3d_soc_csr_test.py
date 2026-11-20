@@ -267,12 +267,28 @@ class TestGfx3DSoCCSR(unittest.TestCase):
 
             # Now draw a FARTHER triangle (Z=0x6000) at y=20..22 with Z_LESS + COLOR_WRITE_EN=1:
             # must be occluded on row 20 AND row 21, while row 24 (where Z=0xFFFF) passes!
+            # Also verify shared shader registers stay locked while g3d_busy=1.
             far_tri = list(z_tri)
             far_tri[4] = far_tri[10] = far_tri[16] = 0x60000000
             far_tri[8] = far_tri[14] = far_tri[20] = 0xFF00CCFF
             far_tri[15] = (26 << 20) | (4 << 4)
             yield from apb_write(reg["Z_CFG"], (1 << 0) | (1 << 1) | (1 << 2) | (1 << 5))
-            st, pix = yield from submit_and_wait(far_tri, max_it=2500)
+            for i, w in enumerate(far_tri):
+                yield from apb_write(reg[f"TRI{i}"], w)
+            yield from apb_write(reg["CTRL"], 1)
+            # Attempt to overwrite INST0_LO and UNIFORM0 while 3D command is busy
+            yield from apb_write(reg2d["INST0_LO"], 0xDEADBEEF)
+            yield from apb_write(reg2d["UNIFORM0"], 0xCAFEBABE)
+            for _ in range(2500):
+                st = yield from apb_read(reg["STATUS"])
+                if not (st & 1):
+                    break
+                yield
+            else:
+                self.fail("GFX3D timed out")
+            self.assertEqual((yield from apb_read(reg2d["INST0_LO"])), 0x4E4E4000, "INST0_LO must stay locked during g3d_busy")
+            self.assertEqual((yield from apb_read(reg2d["UNIFORM0"])), 0, "UNIFORM0 must stay locked during g3d_busy")
+            st = yield from apb_read(reg["STATUS"])
             self.assertEqual(st & 0x7, 0x2, f"far tri status 0x{st:x}")
             self.assertEqual(read_fb(4, 20), 0, "row 20 must be occluded by Z=0x4000")
             self.assertEqual(read_fb(4, 21), 0, "row 21 must be occluded by Z=0x4000")

@@ -53,7 +53,7 @@ class PerspRecipUnit(Module):
 
         lut = Memory(17, 256, init=_build_recip_lut_init())
         self.specials += lut
-        lut_port = lut.get_port(clock_domain=clock_domain)
+        lut_port = lut.get_port(has_re=True, clock_domain=clock_domain)
         self.specials += lut_port
 
         # --- Cycle 1: CLZ normalization ---
@@ -92,9 +92,11 @@ class PerspRecipUnit(Module):
         pb_4_r = Signal(37, reset_less=True)
         y1_4 = Signal(20, reset_less=True)
 
-        # Cycle 2 LUT address from m1[8:16]; lut_port.dat_r is valid alongside m2
+        # Cycle 2 LUT address from m1[8:16]; freeze read under stall so dat_r
+        # stays aligned with m2.
         self.comb += [
             lut_port.adr.eq(m1[8:16]),
+            lut_port.re.eq(~self.stall),
             y0_2.eq(lut_port.dat_r),
         ]
 

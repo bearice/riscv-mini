@@ -2766,7 +2766,7 @@ class Gfx2D(LiteXModule):
 
         # Table writes are registered so the APB decode does not fan out
         # straight into five BSRAM write ports.
-        lut_wr_act = go & (off_d == reg['LUT_DATA']) & (~self.busy)
+        lut_wr_act = go & (off_d == reg['LUT_DATA']) & (~self.busy) & (~self.g3d_busy)
         pal_we_q = Signal()
         lut_we_q = Signal()
         tbl_adr_q = Signal(8, reset_less=True)
@@ -2790,7 +2790,7 @@ class Gfx2D(LiteXModule):
             ]
 
         desc_cases = {
-            reg[name]: [If(~self.busy, sig.eq(wdata_d))]
+            reg[name]: [If(~self.busy & ~self.g3d_busy, sig.eq(wdata_d))]
             for name, sig in desc.items()
         }
         g3d_tri_cases = {
@@ -2838,7 +2838,7 @@ class Gfx2D(LiteXModule):
                 If(wdata_d[0], self.done.eq(0), self.error.eq(0),
                    self.last_error.eq(ERR_NONE))],
             reg['LUT_DATA']: [
-                If(~self.busy, desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],
+                If(~self.busy & ~self.g3d_busy, desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],
             **desc_cases,
             reg3d['CTRL']: [
                 If(~self.busy & ~self.g3d_busy & wdata_d[0],
