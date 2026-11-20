@@ -147,8 +147,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                     z = z_short; r = r_short; g = g_short; b = b_short; s = s_short; t = t_short;
                 }
 
-                int xl = x_left >> 16;
-                int xr = x_right >> 16;
+                int xl = (int)((x_left + 0xFFFF) >> 16);
+                int xr = (int)(((x_right + 0xFFFF) >> 16) - 1);
                 if (xl < 0) xl = 0;
                 if (xr >= xsize) xr = xsize - 1;
 
