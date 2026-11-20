@@ -17,6 +17,8 @@ ZBuffer *ZB_open(int xsize, int ysize, uint16_t *pbuf, uint16_t *zbuf) {
     zb->tex_w_shift = 0;
     zb->pbuf_owned = 0;
     zb->zbuf_owned = 0;
+    zb->depth_test = 1;
+    zb->depth_write = 1;
     return zb;
 }
 

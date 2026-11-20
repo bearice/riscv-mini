@@ -2855,8 +2855,8 @@ class Gfx2D(LiteXModule):
                 If(~self.busy & ~self.g3d_busy,
                    tmem_dat_q.eq(wdata_d),
                    tmem_adr_q.eq(g3d_tmem_addr),
-                   tmem_log2w_q.eq(g3d_tex_cfg[5:8]),
-                   tmem_base_q.eq(g3d_tex_cfg[11:21]),
+                   tmem_log2w_q.eq(g3d_tex_cfg[7:10]),
+                   tmem_base_q.eq(g3d_tex_cfg[13:23]),
                    tmem_req.eq(~tmem_req),
                    g3d_tmem_addr.eq(g3d_tmem_addr + 1))],
             **g3d_tri_cases,
@@ -2894,12 +2894,12 @@ class Gfx2D(LiteXModule):
             *[g3d_pipe.tri.words[i].eq(g3d_tri[i]) for i in range(24)],
             g3d_pipe.sampler.tex_en.eq(g3d_tex_cfg[0]),
             g3d_pipe.sampler.bilinear_en.eq(g3d_tex_cfg[1]),
-            g3d_pipe.sampler.wrap_u.eq(g3d_tex_cfg[2]),
-            g3d_pipe.sampler.wrap_v.eq(g3d_tex_cfg[3]),
-            g3d_pipe.sampler.border_kill_en.eq(g3d_tex_cfg[4]),
-            g3d_pipe.sampler.log2_tex_w.eq(g3d_tex_cfg[5:8]),
-            g3d_pipe.sampler.log2_tex_h.eq(g3d_tex_cfg[8:11]),
-            g3d_pipe.sampler.tmem_base.eq(g3d_tex_cfg[11:21]),
+            g3d_pipe.sampler.wrap_u.eq(g3d_tex_cfg[2:4]),
+            g3d_pipe.sampler.wrap_v.eq(g3d_tex_cfg[4:6]),
+            g3d_pipe.sampler.border_kill_en.eq(g3d_tex_cfg[6]),
+            g3d_pipe.sampler.log2_tex_w.eq(g3d_tex_cfg[7:10]),
+            g3d_pipe.sampler.log2_tex_h.eq(g3d_tex_cfg[10:13]),
+            g3d_pipe.sampler.tmem_base.eq(g3d_tex_cfg[13:23]),
             g3d_pipe.sampler.bg_color.eq(g3d_bg_color),
             g3d_pipe.zbuf.z_test_en.eq(g3d_z_cfg[0]),
             g3d_pipe.zbuf.z_write_en.eq(g3d_z_cfg[1]),
@@ -2908,7 +2908,7 @@ class Gfx2D(LiteXModule):
             engine.frag3d.active.eq(g3d_active_ddr),
             engine.frag3d.tex_en.eq(g3d_tex_cfg[0]),
             # 3D destination line-buffer prefetch is not yet implemented;
-            # TEX_CFG[21] (uses_dst) is rejected at START with ERR_PARAM.
+            # TEX_CFG[23] (uses_dst) is rejected at START with ERR_PARAM.
             engine.frag3d.uses_dst.eq(0),
         ]
 
@@ -3172,7 +3172,7 @@ class Gfx2D(LiteXModule):
         )
         g3d_cfg_bad = Signal()
         self.comb += g3d_cfg_bad.eq(
-            g3d_tex_cfg[21]
+            g3d_tex_cfg[23]
             | (z_en & ((g3d_fb_stride[0:4] != 0) | (g3d_zbuf_addr[0:5] != 0)))
         )
         g3d_fsm.act("IDLE",

@@ -46,6 +46,8 @@ static void emit_raster_triangle(GLContext *c, const GLVertex *p0, const GLVerte
 
     uint64_t tr0 = tgl_rdcycle();
     c->stats.tris_drawn++;
+    c->zb->depth_test = (uint8_t)(c->depth_test != 0);
+    c->zb->depth_write = (uint8_t)(c->depth_write != 0);
     if (c->texture_2d_enabled && c->zb->current_texture) {
         if (c->shade_model == GL_SMOOTH) {
             ZB_fillTriangleMappingSmooth(c->zb, &p0->zp, &p1->zp, &p2->zp);

@@ -72,7 +72,12 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
         dtdx = (int)((float)((int64_t)(p1->t - p0->t) * dy2 - (int64_t)(p2->t - p0->t) * dy1) * inv_area);
     }
 
-    uint16_t flat_color = pack_rgb565(p0->r >> 8, p0->g >> 8, p0->b >> 8);
+    int flat_r8 = p0->r >> 8;
+    int flat_g8 = p0->g >> 8;
+    int flat_b8 = p0->b >> 8;
+    uint16_t flat_color = pack_rgb565(flat_r8, flat_g8, flat_b8);
+    int ztest = zb->depth_test;
+    int zwrite = zb->depth_write;
     const uint16_t *tex = zb->current_texture;
     int tw_mask = zb->tex_w_mask;
     int th_mask = zb->tex_h_mask;
@@ -154,8 +159,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                         uint16_t *zp_end = zp + len;
                         while (zp < zp_end) {
                             uint16_t zv = (uint16_t)(z >> 16);
-                            if (zv < *zp) {
-                                *zp = zv;
+                            if (!ztest || zv < *zp) {
+                                if (zwrite) *zp = zv;
                                 int tx = (s >> 16) & tw_mask;
                                 int ty = (t >> 16) & th_mask;
                                 uint16_t texel = tex[(ty << tw_shift) | tx];
@@ -173,11 +178,12 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                     } else if (mode == MODE_TEX) {
                         for (int i = 0; i < len; i++) {
                             uint16_t zv = (uint16_t)(z >> 16);
-                            if (zv < zp[i]) {
-                                zp[i] = zv;
+                            if (!ztest || zv < zp[i]) {
+                                if (zwrite) zp[i] = zv;
                                 int tx = (s >> 16) & tw_mask;
                                 int ty = (t >> 16) & th_mask;
-                                pp[i] = tex[(ty << tw_shift) | tx];
+                                uint16_t texel = tex[(ty << tw_shift) | tx];
+                                pp[i] = modulate_rgb565(texel, flat_r8, flat_g8, flat_b8);
                             }
                             z += dzdx;
                             s += dsdx;
@@ -186,8 +192,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                     } else if (mode == MODE_SMOOTH) {
                         for (int i = 0; i < len; i++) {
                             uint16_t zv = (uint16_t)(z >> 16);
-                            if (zv < zp[i]) {
-                                zp[i] = zv;
+                            if (!ztest || zv < zp[i]) {
+                                if (zwrite) zp[i] = zv;
                                 pp[i] = pack_rgb565(r >> 8, g >> 8, b >> 8);
                             }
                             z += dzdx;
@@ -198,8 +204,8 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                     } else {
                         for (int i = 0; i < len; i++) {
                             uint16_t zv = (uint16_t)(z >> 16);
-                            if (zv < zp[i]) {
-                                zp[i] = zv;
+                            if (!ztest || zv < zp[i]) {
+                                if (zwrite) zp[i] = zv;
                                 pp[i] = flat_color;
                             }
                             z += dzdx;

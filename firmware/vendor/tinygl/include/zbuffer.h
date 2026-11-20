@@ -27,6 +27,8 @@ typedef struct {
     int tex_w_shift;
     uint8_t zbuf_owned;
     uint8_t pbuf_owned;
+    uint8_t depth_test;
+    uint8_t depth_write;
 } ZBuffer;
 
 ZBuffer *ZB_open(int xsize, int ysize, uint16_t *pbuf, uint16_t *zbuf);

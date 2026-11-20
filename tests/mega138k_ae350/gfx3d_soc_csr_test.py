@@ -81,7 +81,7 @@ class TestGfx3DSoCCSR(unittest.TestCase):
             yield from apb_write(reg2d["INST0_HI"], 0x400F420E)
 
             # Configure 4x4 RGBA8888 texture in TMEM (log2_w=2, log2_h=2, tex_en=1, bilinear=0)
-            tex_cfg = (1 << 0) | (2 << 5) | (2 << 8)
+            tex_cfg = (1 << 0) | (2 << 7) | (2 << 10)
             yield from apb_write(reg["FB_ADDR"], fb_addr)
             yield from apb_write(reg["FB_STRIDE"], stride)
             yield from apb_write(reg["TEX_CFG"], tex_cfg)
@@ -210,11 +210,26 @@ class TestGfx3DSoCCSR(unittest.TestCase):
             self.assertEqual(pix, 1, f"expected 1 pixel, got {pix}")
             self.assertEqual(read_fb(10, 10), 0xFF112233)
 
-            # 3. TEX_CFG[21] (uses_dst) must be rejected with ERR_PARAM
-            yield from apb_write(reg["TEX_CFG"], 1 << 21)
+            # 3. TEX_CFG[23] (uses_dst) must be rejected with ERR_PARAM
+            yield from apb_write(reg["TEX_CFG"], 1 << 23)
             st, pix = yield from submit_and_wait(one_px)
             self.assertEqual(st & 0x7, 0x6, f"expected DONE|ERR_PARAM, got 0x{st:x}")
             self.assertEqual(pix, 0)
+            yield from apb_write(reg["TEX_CFG"], 0)
+
+            # 3b. 2-bit wrap mode (WRAP_BORDER_DISCARD=2) with BG_COLOR substitution
+            # Sample S=-1.0 (out of bounds) -> must output BG_COLOR 0xFF123456
+            b_tri = list(one_px)
+            b_tri[0] = 0
+            b_tri[5] = b_tri[11] = b_tri[17] = (-1 << 20) & 0xFFFFFFFF  # S = -1.0
+            b_tri[6] = b_tri[12] = b_tri[18] = 0
+            b_tri[8] = b_tri[14] = b_tri[20] = 0xFFFFFFFF
+            yield from apb_write(reg["BG_COLOR"], 0xFF123456)
+            yield from apb_write(reg["TEX_CFG"], (1 << 0) | (2 << 2) | (2 << 4) | (2 << 7) | (2 << 10))
+            st, pix = yield from submit_and_wait(b_tri)
+            self.assertEqual(st & 0x7, 0x2, f"border status 0x{st:x}")
+            self.assertEqual(pix, 1)
+            self.assertEqual(read_fb(10, 10), 0xFF123456)
             yield from apb_write(reg["TEX_CFG"], 0)
 
             # 4. Multi-row DDR3 Z-buffer preservation + depth-only pass (COLOR_WRITE_EN=0)
