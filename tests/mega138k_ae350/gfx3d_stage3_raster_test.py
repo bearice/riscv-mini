@@ -295,6 +295,38 @@ class Stage3RasterTest(unittest.TestCase):
         self.assertEqual(len(observed), 28)
         print("PASS GFX3D Stage 3: end-to-end TriRasterizer -> TMEM -> Frag3DPort verified (28 pixels)")
 
+    def test_guardband_large_depth_gradient(self):
+        from gateware.machines.mega138k_ae350.peripherals.gfx3d_raster import TriRasterizer
+        dut = ClockDomainsRenamer("ddr")(TriRasterizer())
+        tri = build_tri_words(
+            (-2047.0, -2047.0, 0x00000000, 0.0, 0.0, 0xFFFFFFFF),
+            (2047.0, -2047.0, 0xC0000000, 0.0, 0.0, 0xFFFFFFFF),
+            (2047.0, 2047.0, 0xC0000000, 0.0, 0.0, 0xFFFFFFFF),
+            scissor=(0, 0, 1, 0),
+        )
+        z_out = {}
+
+        def sim():
+            yield dut.ready.eq(1)
+            for k, val in enumerate(tri):
+                yield dut.words[k].eq(val)
+            yield dut.start.eq(1)
+            yield
+            yield dut.start.eq(0)
+            for _ in range(5000):
+                yield
+                if (yield dut.valid_out):
+                    z_out[((yield dut.x_out), (yield dut.y_out))] = (yield dut.z_out)
+                if not (yield dut.busy):
+                    break
+
+        run_simulation(dut, {"ddr": sim()}, clocks={"ddr": 10})
+        self.assertIn((0, 0), z_out)
+        # At (0, 0) on (-2047,-2047)->(2047,-2047)->(2047,2047), Z must be ~0x60000000, not clamped near 0
+        self.assertGreater(z_out[(0, 0)], 0x50000000, f"got 0x{z_out[(0, 0)]:08x}")
+        self.assertLess(z_out[(0, 0)], 0x70000000, f"got 0x{z_out[(0, 0)]:08x}")
+        print(f"PASS GFX3D Stage 3: guard-band large depth Z(0,0)=0x{z_out[(0, 0)]:08x} verified")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,7 @@ ZBuffer *ZB_open(int xsize, int ysize, uint16_t *pbuf, uint16_t *zbuf) {
     zb->zbuf_owned = 0;
     zb->depth_test = 1;
     zb->depth_write = 1;
+    zb->tex_env_replace = 0;
     return zb;
 }
 

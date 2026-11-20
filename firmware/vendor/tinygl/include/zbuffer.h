@@ -29,6 +29,7 @@ typedef struct {
     uint8_t pbuf_owned;
     uint8_t depth_test;
     uint8_t depth_write;
+    uint8_t tex_env_replace;
 } ZBuffer;
 
 ZBuffer *ZB_open(int xsize, int ysize, uint16_t *pbuf, uint16_t *zbuf);

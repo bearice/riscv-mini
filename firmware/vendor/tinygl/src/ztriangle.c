@@ -40,6 +40,15 @@ enum {
 static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                                const ZBufferPoint *p1, const ZBufferPoint *p2,
                                int mode) {
+    /* Capture provoking vertex (p2) flat color before y-sorting reorders vertices. */
+    int flat_r8 = p2->r >> 8;
+    int flat_g8 = p2->g >> 8;
+    int flat_b8 = p2->b >> 8;
+    uint16_t flat_color = pack_rgb565(flat_r8, flat_g8, flat_b8);
+    int ztest = zb->depth_test;
+    int zwrite = zb->depth_write;
+    int tex_replace = zb->tex_env_replace;
+
     sort_vertices(&p0, &p1, &p2);
 
     int total_h = p2->y - p0->y;
@@ -72,12 +81,6 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
         dtdx = (int)((float)((int64_t)(p1->t - p0->t) * dy2 - (int64_t)(p2->t - p0->t) * dy1) * inv_area);
     }
 
-    int flat_r8 = p0->r >> 8;
-    int flat_g8 = p0->g >> 8;
-    int flat_b8 = p0->b >> 8;
-    uint16_t flat_color = pack_rgb565(flat_r8, flat_g8, flat_b8);
-    int ztest = zb->depth_test;
-    int zwrite = zb->depth_write;
     const uint16_t *tex = zb->current_texture;
     int tw_mask = zb->tex_w_mask;
     int th_mask = zb->tex_h_mask;
@@ -126,30 +129,31 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
 
         for (int y = y_start; y < y_end; y++) {
             if (y >= 0 && y < ysize) {
-                int xl = x_long >> 16;
-                int xr = x_short >> 16;
+                int32_t x_left, x_right;
                 int32_t z, r, g, b, s, t;
 
-                if (xl <= xr) {
+                if (x_long <= x_short) {
+                    x_left = x_long; x_right = x_short;
                     z = z_long; r = r_long; g = g_long; b = b_long; s = s_long; t = t_long;
                 } else {
-                    int tmp = xl; xl = xr; xr = tmp;
+                    x_left = x_short; x_right = x_long;
                     z = z_short; r = r_short; g = g_short; b = b_short; s = s_short; t = t_short;
                 }
 
-                if (xl < 0) {
-                    int skip = -xl;
-                    z += dzdx * skip;
-                    r += drdx * skip;
-                    g += dgdx * skip;
-                    b += dbdx * skip;
-                    s += dsdx * skip;
-                    t += dtdx * skip;
-                    xl = 0;
-                }
+                int xl = x_left >> 16;
+                int xr = x_right >> 16;
+                if (xl < 0) xl = 0;
                 if (xr >= xsize) xr = xsize - 1;
 
                 if (xl <= xr) {
+                    int64_t dx_sub = ((int64_t)xl << 16) - (int64_t)x_left;
+                    z += (int32_t)(((int64_t)dzdx * dx_sub) >> 16);
+                    r += (int32_t)(((int64_t)drdx * dx_sub) >> 16);
+                    g += (int32_t)(((int64_t)dgdx * dx_sub) >> 16);
+                    b += (int32_t)(((int64_t)dbdx * dx_sub) >> 16);
+                    s += (int32_t)(((int64_t)dsdx * dx_sub) >> 16);
+                    t += (int32_t)(((int64_t)dtdx * dx_sub) >> 16);
+
                     int row_off = y * xsize;
                     uint16_t *pp = zb->pbuf + row_off + xl;
                     uint16_t *zp = zb->zbuf + row_off + xl;
@@ -164,7 +168,7 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                                 int tx = (s >> 16) & tw_mask;
                                 int ty = (t >> 16) & th_mask;
                                 uint16_t texel = tex[(ty << tw_shift) | tx];
-                                *pp = modulate_rgb565(texel, r >> 8, g >> 8, b >> 8);
+                                *pp = tex_replace ? texel : modulate_rgb565(texel, r >> 8, g >> 8, b >> 8);
                             }
                             zp++;
                             pp++;
@@ -183,7 +187,7 @@ static void fill_triangle_impl(ZBuffer *zb, const ZBufferPoint *p0,
                                 int tx = (s >> 16) & tw_mask;
                                 int ty = (t >> 16) & th_mask;
                                 uint16_t texel = tex[(ty << tw_shift) | tx];
-                                pp[i] = modulate_rgb565(texel, flat_r8, flat_g8, flat_b8);
+                                pp[i] = tex_replace ? texel : modulate_rgb565(texel, flat_r8, flat_g8, flat_b8);
                             }
                             z += dzdx;
                             s += dsdx;

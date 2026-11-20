@@ -201,6 +201,8 @@ class Stage2aBackendTest(unittest.TestCase):
                 yield eng.frag3d.z_pass.eq(zp)
                 yield eng.frag3d.bounds_discard.eq(bd)
                 yield
+                while not (yield eng.frag3d.ready):
+                    yield
 
             yield eng.frag3d.valid.eq(0)
             # Drain until pipe_busy == 0 before switching to Command 2
@@ -223,14 +225,16 @@ class Stage2aBackendTest(unittest.TestCase):
             yield eng.frag3d.z_pass.eq(zp)
             yield eng.frag3d.bounds_discard.eq(bd)
             yield
+            while not (yield eng.frag3d.ready):
+                yield
             yield eng.frag3d.valid.eq(0)
             while (yield eng.frag3d.pipe_busy):
                 yield
-            for _ in range(4):
+            for _ in range(30):
                 yield
 
         def monitor():
-            for _ in range(200):
+            for _ in range(1000):
                 if (yield eng.frag3d.out_valid):
                     observed.append((
                         (yield eng.frag3d.out_rgba),

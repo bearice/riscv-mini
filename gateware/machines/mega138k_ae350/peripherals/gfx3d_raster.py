@@ -269,17 +269,12 @@ class TriRasterizer(Module):
         gp_p1 = Signal((51, True), reset_less=True)
         gp_p2 = Signal((51, True), reset_less=True)
         num_sel = Signal((52, True))
-        num_raw = Signal((64, True))
         self.comb += [
             da10.eq(attr_1 - attr_0),
             da20.eq(attr_2 - attr_0),
             mul_d1.eq(Mux(grad_is_dy, -dx20, dy20)),
             mul_d2.eq(Mux(grad_is_dy, -dx10, dy10)),
             num_sel.eq(gp_p1 - gp_p2),
-            # Shift to align to Q36.28 before dividing by e_area (Q27.8):
-            # S/T/RGBA (Q12.20 * Q13.4 -> 2^24 / 2^8 = 2^16) => << 12
-            # Z (UQ16.16 * Q13.4 -> 2^20 / 2^8 = 2^12) => << 16
-            num_raw.eq(Mux(grad_is_z, num_sel << 16, num_sel << 12)),
         ]
 
         # Output pixel assembly (2-stage: SPAN_WALK_RND adds, SPAN_WALK_PRE clamps)
@@ -538,33 +533,37 @@ class TriRasterizer(Module):
             NextValue(da20_r, attr_2_r - attr_0_r),
             NextState("SETUP_GRAD_PREP"),
         )
-        num_raw_r = Signal((64, True), reset_less=True)
+        # Compute sign/abs on 52-bit num_sel before alignment shift so Z
+        # (which needs << 16) cannot overflow signed 64-bit arithmetic.
+        num_sel_r = Signal((52, True), reset_less=True)
         fsm.act("SETUP_GRAD_PREP",
             NextValue(gp_p1, da10_r * mul_d1_r),
             NextValue(gp_p2, da20_r * mul_d2_r),
             NextState("SETUP_GRAD_DIFF"),
         )
         fsm.act("SETUP_GRAD_DIFF",
-            NextValue(num_raw_r, num_raw),
+            NextValue(num_sel_r, num_sel),
             NextState("SETUP_GRAD_LOAD"),
         )
         gmul_lo33 = Signal(33, reset_less=True)
         fsm.act("SETUP_GRAD_LOAD",
-            NextValue(gmul_sign, num_raw_r[63]),
-            NextValue(gmul_a, Mux(num_raw_r[63], num_raw_r ^ ((1 << 64) - 1), num_raw_r)),
+            NextValue(gmul_sign, num_sel_r[51]),
+            NextValue(gmul_a, Cat(Constant(0, 12),
+                                  Mux(num_sel_r[51], num_sel_r ^ ((1 << 52) - 1), num_sel_r))),
             NextValue(gmul_acc, 0),
             NextValue(gmul_step, 0),
             NextState("SETUP_GRAD_LOAD2"),
         )
         fsm.act("SETUP_GRAD_LOAD2",
             If(gmul_sign,
-                NextValue(gmul_lo33, gmul_a[0:32] + 1),
+                NextValue(gmul_lo33, gmul_a[12:44] + 1),
             ),
             NextState("SETUP_GRAD_LOAD3"),
         )
         fsm.act("SETUP_GRAD_LOAD3",
             If(gmul_sign,
-                NextValue(gmul_a, Cat(gmul_lo33[0:32], gmul_a[32:64] + gmul_lo33[32])),
+                NextValue(gmul_a, Cat(Constant(0, 12), gmul_lo33[0:32],
+                                      gmul_a[44:64] + gmul_lo33[32])),
             ),
             NextState("SETUP_GRAD_MUL0"),
         )
@@ -610,11 +609,13 @@ class TriRasterizer(Module):
             gmul_hi1_c.eq((gmul_hi1_r[0:17] == 0x1FFFF) & gmul_hi0_sum[34]),
             gmul_hi1_hi.eq(Mux(gmul_hi1_c, gmul_hi1_r[17:34] + 1, gmul_hi1_r[17:34])),
         ]
+        norm_init = Signal(6)
+        self.comb += norm_init.eq(clz_val + Mux(grad_is_z, 4, 0))
         fsm.act("SETUP_GRAD_MUL4",
             NextValue(gmul_acc, Cat(gmul_lo16_r, gmul_lo_sum[0:50], gmul_hi0_sum[0:34], gmul_hi1_lo, gmul_hi1_hi)),
             If(gmul_step == 3,
-                NextValue(norm_cnt, clz_val),
-                NextValue(norm_done, clz_val == 0),
+                NextValue(norm_cnt, norm_init),
+                NextValue(norm_done, norm_init == 0),
                 NextState("SETUP_GRAD_NORM"),
             ).Else(
                 NextValue(gmul_a, gmul_a << 16),
