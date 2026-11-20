@@ -134,7 +134,7 @@ int main(void) {
     G3D_FB_ADDR = fb_addr;
     G3D_FB_STRIDE = stride;
     G3D_ZBUF_ADDR = zbuf_addr;
-    G3D_TEX_CFG = (1u << 0) | (3u << 7) | (3u << 10);
+    G3D_TEX_CFG = (1u << 0) | (3u << 7) | (3u << 11);
     G3D_BG_COLOR = 0xFF000000u;
     G3D_Z_CFG = (0u << 0) | (0u << 1) | (7u << 2) | (1u << 5);
     G3D_TMEM_ADDR = 0u;
@@ -170,7 +170,7 @@ int main(void) {
     if (rc1 != 0 || pix1 == 0 || p_inside == 0 || p_outside != 0) fails++;
 
     /* Test 2: Perspective-correct textured triangle (32,4)-(56,4)-(32,28) */
-    G3D_TEX_CFG = (1u << 0) | (1u << 1) | (3u << 7) | (3u << 10); /* bilinear_en=1 */
+    G3D_TEX_CFG = (1u << 0) | (1u << 1) | (3u << 7) | (3u << 11); /* bilinear_en=1 */
     uint32_t t1 = mcycle32();
     submit_tri(G3D_FLAG_PERSP,
                32 << 4, 4 << 4, 0x10000000u, 0, 0, 1u << 30, 0xFFFFFFFFu,
