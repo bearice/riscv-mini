@@ -115,7 +115,7 @@ void glClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha) {
 
 void glClear(GLbitfield mask) {
     GLContext *c = &g_ctx;
-    int cz = (mask & GL_DEPTH_BUFFER_BIT) != 0;
+    int cz = ((mask & GL_DEPTH_BUFFER_BIT) != 0) && c->depth_write;
     int cc = (mask & GL_COLOR_BUFFER_BIT) != 0;
     if ((cc || cz) && c->clear_hook) {
         c->clear_hook(c->clear_hook_user, c->clear_color_565,

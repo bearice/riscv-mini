@@ -41,8 +41,14 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat,
     t->height = height;
     int count = width * height;
     if (format == GL_RGB && type == GL_UNSIGNED_SHORT_5_6_5) {
-        const uint16_t *src = (const uint16_t *)pixels;
-        for (int i = 0; i < count; i++) t->data[i] = src[i];
+        const uint8_t *src = (const uint8_t *)pixels;
+        int row_stride = (width * 2 + 3) & ~3;
+        for (int y = 0; y < height; y++) {
+            const uint16_t *row = (const uint16_t *)(src + y * row_stride);
+            for (int x = 0; x < width; x++) {
+                t->data[y * width + x] = row[x];
+            }
+        }
     } else if (format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
         const uint8_t *src = (const uint8_t *)pixels;
         for (int i = 0; i < count; i++) {
@@ -53,11 +59,15 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat,
         }
     } else if (format == GL_RGB && type == GL_UNSIGNED_BYTE) {
         const uint8_t *src = (const uint8_t *)pixels;
-        for (int i = 0; i < count; i++) {
-            uint16_t r = src[i * 3 + 0] >> 3;
-            uint16_t g = src[i * 3 + 1] >> 2;
-            uint16_t b = src[i * 3 + 2] >> 3;
-            t->data[i] = (uint16_t)((r << 11) | (g << 5) | b);
+        int row_stride = (width * 3 + 3) & ~3;
+        for (int y = 0; y < height; y++) {
+            const uint8_t *row = src + y * row_stride;
+            for (int x = 0; x < width; x++) {
+                uint16_t r = row[x * 3 + 0] >> 3;
+                uint16_t g = row[x * 3 + 1] >> 2;
+                uint16_t b = row[x * 3 + 2] >> 3;
+                t->data[y * width + x] = (uint16_t)((r << 11) | (g << 5) | b);
+            }
         }
     }
     ZB_setTexture(c->zb, t->data, t->width, t->height);

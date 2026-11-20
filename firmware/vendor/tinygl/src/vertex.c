@@ -23,9 +23,15 @@ void gl_transform_to_viewport(GLContext *c, GLVertex *v) {
     if (v->zp.z < 0) v->zp.z = 0;
     if (v->zp.z > 65535) v->zp.z = 65535;
 
-    v->zp.r = (int)(v->color.v[0] * 255.0f * 256.0f);
-    v->zp.g = (int)(v->color.v[1] * 255.0f * 256.0f);
-    v->zp.b = (int)(v->color.v[2] * 255.0f * 256.0f);
+    float cr = v->color.v[0];
+    float cg = v->color.v[1];
+    float cb = v->color.v[2];
+    if (cr < 0.0f) cr = 0.0f; else if (cr > 1.0f) cr = 1.0f;
+    if (cg < 0.0f) cg = 0.0f; else if (cg > 1.0f) cg = 1.0f;
+    if (cb < 0.0f) cb = 0.0f; else if (cb > 1.0f) cb = 1.0f;
+    v->zp.r = (int)(cr * 255.0f * 256.0f);
+    v->zp.g = (int)(cg * 255.0f * 256.0f);
+    v->zp.b = (int)(cb * 255.0f * 256.0f);
 
     if (c->texture_2d_enabled && c->zb && c->zb->current_texture) {
         v->zp.s = (int)(v->tex_coord.v[0] * (float)c->zb->tex_w * 65536.0f);
