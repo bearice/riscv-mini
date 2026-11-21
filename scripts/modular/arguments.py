@@ -85,6 +85,7 @@ def payload(parser):
     parser.add_argument('--helper',action='append',choices=['string'],default=[],
                    help='link a repository-provided freestanding helper library')
     parser.add_argument('--soft-float',action='store_true',help='build for rv32im/ilp32 instead of the default rv32imaf/ilp32f')
+    parser.add_argument('--hard-float',action='store_true',help='enable hardware FPU (rv32imfd/ilp32d) on targets that default to soft-float')
     parser.add_argument('--optimize',default='-Os',help='optimization level for the payload (default -Os; -O2 is worth several times the speed for compute-bound apps)')
     parser.add_argument('--libc',choices=('none','newlib'),default='none',help='link Newlib and the BIOS syscall runtime')
 

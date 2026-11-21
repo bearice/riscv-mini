@@ -448,6 +448,9 @@ class DDRSoC(LiteXModule):
             'puts $syn_constraints {GLOBAL syn_romstyle=logic}',
             *['puts $syn_constraints {INS "ae350_ddr_fifo_%d" syn_ramstyle=block_ram}' % width
               for width in (REQ_WIDTH, RESP_WIDTH)],
+            'puts $syn_constraints {INS "g3d_dx_mem" syn_ramstyle=block_ram}',
+            'puts $syn_constraints {INS "g3d_dy_mem" syn_ramstyle=block_ram}',
+            'puts $syn_constraints {INS "g3d_sb_mem" syn_ramstyle=block_ram}',
             'close $syn_constraints',
         ]
         if self.sfp is not None:

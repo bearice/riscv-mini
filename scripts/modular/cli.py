@@ -52,6 +52,7 @@ def add_commands(sub):
     rep.add_argument('--rebuild', action='store_true')
     test = sub.add_parser('test', help='Run an explicit host test command and record its exact system and result')
     test.add_argument('--system', required=True)
+    test.add_argument('--timeout', type=int, default=300, help='Default timeout in seconds (0 disables)')
     test.add_argument('argv', nargs=argparse.REMAINDER)
     pin = sub.add_parser('pin', help='Create an explicit named modular reference')
     pin.add_argument('name')
@@ -157,9 +158,15 @@ def perform(args, p):
             if ref is None: raise ValueError('Import the system before testing')
             command = args.argv[1:] if args.argv[:1] == ['--'] else args.argv
             if not command: raise ValueError('A test command is required after --')
-            run.result.update(system=ref, command=command)
+            run.result.update(system=ref, command=command, timeout=args.timeout)
+            timeout_s = None if args.timeout <= 0 else args.timeout
             with (run.path / 'test.log').open('w', encoding='utf-8') as stream:
-                result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+                try:
+                    result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, timeout=timeout_s)
+                except subprocess.TimeoutExpired:
+                    run.result.update(passed=False, timed_out=True, returncode=-1)
+                    run.save()
+                    raise RuntimeError(f'Test timed out after {args.timeout}s; see {run.path / "test.log"}')
             run.result.update(passed=result.returncode == 0, returncode=result.returncode)
             run.save()
             if result.returncode: raise RuntimeError('Test failed; see ' + str(run.path / 'test.log'))

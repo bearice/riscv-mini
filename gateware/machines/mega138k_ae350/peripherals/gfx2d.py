@@ -3,11 +3,12 @@ from functools import reduce
 from operator import or_
 
 from migen import (Array, Case, Cat, ClockDomainsRenamer, Constant,
-                   If, Memory, Mux, NextState, NextValue, Signal)
+                   If, Memory, Mux, NextState, NextValue, Replicate, Signal)
 from litex.gen import LiteXModule
 from gateware.machines.mega138k_ae350 import address_map as amap
 from gateware.machines.mega138k_ae350.ddr3_ahb import DDR3UI
 from gateware.machines.mega138k_ae350.onehot_fsm import OneHotFSM
+from gateware.machines.mega138k_ae350.peripherals.gfx3d_pipeline import Gfx3DPipeline
 
 ERR_NONE = 0
 ERR_UNSUPPORTED = 1
@@ -45,8 +46,10 @@ DESC_NAMES = (
 
 
 class ShaderALU(LiteXModule):
-    def __init__(self, stage_idx, lut_ports=None):
-        self.inst = Signal(64)
+    def __init__(self, lut_ports=None):
+        self.insts = [Signal(64) for _ in range(4)]
+        self.stage_idx = Signal(2)
+        self.stage_next = Signal(2)
         self.last_stage = Signal(2)
         self.r_in = [[Signal((16, True)) for _ in range(4)] for _ in range(4)]
         self.src_pix = [Signal((16, True)) for _ in range(4)]
@@ -66,12 +69,18 @@ class ShaderALU(LiteXModule):
         self.p_out = Signal()
         self.discard_out = Signal()
 
-        # The instruction is static for a whole command; a local copy keeps
-        # the shared descriptor registers off every stage's operand paths.
+        # Instructions and last_stage are static for a whole command; select
+        # the active stage's instruction by stage_idx.
+        insts_r = [Signal(64, reset_less=True) for _ in range(4)]
+        for _ir in insts_r:
+            _ir.attr.add(("syn_preserve", 1))
         inst = Signal(64, reset_less=True)
-        inst.attr.add(("syn_maxfan", 16))
         last_stage = Signal(2, reset_less=True)
-        self.sync += [inst.eq(self.inst), last_stage.eq(self.last_stage)]
+        self.sync += [
+            [insts_r[s].eq(self.insts[s]) for s in range(4)],
+            inst.eq(Array(insts_r)[self.stage_next]),
+            last_stage.eq(self.last_stage),
+        ]
 
         opcode = Signal(6)
         pred = Signal(2)
@@ -106,7 +115,7 @@ class ShaderALU(LiteXModule):
         ]
 
         stage_active = Signal()
-        self.comb += stage_active.eq(stage_idx <= last_stage)
+        self.comb += stage_active.eq(self.stage_idx <= last_stage)
 
         pred_ok = Signal()
         self.comb += [
@@ -116,30 +125,30 @@ class ShaderALU(LiteXModule):
             .Else(pred_ok.eq(1))
         ]
 
-        def select_src(idx):
-            # FG/BG/U0..U7 operands are static, so resolve them into a local
-            # register ahead of the pixel stream.
-            # idx 6/7 = FG/BG and 8..15 = U0..U7; other values are masked by
-            # sel below. An explicit 8:1 + 2:1 tree keeps the mux shallow.
-            static = [Signal(8, reset_less=True) for _ in range(4)]
-            for c in range(4):
-                uni = Signal(8, reset_less=True)
-                self.sync += uni.eq(
-                    Array([self.uniforms[u][c] for u in range(8)])[idx[0:3]])
-                fgbg = Mux(idx[0], self.bg_pix[c], self.fg_pix[c])
-                self.sync += static[c].eq(Mux(idx[3], uni, fgbg))
-            # A second stage lets the descriptor-side mux sit near the shared
-            # descriptor and this copy near the stage's operand logic.
-            static_q = [Signal(8, reset_less=True) for _ in range(4)]
-            self.sync += [static_q[c].eq(static[c]) for c in range(4)]
+        def select_src(idx_slice):
+            # FG/BG/U0..U7 operands and idx decode are static per stage, so
+            # pre-register 4 entries and mux by stage_idx.
+            static_tbl = [[Signal(8, reset_less=True) for _ in range(4)] for _ in range(4)]
+            sel_tbl = [[Signal(reset_less=True) for _ in range(7)] for _ in range(4)]
+            for st in range(4):
+                idx_st = insts_r[st][idx_slice]
+                for c in range(4):
+                    uni = Signal(8, reset_less=True)
+                    self.sync += uni.eq(
+                        Array([self.uniforms[u][c] for u in range(8)])[idx_st[0:3]])
+                    fgbg = Mux(idx_st[0], self.bg_pix[c], self.fg_pix[c])
+                    self.sync += static_tbl[st][c].eq(Mux(idx_st[3], uni, fgbg))
+                self.sync += [sel_tbl[st][k].eq(idx_st == k) for k in range(6)]
+                self.sync += sel_tbl[st][6].eq(idx_st >= 6)
 
-            # The index is static too, so its decode is registered with the
-            # static operand and the pixel path is a single AND-OR level.
+            static_q = [Signal(8, reset_less=True) for _ in range(4)]
             sel = [Signal(reset_less=True) for _ in range(7)]
-            for s in sel:
-                s.attr.add(("syn_maxfan", 16))
-            self.sync += [sel[k].eq(idx == k) for k in range(6)]
-            self.sync += sel[6].eq(idx >= 6)
+            self.sync += [
+                [static_q[c].eq(Array([static_tbl[st][c] for st in range(4)])[self.stage_next])
+                 for c in range(4)],
+                [sel[k].eq(Array([sel_tbl[st][k] for st in range(4)])[self.stage_next])
+                 for k in range(7)],
+            ]
             cands = [*self.r_in, self.src_pix, self.dst_pix, static_q]
             res = [Signal((16, True)) for _ in range(4)]
             for c in range(4):
@@ -147,9 +156,9 @@ class ShaderALU(LiteXModule):
                     Mux(s, cand[c], 0) for s, cand in zip(sel, cands)]))
             return res
 
-        s0_raw = select_src(src0_idx)
-        s1_raw = select_src(src1_idx)
-        s2_raw = select_src(src2_idx)
+        s0_raw = select_src(slice(44, 48))
+        s1_raw = select_src(slice(40, 44))
+        s2_raw = select_src(slice(36, 40))
 
         def apply_swz(raw, swz):
             out = [Signal((16, True)) for _ in range(4)]
@@ -442,6 +451,71 @@ class ShaderALU(LiteXModule):
             p3_imm8.eq(p2_imm8),
         ]
 
+        # Pipeline Sub-stage 3b (Register post-DSP / post-multiply intermediates)
+        p3b_prod_raw = [Signal(17, reset_less=True) for _ in range(4)]
+        p3b_mul_scaled = [Signal(16, reset_less=True) for _ in range(4)]
+        p3b_lerp_hi = [Signal((18, True), reset_less=True) for _ in range(4)]
+        p3b_dot3_01 = Signal(17, reset_less=True)
+        p3b_dot3_2c = Signal(17, reset_less=True)
+        p3b_arith = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_logic = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_alt = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_s1 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_s2 = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_r = [
+            [Signal((16, True), reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p3b_we = [
+            [Signal(reset_less=True) for _ in range(4)] for _ in range(4)
+        ]
+        p3b_src = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_dst = [Signal((16, True), reset_less=True) for _ in range(4)]
+        p3b_p = Signal(reset_less=True)
+        p3b_discard = Signal(reset_less=True)
+        p3b_is_cmp = Signal(reset_less=True)
+        p3b_is_discard = Signal(reset_less=True)
+        p3b_all_match = Signal(reset_less=True)
+        p3b_opcode = Signal(6, reset_less=True)
+        p3b_sat = Signal(reset_less=True)
+
+        all_match = Signal()
+        self.comb += all_match.eq(
+            (~p3_wr_msk[0] | p3_match_ch[0]) &
+            (~p3_wr_msk[1] | p3_match_ch[1]) &
+            (~p3_wr_msk[2] | p3_match_ch[2]) &
+            (~p3_wr_msk[3] | p3_match_ch[3])
+        )
+
+        self.sync += [
+            p3b_dot3_01.eq(p3_prod16[0] + p3_prod16[1]),
+            p3b_dot3_2c.eq(p3_prod16[2] + 128),
+            p3b_p.eq(p3_p),
+            p3b_discard.eq(p3_discard),
+            p3b_is_cmp.eq(p3_is_cmp),
+            p3b_is_discard.eq(p3_is_discard),
+            p3b_all_match.eq(all_match),
+            p3b_opcode.eq(p3_opcode),
+            p3b_sat.eq(p3_sat),
+        ]
+        for c in range(4):
+            self.sync += [
+                p3b_prod_raw[c].eq(p3_prod16[c] + 128),
+                p3b_mul_scaled[c].eq(p3_prod16[c] >> p3_imm8[0:4]),
+                p3b_lerp_hi[c].eq(p3_lerp_prod[c][8:26] + p3_lerp_prod[c][7]),
+                p3b_arith[c].eq(p3_arith[c]),
+                p3b_logic[c].eq(p3_logic[c]),
+                p3b_alt[c].eq(p3_lut[c] if lut_ports is not None else p3_s0[c]),
+                p3b_s1[c].eq(p3_s1[c]),
+                p3b_s2[c].eq(p3_s2[c]),
+                p3b_src[c].eq(p3_src[c]),
+                p3b_dst[c].eq(p3_dst[c]),
+            ]
+            for r in range(4):
+                self.sync += [
+                    p3b_r[r][c].eq(p3_r[r][c]),
+                    p3b_we[r][c].eq(p3_we[r][c]),
+                ]
+
         # Pipeline Sub-stage 4 (Post-multiply Math)
         p4_mult = [Signal((17, True), reset_less=True) for _ in range(4)]
         p4_mult_sat = Signal(reset_less=True)
@@ -463,23 +537,17 @@ class ShaderALU(LiteXModule):
         p4_is_discard = Signal(reset_less=True)
         p4_all_match = Signal(reset_less=True)
 
-        if stage_idx == 1:
-            dot3_res = Signal(16)
-            self.comb += dot3_res.eq(
-                (p3_prod16[0] + p3_prod16[1] + p3_prod16[2] + 128) >> 8)
+        dot3_res = Signal(16)
+        self.comb += dot3_res.eq((p3b_dot3_01 + p3b_dot3_2c) >> 8)
 
         for c in range(4):
-            prod_raw = Signal(17)
             prod_unorm = Signal(16)
             muladd_res = Signal((17, True))
-            mul_scaled_val = Signal(16)
-            lerp_res = Signal((28, True))
+            lerp_res = Signal((18, True))
             self.comb += [
-                prod_raw.eq(p3_prod16[c] + 128),
-                prod_unorm.eq((prod_raw + (prod_raw >> 8)) >> 8),
-                muladd_res.eq(p3_s2[c] + prod_unorm),
-                mul_scaled_val.eq(p3_prod16[c] >> p3_imm8[0:4]),
-                lerp_res.eq((p3_lerp_prod[c] + (p3_s1[c] << 8) + 128) >> 8),
+                prod_unorm.eq((p3b_prod_raw[c] + (p3b_prod_raw[c] >> 8)) >> 8),
+                muladd_res.eq(p3b_s2[c] + prod_unorm),
+                lerp_res.eq(p3b_lerp_hi[c] + p3b_s1[c]),
             ]
 
             # SAT on the multiply group only clamps upward, and the clamp is
@@ -488,48 +556,39 @@ class ShaderALU(LiteXModule):
             mult_raw = Signal((17, True))
             mult_cases = {
                 0: mult_raw.eq(prod_unorm),
-                1: mult_raw.eq(mul_scaled_val),
+                1: mult_raw.eq(p3b_mul_scaled[c]),
                 2: mult_raw.eq(muladd_res),
                 3: mult_raw.eq(lerp_res[0:16]),
+                4: mult_raw.eq(dot3_res),
                 "default": mult_raw.eq(prod_unorm),
             }
-            if stage_idx == 1:
-                mult_cases[4] = mult_raw.eq(dot3_res)
-            self.comb += Case(p3_opcode[0:3], mult_cases)
+            self.comb += Case(p3b_opcode[0:3], mult_cases)
 
             self.sync += [
                 p4_mult[c].eq(mult_raw),
-                p4_arith[c].eq(p3_arith[c]),
-                p4_logic[c].eq(p3_logic[c]),
-                p4_alt[c].eq(p3_lut[c] if lut_ports is not None else p3_s0[c]),
+                p4_arith[c].eq(p3b_arith[c]),
+                p4_logic[c].eq(p3b_logic[c]),
+                p4_alt[c].eq(p3b_alt[c]),
             ]
-
-        all_match = Signal()
-        self.comb += all_match.eq(
-            (~p3_wr_msk[0] | p3_match_ch[0]) &
-            (~p3_wr_msk[1] | p3_match_ch[1]) &
-            (~p3_wr_msk[2] | p3_match_ch[2]) &
-            (~p3_wr_msk[3] | p3_match_ch[3])
-        )
 
         for r in range(4):
             for c in range(4):
                 self.sync += [
-                    p4_r[r][c].eq(p3_r[r][c]),
-                    p4_we[r][c].eq(p3_we[r][c]),
+                    p4_r[r][c].eq(p3b_r[r][c]),
+                    p4_we[r][c].eq(p3b_we[r][c]),
                 ]
 
-        clamp_ops = (1, 2, 4) if stage_idx == 1 else (1, 2)
+        clamp_ops = (1, 2, 4)
         self.sync += [
-            p4_mult_sat.eq(p3_sat & reduce(or_, [p3_opcode[0:3] == k for k in clamp_ops])),
-            p4_p.eq(p3_p),
-            p4_discard.eq(p3_discard),
-            p4_is_cmp.eq(p3_is_cmp),
-            p4_is_discard.eq(p3_is_discard),
-            p4_all_match.eq(all_match),
-            p4_opcode.eq(p3_opcode),
-            [p4_src[c].eq(p3_src[c]) for c in range(4)],
-            [p4_dst[c].eq(p3_dst[c]) for c in range(4)],
+            p4_mult_sat.eq(p3b_sat & reduce(or_, [p3b_opcode[0:3] == k for k in clamp_ops])),
+            p4_p.eq(p3b_p),
+            p4_discard.eq(p3b_discard),
+            p4_is_cmp.eq(p3b_is_cmp),
+            p4_is_discard.eq(p3b_is_discard),
+            p4_all_match.eq(p3b_all_match),
+            p4_opcode.eq(p3b_opcode),
+            [p4_src[c].eq(p3b_src[c]) for c in range(4)],
+            [p4_dst[c].eq(p3b_dst[c]) for c in range(4)],
         ]
 
         # Pipeline Sub-stage 5 (Result Muxing, Writeback & Outputs)
@@ -583,12 +642,13 @@ class BilinearFilter(LiteXModule):
         self.p11 = Signal(32)
         self.wu = Signal(9)
         self.wv = Signal(9)
+        self.ce = Signal(reset=1)
         self.out = Signal(32, reset_less=True)
 
         wu1 = Signal(9, reset_less=True)
         wv_d = [Signal(9, reset_less=True) for _ in range(4)]
-        self.sync += [wu1.eq(self.wu), wv_d[0].eq(self.wv)]
-        self.sync += [wv_d[i].eq(wv_d[i - 1]) for i in range(1, 4)]
+        self.sync += If(self.ce, wu1.eq(self.wu), wv_d[0].eq(self.wv))
+        self.sync += If(self.ce, *[wv_d[i].eq(wv_d[i - 1]) for i in range(1, 4)])
 
         for c in range(4):
             sl = slice(8 * c, 8 * c + 8)
@@ -598,22 +658,22 @@ class BilinearFilter(LiteXModule):
             db = Signal((9, True), reset_less=True)
             e00 = Signal(8, reset_less=True)
             e01 = Signal(8, reset_less=True)
-            self.sync += [
+            self.sync += If(self.ce,
                 dt.eq(self.p10[sl] - self.p00[sl]),
                 db.eq(self.p11[sl] - self.p01[sl]),
                 e00.eq(self.p00[sl]),
                 e01.eq(self.p01[sl]),
-            ]
+            )
             pt = Signal((18, True), reset_less=True)
             pb = Signal((18, True), reset_less=True)
             e00_q = Signal(8, reset_less=True)
             e01_q = Signal(8, reset_less=True)
-            self.sync += [
+            self.sync += If(self.ce,
                 pt.eq(dt * wu1),
                 pb.eq(db * wu1),
                 e00_q.eq(e00),
                 e01_q.eq(e01),
-            ]
+            )
             # D << 8 is spelled as an explicit 16-bit Cat: Migen wraps the
             # unsigned term in a signed concatenation, where a Verilog shift
             # keeps its operand's 8-bit width and would drop D entirely.
@@ -625,17 +685,60 @@ class BilinearFilter(LiteXModule):
                 top_full.eq((pt + Cat(Constant(0, 8), e00_q) + 128) >> 8),
                 bot_full.eq((pb + Cat(Constant(0, 8), e01_q) + 128) >> 8),
             ]
-            self.sync += [top.eq(top_full[0:8]), bot.eq(bot_full[0:8])]
+            self.sync += If(self.ce, top.eq(top_full[0:8]), bot.eq(bot_full[0:8]))
 
             dv = Signal((9, True), reset_less=True)
             top_q = Signal(8, reset_less=True)
-            self.sync += [dv.eq(bot - top), top_q.eq(top)]
+            self.sync += If(self.ce, dv.eq(bot - top), top_q.eq(top))
             pv = Signal((18, True), reset_less=True)
             top_qq = Signal(8, reset_less=True)
-            self.sync += [pv.eq(dv * wv_d[3]), top_qq.eq(top_q)]
+            self.sync += If(self.ce, pv.eq(dv * wv_d[3]), top_qq.eq(top_q))
             out_full = Signal((19, True))
             self.comb += out_full.eq((pv + Cat(Constant(0, 8), top_qq) + 128) >> 8)
-            self.sync += self.out[sl].eq(out_full[0:8])
+            self.sync += If(self.ce, self.out[sl].eq(out_full[0:8]))
+
+
+class Frag3DPort:
+    """Shared 3D fragment injection and Late-Z sideband interface (Stage 2a).
+
+    Connects 3D fragment streams to Gfx2DEngine's BilinearFilter, DST_LB,
+    and 4-way time-multiplexed ShaderALU while keeping static command registers isolated.
+    """
+    LATENCY = BilinearFilter.LATENCY + 2
+
+    def __init__(self):
+        self.active = Signal()
+        self.valid = Signal()
+        self.tex_en = Signal()
+        self.uses_dst = Signal()
+        self.p00 = Signal(32)
+        self.p10 = Signal(32)
+        self.p01 = Signal(32)
+        self.p11 = Signal(32)
+        self.wu = Signal(9)
+        self.wv = Signal(9)
+        self.rgba = Signal(32)
+        self.dst_adr = Signal(10)
+        self.x = Signal(16)
+        self.y = Signal(16)
+        self.z_new = Signal(16)
+        self.z_pass = Signal()
+        self.bounds_discard = Signal()
+        self.stall_in = Signal()
+
+        self.ready = Signal()
+        self.pipe_busy = Signal()
+        self.out_valid = Signal()
+        self.out_rgba = Signal(32)
+        self.out_x = Signal(16)
+        self.out_y = Signal(16)
+        self.out_z = Signal(16)
+        self.out_z_pass = Signal()
+        self.out_bounds_discard = Signal()
+        self.out_shader_discard = Signal()
+        self.out_frag_kill = Signal()
+        self.out_we_color = Signal()
+        self.out_we_z = Signal()
 
 
 class Gfx2DEngine(LiteXModule):
@@ -647,6 +750,7 @@ class Gfx2DEngine(LiteXModule):
         self.done_err = Signal(32)
         self.desc = desc = [Signal(32) for _ in DESC_NAMES]
         self.busy = Signal(reset_less=True)
+        self.frag3d = frag3d = Frag3DPort()
 
         local_desc = [Signal(32, reset_less=True) for _ in DESC_NAMES]
         op = local_desc[0][0:4]
@@ -658,6 +762,7 @@ class Gfx2DEngine(LiteXModule):
         uv_start_u, uv_start_v, uv_du_dx, uv_dv_dy = local_desc[14:18]
         inst0_lo, inst0_hi = local_desc[18], local_desc[19]
         inst1_lo, inst1_hi = local_desc[20], local_desc[21]
+        inst1_hi.attr.add(("syn_maxfan", 16))
         inst2_lo, inst2_hi = local_desc[22], local_desc[23]
         inst3_lo, inst3_hi = local_desc[24], local_desc[25]
         uniforms_raw = local_desc[26:34]
@@ -875,13 +980,13 @@ class Gfx2DEngine(LiteXModule):
             for b, bank in enumerate("eo"):
                 mem = Memory(32, 512, name="src_lb%d_%s" % (k, bank))
                 src_lb_w[k][b] = mem.get_port(write_capable=True, clock_domain="ddr")
-                src_lb_r[k][b] = mem.get_port(clock_domain="ddr")
+                src_lb_r[k][b] = mem.get_port(has_re=True, clock_domain="ddr")
                 self.specials += mem, src_lb_w[k][b], src_lb_r[k][b]
         self.dst_lb = Memory(32, 1024, name="dst_lb")
         self.out_lb = Memory(33, 1024, name="out_lb")
 
         self.dst_lb_w = self.dst_lb.get_port(write_capable=True, clock_domain="ddr")
-        self.dst_lb_r = self.dst_lb.get_port(clock_domain="ddr")
+        self.dst_lb_r = self.dst_lb.get_port(has_re=True, clock_domain="ddr")
 
         self.out_lb_w = self.out_lb.get_port(write_capable=True, clock_domain="ddr")
         self.out_lb_r = self.out_lb.get_port(clock_domain="ddr")
@@ -916,10 +1021,20 @@ class Gfx2DEngine(LiteXModule):
         lb_is_last_pix = Signal(reset_less=True)
         wb_is_last_pix = Signal(reset_less=True)
 
+        alu_sub = Signal(3)
+        alu_stage = Signal(2)
+        alu_stage_next = Signal(2)
+        pipe_ce = Signal(reset=1, name="g2d_pipe_ce")
+        pipe_ce.attr.add(("syn_preserve", 1))
+        pipe_ce.attr.add(("syn_maxfan", 16))
+        pipe_ce_3d = Signal(reset=1, name="g3d_pipe_ce")
+        pipe_ce_3d.attr.add(("syn_preserve", 1))
+        pipe_ce_3d.attr.add(("syn_maxfan", 32))
+
         def delayed(sig, n):
             for _ in range(n):
                 q = Signal(len(sig), reset_less=True)
-                self.sync += q.eq(sig)
+                self.sync += If(pipe_ce, q.eq(sig))
                 sig = q
             return sig
 
@@ -1050,31 +1165,28 @@ class Gfx2DEngine(LiteXModule):
         fe_lat = 4 + BilinearFilter.LATENCY
         comp_idx = Signal(11, reset_less=True)
         comp_out_idx = Signal(11, reset_less=True)
-        comp_pipe_vld = Signal(22 + fe_lat, reset_less=True)
+        comp_pipe_vld = Signal(3 + fe_lat, reset_less=True)
         p0_src_pix = [Signal((16, True), reset_less=True) for _ in range(4)]
         p0_dst_pix = [Signal((16, True), reset_less=True) for _ in range(4)]
         p0_fetch_x = Signal(16, reset_less=True)
         p0_r3 = [Signal(16, reset_less=True) for _ in range(4)]
 
-        # Shader ALUs
-        self.stage0 = stage0 = ShaderALU(0)
-        self.stage1 = stage1 = ShaderALU(1)
-        self.stage2 = stage2 = ShaderALU(2, lut_ports=lut_ports)
-        self.stage3 = stage3 = ShaderALU(3)
-        stages = [stage0, stage1, stage2, stage3]
-        for stage, inst in zip(stages, (inst0, inst1, inst2, inst3)):
-            self.comb += [
-                stage.inst.eq(inst),
-                stage.last_stage.eq(last_stage),
-            ]
+        # Time-multiplexed Shader ALU (5-cycle pipeline x 4 passes = 20 cycles per 5 pixels)
+        self.stage0 = alu = ShaderALU(lut_ports=lut_ports)
+        for s_idx, inst in enumerate((inst0, inst1, inst2, inst3)):
+            self.comb += alu.insts[s_idx].eq(inst)
+        self.comb += [
+            alu.stage_idx.eq(alu_stage),
+            alu.stage_next.eq(alu_stage_next),
+            alu.last_stage.eq(last_stage),
+        ]
         # Unpack uniforms to 4 channels each: 0=.b, 1=.g, 2=.r, 3=.a
         for u in range(8):
             u_raw = uniforms_raw[u]
-            for stage in stages:
-                self.comb += [stage.uniforms[u][c].eq(u_raw[8*c:8*(c+1)])
-                              for c in range(4)]
+            self.comb += [alu.uniforms[u][c].eq(u_raw[8*c:8*(c+1)])
+                          for c in range(4)]
 
-        # Sampling front end, one pixel per cycle from comp_idx / u_acc:
+        # Sampling front end, one pixel per pipe_ce tick from comp_idx / u_acc:
         # A) local source index and U fraction, B) right edge clamp,
         # C) bank addresses, D) bank read, E) 2x2 neighbour select, then the
         # bilinear filter. Unscaled ops sample local index comp_idx with
@@ -1082,21 +1194,21 @@ class Gfx2DEngine(LiteXModule):
         fa_rel = Signal(11, reset_less=True)
         fa_fu = Signal(8, reset_less=True)
         fa_x = Signal(16, reset_less=True)
-        self.sync += [
+        self.sync += If(pipe_ce,
             fa_rel.eq(Mux(scaled, u_acc[16:27], comp_idx)),
             fa_fu.eq(Mux(scaled, u_acc[8:16], 0)),
             fa_x.eq(tile_x + comp_idx),
-        ]
+        )
         fb_i0 = Signal(10, reset_less=True)
         fb_rc = Signal(reset_less=True)
         fb_fu = Signal(8, reset_less=True)
         fb_x = Signal(16, reset_less=True)
-        self.sync += [
+        self.sync += If(pipe_ce,
             fb_rc.eq(fa_rel >= lim_c),
             fb_i0.eq(Mux(fa_rel >= lim_c, lim_c, fa_rel)),
             fb_fu.eq(fa_fu),
             fb_x.eq(fa_x),
-        ]
+        )
         # Local index i lives in bank i[0] at address i >> 1, so the pair
         # (i, i + 1) is even[(i + 1) >> 1] and odd[i >> 1].
         fc_eadr = Signal(9, reset_less=True)
@@ -1106,7 +1218,7 @@ class Gfx2DEngine(LiteXModule):
         fc_fu = Signal(8, reset_less=True)
         fc_x = Signal(16, reset_less=True)
         fc_uc = Signal(14, reset_less=True)
-        self.sync += [
+        self.sync += If(pipe_ce,
             fc_eadr.eq((fb_i0 + 1) >> 1),
             fc_oadr.eq(fb_i0 >> 1),
             fc_odd.eq(fb_i0[0]),
@@ -1114,24 +1226,26 @@ class Gfx2DEngine(LiteXModule):
             fc_fu.eq(fb_fu),
             fc_x.eq(fb_x),
             fc_uc.eq(u_base + fb_i0),
-        ]
+        )
         for k in range(2):
             self.comb += [
                 src_lb_r[k][0].adr.eq(fc_eadr),
+                src_lb_r[k][0].re.eq(pipe_ce),
                 src_lb_r[k][1].adr.eq(fc_oadr),
+                src_lb_r[k][1].re.eq(pipe_ce),
             ]
         fd_odd = Signal(reset_less=True)
         fd_rc = Signal(reset_less=True)
         fd_fu = Signal(8, reset_less=True)
         fd_x = Signal(16, reset_less=True)
         fd_uc = Signal(14, reset_less=True)
-        self.sync += [
+        self.sync += If(pipe_ce,
             fd_odd.eq(fc_odd),
             fd_rc.eq(fc_rc),
             fd_fu.eq(fc_fu),
             fd_x.eq(fc_x),
             fd_uc.eq(fc_uc),
-        ]
+        )
 
         def neighbours(slot):
             even = Mux(slot, src_lb_r[1][0].dat_r, src_lb_r[0][0].dat_r)
@@ -1145,29 +1259,45 @@ class Gfx2DEngine(LiteXModule):
         fe_fu = Signal(8, reset_less=True)
         fe_x = Signal(16, reset_less=True)
         fe_uc = Signal(14, reset_less=True)
-        self.sync += [
+        self.sync += If(pipe_ce,
             fe_p[0].eq(top_l), fe_p[1].eq(top_r),
             fe_p[2].eq(bot_l), fe_p[3].eq(bot_r),
             fe_wu.eq(Mux(bil, fd_fu + (fd_fu >> 7), 0)),
             fe_fu.eq(fd_fu),
             fe_x.eq(fd_x),
             fe_uc.eq(fd_uc),
-        ]
+        )
         self.bilinear = bilinear = BilinearFilter()
         self.comb += [
-            bilinear.p00.eq(fe_p[0]), bilinear.p10.eq(fe_p[1]),
-            bilinear.p01.eq(fe_p[2]), bilinear.p11.eq(fe_p[3]),
-            bilinear.wu.eq(fe_wu), bilinear.wv.eq(wv),
+            bilinear.ce.eq(pipe_ce),
+            bilinear.p00.eq(Mux(frag3d.active, frag3d.p00, fe_p[0])),
+            bilinear.p10.eq(Mux(frag3d.active, frag3d.p10, fe_p[1])),
+            bilinear.p01.eq(Mux(frag3d.active, frag3d.p01, fe_p[2])),
+            bilinear.p11.eq(Mux(frag3d.active, frag3d.p11, fe_p[3])),
+            bilinear.wu.eq(Mux(frag3d.active, frag3d.wu, fe_wu)),
+            bilinear.wv.eq(Mux(frag3d.active, frag3d.wv, wv)),
         ]
         ff_x = delayed(fe_x, BilinearFilter.LATENCY)
         ff_uc = delayed(fe_uc, BilinearFilter.LATENCY)
         ff_fu = delayed(fe_fu, BilinearFilter.LATENCY)
+        f3d_rgba_d = delayed(frag3d.rgba, BilinearFilter.LATENCY)
+        f3d_tex_en_d = delayed(frag3d.tex_en, BilinearFilter.LATENCY)
+        f3d_uses_dst_d = delayed(frag3d.uses_dst, BilinearFilter.LATENCY)
 
         # Stage 0 inputs (with P0 pipeline register). The DST read trails
-        # comp_idx by FE_LAT cycles so it lands with the filtered source.
-        self.comb += self.dst_lb_r.adr.eq(delayed(comp_idx, fe_lat))
+        # comp_idx by FE_LAT cycles (or frag3d.dst_adr by LATENCY-1 cycles)
+        # so it lands with the filtered source.
+        self.comb += [
+            self.dst_lb_r.re.eq(pipe_ce),
+            self.dst_lb_r.adr.eq(Mux(
+                frag3d.active,
+                delayed(frag3d.dst_adr, BilinearFilter.LATENCY - 2),
+                delayed(comp_idx, fe_lat - 1),
+            )),
+        ]
         src_lb_dat = bilinear.out
-        dst_lb_dat = self.dst_lb_r.dat_r
+        dst_lb_dat = Signal(32, reset_less=True)
+        self.sync += If(pipe_ce, dst_lb_dat.eq(self.dst_lb_r.dat_r))
         src_lb_ch = [
             Cat(src_lb_dat[0:8], Constant(0, 8)),
             Cat(src_lb_dat[8:16], Constant(0, 8)),
@@ -1192,63 +1322,53 @@ class Gfx2DEngine(LiteXModule):
             Cat(bg[16:24], Constant(0, 8)),
             Cat(bg[24:32], Constant(0, 8)),
         ]
+        p0_r2 = [Signal((16, True), reset_less=True) for _ in range(4)]
         # R3 = {V_frac, U_frac, V_clamp, U_clamp} on scaled ops and
         # {0, 0, Y, X} otherwise.
-        self.sync += [
+        self.sync += If(pipe_ce,
             p0_fetch_x.eq(ff_x),
             p0_r3[0].eq(Mux(scaled, ff_uc, ff_x)),
             p0_r3[1].eq(Mux(scaled, y0, row[0:16])),
             p0_r3[2].eq(Mux(scaled, ff_fu, 0)),
             p0_r3[3].eq(Mux(scaled, fv, 0)),
-            [p0_src_pix[c].eq(Mux(uses_src, src_lb_ch[c], fg_ch[c]))
-             for c in range(4)],
-            [p0_dst_pix[c].eq(Mux(uses_dst, dst_lb_ch[c], bg_ch[c]))
-             for c in range(4)],
-        ]
-        # FG/BG are static for the whole command, so every stage reads them
-        # from the descriptor instead of carrying them down the pipeline.
-        for stage in stages:
-            for c in range(4):
-                self.comb += [
-                    stage.fg_pix[c].eq(fg_ch[c]),
-                    stage.bg_pix[c].eq(bg_ch[c]),
-                ]
+            p0_r2[0].eq(Mux(frag3d.active, Cat(f3d_rgba_d[0:8], Constant(0, 8)), ff_x[0:16])),
+            p0_r2[1].eq(Mux(frag3d.active, Cat(f3d_rgba_d[8:16], Constant(0, 8)), row[0:16])),
+            p0_r2[2].eq(Mux(frag3d.active, Cat(f3d_rgba_d[16:24], Constant(0, 8)), 0)),
+            p0_r2[3].eq(Mux(frag3d.active, Cat(f3d_rgba_d[24:32], Constant(0, 8)), 0)),
+            [p0_src_pix[c].eq(Mux(
+                frag3d.active,
+                Mux(f3d_tex_en_d, src_lb_ch[c], 0xFF),
+                Mux(uses_src, src_lb_ch[c], fg_ch[c]),
+            )) for c in range(4)],
+            [p0_dst_pix[c].eq(Mux(
+                frag3d.active,
+                Mux(f3d_uses_dst_d, dst_lb_ch[c], bg_ch[c]),
+                Mux(uses_dst, dst_lb_ch[c], bg_ch[c]),
+            )) for c in range(4)],
+        )
+        # FG/BG are static for the whole command.
         for c in range(4):
             self.comb += [
-                stage0.src_pix[c].eq(p0_src_pix[c]),
-                stage0.dst_pix[c].eq(p0_dst_pix[c]),
-                stage0.r_in[0][c].eq(p0_src_pix[c]),
-                stage0.r_in[1][c].eq(p0_dst_pix[c]),
+                alu.fg_pix[c].eq(fg_ch[c]),
+                alu.bg_pix[c].eq(bg_ch[c]),
+                alu.src_pix[c].eq(Mux(pipe_ce, p0_src_pix[c], alu.src_out[c])),
+                alu.dst_pix[c].eq(Mux(pipe_ce, p0_dst_pix[c], alu.dst_out[c])),
+                alu.r_in[0][c].eq(Mux(pipe_ce, p0_src_pix[c], alu.r_out[0][c])),
+                alu.r_in[1][c].eq(Mux(pipe_ce, p0_dst_pix[c], alu.r_out[1][c])),
+                alu.r_in[2][c].eq(Mux(pipe_ce, p0_r2[c], alu.r_out[2][c])),
+                alu.r_in[3][c].eq(Mux(pipe_ce, p0_r3[c], alu.r_out[3][c])),
             ]
         self.comb += [
-            stage0.r_in[2][0].eq(p0_fetch_x[0:16]),
-            stage0.r_in[2][1].eq(row[0:16]),
-            stage0.r_in[2][2].eq(0),
-            stage0.r_in[2][3].eq(0),
-            [stage0.r_in[3][c].eq(p0_r3[c]) for c in range(4)],
-            stage0.p_in.eq(0),
-            stage0.discard_in.eq(0),
+            alu.p_in.eq(Mux(pipe_ce, 0, alu.p_out)),
+            alu.discard_in.eq(Mux(pipe_ce, 0, alu.discard_out)),
         ]
-
-        # Stage k to Stage k+1 direct pipeline connection
-        for prev, nxt in zip(stages[:-1], stages[1:]):
-            for c in range(4):
-                for r in range(4):
-                    self.comb += nxt.r_in[r][c].eq(prev.r_out[r][c])
-                self.comb += [
-                    nxt.src_pix[c].eq(prev.src_out[c]),
-                    nxt.dst_pix[c].eq(prev.dst_out[c]),
-                ]
-            self.comb += [
-                nxt.p_in.eq(prev.p_out),
-                nxt.discard_in.eq(prev.discard_out),
-            ]
 
         # Writeback packer signals
         wb_idx = Signal(11)
         cur_wb_blk = Signal(26, reset_less=True)
         nxt_cur_wb_blk = Signal(26, reset_less=True)
         byte_slot = Signal(6, reset_less=True)
+        byte_slot.attr.add(("syn_maxfan", 32))
         byte_full = Signal()
         self.comb += byte_full.eq(
             Mux(dst_bpp_shift == 2, byte_slot == 28, byte_slot == 30)
@@ -1301,7 +1421,7 @@ class Gfx2DEngine(LiteXModule):
         fsm.act('IDLE',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(self.busy, 0),
-                If(start, NextValue(err, 0),
+                If(start & ~frag3d.active, NextValue(err, 0),
                    NextValue(self.busy, 1),
                    NextState('INIT')))
 
@@ -2133,9 +2253,60 @@ class Gfx2DEngine(LiteXModule):
         comp_out_last = Signal(reset_less=True)
         out_r0_sat = [Signal(8) for _ in range(4)]
         for c in range(4):
-            r0 = stage3.r_out[0][c]
+            r0 = alu.r_out[0][c]
             self.comb += out_r0_sat[c].eq(
                 Mux(r0 < 0, 0, Mux(r0 > 255, 255, r0[0:8])))
+
+        self.comb += alu_stage_next.eq(
+            Mux(fsm.ongoing("T_COMP_START"), 0,
+            Mux(alu_sub == 5, alu_stage + 1, alu_stage))
+        )
+        self.sync += [
+            If(fsm.ongoing("T_COMP_START"),
+                alu_sub.eq(0),
+                alu_stage.eq(0),
+                pipe_ce.eq(1),
+                pipe_ce_3d.eq(1),
+            ).Elif(alu_sub == 5,
+                alu_sub.eq(0),
+                alu_stage.eq(alu_stage + 1),
+                pipe_ce.eq(alu_stage == 3),
+                pipe_ce_3d.eq(alu_stage == 3),
+            ).Else(
+                alu_sub.eq(alu_sub + 1),
+                pipe_ce.eq(0),
+                pipe_ce_3d.eq(0),
+            )
+        ]
+
+        # Stage 2a: 3D sideband shift register matching BilinearFilter + P0 + folded ShaderALU
+        f3d_vld_pipe = Signal(Frag3DPort.LATENCY)
+        self.sync += If(pipe_ce,
+            f3d_vld_pipe.eq(Cat(frag3d.active & frag3d.valid & frag3d.ready,
+                                 f3d_vld_pipe[0:Frag3DPort.LATENCY - 1]))
+        )
+        f3d_sb_in = Cat(frag3d.x, frag3d.y, frag3d.z_new,
+                        frag3d.bounds_discard)
+        f3d_sb_out = delayed(f3d_sb_in, Frag3DPort.LATENCY)
+        # Register z_pass separately at stage 0 so z_lb -> eval_z_func can
+        # place its first FF near the BSRAM without routing to the ALU tile.
+        f3d_z_pass_q = Signal(reset_less=True)
+        self.sync += If(pipe_ce, f3d_z_pass_q.eq(frag3d.z_pass))
+        f3d_z_pass_out = delayed(f3d_z_pass_q, Frag3DPort.LATENCY - 1)
+        self.comb += [
+            frag3d.ready.eq(~self.busy & ~frag3d.stall_in & pipe_ce_3d),
+            frag3d.pipe_busy.eq((comp_pipe_vld != 0) | (f3d_vld_pipe != 0)),
+            frag3d.out_valid.eq(f3d_vld_pipe[Frag3DPort.LATENCY - 1] & pipe_ce),
+            frag3d.out_rgba.eq(Cat(*out_r0_sat)),
+            Cat(frag3d.out_x, frag3d.out_y, frag3d.out_z,
+                frag3d.out_bounds_discard).eq(f3d_sb_out),
+            frag3d.out_z_pass.eq(f3d_z_pass_out),
+            frag3d.out_shader_discard.eq(alu.discard_out),
+            frag3d.out_frag_kill.eq((~frag3d.out_z_pass) | frag3d.out_shader_discard |
+                                    frag3d.out_bounds_discard),
+            frag3d.out_we_color.eq(frag3d.out_valid & ~frag3d.out_frag_kill),
+            frag3d.out_we_z.eq(frag3d.out_valid & ~frag3d.out_frag_kill),
+        ]
         fsm.act('T_COMP_START',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
                 NextValue(comp_idx, 0),
@@ -2151,31 +2322,33 @@ class Gfx2DEngine(LiteXModule):
         pipe_top = len(comp_pipe_vld) - 1
         fsm.act('T_COMP_STREAM',
                 self.ui.cmd_en.eq(0), self.ui.wr_data_en.eq(0),
-                If(comp_active,
-                    NextValue(comp_idx, comp_idx + 1),
-                    NextValue(comp_rem, comp_rem - 1),
-                    NextValue(u_acc, u_acc + du[0:27]),
-                    NextValue(comp_pipe_vld,
-                              Cat(Constant(1, 1), comp_pipe_vld[0:pipe_top])),
-                    If(comp_rem == 1,
-                        NextValue(comp_active, 0)
-                    )
-                ).Else(
-                    NextValue(comp_pipe_vld,
-                              Cat(Constant(0, 1), comp_pipe_vld[0:pipe_top])),
-                ),
+                If(pipe_ce,
+                    If(comp_active,
+                        NextValue(comp_idx, comp_idx + 1),
+                        NextValue(comp_rem, comp_rem - 1),
+                        NextValue(u_acc, u_acc + du[0:27]),
+                        NextValue(comp_pipe_vld,
+                                  Cat(Constant(1, 1), comp_pipe_vld[0:pipe_top])),
+                        If(comp_rem == 1,
+                            NextValue(comp_active, 0)
+                        )
+                    ).Else(
+                        NextValue(comp_pipe_vld,
+                                  Cat(Constant(0, 1), comp_pipe_vld[0:pipe_top])),
+                    ),
 
-                If(comp_pipe_vld[pipe_top],
-                    self.out_lb_w.we.eq(1),
-                    self.out_lb_w.adr.eq(comp_out_idx),
-                    self.out_lb_w.dat_w.eq(Cat(
-                        *out_r0_sat, stage3.discard_out
-                    )),
-                    NextValue(comp_out_idx, comp_out_idx + 1),
-                    NextValue(comp_out_rem, comp_out_rem - 1),
-                    NextValue(comp_out_last, comp_out_rem == 2),
-                    If(comp_out_last,
-                        NextState('T_WB_SETUP')
+                    If(comp_pipe_vld[pipe_top],
+                        self.out_lb_w.we.eq(1),
+                        self.out_lb_w.adr.eq(comp_out_idx),
+                        self.out_lb_w.dat_w.eq(Cat(
+                            *out_r0_sat, alu.discard_out
+                        )),
+                        NextValue(comp_out_idx, comp_out_idx + 1),
+                        NextValue(comp_out_rem, comp_out_rem - 1),
+                        NextValue(comp_out_last, comp_out_rem == 2),
+                        If(comp_out_last,
+                            NextState('T_WB_SETUP')
+                        )
                     )
                 ))
 
@@ -2435,21 +2608,55 @@ class Gfx2D(LiteXModule):
         # register keeps that cone off the 256-bit beat capture enables.
         rd_data_q = Signal(256, reset_less=True)
         rd_valid_q = Signal()
+        rd_valid_q.attr.add(("syn_maxfan", 32))
         self.sync.ddr += [
             rd_data_q.eq(self.ui.rd_data),
             rd_valid_q.eq(self.ui.rd_data_valid),
         ]
+        self.submodules.g3d_pipe = g3d_pipe = ClockDomainsRenamer("ddr")(
+            Gfx3DPipeline(engine.frag3d, clock_domain="ddr")
+        )
+        self.g3d_busy = Signal()
+        self.g3d_done = Signal()
+        self.g3d_err_param = Signal()
+        self.g3d_pixels_out = Signal(32)
+
+        g3d_tri = [Signal(32, reset_less=True) for _ in range(24)]
+        g3d_fb_addr = Signal(32, reset_less=True)
+        g3d_fb_stride = Signal(16, reset_less=True)
+        g3d_tex_cfg = Signal(32, reset_less=True)
+        g3d_bg_color = Signal(32, reset_less=True)
+        g3d_z_cfg = Signal(32, reset_less=True)
+        g3d_zbuf_addr = Signal(32, reset_less=True)
+        g3d_tmem_addr = Signal(16, reset_less=True)
+
+        g3d_active_ddr = Signal()
+        g3d_active_ddr.attr.add(("syn_maxfan", 32))
+        g3d_idle_ui = Signal(reset=1)
+        g3d_ui_cmd = Signal()
+        g3d_ui_cmd_en = Signal()
+        g3d_ui_wr_en = Signal()
+        g3d_req_blk = Signal(26, reset_less=True)
+        g3d_wr_data = Signal(256)
+        g3d_wr_mask = Signal(32)
+
         self.comb += [
             engine.ui.cmd_ready.eq(self.ui.cmd_ready),
             engine.ui.wr_data_rdy.eq(self.ui.wr_data_rdy),
             engine.ui.rd_data.eq(rd_data_q),
             engine.ui.rd_data_valid.eq(rd_valid_q),
-            self.ui.cmd.eq(engine.ui.cmd), self.ui.cmd_en.eq(engine.ui.cmd_en),
-            self.ui.addr.eq(engine.ui.addr), self.ui.burst.eq(engine.ui.burst),
-            self.ui.wr_data.eq(engine.ui.wr_data),
-            self.ui.wr_data_en.eq(engine.ui.wr_data_en),
-            self.ui.wr_data_end.eq(engine.ui.wr_data_end),
-            self.ui.wr_data_mask.eq(engine.ui.wr_data_mask),
+            self.ui.cmd.eq(Mux(g3d_idle_ui, engine.ui.cmd, g3d_ui_cmd)),
+            self.ui.cmd_en.eq(Mux(g3d_idle_ui, engine.ui.cmd_en, g3d_ui_cmd_en)),
+            self.ui.addr.eq(Mux(g3d_idle_ui, engine.ui.addr,
+                                Cat(Constant(0, 3), g3d_req_blk))),
+            self.ui.burst.eq(Mux(g3d_idle_ui, engine.ui.burst, 0)),
+            self.ui.wr_data.eq(Mux(g3d_idle_ui, engine.ui.wr_data, g3d_wr_data)),
+            self.ui.wr_data_en.eq(Mux(g3d_idle_ui, engine.ui.wr_data_en,
+                                      g3d_ui_wr_en)),
+            self.ui.wr_data_end.eq(Mux(g3d_idle_ui, engine.ui.wr_data_end,
+                                       g3d_ui_wr_en)),
+            self.ui.wr_data_mask.eq(Mux(g3d_idle_ui, engine.ui.wr_data_mask,
+                                        g3d_wr_mask)),
         ]
         self.req = Signal()
         self.comb += engine.req.eq(self.req)
@@ -2475,18 +2682,41 @@ class Gfx2D(LiteXModule):
         words[20] = Constant(0, 32)
         words[46] = Constant(0, 32)
 
-        rdata_cases = {i: self.rdata.eq(words[i])
-                       for i in range(len(words))
-                       if not (i == 3 or i == 20 or i == 46)}
-        rdata_cases["default"] = self.rdata.eq(0)
+        reg3d = amap.GFX3D_REGS
+        rdata_2d = Signal(32)
+        rdata_3d = Signal(32)
+        words3d = [Constant(0, 32) for _ in range(35)]
+        words3d[25] = (self.g3d_busy | (self.g3d_done << 1) |
+                       (self.g3d_err_param << 2))
+        words3d[26] = g3d_fb_addr
+        words3d[27] = g3d_fb_stride
+        words3d[28] = g3d_tex_cfg
+        words3d[29] = g3d_bg_color
+        words3d[30] = g3d_z_cfg
+        words3d[31] = g3d_zbuf_addr
+        words3d[32] = g3d_tmem_addr
+        words3d[34] = self.g3d_pixels_out
+
+        rdata3d_cases = {i: rdata_3d.eq(words3d[i])
+                         for i in range(25, 35) if i != 33}
+        rdata3d_cases["default"] = rdata_3d.eq(0)
+
+        rdata_cases_2d = {i: rdata_2d.eq(words[i])
+                          for i in range(len(words))
+                          if not (i == 3 or i == 20 or i == 46)}
+        rdata_cases_2d["default"] = rdata_2d.eq(0)
 
         read_ok = Signal()
         is_write_reg = Signal()
         write_ok = Signal()
+        read_ok_3d = Signal()
+        write_ok_3d = Signal()
 
         self.comb += [
             widx.eq(self.off[2:8]),
-            Case(widx, rdata_cases),
+            Case(widx, rdata_cases_2d),
+            Case(widx, rdata3d_cases),
+            self.rdata.eq(Mux(self.off[8], rdata_3d, rdata_2d)),
             read_ok.eq((self.off[0:2] == 0) & (self.off[8:12] == 0) &
                        (widx <= 46) & (widx != 3)),
             is_write_reg.eq((self.off[0:2] == 0) & (self.off[8:12] == 0) &
@@ -2494,7 +2724,16 @@ class Gfx2D(LiteXModule):
                             (widx != 4) & (widx != 7) &
                             (widx != 18) & (widx != 19)),
             write_ok.eq(is_write_reg & ((widx != 3) | self.wdata[0])),
-            self.ok.eq(self.selected & Mux(self.write, write_ok, read_ok)),
+            read_ok_3d.eq((self.off[0:2] == 0) & (self.off[8:12] == 1) &
+                          (widx <= 34) & (widx != 24) & (widx != 33)),
+            write_ok_3d.eq((self.off[0:2] == 0) & (self.off[8:12] == 1) &
+                           (widx <= 33) & (widx != 25) & (widx != 34) &
+                           ((widx != 24) | self.wdata[0])),
+            self.ok.eq(self.selected & Mux(
+                self.off[8],
+                Mux(self.write, write_ok_3d, read_ok_3d),
+                Mux(self.write, write_ok, read_ok),
+            )),
         ]
 
         # The fabric holds a transaction for at least one cycle before its
@@ -2534,7 +2773,7 @@ class Gfx2D(LiteXModule):
 
         # Table writes are registered so the APB decode does not fan out
         # straight into five BSRAM write ports.
-        lut_wr_act = go & (off_d == reg['LUT_DATA']) & (~self.busy)
+        lut_wr_act = go & (off_d == reg['LUT_DATA']) & (~self.busy) & (~self.g3d_busy)
         pal_we_q = Signal()
         lut_we_q = Signal()
         tbl_adr_q = Signal(8, reset_less=True)
@@ -2558,12 +2797,45 @@ class Gfx2D(LiteXModule):
             ]
 
         desc_cases = {
-            reg[name]: [If(~self.busy, sig.eq(wdata_d))]
+            reg[name]: [If(~self.busy & ~self.g3d_busy, sig.eq(wdata_d))]
             for name, sig in desc.items()
         }
+        g3d_tri_cases = {
+            reg3d[f"TRI{i}"]: [If(~self.g3d_busy, g3d_tri[i].eq(wdata_d))]
+            for i in range(24)
+        }
+
+        g3d_req = Signal()
+        g3d_ack = Signal()
+        g3d_ack_sync = [Signal() for _ in range(2)]
+        g3d_ack_seen = Signal()
+        g3d_err_ddr = Signal(reset_less=True)
+        g3d_pix_lo = Signal(16, reset_less=True)
+        g3d_pix_hi = Signal(16, reset_less=True)
+        g3d_pix_carry = Signal(reset_less=True)
+        g3d_pix_ddr = Cat(g3d_pix_lo, g3d_pix_hi)
+        g3d_complete = g3d_ack_sync[1] != g3d_ack_seen
+        self.sync += [
+            g3d_ack_sync[0].eq(g3d_ack),
+            g3d_ack_sync[1].eq(g3d_ack_sync[0]),
+            If(g3d_complete,
+                g3d_ack_seen.eq(g3d_ack_sync[1]),
+                self.g3d_busy.eq(0),
+                self.g3d_done.eq(1),
+                self.g3d_err_param.eq(g3d_err_ddr),
+                self.g3d_pixels_out.eq(g3d_pix_ddr),
+            ),
+        ]
+
+        tmem_req = Signal()
+        tmem_dat_q = Signal(32, reset_less=True)
+        tmem_adr_q = Signal(16, reset_less=True)
+        tmem_log2w_q = Signal(4, reset_less=True)
+        tmem_base_q = Signal(12, reset_less=True)
+
         self.sync += If(go, Case(off_d, {
             reg['CONTROL']: [
-                If(~self.busy,
+                If(~self.busy & ~self.g3d_busy,
                    self.commands.eq(self.commands + 1), self.busy.eq(1),
                    self.done.eq(0), self.error.eq(0), self.last_error.eq(ERR_NONE),
                    self.req.eq(~self.req))],
@@ -2573,6 +2845,404 @@ class Gfx2D(LiteXModule):
                 If(wdata_d[0], self.done.eq(0), self.error.eq(0),
                    self.last_error.eq(ERR_NONE))],
             reg['LUT_DATA']: [
-                If(~self.busy, desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],
+                If(~self.busy & ~self.g3d_busy, desc['LUT_ADDR'][0:8].eq(desc['LUT_ADDR'][0:8] + 1))],
             **desc_cases,
+            reg3d['CTRL']: [
+                If(~self.busy & ~self.g3d_busy & wdata_d[0],
+                   self.g3d_busy.eq(1), self.g3d_done.eq(0),
+                   self.g3d_err_param.eq(0), g3d_req.eq(~g3d_req))],
+            reg3d['FB_ADDR']: [If(~self.g3d_busy, g3d_fb_addr.eq(wdata_d))],
+            reg3d['FB_STRIDE']: [If(~self.g3d_busy, g3d_fb_stride.eq(wdata_d[0:16]))],
+            reg3d['TEX_CFG']: [If(~self.g3d_busy, g3d_tex_cfg.eq(wdata_d))],
+            reg3d['BG_COLOR']: [If(~self.g3d_busy, g3d_bg_color.eq(wdata_d))],
+            reg3d['Z_CFG']: [If(~self.g3d_busy, g3d_z_cfg.eq(wdata_d))],
+            reg3d['ZBUF_ADDR']: [If(~self.g3d_busy, g3d_zbuf_addr.eq(wdata_d))],
+            reg3d['TMEM_ADDR']: [If(~self.g3d_busy, g3d_tmem_addr.eq(wdata_d[0:16]))],
+            reg3d['TMEM_DATA']: [
+                If(~self.busy & ~self.g3d_busy,
+                   tmem_dat_q.eq(wdata_d),
+                   tmem_adr_q.eq(g3d_tmem_addr),
+                   tmem_log2w_q.eq(g3d_tex_cfg[7:11]),
+                   tmem_base_q.eq(g3d_tex_cfg[15:25]),
+                   tmem_req.eq(~tmem_req),
+                   g3d_tmem_addr.eq(g3d_tmem_addr + 1))],
+            **g3d_tri_cases,
         }))
+
+        # --- GFX3D DDR-domain CDC + TMEM write + Pixel FIFO -> DDR3UI ---
+        tmem_sync = [Signal() for _ in range(2)]
+        tmem_seen = Signal()
+        tmem_wr_pulse = Signal()
+        tmem_u = Signal(12)
+        tmem_v = Signal(12)
+        self.sync.ddr += [
+            tmem_sync[0].eq(tmem_req),
+            tmem_sync[1].eq(tmem_sync[0]),
+            If(tmem_sync[1] != tmem_seen, tmem_seen.eq(tmem_sync[1])),
+        ]
+        self.comb += [
+            tmem_wr_pulse.eq(tmem_sync[1] != tmem_seen),
+            Case(tmem_log2w_q, {
+                0: [tmem_u.eq(0), tmem_v.eq(tmem_adr_q)],
+                **{k: [tmem_u.eq(tmem_adr_q[0:k]), tmem_v.eq(tmem_adr_q >> k)]
+                   for k in range(1, 9)},
+                "default": [tmem_u.eq(tmem_adr_q[0:8]), tmem_v.eq(tmem_adr_q >> 8)],
+            }),
+            g3d_pipe.tmem.wr_en.eq(tmem_wr_pulse),
+            g3d_pipe.tmem.wr_u.eq(tmem_u),
+            g3d_pipe.tmem.wr_v.eq(tmem_v),
+            g3d_pipe.tmem.wr_log2_w.eq(tmem_log2w_q),
+            g3d_pipe.tmem.wr_base.eq(tmem_base_q),
+            g3d_pipe.tmem.wr_dat.eq(tmem_dat_q),
+        ]
+
+        # Static 3D pipeline configuration
+        self.comb += [
+            *[g3d_pipe.tri.words[i].eq(g3d_tri[i]) for i in range(24)],
+            g3d_pipe.sampler.tex_en.eq(g3d_tex_cfg[0]),
+            g3d_pipe.sampler.bilinear_en.eq(g3d_tex_cfg[1]),
+            g3d_pipe.sampler.wrap_u.eq(g3d_tex_cfg[2:4]),
+            g3d_pipe.sampler.wrap_v.eq(g3d_tex_cfg[4:6]),
+            g3d_pipe.sampler.border_kill_en.eq(g3d_tex_cfg[6]),
+            g3d_pipe.sampler.log2_tex_w.eq(g3d_tex_cfg[7:11]),
+            g3d_pipe.sampler.log2_tex_h.eq(g3d_tex_cfg[11:15]),
+            g3d_pipe.sampler.tmem_base.eq(g3d_tex_cfg[15:25]),
+            g3d_pipe.sampler.bg_color.eq(g3d_bg_color),
+            g3d_pipe.zbuf.z_test_en.eq(g3d_z_cfg[0]),
+            g3d_pipe.zbuf.z_write_en.eq(g3d_z_cfg[1]),
+            g3d_pipe.zbuf.z_func.eq(g3d_z_cfg[2:5]),
+            g3d_pipe.zbuf.color_write_en.eq(g3d_z_cfg[5]),
+            engine.frag3d.active.eq(g3d_active_ddr),
+            engine.frag3d.tex_en.eq(g3d_tex_cfg[0]),
+            # 3D destination line-buffer prefetch is not yet implemented;
+            # TEX_CFG[25] (uses_dst) is rejected at START with ERR_PARAM.
+            engine.frag3d.uses_dst.eq(0),
+        ]
+
+        # 64-entry 56-bit pixel output FIFO (decouples Frag3DPort from DDR3UI)
+        px_fifo = Memory(56, 64, name="g3d_px_fifo")
+        px_wr = px_fifo.get_port(write_capable=True, clock_domain="ddr")
+        px_rd = px_fifo.get_port(clock_domain="ddr")
+        self.specials += [px_fifo, px_wr, px_rd]
+
+        px_wr_ptr = Signal(6)
+        px_rd_ptr = Signal(6)
+        px_level = Signal(7)
+        px_push = Signal()
+        px_pop = Signal()
+        px_stall_r = Signal()
+
+        self.comb += [
+            px_push.eq(g3d_active_ddr & g3d_pipe.zbuf.we_color),
+            px_wr.we.eq(px_push),
+            px_wr.adr.eq(px_wr_ptr),
+            px_wr.dat_w.eq(Cat(engine.frag3d.out_x[0:12],
+                               engine.frag3d.out_y[0:12],
+                               engine.frag3d.out_rgba)),
+            px_rd.adr.eq(px_rd_ptr),
+            engine.frag3d.stall_in.eq(px_stall_r),
+        ]
+        self.sync.ddr += [
+            px_stall_r.eq(px_level >= 32),
+            If(px_push, px_wr_ptr.eq(px_wr_ptr + 1)),
+            If(px_pop, px_rd_ptr.eq(px_rd_ptr + 1)),
+            If(px_push & ~px_pop, px_level.eq(px_level + 1)),
+            If(~px_push & px_pop, px_level.eq(px_level - 1)),
+        ]
+
+        # DDR3UI single-beat pixel write & row-aware Z-buffer load/store FSM
+        px_x = Signal(12, reset_less=True)
+        px_y = Signal(12, reset_less=True)
+        px_rgba = Signal(32, reset_less=True)
+        px_y_mul = Signal(28, reset_less=True)
+        px_word_off = Signal(28, reset_less=True)
+        px_byte_addr = Signal(32)
+        px_lane = Signal(3)
+
+        g3d_wr_mask_r = Signal(32, reset_less=True)
+        g3d_wr_beat = Signal(256, reset_less=True)
+        z_en = Signal()
+        z_row_valid = Signal()
+        z_row_dirty = Signal()
+        z_clear_valid = Signal()
+        z_set_valid = Signal()
+        z_clear_dirty = Signal()
+        z_cur_y = Signal(12, reset_less=True)
+        z_cur_blk_lo = Signal(7, reset_less=True)
+        z_cur_blk_hi = Signal(7, reset_less=True)
+        z_blk_idx = Signal(7, reset_less=True)
+        z_blk_done_r = Signal(reset_less=True)
+        z_blk_next_r = Signal(7, reset_less=True)
+        z_lane_idx = Signal(4, reset_less=True)
+        z_row_base_blk = Signal(26, reset_less=True)
+        z_flush_only = Signal()
+        z_flush_req = Signal()
+        z_sync_done = Signal()
+        g3d_ds_busy_r = Signal(reset=1)
+
+        self.sync.ddr += [
+            g3d_ds_busy_r.eq(g3d_pipe.downstream_busy),
+            If(z_clear_valid, z_row_valid.eq(0))
+            .Elif(z_set_valid, z_row_valid.eq(1)),
+            If(z_clear_dirty, z_row_dirty.eq(0))
+            .Elif(g3d_active_ddr & g3d_pipe.zbuf.we_z, z_row_dirty.eq(1)),
+        ]
+        self.comb += [
+            z_en.eq(g3d_z_cfg[0] | g3d_z_cfg[1]),
+            px_byte_addr.eq(g3d_fb_addr + Cat(Constant(0, 2), px_word_off)),
+            px_lane.eq(px_byte_addr[2:5]),
+            g3d_wr_data.eq(g3d_wr_beat),
+            g3d_wr_mask.eq(g3d_wr_mask_r),
+            g3d_pipe.tri.row_sync_ack.eq(Mux(z_en, z_sync_done & ~z_flush_only, 1)),
+        ]
+
+        wr_fsm = ClockDomainsRenamer("ddr")(OneHotFSM(reset_state="IDLE"))
+        self.submodules += wr_fsm
+        wr_fsm.act("IDLE",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            px_pop.eq(0),
+            If(px_level != 0,
+                NextState("CALC"),
+            ).Elif(z_flush_req,
+                NextValue(z_flush_only, 1),
+                NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
+                NextValue(z_blk_idx, z_cur_blk_lo),
+                NextState("Z_WR_ADDR1"),
+            ).Elif(z_en & g3d_pipe.tri.row_sync_req & ~g3d_ds_busy_r,
+                NextValue(z_flush_only, 0),
+                If(z_row_valid & z_row_dirty,
+                    NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
+                    NextValue(z_blk_idx, z_cur_blk_lo),
+                    NextState("Z_WR_ADDR1"),
+                ).Else(
+                    NextState("Z_RD_ADDR0"),
+                ),
+            ),
+        )
+        wr_fsm.act("CALC",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            px_pop.eq(0),
+            NextValue(px_x, px_rd.dat_r[0:12]),
+            NextValue(px_y, px_rd.dat_r[12:24]),
+            NextValue(px_rgba, px_rd.dat_r[24:56]),
+            NextValue(px_y_mul, px_rd.dat_r[12:24] * g3d_fb_stride),
+            NextValue(g3d_pix_carry, g3d_pix_lo == 0xFFFF),
+            NextState("CALC2"),
+        )
+        wr_fsm.act("CALC2",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            px_pop.eq(0),
+            NextValue(px_word_off, px_y_mul + px_x),
+            NextValue(g3d_wr_beat, Replicate(px_rgba, 8)),
+            NextState("CALC3"),
+        )
+        wr_fsm.act("CALC3",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            px_pop.eq(0),
+            NextValue(g3d_req_blk, px_byte_addr[5:31]),
+            NextValue(g3d_wr_mask_r, ~(Constant(0xF, 32) << Cat(Constant(0, 2), px_lane))),
+            NextState("ISSUE"),
+        )
+        wr_fsm.act("ISSUE",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(1),
+            g3d_ui_wr_en.eq(1),
+            If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                px_pop.eq(1),
+                NextValue(g3d_pix_lo, g3d_pix_lo + 1),
+                If(g3d_pix_carry,
+                    NextValue(g3d_pix_hi, g3d_pix_hi + 1),
+                ),
+                NextState("IDLE"),
+            ).Else(
+                px_pop.eq(0),
+            ),
+        )
+        # Z-buffer row writeback states
+        wr_fsm.act("Z_WR_ADDR1",
+            NextValue(z_row_base_blk,
+                      (g3d_zbuf_addr + Cat(Constant(0, 1), px_y_mul))[5:31]),
+            NextState("Z_WR_PACK_PREP"),
+        )
+        wr_fsm.act("Z_WR_PACK_PREP",
+            g3d_pipe.zbuf.ext_rd_en.eq(1),
+            g3d_pipe.zbuf.ext_rd_adr.eq(Cat(Constant(0, 4), z_blk_idx)),
+            NextValue(z_lane_idx, 0),
+            NextState("Z_WR_PACK"),
+        )
+        wr_fsm.act("Z_WR_PACK",
+            g3d_pipe.zbuf.ext_rd_en.eq(1),
+            g3d_pipe.zbuf.ext_rd_adr.eq(Cat((z_lane_idx + 1)[0:4], z_blk_idx)),
+            NextValue(g3d_wr_beat, Cat(g3d_wr_beat[16:256], g3d_pipe.zbuf.ext_rd_dat)),
+            If(z_lane_idx == 15,
+                NextState("Z_WR_CALC"),
+            ).Else(
+                NextValue(z_lane_idx, z_lane_idx + 1),
+            ),
+        )
+        wr_fsm.act("Z_WR_CALC",
+            NextValue(g3d_req_blk, z_row_base_blk + z_blk_idx),
+            NextValue(g3d_wr_mask_r, 0),
+            NextValue(z_blk_done_r, z_blk_idx == z_cur_blk_hi),
+            NextValue(z_blk_next_r, z_blk_idx + 1),
+            NextState("Z_WR_ISSUE"),
+        )
+        wr_fsm.act("Z_WR_ISSUE",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(1),
+            g3d_ui_wr_en.eq(1),
+            If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                If(z_blk_done_r,
+                    z_clear_dirty.eq(1),
+                    If(z_flush_only,
+                        NextState("Z_DONE"),
+                    ).Else(
+                        NextState("Z_RD_ADDR0"),
+                    ),
+                ).Else(
+                    NextValue(z_blk_idx, z_blk_next_r),
+                    NextState("Z_WR_PACK_PREP"),
+                ),
+            ),
+        )
+        # Z-buffer row prefetch states
+        wr_fsm.act("Z_RD_ADDR0",
+            NextValue(z_cur_y, g3d_pipe.tri.row_y),
+            NextValue(z_cur_blk_lo, g3d_pipe.tri.row_x0[4:11]),
+            NextValue(z_cur_blk_hi, g3d_pipe.tri.row_x1[4:11]),
+            NextValue(z_blk_idx, g3d_pipe.tri.row_x0[4:11]),
+            NextState("Z_RD_ADDR1"),
+        )
+        wr_fsm.act("Z_RD_ADDR1",
+            NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
+            NextState("Z_RD_ADDR2"),
+        )
+        wr_fsm.act("Z_RD_ADDR2",
+            NextValue(z_row_base_blk,
+                      (g3d_zbuf_addr + Cat(Constant(0, 1), px_y_mul))[5:31]),
+            NextState("Z_RD_CALC"),
+        )
+        wr_fsm.act("Z_RD_CALC",
+            NextValue(g3d_req_blk, z_row_base_blk + z_blk_idx),
+            NextValue(z_blk_done_r, z_blk_idx == z_cur_blk_hi),
+            NextValue(z_blk_next_r, z_blk_idx + 1),
+            NextState("Z_RD_ISSUE"),
+        )
+        wr_fsm.act("Z_RD_ISSUE",
+            g3d_ui_cmd.eq(1),
+            g3d_ui_cmd_en.eq(1),
+            g3d_ui_wr_en.eq(0),
+            If(self.ui.cmd_ready,
+                NextState("Z_RD_WAIT"),
+            ),
+        )
+        wr_fsm.act("Z_RD_WAIT",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            If(rd_valid_q,
+                NextValue(g3d_wr_beat, rd_data_q),
+                NextValue(z_lane_idx, 0),
+                NextState("Z_RD_UNPACK"),
+            ),
+        )
+        wr_fsm.act("Z_RD_UNPACK",
+            g3d_pipe.zbuf.ext_wr_en.eq(1),
+            g3d_pipe.zbuf.ext_wr_adr.eq(Cat(z_lane_idx, z_blk_idx)),
+            g3d_pipe.zbuf.ext_wr_dat.eq(g3d_wr_beat[0:16]),
+            NextValue(g3d_wr_beat, Cat(g3d_wr_beat[16:256], Constant(0, 16))),
+            If(z_lane_idx == 15,
+                If(z_blk_done_r,
+                    z_set_valid.eq(1),
+                    NextState("Z_DONE"),
+                ).Else(
+                    NextValue(z_blk_idx, z_blk_next_r),
+                    NextState("Z_RD_CALC"),
+                ),
+            ).Else(
+                NextValue(z_lane_idx, z_lane_idx + 1),
+            ),
+        )
+        wr_fsm.act("Z_DONE",
+            z_sync_done.eq(1),
+            NextState("IDLE"),
+        )
+
+        # Main GFX3D control FSM in DDR domain
+        g3d_req_sync = [Signal() for _ in range(2)]
+        g3d_req_seen = Signal()
+        self.sync.ddr += [
+            g3d_req_sync[0].eq(g3d_req),
+            g3d_req_sync[1].eq(g3d_req_sync[0]),
+        ]
+
+        g3d_pipe_busy_r = Signal(reset=1)
+        g3d_fsm = ClockDomainsRenamer("ddr")(OneHotFSM(reset_state="IDLE"))
+        self.submodules += g3d_fsm
+        self.sync.ddr += g3d_pipe_busy_r.eq(
+            g3d_pipe.pipe_busy | g3d_fsm.ongoing("START")
+        )
+        g3d_cfg_bad = Signal()
+        self.comb += g3d_cfg_bad.eq(
+            g3d_tex_cfg[25]
+            | (z_en & ((g3d_fb_stride[0:4] != 0) | (g3d_zbuf_addr[0:5] != 0)))
+        )
+        g3d_fsm.act("IDLE",
+            g3d_pipe.tri.start.eq(0),
+            If(g3d_req_sync[1] != g3d_req_seen,
+                NextValue(g3d_req_seen, g3d_req_sync[1]),
+                NextValue(g3d_active_ddr, 1),
+                NextValue(g3d_idle_ui, 0),
+                NextValue(g3d_pix_lo, 0),
+                NextValue(g3d_pix_hi, 0),
+                NextValue(g3d_err_ddr, 0),
+                z_clear_valid.eq(1),
+                z_clear_dirty.eq(1),
+                NextState("START"),
+            ),
+        )
+        g3d_fsm.act("START",
+            If(g3d_cfg_bad,
+                g3d_pipe.tri.start.eq(0),
+                NextValue(g3d_err_ddr, 1),
+                NextValue(g3d_active_ddr, 0),
+                NextValue(g3d_idle_ui, 1),
+                NextValue(g3d_ack, ~g3d_ack),
+                NextState("IDLE"),
+            ).Else(
+                g3d_pipe.tri.start.eq(1),
+                NextState("RUN"),
+            ),
+        )
+        g3d_fsm.act("RUN",
+            g3d_pipe.tri.start.eq(0),
+            If(g3d_pipe.tri.err_param, NextValue(g3d_err_ddr, 1)),
+            If(~g3d_pipe_busy_r & (px_level == 0) & wr_fsm.ongoing("IDLE"),
+                If(z_en & z_row_valid & z_row_dirty,
+                    NextState("FLUSH_Z"),
+                ).Else(
+                    NextValue(g3d_active_ddr, 0),
+                    NextValue(g3d_idle_ui, 1),
+                    NextValue(g3d_ack, ~g3d_ack),
+                    NextState("IDLE"),
+                ),
+            ),
+        )
+        g3d_fsm.act("FLUSH_Z",
+            g3d_pipe.tri.start.eq(0),
+            z_flush_req.eq(1),
+            If(z_sync_done,
+                NextValue(g3d_active_ddr, 0),
+                NextValue(g3d_idle_ui, 1),
+                NextValue(g3d_ack, ~g3d_ack),
+                NextState("IDLE"),
+            ),
+        )

@@ -40,7 +40,7 @@ class DDRMemoryArbiter(LiteXModule):
         # grant logic sees them one cycle late. A stale level at most offers
         # one unused grant, which the next cycle withdraws.
         pend_q=[Signal() for _ in pending]
-        self.sync += [q.eq(p) for q,p in zip(pend_q,pending)]
+        self.sync += [q.eq(p | (port.cmd_en if port is gfx2d else 0)) for q,p,port in zip(pend_q,pending,ports)]
         pending=pend_q
         choices = {}
         for previous in range(len(ports)):
@@ -59,6 +59,7 @@ class DDRMemoryArbiter(LiteXModule):
         def select(field):return Array([getattr(p,field) for p in ports])[grant]
         read=Signal()
         out_valid=Signal();out_read=Signal(reset_less=True);issued=Signal()
+        out_valid.attr.add(("syn_maxfan", 32))
         out={field:Signal(len(getattr(memory,field)),reset_less=True)
              for field in ('addr','cmd','wr_data','wr_data_mask')}
         # Per-port readiness and response ownership are registered from the
@@ -302,7 +303,6 @@ class VideoFrameReader(LiteXModule):
             ui.wr_data_en.eq(0), ui.wr_data_end.eq(0), ui.wr_data_mask.eq(0xffffffff),
             source.data.eq(data), source.block.eq(index), source.epoch.eq(epoch),
             self.busy.eq(~fsm.ongoing('IDLE')),
-            wrapped_row.eq(row_base + stride - wrap_span),
         ]
 
         def accept():
@@ -412,8 +412,8 @@ class VideoFrameReader(LiteXModule):
             last_block.eq(index == blocks - 1),
             last_column.eq(column == blocks_per_row - 1),
             nxt_normal_row.eq(row_base + stride),
-            nxt_wrapped_row.eq(wrapped_row),
-            nxt_will_wrap.eq(row_base + stride > wrap_limit),
+            nxt_wrapped_row.eq(nxt_normal_row - wrap_span),
+            nxt_will_wrap.eq(nxt_normal_row > wrap_limit),
         ]
         self.comb += self.reserve_next.eq(fsm.ongoing('PUSH') & source.ready &
                                          ~request.valid & ~last_block)

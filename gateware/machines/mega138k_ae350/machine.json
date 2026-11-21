@@ -64,7 +64,7 @@
   },
   "rtl": {
     "place_option": 3,
-    "route_option": 2,
+    "route_option": 0,
     "hdmi_reset_sites": [
       "R35C181[0][A]",
       "R47C181[0][A]",
