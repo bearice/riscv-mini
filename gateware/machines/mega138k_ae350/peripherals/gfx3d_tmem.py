@@ -147,9 +147,9 @@ class TmemSampler(Module):
 
         # --- Stage 0: Signed UV corner wrap & bank address generation ---
         u_raw0 = Signal((32, True))
-        u_raw1 = Signal((32, True))
         v_raw0 = Signal((32, True))
-        v_raw1 = Signal((32, True))
+        u1_lo = Signal(14)
+        v1_lo = Signal(14)
         tex_w = Signal(13)
         tex_h = Signal(13)
         mask_w = Signal(12)
@@ -157,35 +157,51 @@ class TmemSampler(Module):
 
         self.comb += [
             u_raw0.eq(self.u_q32_16[16:48]),
-            u_raw1.eq(u_raw0 + 1),
+            u1_lo.eq(Cat(u_raw0[0:13], Constant(0, 1)) + 1),
             v_raw0.eq(self.v_q32_16[16:48]),
-            v_raw1.eq(v_raw0 + 1),
+            v1_lo.eq(Cat(v_raw0[0:13], Constant(0, 1)) + 1),
             tex_w.eq(1 << self.log2_tex_w),
             tex_h.eq(1 << self.log2_tex_h),
             mask_w.eq(tex_w - 1),
             mask_h.eq(tex_h - 1),
         ]
 
-        def wrap_coord(raw, size, mask, mode):
-            """Compute wrapped 12-bit coordinate and OOB flag for one axis."""
+        def wrap_coord0(raw, size, mask, mode):
+            """Compute wrapped 12-bit coordinate and OOB flag for +0 axis."""
             oob = Signal()
             clamped = Signal(12)
             wrapped = Signal(12)
-            max_idx = Signal(12)
+            is_neg = raw[31]
+            is_ge_size = (~raw[31]) & ((raw[13:31] != 0) | (raw[0:13] >= size))
             self.comb += [
-                max_idx.eq(size - 1),
-                oob.eq((raw < 0) | (raw >= size)),
+                oob.eq(is_neg | is_ge_size),
                 clamped.eq(
-                    Mux(raw < 0, 0, Mux(raw >= size, max_idx, raw[0:12]))
+                    Mux(is_neg, 0, Mux(is_ge_size, mask, raw[0:12]))
                 ),
                 wrapped.eq(Mux(mode == WRAP_REPEAT, raw[0:12] & mask, clamped)),
             ]
             return wrapped, oob
 
-        u0_w, oob_u0 = wrap_coord(u_raw0, tex_w, mask_w, self.wrap_u)
-        u1_w, oob_u1 = wrap_coord(u_raw1, tex_w, mask_w, self.wrap_u)
-        v0_w, oob_v0 = wrap_coord(v_raw0, tex_h, mask_h, self.wrap_v)
-        v1_w, oob_v1 = wrap_coord(v_raw1, tex_h, mask_h, self.wrap_v)
+        def wrap_coord1(raw0, lo1, size, mask, mode):
+            """Compute wrapped 12-bit coordinate and OOB flag for raw0 + 1."""
+            oob = Signal()
+            clamped = Signal(12)
+            wrapped = Signal(12)
+            is_neg = raw0[31] & (raw0[0:31] != 0x7fffffff)
+            is_ge_size = (~raw0[31]) & ((raw0[13:31] != 0) | (lo1 >= size))
+            self.comb += [
+                oob.eq(is_neg | is_ge_size),
+                clamped.eq(
+                    Mux(is_neg, 0, Mux(is_ge_size, mask, lo1[0:12]))
+                ),
+                wrapped.eq(Mux(mode == WRAP_REPEAT, lo1[0:12] & mask, clamped)),
+            ]
+            return wrapped, oob
+
+        u0_w, oob_u0 = wrap_coord0(u_raw0, tex_w, mask_w, self.wrap_u)
+        u1_w, oob_u1 = wrap_coord1(u_raw0, u1_lo, tex_w, mask_w, self.wrap_u)
+        v0_w, oob_v0 = wrap_coord0(v_raw0, tex_h, mask_h, self.wrap_v)
+        v1_w, oob_v1 = wrap_coord1(v_raw0, v1_lo, tex_h, mask_h, self.wrap_v)
 
         # --- Stage 0 -> Stage 1: Register wrapped coords & wu/wv ---
         s0_valid = Signal()

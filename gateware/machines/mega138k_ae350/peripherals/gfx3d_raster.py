@@ -136,6 +136,8 @@ class TriRasterizer(Module):
         # Span Y/X state
         y_cur = Signal((13, True))
         y_end = Signal((13, True))
+        y_done_r = Signal(reset_less=True)
+        y_cur_p1_r = Signal((13, True), reset_less=True)
         x_start = Signal((13, True))
         x_end = Signal((13, True))
         x_cur = Signal(12)
@@ -155,7 +157,9 @@ class TriRasterizer(Module):
         # 82-bit Row-start MAC (multi-cycle: 7 attributes x 2 axes)
         # 0:S, 1:T, 2:Z, 3:R, 4:G, 5:B, 6:A
         mac_attr = Signal(3)
+        mac_attr.attr.add(("syn_maxfan", 16))
         mac_phase = Signal(3)
+        mac_phase.attr.add(("syn_maxfan", 16))
         mac_acc = Signal((82, True))
         dx_q13_4 = Signal((17, True))
         dy_q13_4 = Signal((17, True))
@@ -701,6 +705,8 @@ class TriRasterizer(Module):
             ediv_den_comb.eq(ep_D << 4),
         ]
         fsm.act("SPAN_EDGE_SEL",
+            NextValue(y_done_r, y_cur >= y_end),
+            NextValue(y_cur_p1_r, y_cur + 1),
             NextValue(ex0, ex0_c),
             NextValue(ey0, ey0_c),
             NextValue(ex1, ex1_c),
@@ -1000,11 +1006,11 @@ class TriRasterizer(Module):
         fsm.act("SPAN_WALK",
             If(self.ready,
                 If(x_cur >= x_end[0:12],
-                    If(y_cur >= y_end,
+                    If(y_done_r,
                         NextValue(self.done, 1),
                         NextState("IDLE"),
                     ).Else(
-                        NextValue(y_cur, y_cur + 1),
+                        NextValue(y_cur, y_cur_p1_r),
                         NextValue(edge_idx, 0),
                         NextValue(has_left, 0),
                         NextValue(has_right, 0),

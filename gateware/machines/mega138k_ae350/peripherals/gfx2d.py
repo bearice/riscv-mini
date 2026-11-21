@@ -1026,7 +1026,7 @@ class Gfx2DEngine(LiteXModule):
         alu_stage_next = Signal(2)
         pipe_ce = Signal(reset=1, name="g2d_pipe_ce")
         pipe_ce.attr.add(("syn_preserve", 1))
-        pipe_ce.attr.add(("syn_maxfan", 32))
+        pipe_ce.attr.add(("syn_maxfan", 16))
         pipe_ce_3d = Signal(reset=1, name="g3d_pipe_ce")
         pipe_ce_3d.attr.add(("syn_preserve", 1))
         pipe_ce_3d.attr.add(("syn_maxfan", 32))
@@ -2286,15 +2286,21 @@ class Gfx2DEngine(LiteXModule):
                                  f3d_vld_pipe[0:Frag3DPort.LATENCY - 1]))
         )
         f3d_sb_in = Cat(frag3d.x, frag3d.y, frag3d.z_new,
-                        frag3d.z_pass, frag3d.bounds_discard)
+                        frag3d.bounds_discard)
         f3d_sb_out = delayed(f3d_sb_in, Frag3DPort.LATENCY)
+        # Register z_pass separately at stage 0 so z_lb -> eval_z_func can
+        # place its first FF near the BSRAM without routing to the ALU tile.
+        f3d_z_pass_q = Signal(reset_less=True)
+        self.sync += If(pipe_ce, f3d_z_pass_q.eq(frag3d.z_pass))
+        f3d_z_pass_out = delayed(f3d_z_pass_q, Frag3DPort.LATENCY - 1)
         self.comb += [
             frag3d.ready.eq(~self.busy & ~frag3d.stall_in & pipe_ce_3d),
             frag3d.pipe_busy.eq((comp_pipe_vld != 0) | (f3d_vld_pipe != 0)),
             frag3d.out_valid.eq(f3d_vld_pipe[Frag3DPort.LATENCY - 1] & pipe_ce),
             frag3d.out_rgba.eq(Cat(*out_r0_sat)),
             Cat(frag3d.out_x, frag3d.out_y, frag3d.out_z,
-                frag3d.out_z_pass, frag3d.out_bounds_discard).eq(f3d_sb_out),
+                frag3d.out_bounds_discard).eq(f3d_sb_out),
+            frag3d.out_z_pass.eq(f3d_z_pass_out),
             frag3d.out_shader_discard.eq(alu.discard_out),
             frag3d.out_frag_kill.eq((~frag3d.out_z_pass) | frag3d.out_shader_discard |
                                     frag3d.out_bounds_discard),
@@ -2602,6 +2608,7 @@ class Gfx2D(LiteXModule):
         # register keeps that cone off the 256-bit beat capture enables.
         rd_data_q = Signal(256, reset_less=True)
         rd_valid_q = Signal()
+        rd_valid_q.attr.add(("syn_maxfan", 32))
         self.sync.ddr += [
             rd_data_q.eq(self.ui.rd_data),
             rd_valid_q.eq(self.ui.rd_data_valid),
@@ -2923,6 +2930,7 @@ class Gfx2D(LiteXModule):
         px_level = Signal(7)
         px_push = Signal()
         px_pop = Signal()
+        px_stall_r = Signal()
 
         self.comb += [
             px_push.eq(g3d_active_ddr & g3d_pipe.zbuf.we_color),
@@ -2932,9 +2940,10 @@ class Gfx2D(LiteXModule):
                                engine.frag3d.out_y[0:12],
                                engine.frag3d.out_rgba)),
             px_rd.adr.eq(px_rd_ptr),
-            engine.frag3d.stall_in.eq(px_level >= 32),
+            engine.frag3d.stall_in.eq(px_stall_r),
         ]
         self.sync.ddr += [
+            px_stall_r.eq(px_level >= 32),
             If(px_push, px_wr_ptr.eq(px_wr_ptr + 1)),
             If(px_pop, px_rd_ptr.eq(px_rd_ptr + 1)),
             If(px_push & ~px_pop, px_level.eq(px_level + 1)),
@@ -2946,12 +2955,12 @@ class Gfx2D(LiteXModule):
         px_y = Signal(12, reset_less=True)
         px_rgba = Signal(32, reset_less=True)
         px_y_mul = Signal(28, reset_less=True)
+        px_word_off = Signal(28, reset_less=True)
         px_byte_addr = Signal(32)
         px_lane = Signal(3)
 
         g3d_wr_mask_r = Signal(32, reset_less=True)
-        g3d_wr_data_sel = Signal()
-        z_beat_buf = Signal(256, reset_less=True)
+        g3d_wr_beat = Signal(256, reset_less=True)
         z_en = Signal()
         z_row_valid = Signal()
         z_row_dirty = Signal()
@@ -2962,8 +2971,9 @@ class Gfx2D(LiteXModule):
         z_cur_blk_lo = Signal(7, reset_less=True)
         z_cur_blk_hi = Signal(7, reset_less=True)
         z_blk_idx = Signal(7, reset_less=True)
+        z_blk_done_r = Signal(reset_less=True)
+        z_blk_next_r = Signal(7, reset_less=True)
         z_lane_idx = Signal(4, reset_less=True)
-        z_y_mul = Signal(28, reset_less=True)
         z_row_base_blk = Signal(26, reset_less=True)
         z_flush_only = Signal()
         z_flush_req = Signal()
@@ -2979,9 +2989,9 @@ class Gfx2D(LiteXModule):
         ]
         self.comb += [
             z_en.eq(g3d_z_cfg[0] | g3d_z_cfg[1]),
-            px_byte_addr.eq(g3d_fb_addr + Cat(Constant(0, 2), px_y_mul + px_x)),
+            px_byte_addr.eq(g3d_fb_addr + Cat(Constant(0, 2), px_word_off)),
             px_lane.eq(px_byte_addr[2:5]),
-            g3d_wr_data.eq(Mux(g3d_wr_data_sel, z_beat_buf, Replicate(px_rgba, 8))),
+            g3d_wr_data.eq(g3d_wr_beat),
             g3d_wr_mask.eq(g3d_wr_mask_r),
             g3d_pipe.tri.row_sync_ack.eq(Mux(z_en, z_sync_done & ~z_flush_only, 1)),
         ]
@@ -2997,13 +3007,13 @@ class Gfx2D(LiteXModule):
                 NextState("CALC"),
             ).Elif(z_flush_req,
                 NextValue(z_flush_only, 1),
-                NextValue(z_y_mul, z_cur_y * g3d_fb_stride),
+                NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
                 NextValue(z_blk_idx, z_cur_blk_lo),
                 NextState("Z_WR_ADDR1"),
             ).Elif(z_en & g3d_pipe.tri.row_sync_req & ~g3d_ds_busy_r,
                 NextValue(z_flush_only, 0),
                 If(z_row_valid & z_row_dirty,
-                    NextValue(z_y_mul, z_cur_y * g3d_fb_stride),
+                    NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
                     NextValue(z_blk_idx, z_cur_blk_lo),
                     NextState("Z_WR_ADDR1"),
                 ).Else(
@@ -3028,6 +3038,15 @@ class Gfx2D(LiteXModule):
             g3d_ui_cmd_en.eq(0),
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
+            NextValue(px_word_off, px_y_mul + px_x),
+            NextValue(g3d_wr_beat, Replicate(px_rgba, 8)),
+            NextState("CALC3"),
+        )
+        wr_fsm.act("CALC3",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            px_pop.eq(0),
             NextValue(g3d_req_blk, px_byte_addr[5:31]),
             NextValue(g3d_wr_mask_r, ~(Constant(0xF, 32) << Cat(Constant(0, 2), px_lane))),
             NextState("ISSUE"),
@@ -3036,7 +3055,6 @@ class Gfx2D(LiteXModule):
             g3d_ui_cmd.eq(0),
             g3d_ui_cmd_en.eq(1),
             g3d_ui_wr_en.eq(1),
-            g3d_wr_data_sel.eq(0),
             If(self.ui.cmd_ready & self.ui.wr_data_rdy,
                 px_pop.eq(1),
                 NextValue(g3d_pix_lo, g3d_pix_lo + 1),
@@ -3051,7 +3069,7 @@ class Gfx2D(LiteXModule):
         # Z-buffer row writeback states
         wr_fsm.act("Z_WR_ADDR1",
             NextValue(z_row_base_blk,
-                      (g3d_zbuf_addr + Cat(Constant(0, 1), z_y_mul))[5:31]),
+                      (g3d_zbuf_addr + Cat(Constant(0, 1), px_y_mul))[5:31]),
             NextState("Z_WR_PACK_PREP"),
         )
         wr_fsm.act("Z_WR_PACK_PREP",
@@ -3063,10 +3081,7 @@ class Gfx2D(LiteXModule):
         wr_fsm.act("Z_WR_PACK",
             g3d_pipe.zbuf.ext_rd_en.eq(1),
             g3d_pipe.zbuf.ext_rd_adr.eq(Cat((z_lane_idx + 1)[0:4], z_blk_idx)),
-            Case(z_lane_idx, {
-                i: NextValue(z_beat_buf[16*i:16*(i+1)], g3d_pipe.zbuf.ext_rd_dat)
-                for i in range(16)
-            }),
+            NextValue(g3d_wr_beat, Cat(g3d_wr_beat[16:256], g3d_pipe.zbuf.ext_rd_dat)),
             If(z_lane_idx == 15,
                 NextState("Z_WR_CALC"),
             ).Else(
@@ -3076,15 +3091,16 @@ class Gfx2D(LiteXModule):
         wr_fsm.act("Z_WR_CALC",
             NextValue(g3d_req_blk, z_row_base_blk + z_blk_idx),
             NextValue(g3d_wr_mask_r, 0),
+            NextValue(z_blk_done_r, z_blk_idx == z_cur_blk_hi),
+            NextValue(z_blk_next_r, z_blk_idx + 1),
             NextState("Z_WR_ISSUE"),
         )
         wr_fsm.act("Z_WR_ISSUE",
             g3d_ui_cmd.eq(0),
             g3d_ui_cmd_en.eq(1),
             g3d_ui_wr_en.eq(1),
-            g3d_wr_data_sel.eq(1),
             If(self.ui.cmd_ready & self.ui.wr_data_rdy,
-                If(z_blk_idx == z_cur_blk_hi,
+                If(z_blk_done_r,
                     z_clear_dirty.eq(1),
                     If(z_flush_only,
                         NextState("Z_DONE"),
@@ -3092,7 +3108,7 @@ class Gfx2D(LiteXModule):
                         NextState("Z_RD_ADDR0"),
                     ),
                 ).Else(
-                    NextValue(z_blk_idx, z_blk_idx + 1),
+                    NextValue(z_blk_idx, z_blk_next_r),
                     NextState("Z_WR_PACK_PREP"),
                 ),
             ),
@@ -3103,16 +3119,21 @@ class Gfx2D(LiteXModule):
             NextValue(z_cur_blk_lo, g3d_pipe.tri.row_x0[4:11]),
             NextValue(z_cur_blk_hi, g3d_pipe.tri.row_x1[4:11]),
             NextValue(z_blk_idx, g3d_pipe.tri.row_x0[4:11]),
-            NextValue(z_y_mul, g3d_pipe.tri.row_y * g3d_fb_stride),
             NextState("Z_RD_ADDR1"),
         )
         wr_fsm.act("Z_RD_ADDR1",
+            NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
+            NextState("Z_RD_ADDR2"),
+        )
+        wr_fsm.act("Z_RD_ADDR2",
             NextValue(z_row_base_blk,
-                      (g3d_zbuf_addr + Cat(Constant(0, 1), z_y_mul))[5:31]),
+                      (g3d_zbuf_addr + Cat(Constant(0, 1), px_y_mul))[5:31]),
             NextState("Z_RD_CALC"),
         )
         wr_fsm.act("Z_RD_CALC",
             NextValue(g3d_req_blk, z_row_base_blk + z_blk_idx),
+            NextValue(z_blk_done_r, z_blk_idx == z_cur_blk_hi),
+            NextValue(z_blk_next_r, z_blk_idx + 1),
             NextState("Z_RD_ISSUE"),
         )
         wr_fsm.act("Z_RD_ISSUE",
@@ -3128,7 +3149,7 @@ class Gfx2D(LiteXModule):
             g3d_ui_cmd_en.eq(0),
             g3d_ui_wr_en.eq(0),
             If(rd_valid_q,
-                NextValue(z_beat_buf, rd_data_q),
+                NextValue(g3d_wr_beat, rd_data_q),
                 NextValue(z_lane_idx, 0),
                 NextState("Z_RD_UNPACK"),
             ),
@@ -3136,15 +3157,14 @@ class Gfx2D(LiteXModule):
         wr_fsm.act("Z_RD_UNPACK",
             g3d_pipe.zbuf.ext_wr_en.eq(1),
             g3d_pipe.zbuf.ext_wr_adr.eq(Cat(z_lane_idx, z_blk_idx)),
-            g3d_pipe.zbuf.ext_wr_dat.eq(
-                Array([z_beat_buf[16*i:16*(i+1)] for i in range(16)])[z_lane_idx]
-            ),
+            g3d_pipe.zbuf.ext_wr_dat.eq(g3d_wr_beat[0:16]),
+            NextValue(g3d_wr_beat, Cat(g3d_wr_beat[16:256], Constant(0, 16))),
             If(z_lane_idx == 15,
-                If(z_blk_idx == z_cur_blk_hi,
+                If(z_blk_done_r,
                     z_set_valid.eq(1),
                     NextState("Z_DONE"),
                 ).Else(
-                    NextValue(z_blk_idx, z_blk_idx + 1),
+                    NextValue(z_blk_idx, z_blk_next_r),
                     NextState("Z_RD_CALC"),
                 ),
             ).Else(
