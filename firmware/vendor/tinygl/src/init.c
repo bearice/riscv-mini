@@ -118,9 +118,10 @@ void glClear(GLbitfield mask) {
     int cz = ((mask & GL_DEPTH_BUFFER_BIT) != 0) && c->depth_write;
     int cc = (mask & GL_COLOR_BUFFER_BIT) != 0;
     if ((cc || cz) && c->clear_hook) {
+        uint16_t *cbuf = c->zb->pbuf32 ? (uint16_t *)c->zb->pbuf32 : c->zb->pbuf;
         c->clear_hook(c->clear_hook_user, c->clear_color_565,
                       c->zb->xsize, c->zb->ysize,
-                      cc ? c->zb->pbuf : (uint16_t *)0,
+                      cc ? cbuf : (uint16_t *)0,
                       cz ? c->zb->zbuf : (uint16_t *)0);
         return;
     }

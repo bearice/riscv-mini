@@ -17,11 +17,18 @@ void gl_transform_to_viewport(GLContext *c, GLVertex *v) {
     float y = v->pc.v[1] * winv;
     float z = v->pc.v[2] * winv;
 
-    v->zp.x = (int)(x * c->viewport.xscale + c->viewport.xcenter);
-    v->zp.y = (int)(y * c->viewport.yscale + c->viewport.ycenter);
-    v->zp.z = (int)(z * c->viewport.zscale + c->viewport.zcenter);
-    if (v->zp.z < 0) v->zp.z = 0;
-    if (v->zp.z > 65535) v->zp.z = 65535;
+    v->zp.sx = x * c->viewport.xscale + c->viewport.xcenter;
+    v->zp.sy = y * c->viewport.yscale + c->viewport.ycenter;
+    v->zp.fz = z * c->viewport.zscale + c->viewport.zcenter;
+    if (v->zp.fz < 0.0f) v->zp.fz = 0.0f;
+    if (v->zp.fz > 65535.0f) v->zp.fz = 65535.0f;
+    v->zp.w = v->pc.v[3];
+    v->zp.u = v->tex_coord.v[0];
+    v->zp.v = v->tex_coord.v[1];
+
+    v->zp.x = (int)v->zp.sx;
+    v->zp.y = (int)v->zp.sy;
+    v->zp.z = (int)v->zp.fz;
 
     float cr = v->color.v[0];
     float cg = v->color.v[1];

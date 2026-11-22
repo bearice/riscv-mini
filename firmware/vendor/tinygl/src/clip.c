@@ -23,6 +23,46 @@ static float plane_dist(const V4 *p, int plane) {
 }
 
 static void emit_raster_triangle(GLContext *c, const GLVertex *p0, const GLVertex *p1, const GLVertex *p2) {
+    if (c->zb->hw_draw_tri) {
+        float dx1 = p1->zp.sx - p0->zp.sx;
+        float dy1 = p1->zp.sy - p0->zp.sy;
+        float dx2 = p2->zp.sx - p0->zp.sx;
+        float dy2 = p2->zp.sy - p0->zp.sy;
+        float area = dx1 * dy2 - dy1 * dx2;
+        if (area == 0.0f) {
+            c->stats.tris_culled++;
+            return;
+        }
+        if (c->cull_face_enabled) {
+            int front = (c->front_face == GL_CCW) ? (area < 0.0f) : (area > 0.0f);
+            if ((c->cull_face == GL_BACK && !front) ||
+                (c->cull_face == GL_FRONT && front) ||
+                (c->cull_face == GL_FRONT_AND_BACK)) {
+                c->stats.tris_culled++;
+                return;
+            }
+        }
+        uint64_t tr0 = tgl_rdcycle();
+        c->stats.tris_drawn++;
+        c->zb->depth_test = (uint8_t)(c->depth_test != 0);
+        c->zb->depth_write = (uint8_t)(c->depth_write != 0);
+        c->zb->tex_env_replace = (uint8_t)(c->tex_env_mode == GL_REPLACE);
+        int use_tex = (c->texture_2d_enabled && c->zb->current_texture) ? 1 : 0;
+        int smooth = (c->shade_model == GL_SMOOTH) ? 1 : 0;
+        int xmin = c->viewport.xmin;
+        int ymin = c->viewport.ymin;
+        int xmax = xmin + c->viewport.xsize - 1;
+        int ymax = ymin + c->viewport.ysize - 1;
+        if (xmin < 0) xmin = 0;
+        if (ymin < 0) ymin = 0;
+        if (xmax >= c->zb->xsize) xmax = c->zb->xsize - 1;
+        if (ymax >= c->zb->ysize) ymax = c->zb->ysize - 1;
+        c->zb->hw_draw_tri(c->zb, &p0->zp, &p1->zp, &p2->zp,
+                           xmin, ymin, xmax, ymax, use_tex, smooth);
+        c->stats.cycles_raster += tgl_rdcycle() - tr0;
+        return;
+    }
+
     /* Screen-space signed area for backface culling */
     int dx1 = p1->zp.x - p0->zp.x;
     int dy1 = p1->zp.y - p0->zp.y;

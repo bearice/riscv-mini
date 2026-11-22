@@ -52,7 +52,8 @@ ROM 保持0x80000000是本项目的启动选择，并非硬核复位向量不可
 | 0xf8080000 | 64KiB | 板级 LED 输出、按键事件与诊断边沿，前 4KiB；按键电平接硬 GPIO 输入 |
 | 0xf8090000 | 64KiB | Flash/XIP管理：能力、忙状态、地址模式、写擦命令及错误；不作为程序取指地址 |
 | 0xf80a0000 | 4KiB | Ethernet：PHY 管理、MAC 状态与 DDR DMA 描述符环；实板 RX CRC 尚未解决 |
-| 0xf80a1000–0xfbffffff | 其余空间 | 后续外设保留 |
+| 0xf80c0000 | 4KiB | GFX2D / GFX3D：2D 块加速、4 级可编程着色器（`+0x000..+0x0B8`）与 3D 三角形光栅/透视/Z CSR（`+0x100..+0x188`） |
+| 0xf80c1000–0xfbffffff | 其余空间 | 后续外设保留 |
 
 HDMI CSR控制帧地址，但像素流由fabric专用DDR reader读取；它不要求像素数据每帧经过APB，也不默认长期占用硬DMAC通道。LCD相关槽不建立。
 
@@ -142,6 +143,6 @@ Linux Sv32 虚拟布局：PAGE_OFFSET=0xc0000000（`CONFIG_PAGE_OFFSET`，构建
 
 ## 实现与验证范围
 
-已实现的设备地址、通道与所有权见 [DMA](dma.md)、[I/O](io.md)、[音频](audio.md) 和 [视频](video.md)。其他预留槽不发布为已存在设备。地址范围不表示整段 DDR 容量已通过板测；验证边界见 [内存合同](memory-validation.md)。
+已实现的设备地址、通道与所有权见 [DMA](dma.md)、[I/O](io.md)、[音频](audio.md)、[视频](video.md)、[GFX2D](gfx2d.md) 和 [GFX3D](gfx_3d.md)。其他预留槽不发布为已存在设备。地址范围不表示整段 DDR 容量已通过板测；验证边界见 [内存合同](memory-validation.md)。
 
 独立 bootrom 的最小合同发现寄存器位于 SYSINFO `+0x0c/+0x10/+0x14`，分别为启动合同版本、sys/APB Hz、当前硬件 image ABI，均只读。安装和验收状态见 [bootloader](bootloader.md)。

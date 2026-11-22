@@ -1,8 +1,12 @@
 # AE350 3D 图形处理演进路线图与软硬件接口规范（GFX3D）
 
 > 适用机器：`mega138k_ae350`（板卡 `mega138k_pro`）。
-> 状态：**演进路线图与软硬件接口设计规范（预研/待实现）**。
-> 基线锚点：文中资源基线已更新至 **Step 6c 实测基线**，引自 [gfx2d-shader-core.md §2](gfx2d-shader-core.md#L42) 记录的全量 PnR 回执 `Run 20261113T192338423908Z`（全时钟 setup/hold 0 TNS：`ddr_ui_clk` 100.00MHz、`sys_clk` 50.10MHz、`hdmi_pix_clk` 75.95MHz）及板级 SRAM 验收回执 `20261113T200126914932Z` / `20261113T200202540377Z`（结果字 `0xC3500030`，全部 BAD 计数为 0）。所有 Stage 1..4 的资源增量与帧率指标均为**限定工况下的目标设计预算（Design Budget）**，不代表已验收的硬件能力。
+> 状态：**Stage 1 软件验收完成；Stage 2a/3/4 硬件 RTL（`Gfx3DPipeline` + `GFX3D_REGS` `+0x100..+0x188`）已合入（PR #11 / `b120161`）并通过 100MHz 全量 PnR（0 TNS）及实板 SRAM 冒烟测试；TinyGL 硬件后端、`<GLES/gl.h>`、3D `DST_LB`（`uses_dst`）、Mode 7 与 60 FPS 板级压测待完成**。
+> 基线锚点：
+> - **Step 6c 基线**：引自 [gfx2d-shader-core.md §2](gfx2d-shader-core.md#L42) 全量 PnR 回执 `Run 20261113T192338423908Z`（全时钟 setup/hold 0 TNS）及板级 SRAM 验收回执 `20261113T200126914932Z` / `20261113T200202540377Z`。
+> - **GFX3D 优化实测基线**：gateware `247298905ef6`（新增 256-bit 写合并缓冲、`alu_stage >= last_stage` 动态 `II=6` 与 `SPAN_STEP0..2`）全量 PnR 回执 [`20261122T121450384141Z-build-gfx3d-ii6-step3-r4-aac7ba/project.tr`](../../../build/runs/20261122T121450384141Z-build-gfx3d-ii6-step3-r4-aac7ba/project.tr)（全时钟 `setup: 0, hold: 0`）。
+> - **TinyGL GFX3D 硬件后端实测基线**（[ae350_tinygl_bench.c](../../../firmware/diagnostics/mega138k_ae350/ae350_tinygl_bench.c)，payload `0a5619a2c0d7`，JTAG 回执 `20261122T130046808787Z`，`XRGB8888`）：$320\times 240$ 实测 **24.09 FPS**（`33.20M` 周期/帧，较初版 12.53 FPS 提升 **1.92×**）、$640\times 480$ 实测 **10.20 FPS**（`78.37M` 周期/帧，较初版 4.92 FPS 提升 **2.07×**，其中 FPGA 等待 `60.26M` 周期 / `75.33 ms`，MMIO 提交 `4.41M` 周期 / `5.51 ms`，顶点+裁剪 `2.46M` 周期 / `3.08 ms`）。当前首要瓶颈在 `TriRasterizer` 每扫描线 `SPAN_MAC`（~128 拍）与逐行 `Z_LB` 同步；多边形批量提交当前可省约 `5.51 ms`（~8.6 ms 含重叠），将在 `SPAN_MAC`/Z 优化后收益放大。
+> - 所有尚未实板压测的帧率指标仍为**限定工况下的目标设计预算（Design Budget）**。
 
 ---
 
@@ -479,8 +483,30 @@ flowchart LR
    - **排空切换原则**：任何命令切换（2D → 3D、3D → 2D 或相邻两个三角形切换 `INST0..3`、`SHADER_CFG`、`U0..U7`、TMEM/ZBUF 配置）前，控制 FSM 必须等待前一条命令的像素流水线与 `OUT_LB` / `Z_LB` 写回**完全排空（Drain to Idle）**，再更新静态描述符寄存器，确保 `ShaderALU` 内部静态译码与流水数据不跨三角形混用；
    - **停顿一致冻结**：当 DDR3 写回或行缓冲发生反压停顿时，必须采用入口反压门控（仅在 `OUT_LB`/`Z_LB` 有空位时发射 Span）或对 `BilinearFilter`、`ShaderALU` 与 Sideband 移位寄存器施加同一使能冻结信号，严禁部分级推进、部分级停顿导致伴随坐标与像素颜色错位。
 
+### 4.7 已实现 GFX3D CSR 寄存器映射（`GFX2D_BASE + 0x100..0x188`）
+
+当前 [`Gfx2D`](../../../gateware/machines/mega138k_ae350/peripherals/gfx2d.py#L2685) 与 [`address_map.py`](../../../gateware/machines/mega138k_ae350/address_map.py#L150) 在 `GFX2D_BASE`（`0xf80c0000`）后半页实现了如下 3D 控制寄存器：
+
+| 偏移 | 名称 | 读写 | 说明与当前实现约束 |
+| :--- | :--- | :--- | :--- |
+| `0x100..0x15C` | `TRI0..TRI23` | R/W | 96 字节三角形硬件描述符（24 个 32-bit 字，见 §4.2）；`g3d_busy=0` 时可写 |
+| `0x160` | `CTRL` | W1 | 写 `bit[0]=1` 触发 3D 三角形绘制（要求 2D `busy==0` 且 `g3d_busy==0`） |
+| `0x164` | `STATUS` | RO | `bit[0]=busy`、`bit[1]=done`、`bit[2]=err_param` |
+| `0x168` | `FB_ADDR` | R/W | 帧缓冲 32-bit 物理字节基址（当前写回按 32-bit `XRGB8888/RGBA8888` 像素布局） |
+| `0x16C` | `FB_STRIDE` | R/W | `[15:0]` 目标帧缓冲行跨度（单位：**像素**） |
+| `0x170` | `TEX_CFG` | R/W | `[0]=tex_en`, `[1]=bilinear_en`, `[3:2]=wrap_u`, `[5:4]=wrap_v`, `[6]=border_kill_en`, `[10:7]=log2_tex_w`, `[14:11]=log2_tex_h`, `[24:15]=tmem_base`, `[25]=uses_dst`（当前 3D `DST_LB` 预取未实现，置 `1` 会在启动时置位 `err_param`） |
+| `0x174` | `BG_COLOR` | R/W | 32-bit 越界替换颜色（`WRAP_BORDER_DISCARD` 且 `border_kill_en=0` 时使用） |
+| `0x178` | `Z_CFG` | R/W | `[0]=z_test_en`, `[1]=z_write_en`, `[4:2]=z_func`, `[5]=color_write_en` |
+| `0x17C` | `ZBUF_ADDR` | R/W | 16-bit Z-Buffer 32-bit 物理字节基址（Stride 复用 `FB_STRIDE`） |
+| `0x180` | `TMEM_ADDR` | R/W | `[15:0]` TMEM 写入字地址（每次写 `TMEM_DATA` 后自增 1） |
+| `0x184` | `TMEM_DATA` | WO | 写入 32-bit RGBA8888 纹素至片上 4-Bank TMEM |
+| `0x188` | `PIXELS_OUT` | RO | 上一次三角形绘制提交输出像素计数 |
+
 ---
 
 ## 5. 总结与后续验证计划
 
-本文档定义了 `mega138k_ae350` 平台从 GFX2D 向 GFX3D 演进的分阶段路线与软硬件接口设计规范（基于 Step 6c 实测资源基线，明确 `BilinearFilter` / `ShaderALU` / `DST_LB` / `OUT_LB` 共享后端边界与 3D 片元输入合同、Mode 7 有符号 2D TMEM 四角独立 Wrap 合同、短 Span 性能与 64b/82b 多周期运算预算、96 字节三角形描述符、35-bit 面积与 Top-Left 覆盖公式、Late-Z 提交门禁及 6-DSP 逐像素 `II=1` 透视恢复通路）。本规范当前处于**架构设计阶段**，后续实施按 **Stage 2a（共享像素后端接口）→ Stage 2（Mode 7 + TMEM）→ Stage 3（仿射三角形）→ Stage 4（Z 与透视恢复）** 推进（Stage 1 TinyGL 软件验证可同步进行），依次通过主机 RTL 仿真、Gowin 100MHz 0 TNS 全量 PnR 及实板验收后方可转为已验证交付结论。
+本文档定义了 `mega138k_ae350` 平台从 GFX2D 向 GFX3D 演进的分阶段路线与软硬件接口设计规范。当前 **Stage 1（TinyGL CPU 软件基线）** 与 **Stage 2a/3/4 硬件 RTL（`TriRasterizer` + `TmemSampler` + `PerspRecipUnit` + `ZBufferUnit` + 共享像素后端）** 已完成合入、100MHz 0 TNS 时序闭合及板级 SRAM 冒烟测试；后续重点为：
+1. 将 TinyGL / `<GLES/gl.h>` 接入 `GFX3D_REGS` 硬件管线并完成 60 FPS 实板压测；
+2. 补齐 3D `DST_LB` 背景预取（`uses_dst` 半透明 Alpha 混合）与 `OP_SCANLINE_AFFINE`（Mode 7）；
+3. 完成共享边无缝、$75^\circ$ 透视误差与 Late-Z 透明一致性的完整板级回归验收。

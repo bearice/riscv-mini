@@ -8,6 +8,7 @@ ZBuffer *ZB_open(int xsize, int ysize, uint16_t *pbuf, uint16_t *zbuf) {
     zb->ysize = ysize;
     zb->linesize = xsize * 2;
     zb->pbuf = pbuf;
+    zb->pbuf32 = (uint32_t *)0;
     zb->zbuf = zbuf;
     zb->current_texture = (const uint16_t *)0;
     zb->tex_w = 0;
@@ -20,6 +21,8 @@ ZBuffer *ZB_open(int xsize, int ysize, uint16_t *pbuf, uint16_t *zbuf) {
     zb->depth_test = 1;
     zb->depth_write = 1;
     zb->tex_env_replace = 0;
+    zb->hw_draw_tri = (ZB_HwDrawTriFn)0;
+    zb->hw_set_tex = (ZB_HwSetTexFn)0;
     return zb;
 }
 
@@ -29,6 +32,15 @@ void ZB_close(ZBuffer *zb) {
 
 void ZB_setTarget(ZBuffer *zb, uint16_t *pbuf) {
     zb->pbuf = pbuf;
+}
+
+void ZB_setTarget32(ZBuffer *zb, uint32_t *pbuf32) {
+    zb->pbuf32 = pbuf32;
+}
+
+void ZB_setHwBackend(ZBuffer *zb, ZB_HwDrawTriFn draw_tri, ZB_HwSetTexFn set_tex) {
+    zb->hw_draw_tri = draw_tri;
+    zb->hw_set_tex = set_tex;
 }
 
 void ZB_setTexture(ZBuffer *zb, const uint16_t *tex, int w, int h) {
@@ -44,6 +56,9 @@ void ZB_setTexture(ZBuffer *zb, const uint16_t *tex, int w, int h) {
         shift++;
     }
     zb->tex_w_shift = shift;
+    if (zb->hw_set_tex) {
+        zb->hw_set_tex(zb, tex, w, h);
+    }
 }
 
 void ZB_clear(ZBuffer *zb, int clear_z, int z, int clear_color, uint16_t color) {
