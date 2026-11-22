@@ -123,7 +123,6 @@ class TriRasterizer(Module):
         dy_rd = dy_mem.get_port()
         self.specials += [dx_mem, dx_wr, dx_rd, dy_mem, dy_wr, dy_rd]
         grad_idx = Signal(4)
-        walk_idx = Signal(4)
 
         # Multi-cycle 64x50 -> 114-bit gradient multiplier (4 chunks of 16b x 50b)
         gmul_acc = Signal(147)
@@ -400,7 +399,7 @@ class TriRasterizer(Module):
         self.submodules += fsm
 
         self.comb += [
-            dx_rd.adr.eq(Mux(fsm.ongoing("SPAN_STEP"), walk_idx[0:3], mac_attr)),
+            dx_rd.adr.eq(mac_attr),
             self.busy.eq(~fsm.ongoing("IDLE")),
             self.valid_out.eq(fsm.ongoing("SPAN_WALK")),
         ]
@@ -667,7 +666,27 @@ class TriRasterizer(Module):
             dy_wr.dat_w.eq(grad_signed_r),
             dy_wr.we.eq(fsm.ongoing("SETUP_GRAD_STORE") & grad_idx[0]),
         ]
+        dx_s_r = Signal((42, True), reset_less=True)
+        dx_t_r = Signal((42, True), reset_less=True)
+        dx_z_r = Signal((46, True), reset_less=True)
+        dx_r_r = Signal((38, True), reset_less=True)
+        dx_g_r = Signal((38, True), reset_less=True)
+        dx_b_r = Signal((38, True), reset_less=True)
+        dx_a_r = Signal((38, True), reset_less=True)
+        dx_q_r = Signal((40, True), reset_less=True)
         fsm.act("SETUP_GRAD_STORE",
+            If(~grad_idx[0],
+                Case(grad_idx[1:4], {
+                    0: NextValue(dx_s_r, grad_signed_r[0:42]),
+                    1: NextValue(dx_t_r, grad_signed_r[0:42]),
+                    2: NextValue(dx_z_r, grad_signed_r[0:46]),
+                    3: NextValue(dx_r_r, grad_signed_r[0:38]),
+                    4: NextValue(dx_g_r, grad_signed_r[0:38]),
+                    5: NextValue(dx_b_r, grad_signed_r[0:38]),
+                    6: NextValue(dx_a_r, grad_signed_r[0:38]),
+                    7: NextValue(dx_q_r, grad_signed_r[0:40]),
+                }),
+            ),
             If((grad_idx == 15) | ((grad_idx == 13) & ~persp_en) | ((grad_idx == 5) & ~gouraud_en & ~persp_en),
                 NextValue(edge_idx, 0),
                 NextValue(has_left, 0),
@@ -961,26 +980,6 @@ class TriRasterizer(Module):
             ),
         )
 
-        # Shared 46-bit accumulator step for SPAN_STEP -> SPAN_STEP2 (reads dx_mem sequentially)
-        step_cur = Signal((46, True))
-        step_cur_r = Signal((46, True), reset_less=True)
-        dx_rd_r = Signal((46, True), reset_less=True)
-        step_sum = Signal((46, True))
-        self.comb += [
-            Case(walk_idx, {
-                0: step_cur.eq(s_acc),
-                1: step_cur.eq(t_acc),
-                2: step_cur.eq(z_acc),
-                3: step_cur.eq(r_acc),
-                4: step_cur.eq(g_acc),
-                5: step_cur.eq(b_acc),
-                6: step_cur.eq(a_acc),
-                7: step_cur.eq(q_acc),
-                "default": step_cur.eq(0),
-            }),
-            step_sum.eq(step_cur_r + dx_rd_r),
-        ]
-
         # Register rounded/clamped outputs ahead of SPAN_WALK (2-stage)
         fsm.act("SPAN_WALK_RND",
             NextValue(s_q14_16_r, (s_acc + (1 << 11)) >> 12),
@@ -1018,39 +1017,24 @@ class TriRasterizer(Module):
                     )
                 ).Else(
                     NextValue(x_cur, x_cur + 1),
-                    NextValue(walk_idx, 0),
-                    NextState("SPAN_STEP"),
+                    NextState("SPAN_STEP0"),
                 )
             )
         )
-        fsm.act("SPAN_STEP",
-            NextValue(step_cur_r, step_cur),
-            NextState("SPAN_STEP1b"),
+        fsm.act("SPAN_STEP0",
+            NextValue(s_acc, s_acc + dx_s_r),
+            NextValue(t_acc, t_acc + dx_t_r),
+            NextValue(z_acc, z_acc + dx_z_r),
+            NextState("SPAN_STEP1"),
         )
-        fsm.act("SPAN_STEP1b",
-            NextValue(dx_rd_r, dx_rd.dat_r[0:46]),
+        fsm.act("SPAN_STEP1",
+            NextValue(r_acc, r_acc + dx_r_r),
+            NextValue(g_acc, g_acc + dx_g_r),
+            NextValue(b_acc, b_acc + dx_b_r),
             NextState("SPAN_STEP2"),
         )
         fsm.act("SPAN_STEP2",
-            Case(walk_idx, {
-                0: NextValue(s_acc, step_sum[0:42]),
-                1: NextValue(t_acc, step_sum[0:42]),
-                2: NextValue(z_acc, step_sum[0:46]),
-                3: NextValue(r_acc, step_sum[0:38]),
-                4: NextValue(g_acc, step_sum[0:38]),
-                5: NextValue(b_acc, step_sum[0:38]),
-                6: NextValue(a_acc, step_sum[0:38]),
-                7: NextValue(q_acc, step_sum[0:40]),
-            }),
-            If((walk_idx == 7) |
-               ((walk_idx == 2) & ~gouraud_en & ~persp_en) |
-               ((walk_idx == 6) & ~persp_en),
-                NextState("SPAN_WALK_RND"),
-            ).Elif((walk_idx == 2) & ~gouraud_en & persp_en,
-                NextValue(walk_idx, 7),
-                NextState("SPAN_STEP"),
-            ).Else(
-                NextValue(walk_idx, walk_idx + 1),
-                NextState("SPAN_STEP"),
-            )
+            NextValue(a_acc, a_acc + dx_a_r),
+            NextValue(q_acc, q_acc + dx_q_r),
+            NextState("SPAN_WALK_RND"),
         )

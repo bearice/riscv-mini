@@ -1029,7 +1029,7 @@ class Gfx2DEngine(LiteXModule):
         pipe_ce.attr.add(("syn_maxfan", 16))
         pipe_ce_3d = Signal(reset=1, name="g3d_pipe_ce")
         pipe_ce_3d.attr.add(("syn_preserve", 1))
-        pipe_ce_3d.attr.add(("syn_maxfan", 32))
+        pipe_ce_3d.attr.add(("syn_maxfan", 16))
 
         def delayed(sig, n):
             for _ in range(n):
@@ -2259,7 +2259,7 @@ class Gfx2DEngine(LiteXModule):
 
         self.comb += alu_stage_next.eq(
             Mux(fsm.ongoing("T_COMP_START"), 0,
-            Mux(alu_sub == 5, alu_stage + 1, alu_stage))
+            Mux(alu_sub == 5, Mux(alu_stage >= last_stage, 0, alu_stage + 1), alu_stage))
         )
         self.sync += [
             If(fsm.ongoing("T_COMP_START"),
@@ -2269,9 +2269,9 @@ class Gfx2DEngine(LiteXModule):
                 pipe_ce_3d.eq(1),
             ).Elif(alu_sub == 5,
                 alu_sub.eq(0),
-                alu_stage.eq(alu_stage + 1),
-                pipe_ce.eq(alu_stage == 3),
-                pipe_ce_3d.eq(alu_stage == 3),
+                alu_stage.eq(Mux(alu_stage >= last_stage, 0, alu_stage + 1)),
+                pipe_ce.eq(alu_stage >= last_stage),
+                pipe_ce_3d.eq(alu_stage >= last_stage),
             ).Else(
                 alu_sub.eq(alu_sub + 1),
                 pipe_ce.eq(0),
@@ -2291,7 +2291,7 @@ class Gfx2DEngine(LiteXModule):
         # Register z_pass separately at stage 0 so z_lb -> eval_z_func can
         # place its first FF near the BSRAM without routing to the ALU tile.
         f3d_z_pass_q = Signal(reset_less=True)
-        self.sync += If(pipe_ce, f3d_z_pass_q.eq(frag3d.z_pass))
+        self.sync += f3d_z_pass_q.eq(frag3d.z_pass)
         f3d_z_pass_out = delayed(f3d_z_pass_q, Frag3DPort.LATENCY - 1)
         self.comb += [
             frag3d.ready.eq(~self.busy & ~frag3d.stall_in & pipe_ce_3d),
@@ -2961,6 +2961,15 @@ class Gfx2D(LiteXModule):
 
         g3d_wr_mask_r = Signal(32, reset_less=True)
         g3d_wr_beat = Signal(256, reset_less=True)
+        z_wr_sel = Signal(reset=0)
+        wb_valid = Signal(reset=0)
+        wb_blk = Signal(26, reset_less=True)
+        wb_words = [Signal(32, reset_less=True) for _ in range(8)]
+        wb_word_en = [Signal(reset_less=True) for _ in range(8)]
+        px_blk_r = Signal(26, reset_less=True)
+        px_lane_r = Signal(3, reset_less=True)
+        px_lane_r.attr.add(("syn_maxfan", 16))
+        wb_miss_r = Signal(reset_less=True)
         z_en = Signal()
         z_row_valid = Signal()
         z_row_dirty = Signal()
@@ -2971,6 +2980,7 @@ class Gfx2D(LiteXModule):
         z_cur_blk_lo = Signal(7, reset_less=True)
         z_cur_blk_hi = Signal(7, reset_less=True)
         z_blk_idx = Signal(7, reset_less=True)
+        z_blk_idx.attr.add(("syn_maxfan", 16))
         z_blk_done_r = Signal(reset_less=True)
         z_blk_next_r = Signal(7, reset_less=True)
         z_lane_idx = Signal(4, reset_less=True)
@@ -2979,6 +2989,8 @@ class Gfx2D(LiteXModule):
         z_flush_req = Signal()
         z_sync_done = Signal()
         g3d_ds_busy_r = Signal(reset=1)
+        g3d_pipe_busy_r = Signal(reset=1)
+        g3d_wr_drained_r = Signal(reset=1)
 
         self.sync.ddr += [
             g3d_ds_busy_r.eq(g3d_pipe.downstream_busy),
@@ -2991,8 +3003,9 @@ class Gfx2D(LiteXModule):
             z_en.eq(g3d_z_cfg[0] | g3d_z_cfg[1]),
             px_byte_addr.eq(g3d_fb_addr + Cat(Constant(0, 2), px_word_off)),
             px_lane.eq(px_byte_addr[2:5]),
-            g3d_wr_data.eq(g3d_wr_beat),
-            g3d_wr_mask.eq(g3d_wr_mask_r),
+            g3d_wr_data.eq(Mux(z_wr_sel, g3d_wr_beat, Cat(*wb_words))),
+            g3d_wr_mask.eq(Mux(z_wr_sel, g3d_wr_mask_r,
+                               Cat(*[Replicate(~wb_word_en[i], 4) for i in range(8)]))),
             g3d_pipe.tri.row_sync_ack.eq(Mux(z_en, z_sync_done & ~z_flush_only, 1)),
         ]
 
@@ -3004,13 +3017,21 @@ class Gfx2D(LiteXModule):
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
             If(px_level != 0,
+                NextValue(z_wr_sel, 0),
                 NextState("CALC"),
+            ).Elif(wb_valid & (z_flush_req | (z_en & g3d_pipe.tri.row_sync_req & ~g3d_ds_busy_r) | ~g3d_pipe_busy_r),
+                NextValue(z_wr_sel, 0),
+                NextValue(g3d_req_blk, wb_blk),
+                NextValue(wb_valid, 0),
+                NextState("ISSUE"),
             ).Elif(z_flush_req,
+                NextValue(z_wr_sel, 1),
                 NextValue(z_flush_only, 1),
                 NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
                 NextValue(z_blk_idx, z_cur_blk_lo),
                 NextState("Z_WR_ADDR1"),
             ).Elif(z_en & g3d_pipe.tri.row_sync_req & ~g3d_ds_busy_r,
+                NextValue(z_wr_sel, 1),
                 NextValue(z_flush_only, 0),
                 If(z_row_valid & z_row_dirty,
                     NextValue(px_y_mul, z_cur_y * g3d_fb_stride),
@@ -3039,7 +3060,6 @@ class Gfx2D(LiteXModule):
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
             NextValue(px_word_off, px_y_mul + px_x),
-            NextValue(g3d_wr_beat, Replicate(px_rgba, 8)),
             NextState("CALC3"),
         )
         wr_fsm.act("CALC3",
@@ -3047,23 +3067,55 @@ class Gfx2D(LiteXModule):
             g3d_ui_cmd_en.eq(0),
             g3d_ui_wr_en.eq(0),
             px_pop.eq(0),
-            NextValue(g3d_req_blk, px_byte_addr[5:31]),
-            NextValue(g3d_wr_mask_r, ~(Constant(0xF, 32) << Cat(Constant(0, 2), px_lane))),
-            NextState("ISSUE"),
+            NextValue(px_blk_r, px_byte_addr[5:31]),
+            NextValue(px_lane_r, px_lane),
+            NextState("CALC3B"),
         )
-        wr_fsm.act("ISSUE",
+        wr_fsm.act("CALC3B",
             g3d_ui_cmd.eq(0),
-            g3d_ui_cmd_en.eq(1),
-            g3d_ui_wr_en.eq(1),
-            If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            px_pop.eq(0),
+            NextValue(wb_miss_r, wb_valid & (px_blk_r != wb_blk)),
+            NextState("CALC4"),
+        )
+        wr_fsm.act("CALC4",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(0),
+            g3d_ui_wr_en.eq(0),
+            If(wb_miss_r,
+                px_pop.eq(0),
+                NextValue(z_wr_sel, 0),
+                NextValue(g3d_req_blk, wb_blk),
+                NextValue(wb_valid, 0),
+                NextState("ISSUE"),
+            ).Else(
                 px_pop.eq(1),
                 NextValue(g3d_pix_lo, g3d_pix_lo + 1),
                 If(g3d_pix_carry,
                     NextValue(g3d_pix_hi, g3d_pix_hi + 1),
                 ),
+                If(~wb_valid,
+                    NextValue(wb_valid, 1),
+                    NextValue(wb_blk, px_blk_r),
+                    *[NextValue(wb_words[i], px_rgba) for i in range(8)],
+                    *[NextValue(wb_word_en[i], px_lane_r == i) for i in range(8)],
+                ).Else(
+                    *[If(px_lane_r == i,
+                         NextValue(wb_words[i], px_rgba),
+                         NextValue(wb_word_en[i], 1))
+                      for i in range(8)],
+                ),
                 NextState("IDLE"),
-            ).Else(
-                px_pop.eq(0),
+            ),
+        )
+        wr_fsm.act("ISSUE",
+            g3d_ui_cmd.eq(0),
+            g3d_ui_cmd_en.eq(1),
+            g3d_ui_wr_en.eq(1),
+            px_pop.eq(0),
+            If(self.ui.cmd_ready & self.ui.wr_data_rdy,
+                NextState("IDLE"),
             ),
         )
         # Z-buffer row writeback states
@@ -3184,12 +3236,12 @@ class Gfx2D(LiteXModule):
             g3d_req_sync[1].eq(g3d_req_sync[0]),
         ]
 
-        g3d_pipe_busy_r = Signal(reset=1)
         g3d_fsm = ClockDomainsRenamer("ddr")(OneHotFSM(reset_state="IDLE"))
         self.submodules += g3d_fsm
-        self.sync.ddr += g3d_pipe_busy_r.eq(
-            g3d_pipe.pipe_busy | g3d_fsm.ongoing("START")
-        )
+        self.sync.ddr += [
+            g3d_pipe_busy_r.eq(g3d_pipe.pipe_busy | g3d_fsm.ongoing("START")),
+            g3d_wr_drained_r.eq((px_level == 0) & ~wb_valid & wr_fsm.ongoing("IDLE")),
+        ]
         g3d_cfg_bad = Signal()
         self.comb += g3d_cfg_bad.eq(
             g3d_tex_cfg[25]
@@ -3225,7 +3277,7 @@ class Gfx2D(LiteXModule):
         g3d_fsm.act("RUN",
             g3d_pipe.tri.start.eq(0),
             If(g3d_pipe.tri.err_param, NextValue(g3d_err_ddr, 1)),
-            If(~g3d_pipe_busy_r & (px_level == 0) & wr_fsm.ongoing("IDLE"),
+            If(~g3d_pipe_busy_r & g3d_wr_drained_r,
                 If(z_en & z_row_valid & z_row_dirty,
                     NextState("FLUSH_Z"),
                 ).Else(
