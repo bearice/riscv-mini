@@ -1,0 +1,25 @@
+#!/bin/sh
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export HOME=/root
+export DISPLAY=:0
+
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+[ -c /dev/null ] || mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mkdir -p /dev/pts /dev/shm /tmp /var/run /root
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs -o mode=1777 tmpfs /tmp 2>/dev/null || true
+mount -t tmpfs -o mode=1777 tmpfs /dev/shm 2>/dev/null || true
+chmod 1777 /tmp /dev/shm
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
+
+hostname ae350 2>/dev/null || true
+
+echo "ae350-tinyx-linux init"
+uname -a
+head -n 3 /proc/meminfo
+ls -l /dev/fb0 /dev/ae350-gfx3d /dev/input/mice 2>&1 || true
+
+export PS1='ae350-x11# '
+exec setsid cttyhack /bin/sh

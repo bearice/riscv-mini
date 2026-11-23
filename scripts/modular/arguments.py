@@ -58,6 +58,8 @@ def gwbasic(parser):
 def linux(parser):
     parser.add_argument('--source', type=Path, help='AE350 configured native kernel source tree')
 
+    parser.add_argument('--initramfs', type=Path, help='AE350: external uncompressed newc .cpio archive to embed instead of mini-init')
+
     parser.add_argument('--board-evidence', type=Path, help='Attach a passing board linux operation receipt')
 
 def matrix(parser):

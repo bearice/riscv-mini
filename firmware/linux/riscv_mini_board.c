@@ -8,6 +8,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/timer.h>
+#include <linux/version.h>
 
 struct mini_led { struct led_classdev led; void __iomem *regs; spinlock_t *lock; unsigned int bit; };
 struct mini_board {
@@ -25,6 +26,18 @@ static int mini_gpio_get(struct gpio_chip *chip,unsigned int offset)
 	return offset<6 ? !!(readl(b->regs)&BIT(offset)) :
 		!!(readl(b->regs+4)&BIT(offset-6));
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
+static int mini_gpio_set(struct gpio_chip *chip,unsigned int offset,int value)
+{
+	struct mini_board *b=gpiochip_get_data(chip);
+	unsigned long flags; u32 bits;
+	if(offset>=6) return -EINVAL;
+	spin_lock_irqsave(&b->lock,flags); bits=readl(b->regs);
+	writel(value?bits|BIT(offset):bits&~BIT(offset),b->regs);
+	spin_unlock_irqrestore(&b->lock,flags);
+	return 0;
+}
+#else
 static void mini_gpio_set(struct gpio_chip *chip,unsigned int offset,int value)
 {
 	struct mini_board *b=gpiochip_get_data(chip);
@@ -34,6 +47,7 @@ static void mini_gpio_set(struct gpio_chip *chip,unsigned int offset,int value)
 	writel(value?bits|BIT(offset):bits&~BIT(offset),b->regs);
 	spin_unlock_irqrestore(&b->lock,flags);
 }
+#endif
 static int mini_gpio_input(struct gpio_chip *chip,unsigned int offset) { return offset>=6?0:-EINVAL; }
 static int mini_gpio_output(struct gpio_chip *chip,unsigned int offset,int value)
 { if(offset>=6) return -EINVAL; mini_gpio_set(chip,offset,value); return 0; }
@@ -61,7 +75,11 @@ static irqreturn_t mini_board_irq(int irq,void *data)
 { struct mini_board *b=data; mini_input_report(b); return IRQ_HANDLED; }
 static void mini_board_timer(struct timer_list *timer)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+	struct mini_board *b=timer_container_of(b,timer,timer);
+#else
 	struct mini_board *b=from_timer(b,timer,timer);
+#endif
 	/* Switches have no hardware event latch, so sample them too. */
 	mini_input_report(b); mod_timer(&b->timer,jiffies+msecs_to_jiffies(50));
 }
@@ -101,7 +119,13 @@ static int mini_board_probe(struct platform_device *pdev)
 	return 0;
 }
 static void mini_board_shutdown(struct platform_device *pdev)
-{ struct mini_board *b=platform_get_drvdata(pdev); if(b->input) { writel(0,b->regs+20); del_timer_sync(&b->timer); } }
+{ struct mini_board *b=platform_get_drvdata(pdev); if(b->input) { writel(0,b->regs+20);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	timer_delete_sync(&b->timer);
+#else
+	del_timer_sync(&b->timer);
+#endif
+} }
 struct mini_rgb { struct led_classdev_mc mc; struct mc_subled colors[3]; void __iomem *regs; };
 static int mini_rgb_set(struct led_classdev *led,enum led_brightness value)
 {

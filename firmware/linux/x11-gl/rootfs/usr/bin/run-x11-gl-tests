@@ -1,0 +1,48 @@
+#!/bin/sh
+set -eu
+
+echo "=== AE350 TinyX + OpenGL Verification ==="
+[ -c /dev/fb0 ] || { echo "FAIL: missing /dev/fb0"; exit 1; }
+[ -c /dev/ae350-gfx3d ] || { echo "FAIL: missing /dev/ae350-gfx3d"; exit 1; }
+
+uname -a
+head -n 3 /proc/meminfo
+free -m || true
+
+/usr/bin/startx-ae350
+cat /tmp/xfbdev.log || true
+cat /tmp/wm.log || true
+
+pgrep -x Xfbdev >/dev/null || { echo "FAIL: Xfbdev not running"; exit 1; }
+pgrep -x ae350_wm >/dev/null || { echo "FAIL: ae350_wm not running"; exit 1; }
+
+echo "--- xinfo ---"
+DISPLAY=:0 xinfo
+
+echo "--- glxgears SW (TinyGL) ---"
+DISPLAY=:0 AE350_GFX3D=0 glxgears --frames 20
+
+echo "--- glxgears HW (AE350 GFX3D) ---"
+DISPLAY=:0 AE350_GFX3D=1 glxgears --frames 30
+
+echo "--- glxmesh SW (TinyGL 1000 tris) ---"
+DISPLAY=:0 AE350_GFX3D=0 glxmesh --frames 10
+
+echo "--- glxmesh HW (AE350 GFX3D 1000 tris) ---"
+DISPLAY=:0 AE350_GFX3D=1 glxmesh --frames 20
+
+echo "--- video dma_status ---"
+DMA_STATUS=$(cat /sys/class/graphics/fb0/device/dma_status)
+echo "$DMA_STATUS"
+case "$DMA_STATUS" in
+    *"underflows=0"*"errors=0"*) ;;
+    *) echo "FAIL: video dma_status error/underflow"; exit 1 ;;
+esac
+
+echo "--- dmesg check ---"
+if dmesg | grep -E 'Oops|BUG:|Kernel panic|Unhandled'; then
+    echo "FAIL: kernel fault detected in dmesg"
+    exit 1
+fi
+
+echo "AE350_X11_GL_ALL_PASS"

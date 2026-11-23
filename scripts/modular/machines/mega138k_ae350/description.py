@@ -85,6 +85,9 @@ def execute(store, run, args, dry):
     if args.target == 'uboot':
         from scripts.modular.machines.mega138k_ae350.uboot import build
         return build(store, run, args, dry)
+    if args.target == 'busybox':
+        from scripts.modular.machines.mega138k_ae350.busybox import build
+        return build(store, run, args, dry)
     if getattr(args, 'locked', None):
         raise ValueError('AE350 locked system replay requires a completed system backend')
     if getattr(args, 'synthesize', False) and args.target != 'gateware':

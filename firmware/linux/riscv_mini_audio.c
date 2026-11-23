@@ -6,6 +6,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -147,8 +148,13 @@ static int mini_audio_probe(struct platform_device *pdev)
 	if(IS_ERR(a->out)||IS_ERR(a->mic)) { ret=-ENODEV; goto free; }
 	writel(0,a->out); writel(1,a->out+4); writel(0,a->mic);
 	ret=readl_poll_timeout(a->out+12,busy,!(busy&BIT(19)),10,100000); if(ret) goto free;
-	spin_lock_init(&a->lock); hrtimer_init(&a->timer,CLOCK_MONOTONIC,HRTIMER_MODE_REL);
-	a->timer.function=mini_audio_tick;
+	spin_lock_init(&a->lock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	hrtimer_setup(&a->timer, mini_audio_tick, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+#else
+	hrtimer_init(&a->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	a->timer.function = mini_audio_tick;
+#endif
 	ret=snd_pcm_new(card,"PT8211 and I2S",0,1,1,&a->pcm); if(ret) goto free;
 	a->pcm->private_data=a; strscpy(a->pcm->name,"riscv-mini stereo PCM",sizeof(a->pcm->name));
 	snd_pcm_set_ops(a->pcm,SNDRV_PCM_STREAM_PLAYBACK,&mini_pcm_ops);

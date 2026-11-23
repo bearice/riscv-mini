@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
+rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+
+if ! pgrep -x Xfbdev >/dev/null 2>&1; then
+    Xfbdev :0 -fb /dev/fb0 -noreset -nolisten tcp -ac -br -s 0 >/tmp/xfbdev.log 2>&1 &
+    i=0
+    while [ ! -S /tmp/.X11-unix/X0 ] && [ "$i" -lt 100 ]; do
+        usleep 100000 2>/dev/null || sleep 1
+        i=$((i + 1))
+    done
+    if [ ! -S /tmp/.X11-unix/X0 ]; then
+        echo "Xfbdev failed to open :0"
+        cat /tmp/xfbdev.log || true
+        exit 1
+    fi
+fi
+
+if ! pgrep -x ae350_wm >/dev/null 2>&1; then
+    DISPLAY=:0 ae350_wm >/tmp/wm.log 2>&1 &
+    sleep 1
+fi
+echo "X11 started on :0"

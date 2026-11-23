@@ -193,6 +193,25 @@ void glVertex3f(GLfloat x, GLfloat y, GLfloat z) {
             }
         }
         break;
+    case GL_QUAD_STRIP:
+        if (n == 4) {
+            if (c->shade_model == GL_FLAT) {
+                GLVertex v2_flat = c->vertex[2];
+                v2_flat.color = c->vertex[3].color;
+                v2_flat.zp.r = c->vertex[3].zp.r;
+                v2_flat.zp.g = c->vertex[3].zp.g;
+                v2_flat.zp.b = c->vertex[3].zp.b;
+                gl_draw_triangle(c, &c->vertex[0], &c->vertex[1], &c->vertex[3]);
+                gl_draw_triangle(c, &c->vertex[0], &c->vertex[3], &v2_flat);
+            } else {
+                gl_draw_triangle(c, &c->vertex[0], &c->vertex[1], &c->vertex[3]);
+                gl_draw_triangle(c, &c->vertex[0], &c->vertex[3], &c->vertex[2]);
+            }
+            c->vertex[0] = c->vertex[2];
+            c->vertex[1] = c->vertex[3];
+            n = 2;
+        }
+        break;
     default:
         n = 0;
         break;

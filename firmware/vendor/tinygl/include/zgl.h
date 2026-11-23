@@ -141,7 +141,7 @@ void glGetStats(TinyGLStats *out);
 
 /* Cycle counter helper */
 static inline uint64_t tgl_rdcycle(void) {
-#if defined(__riscv)
+#if defined(__riscv) && !defined(__linux__)
     uint32_t hi0, lo, hi1;
     do {
         __asm__ volatile("csrr %0, 0xc80" : "=r"(hi0));

@@ -6,17 +6,24 @@
  * modes in RGB565/XRGB1555) with double-buffered frame present, and uses
  * the GFX2D accelerator for fillrect/copyarea/imageblit (fbcon text).
  */
+#include <linux/atomic.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-map-ops.h>
 #include <linux/fb.h>
 #include <linux/io.h>
+#include <linux/log2.h>
 #include <linux/math64.h>
+#include <linux/miscdevice.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/uaccess.h>
 
 #include "riscv_mini_ae350_regs.h"
+#include "ae350_gfx3d_uapi.h"
 
 struct ae350_fb {
 	void __iomem *csr;	/* video engine */
@@ -40,6 +47,18 @@ struct ae350_fb {
 	dma_addr_t scratch_dma;
 	size_t scratch_size;
 	spinlock_t gfx_lock;
+	/* GFX3D offscreen render target + Z-buffer exposed via /dev/ae350-gfx3d. */
+	struct mutex gfx3d_lock;
+	atomic_t gfx3d_active;
+	struct miscdevice gfx3d_misc;
+	bool gfx3d_registered;
+	void *gfx3d_color_cpu;
+	dma_addr_t gfx3d_color_dma;
+	size_t gfx3d_color_bytes;
+	void *gfx3d_z_cpu;
+	dma_addr_t gfx3d_z_dma;
+	size_t gfx3d_z_bytes;
+	u32 gfx3d_stride_px;
 };
 
 static void ae350_fb_clean(struct ae350_fb *fb, u32 slot)
@@ -79,6 +98,10 @@ static int ae350_fb_check_var(struct fb_var_screeninfo *var,
 {
 	struct ae350_fb *fb = info->par;
 
+	if (!var->xres_virtual)
+		var->xres_virtual = fb->width;
+	if (!var->yres_virtual || var->yres_virtual == fb->height)
+		var->yres_virtual = fb->height * 2;
 	if (var->xres != fb->width || var->yres != fb->height ||
 	    var->xres_virtual != fb->width ||
 	    var->yres_virtual != fb->height * 2 ||
@@ -91,6 +114,18 @@ static int ae350_fb_check_var(struct fb_var_screeninfo *var,
 	var->blue = info->var.blue;
 	var->transp = info->var.transp;
 	return 0;
+}
+
+static int ae350_fb_set_par(struct fb_info *info)
+{
+	struct ae350_fb *fb = info->par;
+	u32 slot = info->var.yoffset ? 1 : 0;
+	int ret;
+
+	ret = ae350_present(fb, slot);
+	if (!ret)
+		fb->active_slot = slot;
+	return ret;
 }
 
 static int ae350_fb_setcolreg(unsigned regno, unsigned red, unsigned green,
@@ -247,7 +282,8 @@ static void ae350_gfx_write_desc(struct ae350_fb *fb, u32 op,
 
 static int ae350_gfx_ready(struct ae350_fb *fb)
 {
-	return fb->gfx && (fb->format <= AE350_FMT_XRGB1555) &&
+	return fb->gfx && !atomic_read(&fb->gfx3d_active) &&
+		(fb->format <= AE350_FMT_XRGB1555) &&
 		readl(fb->gfx) == AE350_GFX2D_ID &&
 		!(readl(fb->gfx + AE350_G_STATUS) & AE350_G_STATUS_BUSY);
 }
@@ -545,6 +581,7 @@ static int ae350_fb_ioctl(struct fb_info *info, unsigned int cmd,
 static const struct fb_ops ae350_fb_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = ae350_fb_check_var,
+	.fb_set_par = ae350_fb_set_par,
 	.fb_setcolreg = ae350_fb_setcolreg,
 	.fb_blank = ae350_fb_blank,
 	.fb_mmap = ae350_fb_mmap,
@@ -556,6 +593,321 @@ static const struct fb_ops ae350_fb_ops = {
 	.fb_sync = ae350_fb_sync,
 	.fb_read = fb_sys_read,
 	.fb_write = ae350_fb_write,
+};
+
+static void ae350_gfx3d_acquire(struct ae350_fb *fb)
+{
+	unsigned long flags;
+
+	mutex_lock(&fb->gfx3d_lock);
+	spin_lock_irqsave(&fb->gfx_lock, flags);
+	atomic_set(&fb->gfx3d_active, 1);
+	spin_unlock_irqrestore(&fb->gfx_lock, flags);
+}
+
+static int ae350_gfx3d_release(struct ae350_fb *fb)
+{
+	unsigned long flags;
+	int rc;
+
+	rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+	spin_lock_irqsave(&fb->gfx_lock, flags);
+	atomic_set(&fb->gfx3d_active, 0);
+	spin_unlock_irqrestore(&fb->gfx_lock, flags);
+	mutex_unlock(&fb->gfx3d_lock);
+	return rc;
+}
+
+static long ae350_gfx3d_ioctl(struct file *filp, unsigned int cmd,
+			      unsigned long arg)
+{
+	struct ae350_fb *fb = container_of(filp->private_data, struct ae350_fb,
+					   gfx3d_misc);
+	void __user *argp = (void __user *)arg;
+
+	if (!fb->gfx || !fb->gfx3d_color_cpu || !fb->gfx3d_z_cpu)
+		return -ENODEV;
+
+	switch (cmd) {
+	case AE350_GFX3D_IOC_INFO: {
+		struct ae350_gfx3d_info info = {
+			.version = AE350_GFX3D_ABI_VERSION,
+			.max_width = AE350_GFX3D_MAX_W,
+			.max_height = AE350_GFX3D_MAX_H,
+			.max_batch = AE350_GFX3D_MAX_BATCH,
+			.tmem_texels = AE350_GFX3D_TMEM_MAX_TEXELS,
+			.fb_width = fb->width,
+			.fb_height = fb->height,
+			.fb_format = fb->format,
+		};
+
+		if (copy_to_user(argp, &info, sizeof(info)))
+			return -EFAULT;
+		return 0;
+	}
+	case AE350_GFX3D_IOC_CLEAR: {
+		struct ae350_gfx3d_clear req;
+		u32 stride_px;
+		int rc = 0, rel_rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!req.width || !req.height ||
+		    req.width > AE350_GFX3D_MAX_W ||
+		    req.height > AE350_GFX3D_MAX_H)
+			return -EINVAL;
+		stride_px = ALIGN(req.width, 16u);
+		ae350_gfx3d_acquire(fb);
+		rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+		if (!rc && req.clear_color) {
+			u32 *dst = (u32 *)fb->gfx3d_color_cpu;
+			u32 y, x;
+			for (y = 0; y < req.height; y++) {
+				u32 *row = dst + y * stride_px;
+				for (x = 0; x < req.width; x++)
+					row[x] = req.color_xrgb8888;
+			}
+			ae350_cache_clean_range((u32)(uintptr_t)fb->gfx3d_color_cpu,
+						stride_px * req.height * 4u);
+		}
+		if (!rc && req.clear_z) {
+			u16 *dst = (u16 *)fb->gfx3d_z_cpu;
+			u16 zv = (u16)(req.z_val & 0xFFFFu);
+			u32 y, x;
+			for (y = 0; y < req.height; y++) {
+				u16 *row = dst + y * stride_px;
+				for (x = 0; x < req.width; x++)
+					row[x] = zv;
+			}
+			ae350_cache_clean_range((u32)(uintptr_t)fb->gfx3d_z_cpu,
+						stride_px * req.height * 2u);
+		}
+		fb->gfx3d_stride_px = stride_px;
+		rel_rc = ae350_gfx3d_release(fb);
+		return rc ? rc : rel_rc;
+	}
+	case AE350_GFX3D_IOC_UPLOAD_TEX: {
+		struct ae350_gfx3d_tex req;
+		u16 *buf = NULL;
+		u32 count = 0;
+		u32 lw, lh, i;
+		int rc, rel_rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (req.width == 0 || req.height == 0 || req.rgb565_ptr == 0) {
+			ae350_gfx3d_acquire(fb);
+			rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+			if (!rc)
+				writel(0u, fb->gfx + AE350_G3D_TEX_CFG);
+			rel_rc = ae350_gfx3d_release(fb);
+			return rc ? rc : rel_rc;
+		}
+		if ((req.rgb565_ptr >> 32) != 0)
+			return -EFAULT;
+		if (!is_power_of_2(req.width) || !is_power_of_2(req.height) ||
+		    req.width > AE350_GFX3D_TMEM_MAX_TEXELS ||
+		    req.height > AE350_GFX3D_TMEM_MAX_TEXELS)
+			return -EINVAL;
+		count = req.width * req.height;
+		if (!count || count > AE350_GFX3D_TMEM_MAX_TEXELS)
+			return -EINVAL;
+		buf = kmalloc_array(count, sizeof(u16), GFP_KERNEL);
+		if (!buf)
+			return -ENOMEM;
+		if (copy_from_user(buf, u64_to_user_ptr(req.rgb565_ptr),
+				   count * sizeof(u16))) {
+			kfree(buf);
+			return -EFAULT;
+		}
+		lw = ilog2(req.width);
+		lh = ilog2(req.height);
+		ae350_gfx3d_acquire(fb);
+		rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+		if (!rc) {
+			u32 cfg = AE350_G3D_TEX_EN |
+				  (req.bilinear ? AE350_G3D_BILINEAR_EN : 0u) |
+				  ((req.wrap_u & 3u) << 2) |
+				  ((req.wrap_v & 3u) << 4) |
+				  ((lw & 0xFu) << 7) |
+				  ((lh & 0xFu) << 11);
+			writel(cfg, fb->gfx + AE350_G3D_TEX_CFG);
+			writel(0u, fb->gfx + AE350_G3D_TMEM_ADDR);
+			for (i = 0; i < count; i++) {
+				u16 p = buf[i];
+				u32 r5 = (p >> 11) & 0x1Fu;
+				u32 g6 = (p >> 5) & 0x3Fu;
+				u32 b5 = p & 0x1Fu;
+				u32 r8 = (r5 << 3) | (r5 >> 2);
+				u32 g8 = (g6 << 2) | (g6 >> 4);
+				u32 b8 = (b5 << 3) | (b5 >> 2);
+				writel(0xFF000000u | (r8 << 16) | (g8 << 8) | b8,
+				       fb->gfx + AE350_G3D_TMEM_DATA);
+			}
+		}
+		rel_rc = ae350_gfx3d_release(fb);
+		kfree(buf);
+		return rc ? rc : rel_rc;
+	}
+	case AE350_GFX3D_IOC_SUBMIT: {
+		struct ae350_gfx3d_submit req;
+		struct ae350_gfx3d_tri *chunk;
+		const struct ae350_gfx3d_tri __user *user_tris;
+		u32 stride_px, done = 0, submitted = 0;
+		u32 last_z_cfg = 0xFFFFFFFFu, last_tex_cfg = 0xFFFFFFFFu;
+		int rc = 0, rel_rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!req.width || !req.height ||
+		    req.width > AE350_GFX3D_MAX_W ||
+		    req.height > AE350_GFX3D_MAX_H ||
+		    req.count > AE350_GFX3D_MAX_BATCH)
+			return -EINVAL;
+		if (req.count == 0) {
+			req.pixels_out = readl(fb->gfx + AE350_G3D_PIXELS_OUT);
+			if (copy_to_user(argp, &req, sizeof(req)))
+				return -EFAULT;
+			return 0;
+		}
+		if (!req.tris_ptr || (req.tris_ptr >> 32) != 0)
+			return -EFAULT;
+		user_tris = u64_to_user_ptr(req.tris_ptr);
+		chunk = kmalloc_array(64u, sizeof(*chunk), GFP_KERNEL);
+		if (!chunk)
+			return -ENOMEM;
+
+		stride_px = ALIGN(req.width, 16u);
+		ae350_gfx3d_acquire(fb);
+		rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+		if (rc)
+			goto out_submit_release;
+
+		ae350_gfx3d_init_shader(fb->gfx);
+		writel((u32)fb->gfx3d_color_dma, fb->gfx + AE350_G3D_FB_ADDR);
+		writel(stride_px, fb->gfx + AE350_G3D_FB_STRIDE);
+		writel((u32)fb->gfx3d_z_dma, fb->gfx + AE350_G3D_ZBUF_ADDR);
+		fb->gfx3d_stride_px = stride_px;
+
+		while (done < req.count) {
+			u32 n = min_t(u32, req.count - done, 64u);
+			u32 i, j;
+
+			if (copy_from_user(chunk, user_tris + done,
+					   n * sizeof(*chunk))) {
+				rc = -EFAULT;
+				goto out_submit_release;
+			}
+			for (i = 0; i < n; i++) {
+				rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+				if (rc)
+					goto out_submit_release;
+				if (chunk[i].z_cfg != last_z_cfg) {
+					writel(chunk[i].z_cfg,
+					       fb->gfx + AE350_G3D_Z_CFG);
+					last_z_cfg = chunk[i].z_cfg;
+				}
+				if (chunk[i].tex_cfg != last_tex_cfg) {
+					writel(chunk[i].tex_cfg,
+					       fb->gfx + AE350_G3D_TEX_CFG);
+					last_tex_cfg = chunk[i].tex_cfg;
+				}
+				for (j = 0; j < 24u; j++)
+					writel(chunk[i].words[j],
+					       fb->gfx + AE350_G3D_TRI_BASE + 4u * j);
+				writel(1u, fb->gfx + AE350_G3D_CTRL);
+				submitted++;
+				if ((submitted & 31u) == 0u)
+					cond_resched();
+			}
+			done += n;
+		}
+		rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+		if (!rc)
+			req.pixels_out = readl(fb->gfx + AE350_G3D_PIXELS_OUT);
+
+out_submit_release:
+		rel_rc = ae350_gfx3d_release(fb);
+		kfree(chunk);
+		if (rc)
+			return rc;
+		if (rel_rc)
+			return rel_rc;
+		if (copy_to_user(argp, &req, sizeof(req)))
+			return -EFAULT;
+		return 0;
+	}
+	case AE350_GFX3D_IOC_READBACK: {
+		struct ae350_gfx3d_readback req;
+		u8 __user *dst_user;
+		u16 *row565 = NULL;
+		u32 stride_px, y, x;
+		int rc;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		if (!req.width || !req.height ||
+		    req.width > AE350_GFX3D_MAX_W ||
+		    req.height > AE350_GFX3D_MAX_H)
+			return -EINVAL;
+		if (req.fmt != AE350_GFX3D_READBACK_RGB565 &&
+		    req.fmt != AE350_GFX3D_READBACK_XRGB8888)
+			return -EINVAL;
+		if (req.dst_stride < req.width * (req.fmt == AE350_GFX3D_READBACK_RGB565 ? 2u : 4u))
+			return -EINVAL;
+		if (!req.dst_ptr || (req.dst_ptr >> 32) != 0)
+			return -EFAULT;
+		dst_user = u64_to_user_ptr(req.dst_ptr);
+		if (req.fmt == AE350_GFX3D_READBACK_RGB565) {
+			row565 = kmalloc_array(req.width, sizeof(u16), GFP_KERNEL);
+			if (!row565)
+				return -ENOMEM;
+		}
+
+		stride_px = ALIGN(req.width, 16u);
+		mutex_lock(&fb->gfx3d_lock);
+		rc = ae350_gfx3d_wait(fb->gfx, 0x200000u);
+		if (!rc) {
+			const u32 *src = (const u32 *)fb->gfx3d_color_cpu;
+
+			ae350_cache_inval_range((u32)(uintptr_t)fb->gfx3d_color_cpu,
+						stride_px * req.height * 4u);
+			for (y = 0; y < req.height; y++) {
+				const u32 *src_row = src + y * stride_px;
+				u8 __user *dst_row = dst_user + (size_t)y * req.dst_stride;
+
+				if (req.fmt == AE350_GFX3D_READBACK_XRGB8888) {
+					if (copy_to_user(dst_row, src_row, req.width * 4u)) {
+						rc = -EFAULT;
+						break;
+					}
+				} else {
+					for (x = 0; x < req.width; x++) {
+						u32 p = src_row[x];
+						row565[x] = (u16)(((p >> 8) & 0xF800u) |
+								  ((p >> 5) & 0x07E0u) |
+								  ((p >> 3) & 0x001Fu));
+					}
+					if (copy_to_user(dst_row, row565, req.width * 2u)) {
+						rc = -EFAULT;
+						break;
+					}
+				}
+			}
+		}
+		mutex_unlock(&fb->gfx3d_lock);
+		kfree(row565);
+		return rc;
+	}
+	default:
+		return -ENOTTY;
+	}
+}
+
+static const struct file_operations ae350_gfx3d_fops = {
+	.owner = THIS_MODULE,
+	.unlocked_ioctl = ae350_gfx3d_ioctl,
+	.llseek = noop_llseek,
 };
 
 static ssize_t dma_status_show(struct device *dev,
@@ -730,7 +1082,9 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		goto free1;
 	}
 	fb->active_slot = 0;
-	/* Optional second register range: GFX2D accelerator. */
+	mutex_init(&fb->gfx3d_lock);
+	atomic_set(&fb->gfx3d_active, 0);
+	/* Optional second register range: GFX2D accelerator (+GFX3D engine). */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (res) {
 		fb->gfx = devm_ioremap_resource(dev, res);
@@ -738,6 +1092,37 @@ static int ae350_fb_probe(struct platform_device *pdev)
 			fb->gfx = NULL;
 		else if (readl(fb->gfx) != AE350_GFX2D_ID)
 			fb->gfx = NULL;
+	}
+	if (fb->gfx) {
+		fb->gfx3d_color_bytes = PAGE_ALIGN(AE350_GFX3D_MAX_W * AE350_GFX3D_MAX_H * 4u);
+		fb->gfx3d_z_bytes = PAGE_ALIGN(AE350_GFX3D_MAX_W * AE350_GFX3D_MAX_H * 2u);
+		fb->gfx3d_color_cpu = dma_alloc_coherent(dev, fb->gfx3d_color_bytes,
+							 &fb->gfx3d_color_dma, GFP_KERNEL);
+		fb->gfx3d_z_cpu = dma_alloc_coherent(dev, fb->gfx3d_z_bytes,
+						     &fb->gfx3d_z_dma, GFP_KERNEL);
+		if (!fb->gfx3d_color_cpu || !fb->gfx3d_z_cpu ||
+		    fb->gfx3d_color_dma < 4096 || (fb->gfx3d_color_dma & 31u) ||
+		    fb->gfx3d_color_dma > 0x40000000u - fb->gfx3d_color_bytes ||
+		    fb->gfx3d_z_dma < 4096 || (fb->gfx3d_z_dma & 31u) ||
+		    fb->gfx3d_z_dma > 0x40000000u - fb->gfx3d_z_bytes) {
+			ret = (!fb->gfx3d_color_cpu || !fb->gfx3d_z_cpu) ? -ENOMEM : -EINVAL;
+			goto free1;
+		}
+		memset(fb->gfx3d_color_cpu, 0, fb->gfx3d_color_bytes);
+		memset(fb->gfx3d_z_cpu, 0xff, fb->gfx3d_z_bytes);
+		ae350_cache_clean_range((u32)(uintptr_t)fb->gfx3d_color_cpu,
+					fb->gfx3d_color_bytes);
+		ae350_cache_clean_range((u32)(uintptr_t)fb->gfx3d_z_cpu,
+					fb->gfx3d_z_bytes);
+		fb->gfx3d_misc.minor = MISC_DYNAMIC_MINOR;
+		fb->gfx3d_misc.name = "ae350-gfx3d";
+		fb->gfx3d_misc.fops = &ae350_gfx3d_fops;
+		fb->gfx3d_misc.parent = dev;
+		fb->gfx3d_misc.mode = 0666;
+		ret = misc_register(&fb->gfx3d_misc);
+		if (ret)
+			goto free1;
+		fb->gfx3d_registered = true;
 	}
 	info->screen_buffer = fb->cpu[0];
 	info->screen_size = fb->frame_bytes * 2;
@@ -791,16 +1176,25 @@ static int ae350_fb_probe(struct platform_device *pdev)
 		unregister_framebuffer(info);
 		goto free1;
 	}
-	dev_info(dev, "fb%d: %ux%u %s double-buffered at %08x%s\n", info->node,
+	dev_info(dev, "fb%d: %ux%u %s double-buffered at %08x%s%s\n", info->node,
 		 fb->width, fb->height,
 		 fb->format == AE350_FMT_INDEX8 ? "INDEX8" :
 		 (fb->format == AE350_FMT_XRGB8888 ? "XRGB8888" :
 		  (fb->format == AE350_FMT_RGB888 ? "RGB888" :
 		   (fb->format == AE350_FMT_XRGB1555 ? "XRGB1555" : "RGB565"))),
-		 (u32)fb->dma[0], fb->gfx ? " (gfx2d accel)" : "");
+		 (u32)fb->dma[0], fb->gfx ? " (gfx2d accel)" : "",
+		 fb->gfx3d_registered ? " (/dev/ae350-gfx3d)" : "");
 	return 0;
 
 free1:
+	if (fb->gfx3d_registered)
+		misc_deregister(&fb->gfx3d_misc);
+	if (fb->gfx3d_z_cpu)
+		dma_free_coherent(dev, fb->gfx3d_z_bytes, fb->gfx3d_z_cpu,
+				  fb->gfx3d_z_dma);
+	if (fb->gfx3d_color_cpu)
+		dma_free_coherent(dev, fb->gfx3d_color_bytes,
+				  fb->gfx3d_color_cpu, fb->gfx3d_color_dma);
 	if (fb->scratch)
 		dma_free_coherent(dev, fb->scratch_size, fb->scratch,
 				  fb->scratch_dma);

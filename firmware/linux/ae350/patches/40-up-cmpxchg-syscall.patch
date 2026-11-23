@@ -1,0 +1,81 @@
+diff --git a/arch/riscv/include/asm/syscall.h b/arch/riscv/include/asm/syscall.h
+index 3431338..66c12e6 100644
+--- a/arch/riscv/include/asm/syscall.h
++++ b/arch/riscv/include/asm/syscall.h
+@@ -117,6 +117,8 @@ static inline bool arch_syscall_is_vdso_sigreturn(struct pt_regs *regs)
+ 	return false;
+ }
+ 
++asmlinkage long sys_riscv_up_cmpxchg(u32 __user *, u32, u32);
++
+ asmlinkage long sys_riscv_flush_icache(uintptr_t, uintptr_t, uintptr_t);
+ 
+ asmlinkage long sys_riscv_hwprobe(struct riscv_hwprobe *, size_t, size_t,
+diff --git a/arch/riscv/kernel/sys_riscv.c b/arch/riscv/kernel/sys_riscv.c
+index 795b2e8..046f07b 100644
+--- a/arch/riscv/kernel/sys_riscv.c
++++ b/arch/riscv/kernel/sys_riscv.c
+@@ -5,7 +5,10 @@
+  * Copyright (C) 2017 SiFive
+  */
+ 
++#include <linux/pagemap.h>
++#include <linux/sched/signal.h>
+ #include <linux/syscalls.h>
++#include <linux/uaccess.h>
+ #include <asm/cacheflush.h>
+ 
+ static long riscv_sys_mmap(unsigned long addr, unsigned long len,
+@@ -68,6 +71,40 @@ SYSCALL_DEFINE3(riscv_flush_icache, uintptr_t, start, uintptr_t, end,
+ 	return 0;
+ }
+ 
++SYSCALL_DEFINE3(riscv_up_cmpxchg, u32 __user *, ptr, u32, oldval, u32, newval)
++{
++#ifdef CONFIG_SMP
++	return -ENOSYS;
++#else
++	u32 cur;
++	int ret;
++
++	if ((unsigned long)ptr & 3) {
++		force_sig_fault(SIGBUS, BUS_ADRALN, ptr);
++		return 0;
++	}
++	if (!access_ok(ptr, sizeof(u32))) {
++		force_sig_fault(SIGSEGV, SEGV_MAPERR, ptr);
++		return 0;
++	}
++	for (;;) {
++		preempt_disable();
++		pagefault_disable();
++		ret = __get_user(cur, ptr);
++		if (!ret && cur == oldval)
++			ret = __put_user(newval, ptr);
++		pagefault_enable();
++		preempt_enable();
++		if (!ret)
++			return (long)cur;
++		if (fault_in_writeable((char __user *)ptr, sizeof(u32))) {
++			force_sig_fault(SIGSEGV, SEGV_ACCERR, ptr);
++			return 0;
++		}
++	}
++#endif
++}
++
+ /* Not defined using SYSCALL_DEFINE0 to avoid error injection */
+ asmlinkage long __riscv_sys_ni_syscall(const struct pt_regs *__unused)
+ {
+diff --git a/scripts/syscall.tbl b/scripts/syscall.tbl
+index d1ae5e9..946cb63 100644
+--- a/scripts/syscall.tbl
++++ b/scripts/syscall.tbl
+@@ -302,6 +302,7 @@
+ 
+ 244	or1k	or1k_atomic			sys_or1k_atomic
+ 
++257	riscv	riscv_up_cmpxchg		sys_riscv_up_cmpxchg
+ 258	riscv	riscv_hwprobe			sys_riscv_hwprobe
+ 259	riscv	riscv_flush_icache		sys_riscv_flush_icache
+ 

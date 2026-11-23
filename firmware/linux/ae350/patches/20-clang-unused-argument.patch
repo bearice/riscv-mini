@@ -1,6 +1,8 @@
+diff --git a/scripts/Makefile.clang b/scripts/Makefile.clang
+index b67636b..60060a2 100644
 --- a/scripts/Makefile.clang
 +++ b/scripts/Makefile.clang
-@@ -34,6 +34,7 @@
+@@ -37,6 +37,7 @@ endif
  CLANG_FLAGS	+= -Werror=unknown-warning-option
  CLANG_FLAGS	+= -Werror=ignored-optimization-argument
  CLANG_FLAGS	+= -Werror=option-ignored

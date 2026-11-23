@@ -1,6 +1,8 @@
+diff --git a/arch/riscv/Makefile b/arch/riscv/Makefile
+index 4c6de57..0efe7eb 100644
 --- a/arch/riscv/Makefile
 +++ b/arch/riscv/Makefile
-@@ -65,8 +65,9 @@
+@@ -58,8 +58,9 @@ ifeq ($(CONFIG_SHADOW_CALL_STACK),y)
  endif
  
  # ISA string setting
@@ -11,7 +13,7 @@
  riscv-march-$(CONFIG_FPU)		:= $(riscv-march-y)fd
  riscv-march-$(CONFIG_RISCV_ISA_C)	:= $(riscv-march-y)c
  riscv-march-$(CONFIG_RISCV_ISA_V)	:= $(riscv-march-y)v
-@@ -84,12 +85,12 @@
+@@ -83,12 +84,12 @@ riscv-march-$(CONFIG_TOOLCHAIN_HAS_ZABHA) := $(riscv-march-y)_zabha
  
  # Remove F,D,V from isa string for all. Keep extensions between "fd" and "v" by
  # matching non-v and non-multi-letter extensions out with the filter ([^v_]*)
@@ -25,14 +27,15 @@
 +CC_FLAGS_FPU  := -march=$(shell echo $(riscv-march-y) | sed -E 's/(rv32ima?|rv64ima?)([^v_]*)v?/\1\2/')
  
  KBUILD_CFLAGS += -mno-save-restore
- KBUILD_CFLAGS += -DCONFIG_PAGE_OFFSET=$(CONFIG_PAGE_OFFSET)
+ 
+diff --git a/arch/riscv/include/asm/atomic.h b/arch/riscv/include/asm/atomic.h
+index 5b96c2f..c25ee44 100644
 --- a/arch/riscv/include/asm/atomic.h
 +++ b/arch/riscv/include/asm/atomic.h
-@@ -15,6 +15,19 @@
- #  error "64-bit atomics require XLEN to be at least 64"
+@@ -16,6 +16,19 @@
  # endif
  #endif
-+
+ 
 +#ifndef CONFIG_SMP
 +#include <asm-generic/atomic.h>
 +
@@ -45,19 +48,22 @@
 +#define arch_atomic_fetch_xor_relaxed arch_atomic_fetch_xor
 +
 +#else
- 
++
  #include <asm/cmpxchg.h>
  
-@@ -350,4 +363,6 @@
+ #define __atomic_acquire_fence()					\
+@@ -350,4 +363,6 @@ static __always_inline s64 arch_atomic64_dec_if_positive(atomic64_t *v)
  #define arch_atomic64_dec_if_positive	arch_atomic64_dec_if_positive
  #endif
  
 +#endif /* CONFIG_SMP */
 +
  #endif /* _ASM_RISCV_ATOMIC_H */
+diff --git a/arch/riscv/include/asm/bitops.h b/arch/riscv/include/asm/bitops.h
+index 7788067..7408934 100644
 --- a/arch/riscv/include/asm/bitops.h
 +++ b/arch/riscv/include/asm/bitops.h
-@@ -185,6 +185,32 @@
+@@ -185,6 +185,32 @@ legacy:
  
  #include <asm-generic/bitops/const_hweight.h>
  
@@ -90,7 +96,7 @@
  #if (BITS_PER_LONG == 64)
  #define __AMO(op)	"amo" #op ".d"
  #elif (BITS_PER_LONG == 32)
-@@ -211,6 +237,7 @@
+@@ -211,6 +237,7 @@ legacy:
  		: "+A" (addr[BIT_WORD(nr)])			\
  		: "r" (mod(BIT_MASK(nr)))			\
  		: "memory");
@@ -98,8 +104,8 @@
  
  #define __test_and_op_bit(op, mod, nr, addr) 			\
  	__test_and_op_bit_ord(op, mod, nr, addr, .aqrl)
-@@ -354,6 +381,14 @@
- static inline bool arch_xor_unlock_is_negative_byte(unsigned long mask,
+@@ -354,6 +381,14 @@ static __always_inline void arch___clear_bit_unlock(
+ static __always_inline bool arch_xor_unlock_is_negative_byte(unsigned long mask,
  		volatile unsigned long *addr)
  {
 +#ifndef CONFIG_SMP
@@ -113,7 +119,7 @@
  	unsigned long res;
  	__asm__ __volatile__ (
  		__AMO(xor) ".rl %0, %2, %1"
-@@ -361,6 +396,7 @@
+@@ -361,6 +396,7 @@ static __always_inline bool arch_xor_unlock_is_negative_byte(unsigned long mask,
  		: "r" (__NOP(mask))
  		: "memory");
  	return (res & BIT(7)) != 0;
@@ -121,13 +127,14 @@
  }
  
  #undef __test_and_op_bit
+diff --git a/arch/riscv/include/asm/cmpxchg.h b/arch/riscv/include/asm/cmpxchg.h
+index 122e148..b469e66 100644
 --- a/arch/riscv/include/asm/cmpxchg.h
 +++ b/arch/riscv/include/asm/cmpxchg.h
-@@ -5,6 +5,26 @@
- 
+@@ -6,6 +6,26 @@
  #ifndef _ASM_RISCV_CMPXCHG_H
  #define _ASM_RISCV_CMPXCHG_H
-+
+ 
 +#ifndef CONFIG_SMP
 +#include <asm-generic/cmpxchg.h>
 +
@@ -147,23 +154,25 @@
 +#define xchg64(ptr, x) arch_xchg((ptr), (x))
 +
 +#else
- 
++
  #include <linux/bug.h>
  
-@@ -281,4 +301,6 @@
+ #include <asm/alternative-macros.h>
+@@ -448,4 +468,6 @@ no_zawrs:
  	__cmpwait((ptr), (unsigned long)(val), sizeof(*(ptr)))
  #endif
  
 +#endif /* CONFIG_SMP */
 +
  #endif /* _ASM_RISCV_CMPXCHG_H */
+diff --git a/arch/riscv/include/asm/futex.h b/arch/riscv/include/asm/futex.h
+index 6f3bc9b..98a3baf 100644
 --- a/arch/riscv/include/asm/futex.h
 +++ b/arch/riscv/include/asm/futex.h
-@@ -12,6 +12,66 @@
- #include <linux/errno.h>
+@@ -13,6 +13,66 @@
  #include <asm/asm.h>
  #include <asm/asm-extable.h>
-+
+ 
 +#ifndef CONFIG_SMP
 +#include <linux/irqflags.h>
 +
@@ -223,19 +232,22 @@
 +	return ret;
 +}
 +#else
- 
++
  /* We don't even really need the extable code, but for now keep it simple */
  #ifndef CONFIG_MMU
-@@ -100,5 +160,6 @@
+ #define __enable_user_access()		do { } while (0)
+@@ -102,5 +162,6 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
  	*uval = val;
  	return ret;
  }
 +#endif /* CONFIG_SMP */
  
  #endif /* _ASM_RISCV_FUTEX_H */
+diff --git a/arch/riscv/kernel/entry.S b/arch/riscv/kernel/entry.S
+index 78f6ea7..dd05248 100644
 --- a/arch/riscv/kernel/entry.S
 +++ b/arch/riscv/kernel/entry.S
-@@ -265,7 +265,9 @@
+@@ -266,7 +266,9 @@ SYM_CODE_START_NOALIGN(ret_from_exception)
  	 * arbitrarily large.
  	 */
  	REG_L  a2, PT_EPC(sp)

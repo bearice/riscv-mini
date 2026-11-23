@@ -260,13 +260,35 @@ def perform(args):
                         boot += reply+console.uboot('crc32 %08x ${filesize}' % address)
                     boot += console.uboot('booti ${kernel_addr_r} - ${fdt_addr_r}', b'linux-mini> ')
             else:
-                boot = console.command(start, b'linux-mini> ')
+                boot = console.command(start, b'ae350-x11# ' if getattr(args, 'x11_test', False) else b'linux-mini> ')
             loads = check_loaded(boot, layout, [(name, path.read_bytes()) for path, name, _, _ in
                                                 (files if sd_install else uboot_files)])
             if sd_install:
                 op.report['sd_files'] = loads
             elif loads:
                 op.record('uboot_load', source=uboot_load, files=loads)
+            if getattr(args, 'x11_test', False):
+                op.record('opensbi_layout', **check_banner(boot.decode(errors='replace'), layout, uboot))
+                if b'ae350-tinyx-linux init' not in boot:
+                    raise RuntimeError('Missing AE350 TinyX init banner')
+                console.send('/usr/bin/run-x11-gl-tests')
+                x11_out = console.until(b'ae350-x11# ', echo=b'/usr/bin/run-x11-gl-tests',
+                                        timeout=args.timeout).decode(errors='replace')
+                required = (
+                    'XINFO PASS',
+                    'GLXGEARS PASS backend=SW-TinyGL',
+                    'GLXGEARS PASS backend=HW-AE350-GFX3D',
+                    'GLXMESH PASS backend=SW-TinyGL',
+                    'GLXMESH PASS backend=HW-AE350-GFX3D',
+                    'AE350_X11_GL_ALL_PASS',
+                )
+                missing = [m for m in required if m not in x11_out]
+                if missing:
+                    raise RuntimeError('X11/OpenGL verification missing markers: ' + ', '.join(missing))
+                op.record('linux_x11_gl', passed=True, boot=boot.decode(errors='replace'),
+                          output=x11_out)
+                op.report['passed'] = True
+                return
             console.userspace(op, boot, layout, uboot)
             if getattr(args, 'usb_readonly', False):
                 if args.devices:

@@ -1,8 +1,10 @@
+diff --git a/arch/riscv/Kconfig b/arch/riscv/Kconfig
+index fadec20..470c711 100644
 --- a/arch/riscv/Kconfig
 +++ b/arch/riscv/Kconfig
-@@ -289,6 +289,21 @@
- 	default 0xc0000000 if 32BIT
- 	default 0xff60000000000000 if 64BIT
+@@ -295,6 +295,21 @@ config MMU
+ 	  Select if you want MMU-based virtualised addressing space
+ 	  support by paged memory management. If unsure, say 'Y'.
  
 +config RISCV_RESERVED_VA_START
 +	hex "Start of a kernel virtual range that is never mapped"
@@ -22,18 +24,20 @@
  config KASAN_SHADOW_OFFSET
  	hex
  	depends on KASAN_GENERIC
+diff --git a/arch/riscv/mm/init.c b/arch/riscv/mm/init.c
+index 557bf16..4534053 100644
 --- a/arch/riscv/mm/init.c
 +++ b/arch/riscv/mm/init.c
-@@ -25,6 +25,7 @@
- #endif
+@@ -22,6 +22,7 @@
+ #include <linux/hugetlb.h>
  #include <linux/kfence.h>
  #include <linux/execmem.h>
 +#include <linux/vmalloc.h>
  
+ #include <asm/alternative.h>
  #include <asm/fixmap.h>
- #include <asm/io.h>
-@@ -1434,10 +1435,35 @@
- 				    low_size, high);
+@@ -1446,10 +1447,35 @@ static void __init arch_reserve_crashkernel(void)
+ 	reserve_crashkernel_generic(crash_size, crash_base, low_size, high);
  }
  
 +#if defined(CONFIG_MMU) && defined(CONFIG_32BIT)

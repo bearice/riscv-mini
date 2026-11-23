@@ -116,6 +116,27 @@ enum ae350_gfx2d_reg {
 	AE350_G_LUT_DATA	= 184,
 };
 
+/* GFX3D registers inside the GFX2D 4 KiB page (+0x100..+0x188). */
+#define AE350_G3D_TRI_BASE		0x100u
+#define AE350_G3D_CTRL			0x160u
+#define AE350_G3D_STATUS		0x164u
+#define AE350_G3D_FB_ADDR		0x168u
+#define AE350_G3D_FB_STRIDE		0x16Cu
+#define AE350_G3D_TEX_CFG		0x170u
+#define AE350_G3D_BG_COLOR		0x174u
+#define AE350_G3D_Z_CFG			0x178u
+#define AE350_G3D_ZBUF_ADDR		0x17Cu
+#define AE350_G3D_TMEM_ADDR		0x180u
+#define AE350_G3D_TMEM_DATA		0x184u
+#define AE350_G3D_PIXELS_OUT		0x188u
+
+#define AE350_G3D_STATUS_BUSY		BIT(0)
+#define AE350_G3D_STATUS_DONE		BIT(1)
+#define AE350_G3D_STATUS_ERR_PARAM	BIT(2)
+
+#define AE350_G3D_TEX_EN		BIT(0)
+#define AE350_G3D_BILINEAR_EN		BIT(1)
+
 /* GFX2D op codes (docs/platforms/mega138k_ae350/gfx2d.md & gfx2d-shader-core.md). */
 #define AE350_GFX_FILL	0
 #define AE350_GFX_COPY	1
@@ -449,6 +470,29 @@ static inline int ae350_gfx2d_run(void __iomem *gfx)
 {
 	writel(1u, gfx + AE350_G_CONTROL);
 	return ae350_gfx2d_wait(gfx, 0x40000);
+}
+
+static inline int ae350_gfx3d_wait(void __iomem *gfx, u32 rounds)
+{
+	u32 i;
+
+	for (i = 0; i < rounds; i++) {
+		u32 st = readl(gfx + AE350_G3D_STATUS);
+
+		if (!(st & AE350_G3D_STATUS_BUSY))
+			return (st & AE350_G3D_STATUS_ERR_PARAM) ? -EINVAL : 0;
+		cpu_relax();
+	}
+	return -ETIMEDOUT;
+}
+
+static inline void ae350_gfx3d_init_shader(void __iomem *gfx)
+{
+	/* ShaderALU Stage 0: MUL_UNORM8(R0, SRC, R2) */
+	writel(0u, gfx + AE350_G_SHADER_CFG);
+	writel(0x4E4E4000u, gfx + AE350_G_INST0_LO);
+	writel(0x400F420Eu, gfx + AE350_G_INST0_HI);
+	writel(0xFF000000u, gfx + AE350_G3D_BG_COLOR);
 }
 
 #define AE350_G_INST_HI(op, pred, dst, wr, s0, s1, s2, swz0)		\

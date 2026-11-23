@@ -15,8 +15,11 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
 
-#include <drm/drm_aperture.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+#include <drm/clients/drm_client_setup.h>
+#endif
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic_state_helper.h>
@@ -644,9 +647,14 @@ DEFINE_DRM_GEM_FOPS(ae350_drm_fops);
 
 static struct drm_driver ae350_drm_driver = {
 	DRM_GEM_DMA_DRIVER_OPS_VMAP,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+	DRM_FBDEV_DMA_DRIVER_OPS,
+#endif
 	.name = DRIVER_NAME,
 	.desc = DRIVER_DESC,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 14, 0)
 	.date = DRIVER_DATE,
+#endif
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
 	.driver_features = DRIVER_ATOMIC | DRIVER_GEM | DRIVER_MODESET,
@@ -724,7 +732,11 @@ static int ae350_drm_probe(struct platform_device *pdev)
 	if (ret)
 		goto release;
 	platform_set_drvdata(pdev, drm);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+	drm_client_setup(dev_drm, NULL);
+#else
 	drm_fbdev_dma_setup(dev_drm, 16);
+#endif
 	dev_info(dev, "fb%d: KMS %s modes from %u gateware modes\n",
 		 dev_drm->primary->index, DRIVER_NAME,
 		 readl(drm->csr + AE350_V_MODE_COUNT));

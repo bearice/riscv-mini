@@ -141,6 +141,7 @@ static void mini_uart_write(struct uart_port *port, unsigned int offset, u8 valu
 
     # AE350 video drivers (fbdev and DRM/KMS share a register header).
     (fb / 'riscv_mini_ae350_regs.h').write_bytes((port / 'riscv_mini_ae350_regs.h').read_bytes())
+    (fb / 'ae350_gfx3d_uapi.h').write_bytes((port / 'ae350_gfx3d_uapi.h').read_bytes())
     (fb / 'riscv_mini_ae350_fb.c').write_bytes((port / 'riscv_mini_ae350_fb.c').read_bytes())
     if 'config FB_AE350_VIDEO\n' not in (fb / 'Kconfig').read_text():
         with (fb / 'Kconfig').open('a') as stream:

@@ -216,6 +216,7 @@ def parser():
             op.add_argument('--sd-install',action='store_true',help='AE350: replace Image/fw_payload.bin/mega138k_ae350.dtb in the SD root, then `boot sd`: the BIOS starts fw_payload.bin and U-Boot loads Image and the DTB')
             op.add_argument('--uboot-load',choices=('sd','net'),default='sd',help='AE350 with fw_payload.bin: U-Boot loads Image and the DTB from the SD card (`run sdboot`) or over TFTP from --host-ip')
             op.add_argument('--uboot-command',action='append',default=[],metavar='COMMAND',help='AE350 with fw_payload.bin: stop autoboot and run this U-Boot command before loading; repeatable, output kept in the receipt')
+            op.add_argument('--x11-test',action='store_true',help='AE350: boot graphical BusyBox/Xfbdev rootfs and run automated X11 + OpenGL SW/HW verification')
         if name == 'build' and 'gateware' in (getattr(op, 'choices', {}) or {}):
             pass
         if name in ('run','update','verify'):
